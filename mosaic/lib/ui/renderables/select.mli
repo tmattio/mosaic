@@ -4,7 +4,7 @@
 
 (** Vertical list selector with optional descriptions.
 
-    A focusable, keyboard-navigable list where exactly one item is highlighted
+    A focusable, keyboard-navigable list where at most one item is highlighted
     at a time. Each {!type-item} has a label and an optional description. The
     widget automatically scrolls to keep the selected item centered in the
     viewport; rendering is buffered.
@@ -16,6 +16,11 @@
     - j / k — move selection by one item.
     - Enter / KP_enter — activate the current selection (fires the
       {!val-set_on_activate} callback).
+
+    Bindings use {!Shortcut} matching: modifiers are exact apart from lock
+    state, keypad equivalents and base-layout keys are recognized, and release
+    events are ignored. Widget actions run after raw key handlers and respect
+    [prevent_default].
 
     {2:mouse Mouse}
 
@@ -36,6 +41,15 @@ type item = {
   description : string option;  (** Optional secondary text. *)
 }
 (** The type for list items. *)
+
+type action =
+  | Move_up
+  | Move_down
+  | Move_up_fast
+  | Move_down_fast
+  | Activate
+      (** Navigation and activation actions. Fast movement uses
+          [fast_scroll_step]. *)
 
 type t
 (** A select widget backed by a {!Renderable.t}. *)
@@ -65,6 +79,7 @@ val create :
   ?wrap_selection:bool ->
   ?item_spacing:int ->
   ?fast_scroll_step:int ->
+  ?key_bindings:(Shortcut.t * action) list ->
   unit ->
   t
 (** [create ~parent ()] is a select node attached to [parent].
@@ -97,6 +112,7 @@ module Props : sig
     ?wrap_selection:bool ->
     ?item_spacing:int ->
     ?fast_scroll_step:int ->
+    ?key_bindings:(Shortcut.t * action) list ->
     unit ->
     t
   (** [make ()] is a property set with the same defaults as {!val-create}, with:
@@ -123,7 +139,10 @@ module Props : sig
       - [item_spacing] vertical spacing between items in cells, clamped to
         minimum [0]. Defaults to [0].
       - [fast_scroll_step] items to skip with Shift+Up/Down, clamped to minimum
-        [1]. Defaults to [5]. *)
+        [1]. Defaults to [5].
+      - [key_bindings] custom shortcut/action pairs, default [[]]. Later
+        bindings override equivalent defaults; other defaults remain available.
+  *)
 
   val default : t
   (** [default] is [make ()]. *)

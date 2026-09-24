@@ -56,92 +56,104 @@ type action =
   | Submit
 
 module Action = struct
-  let b = Keymap.binding
-
   let defaults =
     [
-      b "left" Move_left;
-      b "right" Move_right;
-      b "up" Move_up;
-      b "down" Move_down;
-      b ~shift:true "left" Select_left;
-      b ~shift:true "right" Select_right;
-      b ~shift:true "up" Select_up;
-      b ~shift:true "down" Select_down;
-      b "home" Buffer_home;
-      b "end" Buffer_end;
-      b ~shift:true "home" Select_buffer_home;
-      b ~shift:true "end" Select_buffer_end;
-      b ~ctrl:true "a" Line_home;
-      b ~ctrl:true "e" Line_end;
-      b ~ctrl:true ~shift:true "a" Select_line_home;
-      b ~ctrl:true ~shift:true "e" Select_line_end;
-      b ~alt:true "a" Visual_line_home;
-      b ~alt:true "e" Visual_line_end;
-      b ~alt:true ~shift:true "a" Select_visual_line_home;
-      b ~alt:true ~shift:true "e" Select_visual_line_end;
-      b ~ctrl:true "f" Move_right;
-      b ~ctrl:true "b" Move_left;
-      b ~ctrl:true "w" Delete_word_backward;
-      b ~ctrl:true "backspace" Delete_word_backward;
-      b ~alt:true "d" Delete_word_forward;
-      b ~alt:true "delete" Delete_word_forward;
-      b ~ctrl:true "delete" Delete_word_forward;
-      b ~ctrl:true ~shift:true "d" Delete_line;
-      b ~ctrl:true "k" Delete_to_line_end;
-      b ~ctrl:true "u" Delete_to_line_start;
-      b "backspace" Backspace;
-      b ~shift:true "backspace" Backspace;
-      b ~ctrl:true "d" Delete;
-      b "delete" Delete;
-      b ~shift:true "delete" Delete;
-      b "return" Newline;
-      b "linefeed" Newline;
-      b ~alt:true "return" Submit;
-      b ~ctrl:true "return" Submit;
-      b ~super:true "return" Submit;
-      b ~alt:true "linefeed" Submit;
-      b ~ctrl:true "linefeed" Submit;
-      b ~super:true "linefeed" Submit;
-      b ~ctrl:true "-" Undo;
-      b ~ctrl:true "." Redo;
-      b ~ctrl:true "z" Undo;
-      b ~ctrl:true ~shift:true "z" Redo;
-      b ~super:true "z" Undo;
-      b ~super:true ~shift:true "z" Redo;
-      b ~alt:true "f" Word_forward;
-      b ~alt:true "b" Word_backward;
-      b ~alt:true "right" Word_forward;
-      b ~alt:true "left" Word_backward;
-      b ~ctrl:true "right" Word_forward;
-      b ~ctrl:true "left" Word_backward;
-      b ~alt:true ~shift:true "f" Select_word_forward;
-      b ~alt:true ~shift:true "b" Select_word_backward;
-      b ~alt:true ~shift:true "right" Select_word_forward;
-      b ~alt:true ~shift:true "left" Select_word_backward;
-      b ~alt:true "backspace" Delete_word_backward;
-      b ~super:true "left" Visual_line_home;
-      b ~super:true "right" Visual_line_end;
-      b ~super:true "up" Buffer_home;
-      b ~super:true "down" Buffer_end;
-      b ~super:true ~shift:true "left" Select_visual_line_home;
-      b ~super:true ~shift:true "right" Select_visual_line_end;
-      b ~super:true ~shift:true "up" Select_buffer_home;
-      b ~super:true ~shift:true "down" Select_buffer_end;
-      b ~super:true "a" Select_all;
+      (Shortcut.key Matrix_input.Key.Left, Move_left);
+      (Shortcut.key Matrix_input.Key.Right, Move_right);
+      (Shortcut.key Matrix_input.Key.Up, Move_up);
+      (Shortcut.key Matrix_input.Key.Down, Move_down);
+      (Shortcut.key ~shift:true Matrix_input.Key.Left, Select_left);
+      (Shortcut.key ~shift:true Matrix_input.Key.Right, Select_right);
+      (Shortcut.key ~shift:true Matrix_input.Key.Up, Select_up);
+      (Shortcut.key ~shift:true Matrix_input.Key.Down, Select_down);
+      (Shortcut.key Matrix_input.Key.Home, Buffer_home);
+      (Shortcut.key Matrix_input.Key.End, Buffer_end);
+      (Shortcut.key ~shift:true Matrix_input.Key.Home, Select_buffer_home);
+      (Shortcut.key ~shift:true Matrix_input.Key.End, Select_buffer_end);
+      (Shortcut.char ~ctrl:true 'a', Line_home);
+      (Shortcut.char ~ctrl:true 'e', Line_end);
+      (Shortcut.char ~ctrl:true ~shift:true 'a', Select_line_home);
+      (Shortcut.char ~ctrl:true ~shift:true 'e', Select_line_end);
+      (Shortcut.char ~alt:true 'a', Visual_line_home);
+      (Shortcut.char ~alt:true 'e', Visual_line_end);
+      (Shortcut.char ~alt:true ~shift:true 'a', Select_visual_line_home);
+      (Shortcut.char ~alt:true ~shift:true 'e', Select_visual_line_end);
+      (Shortcut.char ~ctrl:true 'f', Move_right);
+      (Shortcut.char ~ctrl:true 'b', Move_left);
+      (Shortcut.char ~ctrl:true 'w', Delete_word_backward);
+      (Shortcut.key ~ctrl:true Matrix_input.Key.Backspace, Delete_word_backward);
+      (Shortcut.char ~alt:true 'd', Delete_word_forward);
+      (Shortcut.key ~alt:true Matrix_input.Key.Delete, Delete_word_forward);
+      (Shortcut.key ~ctrl:true Matrix_input.Key.Delete, Delete_word_forward);
+      (Shortcut.char ~ctrl:true ~shift:true 'd', Delete_line);
+      (Shortcut.char ~ctrl:true 'k', Delete_to_line_end);
+      (Shortcut.char ~ctrl:true 'u', Delete_to_line_start);
+      (Shortcut.key Matrix_input.Key.Backspace, Backspace);
+      (Shortcut.key ~shift:true Matrix_input.Key.Backspace, Backspace);
+      (Shortcut.char ~ctrl:true 'd', Delete);
+      (Shortcut.key Matrix_input.Key.Delete, Delete);
+      (Shortcut.key ~shift:true Matrix_input.Key.Delete, Delete);
+      (Shortcut.key Matrix_input.Key.Enter, Newline);
+      (Shortcut.key Matrix_input.Key.Line_feed, Newline);
+      (Shortcut.key ~alt:true Matrix_input.Key.Enter, Submit);
+      (Shortcut.key ~ctrl:true Matrix_input.Key.Enter, Submit);
+      (Shortcut.key ~super:true Matrix_input.Key.Enter, Submit);
+      (Shortcut.key ~alt:true Matrix_input.Key.Line_feed, Submit);
+      (Shortcut.key ~ctrl:true Matrix_input.Key.Line_feed, Submit);
+      (Shortcut.key ~super:true Matrix_input.Key.Line_feed, Submit);
+      (Shortcut.char ~ctrl:true '-', Undo);
+      (Shortcut.char ~ctrl:true '.', Redo);
+      (Shortcut.char ~ctrl:true 'z', Undo);
+      (Shortcut.char ~ctrl:true ~shift:true 'z', Redo);
+      (Shortcut.char ~super:true 'z', Undo);
+      (Shortcut.char ~super:true ~shift:true 'z', Redo);
+      (Shortcut.char ~alt:true 'f', Word_forward);
+      (Shortcut.char ~alt:true 'b', Word_backward);
+      (Shortcut.key ~alt:true Matrix_input.Key.Right, Word_forward);
+      (Shortcut.key ~alt:true Matrix_input.Key.Left, Word_backward);
+      (Shortcut.key ~ctrl:true Matrix_input.Key.Right, Word_forward);
+      (Shortcut.key ~ctrl:true Matrix_input.Key.Left, Word_backward);
+      (Shortcut.char ~alt:true ~shift:true 'f', Select_word_forward);
+      (Shortcut.char ~alt:true ~shift:true 'b', Select_word_backward);
+      ( Shortcut.key ~alt:true ~shift:true Matrix_input.Key.Right,
+        Select_word_forward );
+      ( Shortcut.key ~alt:true ~shift:true Matrix_input.Key.Left,
+        Select_word_backward );
+      (Shortcut.key ~alt:true Matrix_input.Key.Backspace, Delete_word_backward);
+      (Shortcut.key ~super:true Matrix_input.Key.Left, Visual_line_home);
+      (Shortcut.key ~super:true Matrix_input.Key.Right, Visual_line_end);
+      (Shortcut.key ~super:true Matrix_input.Key.Up, Buffer_home);
+      (Shortcut.key ~super:true Matrix_input.Key.Down, Buffer_end);
+      ( Shortcut.key ~super:true ~shift:true Matrix_input.Key.Left,
+        Select_visual_line_home );
+      ( Shortcut.key ~super:true ~shift:true Matrix_input.Key.Right,
+        Select_visual_line_end );
+      ( Shortcut.key ~super:true ~shift:true Matrix_input.Key.Up,
+        Select_buffer_home );
+      ( Shortcut.key ~super:true ~shift:true Matrix_input.Key.Down,
+        Select_buffer_end );
+      (Shortcut.char ~super:true 'a', Select_all);
     ]
 
-  let input_overrides = [ b "return" Submit; b "linefeed" Submit ]
+  let input_overrides =
+    [
+      (Shortcut.key Matrix_input.Key.Enter, Submit);
+      (Shortcut.key Matrix_input.Key.Line_feed, Submit);
+    ]
 
-  let keymap ?(aliases = []) ?(custom = []) = function
-    | `Multiline -> Keymap.make ~aliases ~defaults ~custom ()
-    | `Single_line ->
-        Keymap.make ~aliases ~defaults ~custom:(input_overrides @ custom) ()
+  let multiline = Keymap.make ~defaults ()
+  let single_line = Keymap.make ~defaults ~custom:input_overrides ()
+
+  let keymap ?(custom = []) mode =
+    match (custom, mode) with
+    | [], `Multiline -> multiline
+    | [], `Single_line -> single_line
+    | _, `Multiline -> Keymap.make ~defaults ~custom ()
+    | _, `Single_line ->
+        Keymap.make ~defaults ~custom:(input_overrides @ custom) ()
 end
 
-type key_binding = action Keymap.binding
-
-let key_binding = Keymap.binding
+type key_binding = Shortcut.t * action
 
 module Props = struct
   type t = {
@@ -164,7 +176,6 @@ module Props = struct
     selectable : bool;
     show_cursor : bool;
     key_bindings : key_binding list;
-    key_aliases : (string * string) list;
   }
 
   let make ~state ?(spans = []) ?ghost_text
@@ -178,7 +189,7 @@ module Props = struct
       ?(cursor_style = default_cursor_style)
       ?(cursor_color = default_cursor_color)
       ?(cursor_blinking = default_cursor_blinking) ?(selectable = true)
-      ?(show_cursor = true) ?(key_bindings = []) ?(key_aliases = []) () =
+      ?(show_cursor = true) ?(key_bindings = []) () =
     {
       state;
       spans;
@@ -199,7 +210,6 @@ module Props = struct
       selectable;
       show_cursor;
       key_bindings;
-      key_aliases;
     }
 
   let default = make ~state:Editor.empty ()
@@ -231,9 +241,6 @@ module Props = struct
     && a.selectable = b.selectable
     && a.show_cursor = b.show_cursor
     && List.equal (Keymap.binding_equal ( = )) a.key_bindings b.key_bindings
-    && List.equal
-         (fun (ak, av) (bk, bv) -> String.equal ak bk && String.equal av bv)
-         a.key_aliases b.key_aliases
 end
 
 (* Types *)
@@ -775,7 +782,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
     ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?(mode = `Multiline)
-    ?key_bindings ?key_aliases ~on_change ?on_submit () =
+    ?key_bindings ~on_change ?on_submit () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -784,7 +791,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
       ?text_color ?background_color ?focused_text_color
       ?focused_background_color ?placeholder_color ?selection_color
       ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable
-      ?show_cursor ?key_bindings ?key_aliases ()
+      ?show_cursor ?key_bindings ()
   in
   let width_method = Renderable.Private.width_method node in
   let buf = Editor.Private.buffer state in
@@ -802,8 +809,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
       on_change;
       on_submit;
       mode;
-      keymap =
-        Action.keymap ~aliases:props.key_aliases ~custom:props.key_bindings mode;
+      keymap = Action.keymap ~custom:props.key_bindings mode;
     }
   in
   Renderable.set_render_before node (Some (render_before t));
@@ -836,14 +842,10 @@ let apply_props t (props : Props.t) =
   let spans_changed = not (Props.spans_equal t.props.spans props.spans) in
   let selectable_changed = t.props.selectable <> props.selectable in
   let keymap_changed =
-    (not
-       (List.equal
-          (Keymap.binding_equal ( = ))
-          t.props.key_bindings props.key_bindings))
-    || not
-         (List.equal
-            (fun (ak, av) (bk, bv) -> String.equal ak bk && String.equal av bv)
-            t.props.key_aliases props.key_aliases)
+    not
+      (List.equal
+         (Keymap.binding_equal ( = ))
+         t.props.key_bindings props.key_bindings)
   in
   let style_changed =
     (not (Ansi.Color.equal t.props.text_color props.text_color))
@@ -862,8 +864,7 @@ let apply_props t (props : Props.t) =
   if t.props.wrap <> props.wrap then Text_surface.set_wrap t.surface props.wrap;
   t.props <- props;
   if keymap_changed then
-    t.keymap <-
-      Action.keymap ~aliases:props.key_aliases ~custom:props.key_bindings t.mode;
+    t.keymap <- Action.keymap ~custom:props.key_bindings t.mode;
   if selectable_changed then register_selection t;
   if style_changed then sync_style t ~focused:(Renderable.focused t.node)
   else if source_changed || spans_changed then sync t;

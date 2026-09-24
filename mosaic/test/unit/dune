@@ -299,3 +299,22 @@
   matrix.input
   matrix.grid
   matrix.screen))
+
+(test
+ (name test_shortcut)
+ (modules test_shortcut)
+ (package mosaic)
+ (libraries windtrap mosaic.ui matrix.input))
+
+(test
+ (name test_navigation_keys)
+ (modules test_navigation_keys)
+ (package mosaic)
+ (libraries
+  windtrap
+  mosaic
+  mosaic.mlx
+  mosaic.ui
+  matrix.input
+  matrix.grid
+  matrix.screen))

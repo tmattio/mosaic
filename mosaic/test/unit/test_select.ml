@@ -15,20 +15,22 @@ let sample_items =
     ]
 
 let make_select ?options ?selected_index ?wrap_selection ?show_description
-    ?show_scroll_indicator ?item_spacing ?fast_scroll_step () =
+    ?show_scroll_indicator ?item_spacing ?fast_scroll_step ?key_bindings () =
   let t = make_ctx () in
   let root = make_root t in
   let sel =
     Select.create ~parent:root ?options ?selected_index ?wrap_selection
       ?show_description ?show_scroll_indicator ?item_spacing ?fast_scroll_step
-      ()
+      ?key_bindings ()
   in
   Select.set_on_change sel (Some (Select.set_selected_index sel));
   (t, sel)
 
 let emit_key sel key =
   let ev = Event.Key.of_input key in
-  Renderable.Private.emit_key (Select.node sel) ev
+  Renderable.Private.emit_key (Select.node sel) ev;
+  if not (Event.Key.default_prevented ev) then
+    Renderable.Private.emit_default_key (Select.node sel) ev
 
 let emit_mouse sel ev = Renderable.Private.emit_mouse (Select.node sel) ev
 
@@ -532,9 +534,76 @@ let absent_selection_is_preserved () =
   equal ~msg:"click selects a valid item from absence" int 1
     (Select.selected_index sel)
 
+let bindings_use_exact_key_events () =
+  let _, sel = make_select ~options:sample_items ~selected_index:2 () in
+  List.iter
+    (fun key ->
+      let event = Event.Key.of_input key in
+      Renderable.Private.emit_default_key (Select.node sel) event;
+      is_false ~msg:"unbound modified/released key remains available"
+        (Event.Key.default_prevented event);
+      equal ~msg:"unbound event leaves selection unchanged" int 2
+        (Select.selected_index sel))
+    [
+      make_key ~ctrl:true Down;
+      make_key ~alt:true Down;
+      make_key ~super:true Down;
+      make_key ~hyper:true Down;
+      make_key ~meta:true Down;
+      make_key ~shift:true (Char (Uchar.of_char 'j'));
+      make_key ~event_type:Release Down;
+    ];
+  emit_key sel
+    (make_key ~caps_lock:true ~num_lock:true ~event_type:Repeat KP_down);
+  equal ~msg:"repeat and keypad navigation ignore lock state" int 3
+    (Select.selected_index sel);
+  emit_key sel
+    (make_key ~base_key:(Uchar.of_char 'k') (Char (Uchar.of_int 0x043B)));
+  equal ~msg:"base-layout fallback uses the same default binding" int 2
+    (Select.selected_index sel)
+
+let custom_bindings_override_and_update () =
+  let bindings =
+    [ (Shortcut.down, Select.Move_up); (Shortcut.ctrl 'n', Select.Move_down) ]
+  in
+  let _, sel =
+    make_select ~options:sample_items ~selected_index:2 ~key_bindings:bindings
+      ()
+  in
+  emit_key sel (make_key Down);
+  equal ~msg:"custom binding overrides default" int 1
+    (Select.selected_index sel);
+  emit_key sel (make_key ~ctrl:true (Char (Uchar.of_char 'n')));
+  equal ~msg:"custom modified shortcut invokes action" int 2
+    (Select.selected_index sel);
+  Select.apply_props sel
+    (Select.Props.make ~options:sample_items ~selected_index:2 ());
+  emit_key sel (make_key Down);
+  equal ~msg:"removing custom bindings restores defaults" int 3
+    (Select.selected_index sel);
+  emit_key sel (make_key ~ctrl:true (Char (Uchar.of_char 'n')));
+  equal ~msg:"removed custom binding is unavailable" int 3
+    (Select.selected_index sel)
+
+let raw_handler_can_prevent_navigation () =
+  let _, sel = make_select ~options:sample_items () in
+  Renderable.on_key (Select.node sel) Event.Key.prevent_default;
+  emit_key sel (make_key Down);
+  equal ~msg:"raw handlers run before default navigation" int 0
+    (Select.selected_index sel)
+
 let () =
   run "mosaic.select"
     [
+      group "Typed bindings"
+        [
+          test "exact modifiers, repeat, release and base layout"
+            bindings_use_exact_key_events;
+          test "custom bindings override and update"
+            custom_bindings_override_and_update;
+          test "raw handlers prevent navigation"
+            raw_handler_can_prevent_navigation;
+        ];
       test "proposals do not drift" proposals_do_not_drift;
       test "absent selection is preserved" absent_selection_is_preserved;
       group "Props"

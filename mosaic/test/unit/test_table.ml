@@ -40,7 +40,11 @@ let make_table ?columns ?rows ?selected_row ?border ?border_style ?show_header
 
 let emit_key tbl key =
   let ev = Event.Key.of_input key in
-  Renderable.Private.emit_key (Table.node tbl) ev
+  Renderable.Private.emit_key (Table.node tbl) ev;
+  if
+    (not (Event.Key.default_prevented ev))
+    && not (Event.Key.propagation_stopped ev)
+  then Renderable.Private.emit_default_key (Table.node tbl) ev
 
 let emit_mouse tbl ev = Renderable.Private.emit_mouse (Table.node tbl) ev
 

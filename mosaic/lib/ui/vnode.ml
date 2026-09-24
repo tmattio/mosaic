@@ -275,13 +275,13 @@ let input ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?text_color ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
-    ?key_aliases ~on_change ?on_submit ~state () =
+    ~on_change ?on_submit ~state () =
   let kind =
     Text_input
       (Text_input.Props.make ~state ?placeholder ?text_color ?background_color
          ?focused_text_color ?focused_background_color ?placeholder_color
          ?selection_color ?selection_fg ?cursor_style ?cursor_color
-         ?cursor_blinking ?selectable ?show_cursor ?key_bindings ?key_aliases ())
+         ?cursor_blinking ?selectable ?show_cursor ?key_bindings ())
   in
   let attrs =
     {
@@ -318,15 +318,15 @@ let select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?selected_index ?background ?text_color ?focused_background
     ?focused_text_color ?selected_background ?selected_text_color
     ?description_color ?selected_description_color ?show_description
-    ?show_scroll_indicator ?wrap_selection ?item_spacing ?fast_scroll_step
-    ?on_change ?on_activate () =
+    ?show_scroll_indicator ?wrap_selection ?key_bindings ?item_spacing
+    ?fast_scroll_step ?on_change ?on_activate () =
   let kind =
     Select
       (Select.Props.make ?options ?selected_index ?background ?text_color
          ?focused_background ?focused_text_color ?selected_background
          ?selected_text_color ?description_color ?selected_description_color
-         ?show_description ?show_scroll_indicator ?wrap_selection ?item_spacing
-         ?fast_scroll_step ())
+         ?show_description ?show_scroll_indicator ?wrap_selection ?key_bindings
+         ?item_spacing ?fast_scroll_step ())
   in
   let attrs =
     {
@@ -363,14 +363,15 @@ let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?tab_width ?background ?text_color ?focused_background ?focused_text_color
     ?selected_background ?selected_text_color ?description_color
     ?selected_description_color ?show_underline ?show_description
-    ?show_scroll_arrows ?wrap_selection ?on_change ?on_activate () =
+    ?show_scroll_arrows ?wrap_selection ?key_bindings ?on_change ?on_activate ()
+    =
   let kind =
     Tab_select
       (Tab_select.Props.make ~options ?selected ?tab_width ?background
          ?text_color ?focused_background ?focused_text_color
          ?selected_background ?selected_text_color ?description_color
          ?selected_description_color ?show_underline ?show_description
-         ?show_scroll_arrows ?wrap_selection ())
+         ?show_scroll_arrows ?wrap_selection ?key_bindings ())
   in
   let attrs =
     {
@@ -589,15 +590,14 @@ let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
     ?focused_text_color ?focused_background_color ?placeholder_color
     ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ?key_aliases ~on_change ?on_submit
-    ~state () =
+    ?selectable ?show_cursor ?key_bindings ~on_change ?on_submit ~state () =
   let kind =
     Textarea
       (Textarea.Props.make ~state ?spans ?ghost_text ?ghost_text_color
          ?placeholder ?wrap ?text_color ?background_color ?focused_text_color
          ?focused_background_color ?placeholder_color ?selection_color
          ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable
-         ?show_cursor ?key_bindings ?key_aliases ())
+         ?show_cursor ?key_bindings ())
   in
   let attrs =
     {
@@ -638,7 +638,8 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?text_color ?background ?selected_text_color ?selected_background
     ?focused_selected_text_color ?focused_selected_background ?selection_visible
     ?show_scroll_indicator ?activate_on_click ?wheel_navigation ?row_styles
-    ?wrap_selection ?fast_scroll_step ?on_change ?on_activate ?on_hover () =
+    ?wrap_selection ?key_bindings ?fast_scroll_step ?on_change ?on_activate
+    ?on_hover () =
   let kind =
     Table
       (Table.Props.make ?columns ?rows ?selected_row ?border ?border_style
@@ -647,7 +648,7 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
          ?selected_text_color ?selected_background ?focused_selected_text_color
          ?focused_selected_background ?selection_visible ?show_scroll_indicator
          ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
-         ?fast_scroll_step ())
+         ?key_bindings ?fast_scroll_step ())
   in
   let attrs =
     {
@@ -849,15 +850,15 @@ let tree ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?show_guides ?guide_style ?expand_icon ?collapse_icon ?leaf_icon ?background
     ?text_color ?selected_background ?selected_text_color
     ?focused_selected_background ?focused_selected_text_color ?guide_color
-    ?icon_color ?wrap_selection ?fast_scroll_step ~on_change ?on_activate ~state
-    () =
+    ?icon_color ?wrap_selection ?key_bindings ?fast_scroll_step ~on_change
+    ?on_activate ~state () =
   let kind =
     Tree
       (Tree.Props.make ~state ?items ?indent_size ?show_guides ?guide_style
          ?expand_icon ?collapse_icon ?leaf_icon ?background ?text_color
          ?selected_background ?selected_text_color ?focused_selected_background
          ?focused_selected_text_color ?guide_color ?icon_color ?wrap_selection
-         ?fast_scroll_step ())
+         ?key_bindings ?fast_scroll_step ())
   in
   let attrs =
     {

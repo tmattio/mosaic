@@ -8,6 +8,27 @@ let item_equal (a : item) (b : item) =
 
 let items_equal = List.equal item_equal
 
+type action = Move_up | Move_down | Move_up_fast | Move_down_fast | Activate
+
+let key_bindings_equal = List.equal (Keymap.binding_equal ( = ))
+
+let default_key_bindings =
+  [
+    (Shortcut.up, Move_up);
+    (Shortcut.down, Move_down);
+    (Shortcut.char 'k', Move_up);
+    (Shortcut.char 'j', Move_down);
+    (Shortcut.key ~shift:true Up, Move_up_fast);
+    (Shortcut.key ~shift:true Down, Move_down_fast);
+    (Shortcut.enter, Activate);
+  ]
+
+let default_keymap = Keymap.make ~defaults:default_key_bindings ()
+
+let keymap = function
+  | [] -> default_keymap
+  | custom -> Keymap.make ~defaults:default_key_bindings ~custom ()
+
 (* ───── Props ───── *)
 
 module Props = struct
@@ -27,6 +48,7 @@ module Props = struct
     wrap_selection : bool;
     item_spacing : int;
     fast_scroll_step : int;
+    key_bindings : action Keymap.binding list;
   }
 
   let make ?(options = []) ?(selected_index = 0) ?background ?text_color
@@ -36,7 +58,8 @@ module Props = struct
       ?(description_color = Ansi.Color.of_rgb 136 136 136)
       ?(selected_description_color = Ansi.Color.of_rgb 204 204 204)
       ?(show_description = true) ?(show_scroll_indicator = false)
-      ?(wrap_selection = false) ?(item_spacing = 0) ?(fast_scroll_step = 5) () =
+      ?(wrap_selection = false) ?(item_spacing = 0) ?(fast_scroll_step = 5)
+      ?(key_bindings = []) () =
     let background_opt = background in
     let background =
       Option.value background ~default:(Ansi.Color.of_rgba 0 0 0 0)
@@ -72,6 +95,7 @@ module Props = struct
       wrap_selection;
       item_spacing = max 0 item_spacing;
       fast_scroll_step = max 1 fast_scroll_step;
+      key_bindings;
     }
 
   let default = make ()
@@ -93,6 +117,7 @@ module Props = struct
     && Bool.equal a.wrap_selection b.wrap_selection
     && Int.equal a.item_spacing b.item_spacing
     && Int.equal a.fast_scroll_step b.fast_scroll_step
+    && key_bindings_equal a.key_bindings b.key_bindings
 end
 
 (* ───── Types ───── *)
@@ -105,6 +130,7 @@ type t = {
   mutable scroll_offset : int;
   mutable lines_per_item : int;
   mutable max_visible_items : int;
+  mutable keymap : action Keymap.t;
   mutable on_change : (int -> unit) option;
   mutable on_activate : (int -> unit) option;
 }
@@ -116,8 +142,6 @@ let node t = t.node
 let indicator_selected = "\xe2\x96\xb6 " (* ▶ + space *)
 let indicator_blank = "  "
 let scroll_block = "\xe2\x96\x88" (* █ *)
-let uchar_j = Uchar.of_char 'j'
-let uchar_k = Uchar.of_char 'k'
 
 (* ───── Internal Helpers ───── *)
 
@@ -290,29 +314,19 @@ let set_on_activate t cb = t.on_activate <- cb
 (* ───── Key Handling ───── *)
 
 let handle_key t (event : Event.key) =
-  let kev = Event.Key.data event in
-  let shift = kev.modifier.shift in
-  let consumed =
-    match kev.key with
-    | Up ->
-        move_up ~steps:(if shift then t.props.fast_scroll_step else 1) t;
-        true
-    | Down ->
-        move_down ~steps:(if shift then t.props.fast_scroll_step else 1) t;
-        true
-    | Char c when Uchar.equal c uchar_k ->
-        move_up t;
-        true
-    | Char c when Uchar.equal c uchar_j ->
-        move_down t;
-        true
-    | Enter | KP_enter ->
-        (if t.selected_index >= 0 then
-           match t.on_activate with None -> () | Some f -> f t.selected_index);
-        true
-    | _ -> false
-  in
-  if consumed then Event.Key.prevent_default event
+  if not (Event.Key.default_prevented event) then
+    match Keymap.action t.keymap (Event.Key.data event) with
+    | None -> ()
+    | Some action -> (
+        Event.Key.prevent_default event;
+        match action with
+        | Move_up -> move_up t
+        | Move_down -> move_down t
+        | Move_up_fast -> move_up ~steps:t.props.fast_scroll_step t
+        | Move_down_fast -> move_down ~steps:t.props.fast_scroll_step t
+        | Activate ->
+            if t.selected_index >= 0 then
+              Option.iter (fun f -> f t.selected_index) t.on_activate)
 
 (* ───── Mouse Handling ───── *)
 
@@ -435,7 +449,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
     ?selected_index ?background ?text_color ?focused_background
     ?focused_text_color ?selected_background ?selected_text_color
     ?description_color ?selected_description_color ?show_description
-    ?show_scroll_indicator ?wrap_selection ?item_spacing ?fast_scroll_step () =
+    ?show_scroll_indicator ?wrap_selection ?item_spacing ?fast_scroll_step
+    ?key_bindings () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -444,7 +459,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
       ?focused_background ?focused_text_color ?selected_background
       ?selected_text_color ?description_color ?selected_description_color
       ?show_description ?show_scroll_indicator ?wrap_selection ?item_spacing
-      ?fast_scroll_step ()
+      ?fast_scroll_step ?key_bindings ()
   in
   let items = Array.of_list props.options in
   let t =
@@ -456,6 +471,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
       scroll_offset = 0;
       lines_per_item = 1;
       max_visible_items = 1;
+      keymap = keymap props.key_bindings;
       on_change = None;
       on_activate = None;
     }
@@ -469,7 +485,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
   Renderable.set_render node (render t);
   Renderable.set_buffered node true;
   Renderable.set_focusable node true;
-  Renderable.on_key node (handle_key t);
+  Renderable.set_default_key_handler node (Some (handle_key t));
   Renderable.on_mouse node (handle_mouse t);
   Renderable.set_on_resize node (Some (on_resize t));
   request t;
@@ -491,6 +507,12 @@ let set_selected_index t idx =
     request t
   end
 
+let set_key_bindings t bindings =
+  if not (key_bindings_equal t.props.key_bindings bindings) then begin
+    t.props <- { t.props with key_bindings = bindings };
+    t.keymap <- keymap bindings
+  end
+
 let apply_props t (props : Props.t) =
   if not (items_equal (Array.to_list t.items) props.options) then
     set_options t props.options;
@@ -500,6 +522,7 @@ let apply_props t (props : Props.t) =
   set_show_scroll_indicator t props.show_scroll_indicator;
   set_item_spacing t props.item_spacing;
   set_fast_scroll_step t props.fast_scroll_step;
+  set_key_bindings t props.key_bindings;
   set_background t props.background;
   set_text_color t props.text_color;
   set_focused_background t props.focused_background;

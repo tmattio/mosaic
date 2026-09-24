@@ -393,7 +393,6 @@ val input :
   ?selectable:bool ->
   ?show_cursor:bool ->
   ?key_bindings:Text_input.key_binding list ->
-  ?key_aliases:(string * string) list ->
   on_change:(Editor.t -> 'msg) ->
   ?on_submit:(string -> 'msg) ->
   state:Editor.t ->
@@ -470,6 +469,7 @@ val select :
   ?show_description:bool ->
   ?show_scroll_indicator:bool ->
   ?wrap_selection:bool ->
+  ?key_bindings:(Shortcut.t * Select.action) list ->
   ?item_spacing:int ->
   ?fast_scroll_step:int ->
   ?on_change:(int -> 'msg) ->
@@ -540,6 +540,7 @@ val tab_select :
   ?show_description:bool ->
   ?show_scroll_arrows:bool ->
   ?wrap_selection:bool ->
+  ?key_bindings:(Shortcut.t * Tab_select.action) list ->
   ?on_change:(int -> 'msg) ->
   ?on_activate:(int -> 'msg) ->
   unit ->
@@ -827,7 +828,6 @@ val textarea :
   ?selectable:bool ->
   ?show_cursor:bool ->
   ?key_bindings:Textarea.key_binding list ->
-  ?key_aliases:(string * string) list ->
   on_change:(Editor.t -> 'msg) ->
   ?on_submit:(string -> 'msg) ->
   state:Editor.t ->
@@ -918,6 +918,7 @@ val table :
   ?wheel_navigation:bool ->
   ?row_styles:Ansi.Style.t list ->
   ?wrap_selection:bool ->
+  ?key_bindings:(Shortcut.t * Table.action) list ->
   ?fast_scroll_step:int ->
   ?on_change:(int -> 'msg) ->
   ?on_activate:(int -> 'msg) ->
@@ -1222,6 +1223,7 @@ val tree :
   ?guide_color:Ansi.Color.t ->
   ?icon_color:Ansi.Color.t ->
   ?wrap_selection:bool ->
+  ?key_bindings:(Shortcut.t * Tree.action) list ->
   ?fast_scroll_step:int ->
   on_change:(Tree.State.t -> 'msg) ->
   ?on_activate:(Tree.item -> 'msg) ->

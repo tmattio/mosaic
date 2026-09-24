@@ -149,7 +149,7 @@ let mouse_up ~x ~y =
 
 let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true }
 let shift_mod = { no_mod with Matrix_input.Modifier.shift = true }
-let alt_mod = { no_mod with Matrix_input.Modifier.alt = true }
+let alt_mod = { no_mod with Matrix_input.Modifier.alt = true; meta = true }
 let super_mod = { no_mod with Matrix_input.Modifier.super = true }
 
 let ctrl_shift_mod =
@@ -525,12 +525,12 @@ let alt_b_moves_word_backward () =
   send_char_with_mod ta ~modifier:alt_mod 'b';
   equal ~msg:"moved to word boundary" int 6 (Editor.cursor (Textarea.state ta))
 
-let meta_b_moves_word_backward () =
+let meta_only_does_not_match_alt_binding () =
   let t, ta = make_textarea ~value:"hello world" () in
   focus_textarea t ta;
   let meta_mod = { no_mod with Matrix_input.Modifier.meta = true } in
   send_char_with_mod ta ~modifier:meta_mod 'b';
-  equal ~msg:"moved to word boundary" int 6 (Textarea.cursor ta)
+  equal ~msg:"Meta alone does not match Alt" int 11 (Textarea.cursor ta)
 
 let alt_f_moves_word_forward () =
   let t, ta = make_textarea ~value:"hello world" () in
@@ -685,7 +685,7 @@ let alt_enter_fires_submit () =
   let on_submit v = received := v in
   let t, ta = make_textarea ~value:"hello" ~on_submit () in
   focus_textarea t ta;
-  let alt_mod = { no_mod with Matrix_input.Modifier.alt = true } in
+  let alt_mod = { no_mod with Matrix_input.Modifier.alt = true; meta = true } in
   send_key_with_mod ta ~modifier:alt_mod Matrix_input.Key.Enter;
   equal ~msg:"submit fired" string "hello" !received
 
@@ -1050,7 +1050,8 @@ let () =
       group "Alt keybindings"
         [
           test "Alt+B moves word backward" alt_b_moves_word_backward;
-          test "Meta+B moves word backward" meta_b_moves_word_backward;
+          test "Meta alone does not match Alt"
+            meta_only_does_not_match_alt_binding;
           test "Alt+F moves word forward" alt_f_moves_word_forward;
           test "Alt+D deletes word forward" alt_d_deletes_word_forward;
         ];

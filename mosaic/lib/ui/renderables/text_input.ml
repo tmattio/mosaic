@@ -50,9 +50,7 @@ type action = Textarea.action =
   | Select_all
   | Submit
 
-type key_binding = Textarea.key_binding
-
-let key_binding = Textarea.key_binding
+type key_binding = Shortcut.t * action
 
 module Props = struct
   type t = {
@@ -71,7 +69,6 @@ module Props = struct
     selectable : bool;
     show_cursor : bool;
     key_bindings : key_binding list;
-    key_aliases : (string * string) list;
   }
 
   let make ~state ?(placeholder = "") ?(text_color = default_text_color)
@@ -83,7 +80,7 @@ module Props = struct
       ?(cursor_style = default_cursor_style)
       ?(cursor_color = default_cursor_color)
       ?(cursor_blinking = default_cursor_blinking) ?(selectable = true)
-      ?(show_cursor = true) ?(key_bindings = []) ?(key_aliases = []) () =
+      ?(show_cursor = true) ?(key_bindings = []) () =
     if Matrix.Text.Layout.Source.line_count (Editor.source state) <> 1 then
       invalid_arg "Mosaic_ui.Text_input: state must not contain CR or LF";
     {
@@ -102,7 +99,6 @@ module Props = struct
       selectable;
       show_cursor;
       key_bindings;
-      key_aliases;
     }
 
   let default = make ~state:Editor.empty ()
@@ -123,9 +119,6 @@ module Props = struct
     && a.selectable = b.selectable
     && a.show_cursor = b.show_cursor
     && List.equal (Keymap.binding_equal ( = )) a.key_bindings b.key_bindings
-    && List.equal
-         (fun (ak, av) (bk, bv) -> String.equal ak bk && String.equal av bv)
-         a.key_aliases b.key_aliases
 end
 
 type t = { surface : Edit_surface.t; mutable props : Props.t }
@@ -140,8 +133,7 @@ let surface_props (props : Props.t) =
     ~selection_color:props.selection_color ?selection_fg:props.selection_fg
     ~cursor_style:props.cursor_style ~cursor_color:props.cursor_color
     ~cursor_blinking:props.cursor_blinking ~selectable:props.selectable
-    ~show_cursor:props.show_cursor ~key_bindings:props.key_bindings
-    ~key_aliases:props.key_aliases ()
+    ~show_cursor:props.show_cursor ~key_bindings:props.key_bindings ()
 
 let node t = Edit_surface.node t.surface
 let state t = Edit_surface.state t.surface
@@ -156,12 +148,12 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
     ?placeholder ?text_color ?background_color ?focused_text_color
     ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
     ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
-    ?key_bindings ?key_aliases ~on_change ?on_submit () =
+    ?key_bindings ~on_change ?on_submit () =
   let props =
     Props.make ~state ?placeholder ?text_color ?background_color
       ?focused_text_color ?focused_background_color ?placeholder_color
       ?selection_color ?selection_fg ?cursor_style ?cursor_color
-      ?cursor_blinking ?selectable ?show_cursor ?key_bindings ?key_aliases ()
+      ?cursor_blinking ?selectable ?show_cursor ?key_bindings ()
   in
   let surface =
     Edit_surface.create ~parent ?index ?id ?style ?visible ?z_index ?opacity
@@ -174,8 +166,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
       ~cursor_style:props.cursor_style ~cursor_color:props.cursor_color
       ~cursor_blinking:props.cursor_blinking ~selectable:props.selectable
       ~show_cursor:props.show_cursor ~mode:`Single_line
-      ~key_bindings:props.key_bindings ~key_aliases:props.key_aliases ~on_change
-      ?on_submit ()
+      ~key_bindings:props.key_bindings ~on_change ?on_submit ()
   in
   { surface; props }
 

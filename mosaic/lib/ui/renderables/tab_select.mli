@@ -32,6 +32,15 @@ val item : label:string -> ?description:string -> unit -> item
 type t
 (** A tab selector backed by a {!Renderable.t}. *)
 
+type action =
+  | Move_left
+  | Move_right
+  | Activate  (** Keyboard navigation and activation actions. *)
+
+type key_binding = Shortcut.t * action
+(** A shortcut and its action. Custom bindings override defaults; the last
+    binding for a shortcut wins. Releases are ignored. *)
+
 (** {1:construction Construction} *)
 
 val create :
@@ -57,6 +66,7 @@ val create :
   ?show_description:bool ->
   ?show_scroll_arrows:bool ->
   ?wrap_selection:bool ->
+  ?key_bindings:key_binding list ->
   ?on_change:(int -> unit) ->
   ?on_activate:(int -> unit) ->
   unit ->
@@ -112,6 +122,7 @@ module Props : sig
     ?show_description:bool ->
     ?show_scroll_arrows:bool ->
     ?wrap_selection:bool ->
+    ?key_bindings:key_binding list ->
     unit ->
     t
   (** [make ~options ()] is a property set with the same defaults as

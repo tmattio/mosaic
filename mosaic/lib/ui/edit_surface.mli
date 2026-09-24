@@ -55,19 +55,8 @@ type action =
   | Select_all
   | Submit
 
-type key_binding = action Keymap.binding
+type key_binding = Shortcut.t * action
 (** The type for editing key bindings. *)
-
-val key_binding :
-  ?ctrl:bool ->
-  ?shift:bool ->
-  ?alt:bool ->
-  ?super:bool ->
-  string ->
-  action ->
-  key_binding
-(** [key_binding name action] binds [name] with optional modifiers to [action].
-*)
 
 (** {1:properties Properties} *)
 
@@ -95,7 +84,6 @@ module Props : sig
     ?selectable:bool ->
     ?show_cursor:bool ->
     ?key_bindings:key_binding list ->
-    ?key_aliases:(string * string) list ->
     unit ->
     t
   (** [make ~state ()] describes [state] with textarea visual defaults. *)
@@ -141,7 +129,6 @@ val create :
   ?show_cursor:bool ->
   ?mode:mode ->
   ?key_bindings:key_binding list ->
-  ?key_aliases:(string * string) list ->
   on_change:(Editor.t -> unit) ->
   ?on_submit:(string -> unit) ->
   unit ->

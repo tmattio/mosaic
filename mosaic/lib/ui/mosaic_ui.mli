@@ -22,6 +22,9 @@
 module Event = Event
 (** Keyboard, paste, and mouse UI events with propagation control. *)
 
+module Shortcut = Shortcut
+(** Typed keyboard shortcuts shared by widgets and application handlers. *)
+
 module Selection = Selection
 (** Text selections with anchor and focus points. *)
 

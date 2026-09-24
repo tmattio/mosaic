@@ -241,3 +241,25 @@ dune exec ./mosaic/examples/<name>/main.exe
 ## License
 
 ISC. See [LICENSE](../LICENSE).
+
+### Keyboard bindings
+
+Widgets and subscriptions share `Shortcut.t`. Editor and selection-widget
+`key_bindings` pair a typed shortcut with a widget action; custom entries
+replace defaults for the same shortcut, with the last entry taking precedence.
+For example:
+
+```ocaml
+let editor_view =
+  textarea ~state:model.editor ~on_change:(fun state -> Edit state)
+    ~key_bindings:[ Shortcut.ctrl 'j', Mosaic_ui.Textarea.Submit ] ()
+
+let selection_view =
+  select ~equal:String.equal ~selected:model.selected
+    ~on_change:(fun value -> Select value)
+    ~key_bindings:[ Shortcut.ctrl 'n', Select.Move_down ] options
+```
+
+Modifiers match exactly, ignoring Caps Lock and Num Lock. Releases do not
+trigger bindings; repeats repeat navigation and editing. Keypad equivalents
+and terminal-reported base-layout keys use the same matching rules everywhere.

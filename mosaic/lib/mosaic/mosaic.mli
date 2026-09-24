@@ -54,87 +54,8 @@ module Focus : sig
       empty [order] returns [None]. *)
 end
 
-module Shortcut : sig
-  (** Keyboard shortcuts for subscriptions and event handlers.
-
-      A shortcut matches a key press or repeat with exact non-lock modifiers.
-      Caps Lock and Num Lock state are ignored. When a terminal reports a
-      base-layout key, matching also tries that base key so physical shortcuts
-      such as Ctrl+C keep working across keyboard layouts. *)
-
-  type t
-  (** The type for keyboard shortcuts. *)
-
-  val key :
-    ?ctrl:bool ->
-    ?alt:bool ->
-    ?shift:bool ->
-    ?super:bool ->
-    ?hyper:bool ->
-    ?meta:bool ->
-    Matrix.Input.Key.t ->
-    t
-  (** [key k] matches [k] with no modifiers. Optional modifier arguments default
-      to [false]. [alt] also implies [meta], matching terminal Alt input as
-      reported by Matrix. *)
-
-  val char :
-    ?ctrl:bool ->
-    ?alt:bool ->
-    ?shift:bool ->
-    ?super:bool ->
-    ?hyper:bool ->
-    ?meta:bool ->
-    char ->
-    t
-  (** [char c] is [key (Char c)]. Optional modifier arguments default to
-      [false]. *)
-
-  val ctrl : char -> t
-  (** [ctrl c] matches Ctrl+[c]. *)
-
-  val alt : char -> t
-  (** [alt c] matches Alt+[c]. *)
-
-  val shift : char -> t
-  (** [shift c] matches Shift+[c]. *)
-
-  val escape : t
-  (** [escape] matches Escape. *)
-
-  val enter : t
-  (** [enter] matches Enter. *)
-
-  val tab : t
-  (** [tab] matches Tab. *)
-
-  val backspace : t
-  (** [backspace] matches Backspace. *)
-
-  val delete : t
-  (** [delete] matches Delete. *)
-
-  val f : int -> t
-  (** [f n] matches function key F[n]. *)
-
-  val up : t
-  (** [up] matches the Up arrow key. *)
-
-  val down : t
-  (** [down] matches the Down arrow key. *)
-
-  val left : t
-  (** [left] matches the Left arrow key. *)
-
-  val right : t
-  (** [right] matches the Right arrow key. *)
-
-  val space : t
-  (** [space] matches Space. *)
-
-  val matches : t -> Event.key -> bool
-  (** [matches shortcut ev] is [true] iff [ev] matches [shortcut]. *)
-end
+module Shortcut = Mosaic_ui.Shortcut
+(** Typed keyboard shortcuts shared by widgets and subscriptions. *)
 
 module Canvas : sig
   (** Mutable cell-level drawing surface.
@@ -499,6 +420,13 @@ end
 
 (** Companion types for the {!val-select} widget. *)
 module Select : sig
+  type action = Mosaic_ui.Select.action =
+    | Move_up
+    | Move_down
+    | Move_up_fast
+    | Move_down_fast
+    | Activate  (** Keyboard navigation and activation actions. *)
+
   type 'a item
   (** A display label and optional description paired with an application value.
       Values must be distinct under the selection widget's [equal] function. *)
@@ -510,6 +438,11 @@ end
 
 (** Companion types for the {!val-tab_select} widget. *)
 module Tab_select : sig
+  type action = Mosaic_ui.Tab_select.action =
+    | Move_left
+    | Move_right
+    | Activate  (** Keyboard navigation and activation actions. *)
+
   type 'a item
   (** A tab label and description paired with an application value. Values must
       be distinct under the selection widget's [equal] function. *)
@@ -521,6 +454,15 @@ end
 
 (** Companion types for the {!val-table} widget. *)
 module Table : sig
+  type action = Mosaic_ui.Table.action =
+    | Move_up
+    | Move_down
+    | Move_up_fast
+    | Move_down_fast
+    | Page_up
+    | Page_down
+    | Activate  (** Keyboard navigation and activation actions. *)
+
   type alignment = Mosaic_ui.Table.alignment
   (** Horizontal text alignment: [`Left], [`Right], or [`Center]. Defaults to
       [`Left]. *)
@@ -579,6 +521,16 @@ end
 
 (** Companion types for the {!val-tree} widget. *)
 module Tree : sig
+  type action = Mosaic_ui.Tree.action =
+    | Move_up
+    | Move_down
+    | Move_up_fast
+    | Move_down_fast
+    | Expand
+    | Collapse
+    | Toggle
+    | Activate  (** Keyboard navigation, expansion and activation actions. *)
+
   type item = Mosaic_ui.Tree.item = {
     id : string;
     label : string;
@@ -1227,11 +1179,11 @@ val inset_lrtb : int -> int -> int -> int -> length_percentage_auto rect
     Generic event callbacks return a message or [None]. [on_click] runs on
     primary-button release without dragging; [on_size] reports changed allocated
     dimensions in cells. Neither callback changes application state by itself.
-    Interactive [state] values belong to the model. Semantic callbacks such as
-    [on_change], [on_scroll], [on_submit] and [on_activate] return messages
-    directly; acceptance or rejection belongs in [update]. Storing an
-    [on_change] proposal accepts it. Subsequent events derive from the accepted
-    model. *)
+    Interactive [state] values belong to the model. Semantic
+    callbacks such as [on_change], [on_scroll], [on_submit] and [on_activate]
+    return messages directly; acceptance or rejection belongs in [update].
+    Storing an [on_change] proposal accepts it. Subsequent events derive from
+    the accepted model. *)
 
 val empty : 'msg t
 (** [empty] occupies no space. *)
@@ -1521,7 +1473,6 @@ val input :
   ?selectable:bool ->
   ?show_cursor:bool ->
   ?key_bindings:Mosaic_ui.Text_input.key_binding list ->
-  ?key_aliases:(string * string) list ->
   on_change:(Editor.t -> 'msg) ->
   ?on_submit:(string -> 'msg) ->
   state:Editor.t ->
@@ -1598,6 +1549,7 @@ val select :
   ?show_description:bool ->
   ?show_scroll_indicator:bool ->
   ?wrap_selection:bool ->
+  ?key_bindings:(Shortcut.t * Select.action) list ->
   ?item_spacing:int ->
   ?fast_scroll_step:int ->
   on_change:('a -> 'msg) ->
@@ -1679,6 +1631,7 @@ val tab_select :
   ?show_description:bool ->
   ?show_scroll_arrows:bool ->
   ?wrap_selection:bool ->
+  ?key_bindings:(Shortcut.t * Tab_select.action) list ->
   on_change:('a -> 'msg) ->
   ?on_activate:('a -> 'msg) ->
   equal:('a -> 'a -> bool) ->
@@ -2062,7 +2015,6 @@ val textarea :
   ?selectable:bool ->
   ?show_cursor:bool ->
   ?key_bindings:Mosaic_ui.Textarea.key_binding list ->
-  ?key_aliases:(string * string) list ->
   on_change:(Editor.t -> 'msg) ->
   ?on_submit:(string -> 'msg) ->
   state:Editor.t ->
@@ -2402,6 +2354,7 @@ val table :
   ?wheel_navigation:bool ->
   ?row_styles:Ansi.Style.t list ->
   ?wrap_selection:bool ->
+  ?key_bindings:(Shortcut.t * Table.action) list ->
   ?fast_scroll_step:int ->
   on_change:('a -> 'msg) ->
   ?on_activate:('a -> 'msg) ->
@@ -2489,6 +2442,7 @@ val tree :
   ?guide_color:Ansi.Color.t ->
   ?icon_color:Ansi.Color.t ->
   ?wrap_selection:bool ->
+  ?key_bindings:(Shortcut.t * Tree.action) list ->
   ?fast_scroll_step:int ->
   on_change:(Tree.State.t -> 'msg) ->
   ?on_activate:(Tree.item -> 'msg) ->

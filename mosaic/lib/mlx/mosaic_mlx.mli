@@ -8,7 +8,9 @@
     unchanged from {!Mosaic}; see that module for their documentation. Only the
     elements listed below are overridden. *)
 
-include module type of Mosaic
+include module type of struct
+  include Mosaic
+end
 
 (** {1:overrides Overridden elements}
 
@@ -401,7 +403,6 @@ val input :
   ?selectable:bool ->
   ?show_cursor:bool ->
   ?key_bindings:Mosaic_ui.Text_input.key_binding list ->
-  ?key_aliases:(string * string) list ->
   on_change:(Editor.t -> 'msg) ->
   ?on_submit:(string -> 'msg) ->
   state:Editor.t ->
@@ -479,7 +480,6 @@ val textarea :
   ?selectable:bool ->
   ?show_cursor:bool ->
   ?key_bindings:Mosaic_ui.Textarea.key_binding list ->
-  ?key_aliases:(string * string) list ->
   on_change:(Editor.t -> 'msg) ->
   ?on_submit:(string -> 'msg) ->
   state:Editor.t ->

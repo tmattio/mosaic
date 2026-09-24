@@ -45,8 +45,43 @@ end
 
 (* ───── Props ───── *)
 
+type action =
+  | Move_up
+  | Move_down
+  | Move_up_fast
+  | Move_down_fast
+  | Expand
+  | Collapse
+  | Toggle
+  | Activate
+
+type key_binding = Shortcut.t * action
+
+let default_bindings =
+  Shortcut.
+    [
+      (up, Move_up);
+      (down, Move_down);
+      (char 'k', Move_up);
+      (char 'j', Move_down);
+      (key ~shift:true Matrix_input.Key.Up, Move_up_fast);
+      (key ~shift:true Matrix_input.Key.Down, Move_down_fast);
+      (right, Expand);
+      (left, Collapse);
+      (space, Toggle);
+      (enter, Activate);
+      (key Matrix_input.Key.Line_feed, Activate);
+    ]
+
+let default_keymap = Keymap.make ~defaults:default_bindings ()
+
+let keymap = function
+  | [] -> default_keymap
+  | custom -> Keymap.make ~defaults:default_bindings ~custom ()
+
 module Props = struct
   type t = {
+    key_bindings : key_binding list;
     items : item list;
     state : State.t;
     indent_size : int;
@@ -77,7 +112,7 @@ module Props = struct
       ?focused_selected_background ?focused_selected_text_color
       ?(guide_color = Ansi.Color.of_rgb 102 102 102)
       ?(icon_color = Ansi.Color.of_rgb 153 153 153) ?(wrap_selection = false)
-      ?(fast_scroll_step = 5) () =
+      ?(key_bindings = []) ?(fast_scroll_step = 5) () =
     let focused_selected_background =
       match focused_selected_background with
       | Some c -> c
@@ -89,6 +124,7 @@ module Props = struct
       | None -> selected_text_color
     in
     {
+      key_bindings;
       items;
       state;
       indent_size = max 1 indent_size;
@@ -112,7 +148,8 @@ module Props = struct
   let default = make ()
 
   let equal a b =
-    items_equal a.items b.items
+    List.equal (Keymap.binding_equal ( = )) a.key_bindings b.key_bindings
+    && items_equal a.items b.items
     && State.equal a.state b.state
     && Int.equal a.indent_size b.indent_size
     && Bool.equal a.show_guides b.show_guides
@@ -150,6 +187,7 @@ type visible_entry = {
 type t = {
   node : Renderable.t;
   mutable props : Props.t;
+  mutable keymap : action Keymap.t;
   mutable tree_items : item list;
   mutable visible : visible_entry array;
   mutable selected_index : int;
@@ -445,55 +483,40 @@ let draw_cell grid ~x ~y ~fg ~bg uch =
 (* ───── Key Handling ───── *)
 
 let handle_key t (event : Event.key) =
-  let kev = Event.Key.data event in
-  let shift = kev.modifier.shift in
-  let consumed =
-    match kev.key with
-    | Up ->
-        move_up ~steps:(if shift then t.props.fast_scroll_step else 1) t;
-        true
-    | Down ->
-        move_down ~steps:(if shift then t.props.fast_scroll_step else 1) t;
-        true
-    | Char c when Uchar.equal c (Uchar.of_char 'k') ->
-        move_up t;
-        true
-    | Char c when Uchar.equal c (Uchar.of_char 'j') ->
-        move_down t;
-        true
-    | Right ->
-        (if t.selected_index >= 0 && visible_count t > 0 then
-           let entry = t.visible.(t.selected_index) in
-           if entry.expandable && not entry.expanded then
-             expand t t.selected_index
-           else if entry.expanded then
-             (* Move to first child *)
-             let next = t.selected_index + 1 in
-             if next < visible_count t then set_selected_index_internal t next);
-        true
-    | Left ->
-        (if t.selected_index >= 0 && visible_count t > 0 then
-           let entry = t.visible.(t.selected_index) in
-           if entry.expandable && entry.expanded then
-             collapse t t.selected_index
-           else
-             match find_parent_index t t.selected_index with
-             | Some pi -> set_selected_index_internal t pi
-             | None -> ());
-        true
-    | Char c when Uchar.equal c (Uchar.of_char ' ') ->
-        if t.selected_index >= 0 && visible_count t > 0 then
-          toggle_expand t t.selected_index;
-        true
-    | Enter | KP_enter ->
-        (if t.selected_index >= 0 && visible_count t > 0 then
-           match t.on_activate with
-           | None -> ()
-           | Some f -> f t.visible.(t.selected_index).item);
-        true
-    | _ -> false
-  in
-  if consumed then Event.Key.prevent_default event
+  match Keymap.action t.keymap (Event.Key.data event) with
+  | None -> ()
+  | Some action -> (
+      Event.Key.prevent_default event;
+      match action with
+      | Move_up -> move_up t
+      | Move_down -> move_down t
+      | Move_up_fast -> move_up ~steps:t.props.fast_scroll_step t
+      | Move_down_fast -> move_down ~steps:t.props.fast_scroll_step t
+      | Expand ->
+          if t.selected_index >= 0 && visible_count t > 0 then
+            let entry = t.visible.(t.selected_index) in
+            if entry.expandable && not entry.expanded then
+              expand t t.selected_index
+            else if entry.expanded then
+              let next = t.selected_index + 1 in
+              if next < visible_count t then set_selected_index_internal t next
+      | Collapse -> (
+          if t.selected_index >= 0 && visible_count t > 0 then
+            let entry = t.visible.(t.selected_index) in
+            if entry.expandable && entry.expanded then
+              collapse t t.selected_index
+            else
+              match find_parent_index t t.selected_index with
+              | Some index -> set_selected_index_internal t index
+              | None -> ())
+      | Toggle ->
+          if t.selected_index >= 0 && visible_count t > 0 then
+            toggle_expand t t.selected_index
+      | Activate ->
+          if t.selected_index >= 0 && visible_count t > 0 then
+            Option.iter
+              (fun f -> f t.visible.(t.selected_index).item)
+              t.on_activate)
 
 (* ───── Mouse Handling ───── *)
 
@@ -641,7 +664,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items ?state
     ?indent_size ?show_guides ?guide_style ?expand_icon ?collapse_icon
     ?leaf_icon ?background ?text_color ?selected_background ?selected_text_color
     ?focused_selected_background ?focused_selected_text_color ?guide_color
-    ?icon_color ?wrap_selection ?fast_scroll_step () =
+    ?icon_color ?wrap_selection ?key_bindings ?fast_scroll_step () =
   let rnode =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -650,12 +673,13 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items ?state
       ?collapse_icon ?leaf_icon ?background ?text_color ?selected_background
       ?selected_text_color ?focused_selected_background
       ?focused_selected_text_color ?guide_color ?icon_color ?wrap_selection
-      ?fast_scroll_step ()
+      ?key_bindings ?fast_scroll_step ()
   in
   let t =
     {
       node = rnode;
       props;
+      keymap = keymap props.key_bindings;
       tree_items = props.items;
       visible = [||];
       selected_index = 0;
@@ -671,7 +695,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items ?state
   Renderable.set_render rnode (render t);
   Renderable.set_buffered rnode true;
   Renderable.set_focusable rnode true;
-  Renderable.on_key rnode (handle_key t);
+  Renderable.set_default_key_handler rnode (Some (handle_key t));
   Renderable.on_mouse rnode (handle_mouse t);
   Renderable.set_on_resize rnode (Some (on_resize t));
   request t;
@@ -684,6 +708,15 @@ let set_style t style = Renderable.set_style t.node style
 (* ───── Apply Props ───── *)
 
 let apply_props t (props : Props.t) =
+  if
+    not
+      (List.equal
+         (Keymap.binding_equal ( = ))
+         t.props.key_bindings props.key_bindings)
+  then begin
+    t.keymap <- keymap props.key_bindings;
+    t.props <- { t.props with key_bindings = props.key_bindings }
+  end;
   let changed =
     not
       (items_equal t.tree_items props.items

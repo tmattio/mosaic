@@ -56,6 +56,20 @@ module State : sig
   val equal : t -> t -> bool
 end
 
+type action =
+  | Move_up
+  | Move_down
+  | Move_up_fast
+  | Move_down_fast
+  | Expand
+  | Collapse
+  | Toggle
+  | Activate  (** Keyboard navigation and activation actions. *)
+
+type key_binding = Shortcut.t * action
+(** A shortcut and its action. Custom bindings override defaults; the last
+    binding for a shortcut wins. Releases are ignored. *)
+
 (** {1:construction Construction} *)
 
 val create :
@@ -83,6 +97,7 @@ val create :
   ?guide_color:Ansi.Color.t ->
   ?icon_color:Ansi.Color.t ->
   ?wrap_selection:bool ->
+  ?key_bindings:key_binding list ->
   ?fast_scroll_step:int ->
   unit ->
   t
@@ -119,6 +134,7 @@ module Props : sig
     ?guide_color:Ansi.Color.t ->
     ?icon_color:Ansi.Color.t ->
     ?wrap_selection:bool ->
+    ?key_bindings:key_binding list ->
     ?fast_scroll_step:int ->
     unit ->
     t

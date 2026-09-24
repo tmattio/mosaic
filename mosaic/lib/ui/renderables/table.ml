@@ -77,8 +77,41 @@ let rec rows_equal xs ys =
 
 (* ───── Props ───── *)
 
+type action =
+  | Move_up
+  | Move_down
+  | Move_up_fast
+  | Move_down_fast
+  | Page_up
+  | Page_down
+  | Activate
+
+type key_binding = Shortcut.t * action
+
+let default_bindings =
+  Shortcut.
+    [
+      (up, Move_up);
+      (down, Move_down);
+      (char 'k', Move_up);
+      (char 'j', Move_down);
+      (key ~shift:true Matrix_input.Key.Up, Move_up_fast);
+      (key ~shift:true Matrix_input.Key.Down, Move_down_fast);
+      (key Matrix_input.Key.Page_up, Page_up);
+      (key Matrix_input.Key.Page_down, Page_down);
+      (enter, Activate);
+      (key Matrix_input.Key.Line_feed, Activate);
+    ]
+
+let default_keymap = Keymap.make ~defaults:default_bindings ()
+
+let keymap = function
+  | [] -> default_keymap
+  | custom -> Keymap.make ~defaults:default_bindings ~custom ()
+
 module Props = struct
   type t = {
+    key_bindings : key_binding list;
     columns : column list;
     rows : cell array list;
     selected_row : int;
@@ -117,7 +150,8 @@ module Props = struct
       ?focused_selected_text_color ?focused_selected_background
       ?(selection_visible = true) ?(show_scroll_indicator = false)
       ?(activate_on_click = false) ?(wheel_navigation = true) ?(row_styles = [])
-      ?(wrap_selection = false) ?(fast_scroll_step = 5) () =
+      ?(wrap_selection = false) ?(key_bindings = []) ?(fast_scroll_step = 5) ()
+      =
     let focused_selected_text_color =
       match focused_selected_text_color with
       | Some c -> c
@@ -129,6 +163,7 @@ module Props = struct
       | None -> selected_background
     in
     {
+      key_bindings;
       columns;
       rows;
       selected_row = max (-1) selected_row;
@@ -164,7 +199,8 @@ module Props = struct
     | _ -> false
 
   let equal a b =
-    columns_equal a.columns b.columns
+    List.equal (Keymap.binding_equal ( = )) a.key_bindings b.key_bindings
+    && columns_equal a.columns b.columns
     && rows_equal a.rows b.rows
     && Int.equal a.selected_row b.selected_row
     && Bool.equal a.border b.border
@@ -197,6 +233,7 @@ end
 type t = {
   node : Renderable.t;
   mutable props : Props.t;
+  mutable keymap : action Keymap.t;
   mutable col_specs : column array;
   mutable data_rows : cell array array;
   mutable selected_row : int;
@@ -572,35 +609,20 @@ let set_on_hover t cb = t.on_hover <- cb
 (* ───── Key Handling ───── *)
 
 let handle_key t (event : Event.key) =
-  let kev = Event.Key.data event in
-  let shift = kev.modifier.shift in
-  let consumed =
-    match kev.key with
-    | Up ->
-        move_up ~steps:(if shift then t.props.fast_scroll_step else 1) t;
-        true
-    | Down ->
-        move_down ~steps:(if shift then t.props.fast_scroll_step else 1) t;
-        true
-    | Page_up ->
-        page_up t;
-        true
-    | Page_down ->
-        page_down t;
-        true
-    | Char c when Uchar.equal c (Uchar.of_char 'k') ->
-        move_up t;
-        true
-    | Char c when Uchar.equal c (Uchar.of_char 'j') ->
-        move_down t;
-        true
-    | Enter | KP_enter ->
-        (if t.selected_row >= 0 then
-           match t.on_activate with None -> () | Some f -> f t.selected_row);
-        true
-    | _ -> false
-  in
-  if consumed then Event.Key.prevent_default event
+  match Keymap.action t.keymap (Event.Key.data event) with
+  | None -> ()
+  | Some action -> (
+      Event.Key.prevent_default event;
+      match action with
+      | Move_up -> move_up t
+      | Move_down -> move_down t
+      | Move_up_fast -> move_up ~steps:t.props.fast_scroll_step t
+      | Move_down_fast -> move_down ~steps:t.props.fast_scroll_step t
+      | Page_up -> page_up t
+      | Page_down -> page_down t
+      | Activate ->
+          if t.selected_row >= 0 then
+            Option.iter (fun f -> f t.selected_row) t.on_activate)
 
 (* ───── Mouse Handling ───── *)
 
@@ -1034,7 +1056,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
     ?text_color ?background ?selected_text_color ?selected_background
     ?focused_selected_text_color ?focused_selected_background ?selection_visible
     ?show_scroll_indicator ?activate_on_click ?wheel_navigation ?row_styles
-    ?wrap_selection ?fast_scroll_step () =
+    ?wrap_selection ?key_bindings ?fast_scroll_step () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -1045,7 +1067,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
       ?selected_background ?focused_selected_text_color
       ?focused_selected_background ?selection_visible ?show_scroll_indicator
       ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
-      ?fast_scroll_step ()
+      ?key_bindings ?fast_scroll_step ()
   in
   let col_specs = Array.of_list props.columns in
   let data_rows = Array.of_list props.rows in
@@ -1057,6 +1079,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
     {
       node;
       props;
+      keymap = keymap props.key_bindings;
       col_specs;
       data_rows;
       selected_row = initial_selected;
@@ -1073,7 +1096,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
   Renderable.set_measure node (Some (measure t));
   Renderable.set_buffered node true;
   Renderable.set_focusable node true;
-  Renderable.on_key node (handle_key t);
+  Renderable.set_default_key_handler node (Some (handle_key t));
   Renderable.on_mouse node (handle_mouse t);
   Renderable.set_on_resize node (Some (on_resize t));
   request t;
@@ -1088,6 +1111,15 @@ let set_style t style = Renderable.set_style t.node style
 (* Controlled application: move the selection without echoing [on_change] —
    the value came from the app, not from a user gesture. *)
 let apply_props t (props : Props.t) =
+  if
+    not
+      (List.equal
+         (Keymap.binding_equal ( = ))
+         t.props.key_bindings props.key_bindings)
+  then begin
+    t.keymap <- keymap props.key_bindings;
+    t.props <- { t.props with key_bindings = props.key_bindings }
+  end;
   if not (columns_equal (Array.to_list t.col_specs) props.columns) then
     set_columns t props.columns;
   if not (rows_equal (Array.to_list t.data_rows) props.rows) then

@@ -70,7 +70,11 @@ let make_tree ?(items = []) ?(selected_index = 0) ?(expand_depth = 0)
 
 let emit_key tree key =
   let ev = Event.Key.of_input key in
-  Renderable.Private.emit_key (Tree.node tree) ev
+  Renderable.Private.emit_key (Tree.node tree) ev;
+  if
+    (not (Event.Key.default_prevented ev))
+    && not (Event.Key.propagation_stopped ev)
+  then Renderable.Private.emit_default_key (Tree.node tree) ev
 
 let emit_mouse tree ev = Renderable.Private.emit_mouse (Tree.node tree) ev
 

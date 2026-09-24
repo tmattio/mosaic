@@ -28,7 +28,11 @@ let make_tab_select ?options ?selected ?tab_width ?wrap_selection
 
 let emit_key ts key =
   let ev = Event.Key.of_input key in
-  Renderable.Private.emit_key (Tab_select.node ts) ev
+  Renderable.Private.emit_key (Tab_select.node ts) ev;
+  if
+    (not (Event.Key.default_prevented ev))
+    && not (Event.Key.propagation_stopped ev)
+  then Renderable.Private.emit_default_key (Tab_select.node ts) ev
 
 (* ── Props ── *)
 

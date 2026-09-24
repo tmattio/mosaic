@@ -6,8 +6,29 @@ let item ~label ?(description = "") () = { label; description }
 
 (* ───── Props ───── *)
 
+type action = Move_left | Move_right | Activate
+type key_binding = Shortcut.t * action
+
+let default_bindings =
+  Shortcut.
+    [
+      (left, Move_left);
+      (right, Move_right);
+      (char '[', Move_left);
+      (char ']', Move_right);
+      (enter, Activate);
+      (key Matrix_input.Key.Line_feed, Activate);
+    ]
+
+let default_keymap = Keymap.make ~defaults:default_bindings ()
+
+let keymap = function
+  | [] -> default_keymap
+  | custom -> Keymap.make ~defaults:default_bindings ~custom ()
+
 module Props = struct
   type t = {
+    key_bindings : key_binding list;
     options : item list;
     selected : int;
     tab_width : int;
@@ -36,7 +57,8 @@ module Props = struct
       ?(description_color = default_description_color)
       ?(selected_description_color = default_selected_description_color)
       ?(show_underline = true) ?(show_description = false)
-      ?(show_scroll_arrows = true) ?(wrap_selection = false) () =
+      ?(show_scroll_arrows = true) ?(wrap_selection = false)
+      ?(key_bindings = []) () =
     let transparent = Ansi.Color.of_rgba 0 0 0 0 in
     let background' = Option.value ~default:transparent background in
     let text_color =
@@ -51,6 +73,7 @@ module Props = struct
       Option.value ~default:text_color focused_text_color
     in
     {
+      key_bindings;
       options;
       selected = max (-1) selected;
       tab_width = max 1 tab_width;
@@ -72,7 +95,8 @@ module Props = struct
   let equal_item a b = a.label = b.label && a.description = b.description
 
   let equal a b =
-    List.equal equal_item a.options b.options
+    List.equal (Keymap.binding_equal ( = )) a.key_bindings b.key_bindings
+    && List.equal equal_item a.options b.options
     && Int.equal a.selected b.selected
     && a.tab_width = b.tab_width
     && Ansi.Color.equal a.background b.background
@@ -95,6 +119,7 @@ end
 type t = {
   node : Renderable.t;
   mutable props : Props.t;
+  mutable keymap : action Keymap.t;
   mutable selected_index : int;
   mutable scroll_offset : int;
   mutable on_change : (int -> unit) option;
@@ -293,35 +318,16 @@ let select_current t =
 
 (* ───── Key Handler ───── *)
 
-let handle_key t (ev : Event.key) =
-  let data = Event.Key.data ev in
-  let key = data.Matrix_input.Key.key in
-  let n = List.length t.props.options in
-  if n = 0 then ()
-  else
-    let action =
-      match key with
-      | Matrix_input.Key.Left -> Some `Move_left
-      | Matrix_input.Key.Right -> Some `Move_right
-      | Matrix_input.Key.Enter | Matrix_input.Key.Line_feed -> Some `Activate
-      | Matrix_input.Key.Char u ->
-          let c = Uchar.to_int u in
-          if c = Char.code '[' then Some `Move_left
-          else if c = Char.code ']' then Some `Move_right
-          else None
-      | _ -> None
-    in
-    match action with
+let handle_key t (event : Event.key) =
+  if t.props.options <> [] then
+    match Keymap.action t.keymap (Event.Key.data event) with
     | None -> ()
-    | Some `Move_left ->
-        Event.Key.prevent_default ev;
-        move_left t
-    | Some `Move_right ->
-        Event.Key.prevent_default ev;
-        move_right t
-    | Some `Activate ->
-        Event.Key.prevent_default ev;
-        select_current t
+    | Some action -> (
+        Event.Key.prevent_default event;
+        match action with
+        | Move_left -> move_left t
+        | Move_right -> move_right t
+        | Activate -> select_current t)
 
 (* ───── Construction ───── *)
 
@@ -329,8 +335,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~options
     ?selected ?tab_width ?background ?text_color ?focused_background
     ?focused_text_color ?selected_background ?selected_text_color
     ?description_color ?selected_description_color ?show_underline
-    ?show_description ?show_scroll_arrows ?wrap_selection ?on_change
-    ?on_activate () =
+    ?show_description ?show_scroll_arrows ?wrap_selection ?key_bindings
+    ?on_change ?on_activate () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -338,19 +344,28 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~options
     Props.make ~options ?selected ?tab_width ?background ?text_color
       ?focused_background ?focused_text_color ?selected_background
       ?selected_text_color ?description_color ?selected_description_color
-      ?show_underline ?show_description ?show_scroll_arrows ?wrap_selection ()
+      ?show_underline ?show_description ?show_scroll_arrows ?wrap_selection
+      ?key_bindings ()
   in
   let selected_index =
     clamp_selected props (Option.value ~default:0 selected)
   in
   let t =
-    { node; props; selected_index; scroll_offset = 0; on_change; on_activate }
+    {
+      node;
+      props;
+      keymap = keymap props.key_bindings;
+      selected_index;
+      scroll_offset = 0;
+      on_change;
+      on_activate;
+    }
   in
   Renderable.set_render node (render t);
   Renderable.set_measure node (Some (measure t));
   Renderable.set_focusable node true;
   Renderable.set_buffered node true;
-  Renderable.on_key node (handle_key t);
+  Renderable.set_default_key_handler node (Some (handle_key t));
   Renderable.set_on_resize node
     (Some
        (fun _node ->
@@ -451,6 +466,15 @@ let set_on_activate t f = t.on_activate <- f
 (* Controlled application: move the selection without echoing [on_change] —
    the value came from the app, not from a user gesture. *)
 let apply_props t (props : Props.t) =
+  if
+    not
+      (List.equal
+         (Keymap.binding_equal ( = ))
+         t.props.key_bindings props.key_bindings)
+  then begin
+    t.keymap <- keymap props.key_bindings;
+    t.props <- { t.props with key_bindings = props.key_bindings }
+  end;
   set_options t props.options;
   set_selected t props.selected;
   set_wrap_selection t props.wrap_selection;

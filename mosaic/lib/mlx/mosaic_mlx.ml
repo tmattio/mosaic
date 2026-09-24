@@ -127,7 +127,7 @@ let input ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
-    ?key_aliases ~on_change ?on_submit ~state ?(children = []) () =
+    ~on_change ?on_submit ~state ?(children = []) () =
   ignore children;
   Mosaic.input ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -141,7 +141,7 @@ let input ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
-    ?key_aliases ~on_change ?on_submit ~state ()
+    ~on_change ?on_submit ~state ()
 
 let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -155,8 +155,8 @@ let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
     ?focused_text_color ?focused_background_color ?placeholder_color
     ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ?key_aliases ~on_change ?on_submit
-    ~state ?(children = []) () =
+    ?selectable ?show_cursor ?key_bindings ~on_change ?on_submit ~state
+    ?(children = []) () =
   ignore children;
   Mosaic.textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -170,8 +170,7 @@ let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
     ?focused_text_color ?focused_background_color ?placeholder_color
     ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ?key_aliases ~on_change ?on_submit
-    ~state ()
+    ?selectable ?show_cursor ?key_bindings ~on_change ?on_submit ~state ()
 
 let line_number ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

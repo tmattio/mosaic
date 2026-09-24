@@ -48,19 +48,8 @@ type action = Textarea.action =
   | Select_all
   | Submit
 
-type key_binding = Textarea.key_binding
+type key_binding = Shortcut.t * action
 (** The type for text input key bindings. *)
-
-val key_binding :
-  ?ctrl:bool ->
-  ?shift:bool ->
-  ?alt:bool ->
-  ?super:bool ->
-  string ->
-  action ->
-  key_binding
-(** [key_binding name action] binds [name] with optional modifiers to [action].
-*)
 
 (** {1:construction Construction} *)
 
@@ -87,7 +76,6 @@ val create :
   ?selectable:bool ->
   ?show_cursor:bool ->
   ?key_bindings:key_binding list ->
-  ?key_aliases:(string * string) list ->
   on_change:(Editor.t -> unit) ->
   ?on_submit:(string -> unit) ->
   unit ->
@@ -130,7 +118,6 @@ module Props : sig
     ?selectable:bool ->
     ?show_cursor:bool ->
     ?key_bindings:key_binding list ->
-    ?key_aliases:(string * string) list ->
     unit ->
     t
   (** [make ~state ()] describes [state] with the widget's visual defaults.

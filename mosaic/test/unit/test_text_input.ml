@@ -141,7 +141,7 @@ let string_contains haystack needle =
 
 let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true }
 let shift_mod = { no_mod with Matrix_input.Modifier.shift = true }
-let alt_mod = { no_mod with Matrix_input.Modifier.alt = true }
+let alt_mod = { no_mod with Matrix_input.Modifier.alt = true; meta = true }
 let super_mod = { no_mod with Matrix_input.Modifier.super = true }
 
 let ctrl_shift_mod =
@@ -526,12 +526,12 @@ let alt_b_moves_word_backward () =
   equal ~msg:"moved to word boundary" int 6
     (Editor.cursor (Text_input.state input))
 
-let meta_b_moves_word_backward () =
+let meta_only_does_not_match_alt_binding () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
   let meta_mod = { no_mod with Matrix_input.Modifier.meta = true } in
   send_char_with_mod input ~modifier:meta_mod 'b';
-  equal ~msg:"moved to word boundary" int 6 (Text_input.cursor input)
+  equal ~msg:"Meta alone does not match Alt" int 11 (Text_input.cursor input)
 
 let alt_f_moves_word_forward () =
   let t, input = make_input ~value:"hello world" () in
@@ -1016,9 +1016,56 @@ let multiline_history_is_ignored_by_single_line_input () =
       (Editor.undo (Editor.insert "a\nb" Editor.empty), '.');
     ]
 
+let typed_bindings_override_defaults_and_recompile () =
+  let state = editor ~value:"abc" ~cursor:1 () in
+  let proposed = ref state in
+  let parent = make_root (make_ctx ()) in
+  let bindings =
+    [
+      (Shortcut.left, Text_input.Buffer_home);
+      (Shortcut.key Matrix_input.Key.KP_left, Text_input.Buffer_end);
+      (Shortcut.ctrl 'a', Text_input.Buffer_end);
+      (Shortcut.char ~meta:true 'b', Text_input.Buffer_home);
+    ]
+  in
+  let input =
+    Text_input.create ~parent ~state ~key_bindings:bindings
+      ~on_change:(fun state -> proposed := state)
+      ()
+  in
+  send_key input Matrix_input.Key.Left;
+  equal ~msg:"last equivalent custom shortcut overrides default" int 3
+    (Editor.cursor !proposed);
+  send_input_event input
+    (Matrix_input.Key.make ~modifier:ctrl_mod ~base_key:(Uchar.of_char 'a')
+       (Matrix_input.Key.Char (Uchar.of_int 0x0444)));
+  equal ~msg:"custom shortcuts use the base-layout fallback" int 3
+    (Editor.cursor !proposed);
+  send_char_with_mod input ~modifier:{ no_mod with meta = true } 'b';
+  equal ~msg:"explicit Meta shortcut remains distinct from Alt" int 0
+    (Editor.cursor !proposed);
+  proposed := state;
+  send_input_event input
+    (Matrix_input.Key.make ~event_type:Release Matrix_input.Key.Left);
+  is_true ~msg:"release publishes no proposal" (!proposed == state);
+  send_input_event input
+    (Matrix_input.Key.make ~event_type:Repeat Matrix_input.Key.Left);
+  equal ~msg:"repeat runs the custom shortcut" int 3 (Editor.cursor !proposed);
+  proposed := state;
+  send_key_with_mod input
+    ~modifier:{ no_mod with hyper = true }
+    Matrix_input.Key.Left;
+  is_true ~msg:"extra non-lock modifier does not match" (!proposed == state);
+  Text_input.apply_props input (Text_input.Props.make ~state ());
+  send_key input Matrix_input.Key.Left;
+  equal ~msg:"removing custom bindings restores defaults" int 0
+    (Editor.cursor !proposed)
+
 let () =
   run "mosaic.text-input"
     [
+      test "typed bindings override defaults and recompile"
+        typed_bindings_override_defaults_and_recompile;
       group "Single-line declarations"
         [
           test "multiline history is ignored by single-line input"
@@ -1108,7 +1155,8 @@ let () =
       group "Alt keybindings"
         [
           test "Alt+B moves word backward" alt_b_moves_word_backward;
-          test "Meta+B moves word backward" meta_b_moves_word_backward;
+          test "Meta alone does not match Alt"
+            meta_only_does_not_match_alt_binding;
           test "Alt+F moves word forward" alt_f_moves_word_forward;
           test "Alt+D deletes word forward" alt_d_deletes_word_forward;
           test "Alt+Backspace deletes word backward"

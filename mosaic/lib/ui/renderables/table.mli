@@ -120,6 +120,19 @@ val cell_equal : cell -> cell -> bool
 
 (** {1:constructors Constructors} *)
 
+type action =
+  | Move_up
+  | Move_down
+  | Move_up_fast
+  | Move_down_fast
+  | Page_up
+  | Page_down
+  | Activate  (** Keyboard navigation and activation actions. *)
+
+type key_binding = Shortcut.t * action
+(** A shortcut and its action. Custom bindings override defaults; the last
+    binding for a shortcut wins. Releases are ignored. *)
+
 val create :
   parent:Renderable.t ->
   ?index:int ->
@@ -151,6 +164,7 @@ val create :
   ?wheel_navigation:bool ->
   ?row_styles:Ansi.Style.t list ->
   ?wrap_selection:bool ->
+  ?key_bindings:key_binding list ->
   ?fast_scroll_step:int ->
   unit ->
   t
@@ -195,6 +209,7 @@ module Props : sig
     ?wheel_navigation:bool ->
     ?row_styles:Ansi.Style.t list ->
     ?wrap_selection:bool ->
+    ?key_bindings:key_binding list ->
     ?fast_scroll_step:int ->
     unit ->
     t

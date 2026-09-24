@@ -46,72 +46,7 @@ module Focus = struct
             scan first rest)
 end
 
-module Shortcut = struct
-  module Key = Matrix.Input.Key
-  module Modifier = Matrix.Input.Modifier
-
-  type t = { key : Key.t; modifier : Modifier.t }
-
-  let modifier ?(ctrl = false) ?(alt = false) ?(shift = false) ?(super = false)
-      ?(hyper = false) ?(meta = false) () =
-    { Modifier.none with ctrl; alt; shift; super; hyper; meta = meta || alt }
-
-  let key ?ctrl ?alt ?shift ?super ?hyper ?meta key =
-    { key; modifier = modifier ?ctrl ?alt ?shift ?super ?hyper ?meta () }
-
-  let char ?ctrl ?alt ?shift ?super ?hyper ?meta c =
-    key ?ctrl ?alt ?shift ?super ?hyper ?meta (Key.Char (Uchar.of_char c))
-
-  let ctrl c = char ~ctrl:true c
-  let alt c = char ~alt:true c
-  let shift c = char ~shift:true c
-  let escape = key Key.Escape
-  let enter = key Key.Enter
-  let tab = key Key.Tab
-  let backspace = key Key.Backspace
-  let delete = key Key.Delete
-  let f n = key (Key.F n)
-  let up = key Key.Up
-  let down = key Key.Down
-  let left = key Key.Left
-  let right = key Key.Right
-  let space = char ' '
-
-  let matches_modifier t (actual : Modifier.t) =
-    Bool.equal t.modifier.ctrl actual.ctrl
-    && Bool.equal t.modifier.alt actual.alt
-    && Bool.equal t.modifier.shift actual.shift
-    && Bool.equal t.modifier.super actual.super
-    && Bool.equal t.modifier.hyper actual.hyper
-    && Bool.equal t.modifier.meta actual.meta
-
-  let normalized_char_key u =
-    let code = Uchar.to_int u in
-    if code >= Char.code 'A' && code <= Char.code 'Z' then
-      Key.Char (Uchar.of_int (code + 32))
-    else Key.Char u
-
-  let add_key key keys =
-    if List.exists (Key.equal key) keys then keys else key :: keys
-
-  let matching_keys key base_key =
-    let keys =
-      match key with
-      | Key.Char u -> add_key (normalized_char_key u) [ key ]
-      | _ -> [ key ]
-    in
-    match base_key with
-    | Some u -> add_key (normalized_char_key u) keys
-    | None -> keys
-
-  let matches t ev =
-    let ev = Event.Key.data ev in
-    match ev.event_type with
-    | Key.Release -> false
-    | Key.Press | Key.Repeat ->
-        matches_modifier t ev.modifier
-        && List.exists (Key.equal t.key) (matching_keys ev.key ev.base_key)
-end
+module Shortcut = Mosaic_ui.Shortcut
 
 (* Geometry type aliases *)
 
@@ -191,6 +126,13 @@ end
 (* Narrowed widget modules *)
 
 module Select = struct
+  type action = Mosaic_ui.Select.action =
+    | Move_up
+    | Move_down
+    | Move_up_fast
+    | Move_down_fast
+    | Activate
+
   type 'a item = { value : 'a; presentation : Mosaic_ui.Select.item }
 
   let item value ?description label =
@@ -198,6 +140,11 @@ module Select = struct
 end
 
 module Tab_select = struct
+  type action = Mosaic_ui.Tab_select.action =
+    | Move_left
+    | Move_right
+    | Activate
+
   type 'a item = { value : 'a; presentation : Mosaic_ui.Tab_select.item }
 
   let item value ?(description = "") label =
@@ -1018,7 +965,7 @@ let input ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
-    ?key_aliases ~on_change ?on_submit ~state () =
+    ~on_change ?on_submit ~state () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1034,7 +981,7 @@ let input ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?placeholder ?text_color ?background_color ?focused_text_color
     ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
     ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
-    ?key_bindings ?key_aliases ~on_change ?on_submit ()
+    ?key_bindings ~on_change ?on_submit ()
 
 let selection_index ~equal ~value selected items =
   match selected with
@@ -1058,8 +1005,9 @@ let select ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?on_click ?on_focus_request ?on_size ?focused ?background ?text_color
     ?focused_background ?focused_text_color ?selected_background
     ?selected_text_color ?description_color ?selected_description_color
-    ?show_description ?show_scroll_indicator ?wrap_selection ?item_spacing
-    ?fast_scroll_step ~on_change ?on_activate ~equal ~selected options =
+    ?show_description ?show_scroll_indicator ?wrap_selection ?key_bindings
+    ?item_spacing ?fast_scroll_step ~on_change ?on_activate ~equal ~selected
+    options =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1083,8 +1031,8 @@ let select ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?focused ~options ?background ?text_color ?focused_background
     ?focused_text_color ?selected_background ?selected_text_color
     ?description_color ?selected_description_color ?show_description
-    ?show_scroll_indicator ?wrap_selection ?item_spacing ?fast_scroll_step
-    ~on_change ?on_activate ()
+    ?show_scroll_indicator ?wrap_selection ?key_bindings ?item_spacing
+    ?fast_scroll_step ~on_change ?on_activate ()
 
 let tab_select ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -1098,7 +1046,7 @@ let tab_select ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_color ?focused_background ?focused_text_color ?selected_background
     ?selected_text_color ?description_color ?selected_description_color
     ?show_underline ?show_description ?show_scroll_arrows ?wrap_selection
-    ~on_change ?on_activate ~equal ~selected options =
+    ?key_bindings ~on_change ?on_activate ~equal ~selected options =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1124,8 +1072,8 @@ let tab_select ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?focused ~options ?tab_width ?background ?text_color ?focused_background
     ?focused_text_color ?selected_background ?selected_text_color
     ?description_color ?selected_description_color ?show_underline
-    ?show_description ?show_scroll_arrows ?wrap_selection ~on_change
-    ?on_activate ()
+    ?show_description ?show_scroll_arrows ?wrap_selection ?key_bindings
+    ~on_change ?on_activate ()
 
 let canvas ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -1260,8 +1208,7 @@ let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
     ?focused_text_color ?focused_background_color ?placeholder_color
     ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ?key_aliases ~on_change ?on_submit
-    ~state () =
+    ?selectable ?show_cursor ?key_bindings ~on_change ?on_submit ~state () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1278,7 +1225,7 @@ let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ~on_change
-    ?key_bindings ?key_aliases ?on_submit ()
+    ?key_bindings ?on_submit ()
 
 let code ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -1396,7 +1343,8 @@ let table ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?selected_text_color ?selected_background ?focused_selected_text_color
     ?focused_selected_background ?selection_visible ?show_scroll_indicator
     ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
-    ?fast_scroll_step ~on_change ?on_activate ?on_hover ~equal ~selected () =
+    ?key_bindings ?fast_scroll_step ~on_change ?on_activate ?on_hover ~equal
+    ~selected () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1426,7 +1374,7 @@ let table ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?selected_background ?focused_selected_text_color
     ?focused_selected_background ?selection_visible ?show_scroll_indicator
     ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
-    ?fast_scroll_step ~on_change ?on_activate ?on_hover ()
+    ?key_bindings ?fast_scroll_step ~on_change ?on_activate ?on_hover ()
 
 let tree ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -1440,8 +1388,8 @@ let tree ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?show_guides ?guide_style ?expand_icon ?collapse_icon ?leaf_icon ?background
     ?text_color ?selected_background ?selected_text_color
     ?focused_selected_background ?focused_selected_text_color ?guide_color
-    ?icon_color ?wrap_selection ?fast_scroll_step ~on_change ?on_activate ~state
-    () =
+    ?icon_color ?wrap_selection ?key_bindings ?fast_scroll_step ~on_change
+    ?on_activate ~state () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1457,7 +1405,8 @@ let tree ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?items ?indent_size ?show_guides ?guide_style ?expand_icon ?collapse_icon
     ?leaf_icon ?background ?text_color ?selected_background ?selected_text_color
     ?focused_selected_background ?focused_selected_text_color ?guide_color
-    ?icon_color ?wrap_selection ?fast_scroll_step ~on_change ?on_activate ()
+    ?icon_color ?wrap_selection ?key_bindings ?fast_scroll_step ~on_change
+    ?on_activate ()
 
 let px = Vnode.px
 let pct = Vnode.pct
