@@ -163,33 +163,32 @@ touches them only where §4.2's additive changes require.
 Goal: both surfaces uniform enough that the cookbook recipe has no
 incidental noise. Everything here is small and additive.
 
-### 4.1 tree-sitter side: one shape per grammar
+### 4.1 tree-sitter side: one name per grammar
 
 Today the grammar surface is ad hoc: `Tree_sitter_ocaml.highlight_ocaml`,
 `highlight_interface`, `Tree_sitter_json.highlight` — three spellings for
-one idea. The pass makes every grammar a module conforming to one signature,
-specified in the bindings:
+one idea. A grammar is a function; the pass is a renaming, not an
+abstraction. Every grammar package leads with the same word:
 
 ```ocaml
-(* tree-sitter core *)
-module type GRAMMAR = sig
-  val name : string
-  (** Canonical lowercase name, e.g. ["ocaml"], ["json"]. *)
-
-  val highlight : string -> (int * int * string) list
-  (** [highlight src] is the scope-annotated byte ranges of [src], sorted by
-      start byte, empty ranges and [_]-prefixed captures dropped. Scopes
-      follow the base vocabulary (see mosaic's [Syntax_style]). *)
-end
+val highlight : string -> (int * int * string) list
+(** [highlight src] is the scope-annotated byte ranges of [src], sorted by
+    start byte, empty ranges and [_]-prefixed captures dropped. Scopes
+    follow the base vocabulary (see mosaic's [Syntax_style]). *)
 ```
 
-Grammar packages export their grammars as such modules —
-`Tree_sitter_ocaml.Ocaml`, `Tree_sitter_ocaml.Interface`,
-`Tree_sitter_ocaml.Type`, `Tree_sitter_json.Json` — keeping the existing
-`Parser`/`Tree`/`Query` core for advanced use (custom queries, editors)
-untouched. The triples type is the deliberate currency of the boundary: it
-keeps the grammars ignorant of mosaic, and `Syntax_highlight.of_triples` is
-the one-call lift on the other side.
+so `Tree_sitter_ocaml.highlight`, `Tree_sitter_ocaml.highlight_interface`,
+`Tree_sitter_ocaml.highlight_type`, `Tree_sitter_json.highlight` — the
+module name already carries the language; secondary grammars suffix it.
+Uniformity is this documented convention, not a signature: the function's
+type is the contract at every use site, and a plain function composes
+better than anything wrapping it. A `GRAMMAR` module type was considered
+and rejected — its only cargo beyond the function was a `name` field
+nothing consumes, at the price of first-class-module noise in every
+resolver. The existing `Parser`/`Tree`/`Query` core for advanced use
+(custom queries, editors) is untouched. The triples type is the deliberate
+currency of the boundary: it keeps the grammars ignorant of mosaic, and
+`Syntax_highlight.of_triples` is the one-call lift on the other side.
 
 ### 4.2 mosaic side: labeled request, and the off-thread one-liner
 
@@ -236,14 +235,12 @@ policy. With the tree-sitter grammar packages:
 
 ```ocaml
 let highlight ~language ~content =
-  let ranges (module G : Tree_sitter.GRAMMAR) =
-    Mosaic.Syntax_highlight.of_triples (G.highlight content)
-  in
-  match language with
-  | "ocaml" | "ml" -> Some (ranges (module Tree_sitter_ocaml.Ocaml))
-  | "mli" -> Some (ranges (module Tree_sitter_ocaml.Interface))
-  | "json" -> Some (ranges (module Tree_sitter_json.Json))
-  | _ -> None
+  (match language with
+  | "ocaml" | "ml" -> Some Tree_sitter_ocaml.highlight
+  | "mli" -> Some Tree_sitter_ocaml.highlight_interface
+  | "json" -> Some Tree_sitter_json.highlight
+  | _ -> None)
+  |> Option.map (fun f -> Mosaic.Syntax_highlight.of_triples (f content))
 
 (* A code element, highlighted off-thread: *)
 let code_view src =
@@ -283,7 +280,7 @@ you re-render the same blocks (a plain `Hashtbl` with a size cap is
 enough), and skip highlighting on fences that are still streaming.
 ````
 
-(The recipe is 12 lines of resolver; everything else is ordinary element
+(The resolver is seven lines; everything else is ordinary element
 construction. Mentat's `code_highlight.ml` becomes this page's first
 consumer.)
 
@@ -292,9 +289,7 @@ consumer.)
 1. **New repository** for the bindings + grammars + their tests (the
    windtrap-migrated `tree-sitter/test` travels with them). Opam package
    names unchanged (`tree-sitter`), so consumers change a pin URL, not a
-   dependency name. Naming caveat: before any opam-repository publication,
-   check the `tree-sitter` name for collision with existing community
-   bindings and rename if contested (Q2).
+   dependency name.
 2. **mosaic repo**: delete the `tree-sitter/` tree; drop the tree-sitter
    package stanza and `dune-project:107`'s depends line; regenerate
    `mosaic.opam`; relock. `dune build @install` must be tree-sitter-free.
@@ -310,7 +305,7 @@ consumer.)
    dependency-law allowlist (`test/tools/test_tools_dependency_laws.ml:322`)
    are unchanged by the move itself. Optionally: replace
    `code_highlight.ml`'s resolver with the cookbook shape once §4.1's
-   uniform grammar modules land.
+   uniform names land.
 5. **Repo docs**: update `AGENTS.md`/`CLAUDE.local.md` (tree-sitter listed
    as an in-repo project with `./tree-sitter/` paths), `README.md`, and CI
    configuration that builds or tests the tree-sitter tree.
@@ -321,25 +316,12 @@ consumer.)
 
 ## 7. Open questions
 
-- **Q1 — Grammar module granularity.** One module per grammar
-  (`Tree_sitter_ocaml.Ocaml` / `.Interface` / `.Type`) as proposed, or one
-  per package with a language argument? Per-grammar modules keep `GRAMMAR`
-  first-class (passable as `(module G)`) and are recommended; confirm the
-  spelling reads well at mentat's call sites.
-- **Q2 — Opam naming.** `tree-sitter` is a generic name; community bindings
-  exist (e.g. the semgrep lineage). Decide the published name before the
-  first opam release of either package; the pin-based ecosystem is
-  unaffected meanwhile.
-- **Q3 — The base scope set.** Confirm §3-R4's proposed list against the
+- **Q1 — The base scope set.** Confirm §3-R4's proposed list against the
   shipped grammar queries and `Syntax_style.default`; decide whether
   unknown first segments are dropped, styled as base, or a documented
   extension point.
-- **Q4 — `threaded` cancellation semantics.** Worker threads cannot be
+- **Q2 — `threaded` cancellation semantics.** Worker threads cannot be
   killed; `cancel` abandons the generation but the thread runs to
   completion. Acceptable for highlight workloads (bounded by content size),
   but say so in the doc, and decide whether a shared single worker or
   thread-per-request is the implementation.
-- **Q5 — Timing with RFC 0001.** The extraction (§6) is independent and can
-  land immediately. The §4 API pass touches surfaces RFC 0001 will move
-  into the widget-state model; decide whether §4.2 lands on the current API
-  or waits to land once, on the new one.
