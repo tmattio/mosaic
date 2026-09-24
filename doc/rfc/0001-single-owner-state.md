@@ -589,7 +589,7 @@ on the same Apple M1 Max host.
 
 | Runtime action | Before, allocated words | RFC baseline, allocated words | Change |
 | --- | ---: | ---: | ---: |
-| Insert/backspace through presentation | 5,846,986 | 3,858,948 | −34.0% |
+| Insert/backspace through presentation | 5,846,986 | 3,858,924 | −34.0% |
 | Wheel roundtrip, two eight-event bursts | 4,604,250 | 4,084,260 | −11.3% |
 | Resize between 249×69 and 250×70 | 145,352,687 | 142,546,693 | −1.9% |
 
