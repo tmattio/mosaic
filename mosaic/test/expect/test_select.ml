@@ -125,3 +125,29 @@ let%expect_test "focused vs unfocused" =
    Fourth item
    Epsilon
    Fifth item|}]
+
+let%expect_test "intrinsic select fits between siblings on its first frame" =
+  let style =
+    Toffee.Style.default
+    |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column
+    |> Toffee.Style.set_align_items (Some Toffee.Style.Align_items.Start)
+  in
+  render ~width:12 ~height:4
+    (Vnode.box ~style
+       [
+         Vnode.text "before";
+         Vnode.select ~show_description:false
+           ~options:
+             Select.
+               [
+                 { label = "A"; description = None };
+                 { label = "B"; description = None };
+               ]
+           ();
+         Vnode.text "after";
+       ]);
+  [%expect_exact {|
+before
+ ▶ A
+   B
+after|}]

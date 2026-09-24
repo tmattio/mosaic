@@ -9,6 +9,14 @@
     widget automatically scrolls to keep the selected item centered in the
     viewport; rendering is buffered.
 
+    Without explicit dimensions, the node fits its content: width includes the
+    three-cell label/description indent, and height includes every item's one
+    label row, an additional row when descriptions are enabled, and spacing
+    between items. Empty lists measure zero in both dimensions. Enabling the
+    scroll indicator reserves one additional column. Definite available space
+    constrains this size; explicit dimensions take precedence. Text is clipped
+    horizontally rather than wrapped.
+
     {2:keys Keyboard}
 
     - Up / Down — move selection (Shift for fast scroll by

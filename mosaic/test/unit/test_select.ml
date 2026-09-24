@@ -534,6 +534,119 @@ let absent_selection_is_preserved () =
   equal ~msg:"click selects a valid item from absence" int 1
     (Select.selected_index sel)
 
+let measure_select ?width ?height
+    ?(available_width = Toffee.Available_space.Max_content)
+    ?(available_height = Toffee.Available_space.Max_content) sel =
+  match Renderable.Private.measure (Select.node sel) with
+  | None -> fail "Select has no intrinsic measurement"
+  | Some measure ->
+      let size =
+        measure
+          ~known_dimensions:Toffee.Geometry.Size.{ width; height }
+          ~available_space:
+            Toffee.Geometry.Size.
+              { width = available_width; height = available_height }
+          ~style:(Renderable.style (Select.node sel))
+      in
+      (int_of_float size.width, int_of_float size.height)
+
+let intrinsic_content_size () =
+  let _, empty = make_select () in
+  equal ~msg:"empty content has no intrinsic extent" (pair int int) (0, 0)
+    (measure_select empty);
+  let options =
+    Select.
+      [
+        { label = "界"; description = Some "details" };
+        { label = "B"; description = None };
+      ]
+  in
+  let _, sel = make_select ~options ~item_spacing:3 () in
+  equal ~msg:"description width and inter-item spacing" (pair int int) (10, 7)
+    (measure_select sel);
+  Select.set_show_description sel false;
+  equal ~msg:"hidden descriptions contribute neither width nor rows"
+    (pair int int) (5, 5) (measure_select sel);
+  Select.set_show_scroll_indicator sel true;
+  equal ~msg:"indicator reserves a rightmost column" (pair int int) (6, 5)
+    (measure_select sel);
+  Select.set_item_spacing sel 0;
+  equal ~msg:"spacing change invalidates natural height" (pair int int) (6, 2)
+    (measure_select sel)
+
+let intrinsic_constraints () =
+  let _, sel = make_select ~options:sample_items () in
+  equal ~msg:"available dimensions constrain content" (pair int int) (4, 3)
+    (measure_select ~available_width:(Definite 4.)
+       ~available_height:(Definite 3.) sel);
+  equal ~msg:"explicit dimensions take precedence including zero" (pair int int)
+    (20, 0)
+    (measure_select ~width:20. ~height:0. ~available_width:(Definite 4.) sel);
+  equal ~msg:"zero available dimensions are respected" (pair int int) (0, 0)
+    (measure_select ~available_width:(Definite 0.)
+       ~available_height:(Definite 0.) sel);
+  equal ~msg:"no wrapping gives the same min and max content" (pair int int)
+    (measure_select sel)
+    (measure_select ~available_width:Min_content ~available_height:Min_content
+       sel)
+
+let intrinsic_options_invalidation () =
+  let options label = Select.[ { label; description = None } ] in
+  let _, sel = make_select ~options:(options "A") ~show_description:false () in
+  equal (pair int int) (4, 1) (measure_select sel);
+  Select.set_options sel (options "abcdefghij");
+  equal ~msg:"replacement invalidates measured width" (pair int int) (13, 1)
+    (measure_select sel);
+  Select.apply_props sel
+    (Select.Props.make ~options:(options "界") ~show_description:false ());
+  equal ~msg:"declaration can shrink cached content" (pair int int) (5, 1)
+    (measure_select sel);
+  Select.set_selected_index sel (-1);
+  equal ~msg:"selection does not determine content size" (pair int int) (5, 1)
+    (measure_select sel);
+  Select.set_options sel [];
+  equal ~msg:"clearing items clears intrinsic size" (pair int int) (0, 0)
+    (measure_select sel)
+
+let intrinsic_width_policy () =
+  let width_method = ref `Unicode in
+  let context = make_ctx () in
+  let context =
+    {
+      context with
+      ctx = { context.ctx with width_method = (fun () -> !width_method) };
+    }
+  in
+  let root = make_root context in
+  let sel =
+    Select.create ~parent:root ~show_description:false
+      ~options:Select.[ { label = "👩‍👩‍👦"; description = None } ]
+      ()
+  in
+  equal ~msg:"Unicode measures the grapheme cluster" (pair int int) (5, 1)
+    (measure_select sel);
+  width_method := `Wcwidth;
+  equal ~msg:"policy change invalidates cached item width" (pair int int) (9, 1)
+    (measure_select sel)
+
+let intrinsic_spacing_paints_last_item () =
+  let _, sel =
+    make_select ~show_description:false ~item_spacing:2
+      ~options:
+        Select.
+          [
+            { label = "A"; description = None };
+            { label = "B"; description = None };
+          ]
+      ()
+  in
+  let width, height = measure_select sel in
+  with_layout sel ~width ~height;
+  let grid = make_grid ~width ~height () in
+  Renderable.Private.render_full (Select.node sel) ~grid ~delta:0.;
+  equal ~msg:"last item does not need a trailing spacing row" string "B"
+    (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:3 ~y:3))
+
 let bindings_use_exact_key_events () =
   let _, sel = make_select ~options:sample_items ~selected_index:2 () in
   List.iter
@@ -595,6 +708,15 @@ let raw_handler_can_prevent_navigation () =
 let () =
   run "mosaic.select"
     [
+      group "Intrinsic sizing"
+        [
+          test "content, descriptions and spacing" intrinsic_content_size;
+          test "available and known dimensions" intrinsic_constraints;
+          test "option changes invalidate size" intrinsic_options_invalidation;
+          test "terminal width policy" intrinsic_width_policy;
+          test "last item needs no trailing gap"
+            intrinsic_spacing_paints_last_item;
+        ];
       group "Typed bindings"
         [
           test "exact modifiers, repeat, release and base layout"

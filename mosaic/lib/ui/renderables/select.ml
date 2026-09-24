@@ -130,6 +130,7 @@ type t = {
   mutable scroll_offset : int;
   mutable lines_per_item : int;
   mutable max_visible_items : int;
+  mutable content_widths : (Matrix.Text.width_method * int * int) option;
   mutable keymap : action Keymap.t;
   mutable on_change : (int -> unit) option;
   mutable on_activate : (int -> unit) option;
@@ -168,7 +169,7 @@ let recalc_lines_per_item t =
 let recalc_max_visible t height =
   let h = max 0 height in
   let lpi = max 1 t.lines_per_item in
-  t.max_visible_items <- max 1 (h / lpi)
+  t.max_visible_items <- max 1 ((h + t.props.item_spacing) / lpi)
 
 (* Center the selected item within the visible viewport when possible, clamped
    so the scroll offset never goes negative or past the last page. *)
@@ -202,7 +203,10 @@ let selected_item t =
 (* ───── Options ───── *)
 
 let set_options t opts =
+  t.props <- { t.props with options = opts };
   t.items <- Array.of_list opts;
+  t.content_widths <- None;
+  Renderable.mark_dirty t.node;
   t.selected_index <- clamp_index t t.selected_index;
   update_scroll_offset t;
   request t
@@ -234,6 +238,7 @@ let move_down ?(steps = 1) t =
 let set_show_description t flag =
   if t.props.show_description <> flag then (
     t.props <- { t.props with show_description = flag };
+    Renderable.mark_dirty t.node;
     recalc_lines_per_item t;
     update_scroll_offset t;
     request t)
@@ -241,12 +246,14 @@ let set_show_description t flag =
 let set_show_scroll_indicator t flag =
   if t.props.show_scroll_indicator <> flag then (
     t.props <- { t.props with show_scroll_indicator = flag };
+    Renderable.mark_dirty t.node;
     request t)
 
 let set_item_spacing t n =
   let n = max 0 n in
   if t.props.item_spacing <> n then (
     t.props <- { t.props with item_spacing = n };
+    Renderable.mark_dirty t.node;
     recalc_lines_per_item t;
     update_scroll_offset t;
     request t)
@@ -443,6 +450,67 @@ let on_resize t _node =
   update_scroll_offset t;
   request t
 
+(* ───── Measure ───── *)
+
+let content_widths t =
+  let width_method = Renderable.Private.width_method t.node in
+  match t.content_widths with
+  | Some ((cached_method, _, _) as widths) when cached_method = width_method ->
+      widths
+  | None | Some _ ->
+      let label = ref 0 in
+      let description = ref 0 in
+      for i = 0 to Array.length t.items - 1 do
+        let item = t.items.(i) in
+        label :=
+          max !label (Matrix.Text.measure ~width_method ~tab_width:2 item.label);
+        match item.description with
+        | None -> ()
+        | Some text ->
+            description :=
+              max !description
+                (Matrix.Text.measure ~width_method ~tab_width:2 text)
+      done;
+      let widths = (width_method, !label, !description) in
+      t.content_widths <- Some widths;
+      widths
+
+let measured_dimension known available intrinsic =
+  match known with
+  | Some value -> value
+  | None -> (
+      match available with
+      | Toffee.Available_space.Definite limit -> min intrinsic (max 0. limit)
+      | Min_content | Max_content -> intrinsic)
+
+let measure t ~known_dimensions ~available_space ~style:_ =
+  let count = option_count t in
+  let width =
+    match known_dimensions.Toffee.Geometry.Size.width with
+    | Some width -> width
+    | None ->
+        let intrinsic =
+          if count = 0 then 0.
+          else
+            let _, label, description = content_widths t in
+            let content =
+              if t.props.show_description then max label description else label
+            in
+            float_of_int
+              (3 + content + if t.props.show_scroll_indicator then 1 else 0)
+        in
+        measured_dimension None available_space.Toffee.Geometry.Size.width
+          intrinsic
+  in
+  let height =
+    let intrinsic =
+      if count = 0 then 0.
+      else float_of_int ((count * t.lines_per_item) - t.props.item_spacing)
+    in
+    measured_dimension known_dimensions.height available_space.height intrinsic
+  in
+  Toffee.Geometry.Size.{ width; height }
+
 (* ───── Construction ───── *)
 
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
@@ -471,6 +539,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
       scroll_offset = 0;
       lines_per_item = 1;
       max_visible_items = 1;
+      content_widths = None;
       keymap = keymap props.key_bindings;
       on_change = None;
       on_activate = None;
@@ -483,6 +552,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
   (* Wire up rendering and event handlers. Buffered rendering avoids redundant
      redraws when multiple properties change in a single frame. *)
   Renderable.set_render node (render t);
+  Renderable.set_measure node (Some (measure t));
   Renderable.set_buffered node true;
   Renderable.set_focusable node true;
   Renderable.set_default_key_handler node (Some (handle_key t));
@@ -514,7 +584,7 @@ let set_key_bindings t bindings =
   end
 
 let apply_props t (props : Props.t) =
-  if not (items_equal (Array.to_list t.items) props.options) then
+  if not (items_equal t.props.options props.options) then
     set_options t props.options;
   set_selected_index t props.selected_index;
   set_wrap_selection t props.wrap_selection;

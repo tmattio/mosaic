@@ -284,3 +284,7 @@ let selection_view =
 Modifiers match exactly, ignoring Caps Lock and Num Lock. Releases do not
 trigger bindings; repeats repeat navigation and editing. Keypad equivalents
 and terminal-reported base-layout keys use the same matching rules everywhere.
+
+Select measures its labels and descriptions when no size is specified. Use
+`max_size` or an explicit height to constrain the visible rows; option changes
+invalidate cached widths, while moving the selection reuses them.
