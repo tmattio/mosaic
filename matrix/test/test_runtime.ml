@@ -746,6 +746,44 @@ let test_suspend_is_idempotent () =
   is_true ~msg:"double suspend then resume leaves the app resumable"
     (Matrix.redraw_requested app)
 
+let test_suspend_discards_partial_input () =
+  List.iter
+    (fun partial ->
+      let app, state =
+        make_app ~target_fps:None ~input_chunks:[ partial ]
+          ~emit_event_each_read:(Some Matrix.Input.Focus) ~stop_after_reads:5 ()
+      in
+      let received = ref [] in
+      Matrix.run app
+        ~on_render:(fun app ->
+          if state.read_calls = 1 then (
+            Matrix.suspend app;
+            Matrix.resume app;
+            state.pending_input_chunks <- [ "q" ]))
+        ~on_input:(fun app event ->
+          match event with
+          | Matrix.Input.Focus -> ()
+          | _ ->
+              received := event :: !received;
+              Matrix.stop app);
+      equal
+        ~msg:(Printf.sprintf "discard partial %S across suspend" partial)
+        (list input_event)
+        [ Matrix.Input.Key (Matrix.Input.Key.of_char 'q') ]
+        (List.rev !received))
+    [ "\027"; "\226"; "\027[200~unfinished" ]
+
+let test_cursor_visibility_preserves_blinking () =
+  let app, state = make_app ~terminal_tty:true ~target_fps:None () in
+  Matrix.set_cursor_style app ~style:`Line ~blinking:true;
+  Matrix.set_cursor ~visible:true app;
+  Matrix.set_cursor_position app ~row:1 ~col:1;
+  Matrix.prepare app;
+  Matrix.submit app;
+  contains ~msg:"visibility preserves the requested blinking style"
+    ~sub:"\027[5 q" (output state);
+  Matrix.close app
+
 (* Regression: close must not clobber terminal appearance the app never
    touched (window title, cursor colour, cursor style). *)
 let test_close_leaves_untouched_appearance_alone () =
@@ -1878,6 +1916,10 @@ let () =
           test "resume preserves resize during cursor query"
             test_resume_preserves_resize_during_cursor_query;
           test "suspend is idempotent" test_suspend_is_idempotent;
+          test "suspend discards partial input"
+            test_suspend_discards_partial_input;
+          test "cursor visibility preserves blinking"
+            test_cursor_visibility_preserves_blinking;
           test "close leaves untouched appearance alone"
             test_close_leaves_untouched_appearance_alone;
           test "close restores touched cursor appearance"

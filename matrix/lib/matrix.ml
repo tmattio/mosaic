@@ -829,6 +829,7 @@ let suspend ?(leave_alt = false) t =
     t.previous_control_state <- t.control_state;
     t.control_state <- `Explicit_suspended;
     update_loop_active t;
+    Input.Parser.reset t.parser;
     t.redraw_requested <- false;
     force_full_redraw t;
     (* The suspended program owns the terminal; whatever cursor state it leaves
@@ -854,6 +855,7 @@ let resume t =
   else (
     (if t.config.raw_mode then try t.backend.set_raw_mode true with _ -> ());
     (try t.backend.flush_input () with _ -> ());
+    Input.Parser.reset t.parser;
     if t.suspend_left_alt then (
       t.suspend_left_alt <- false;
       try Terminal.enter_alternate_screen t.terminal with _ -> ());
@@ -901,8 +903,7 @@ let set_cursor ?visible ?style t =
   let cursor = Screen.cursor t.screen in
   let visible = Option.value visible ~default:cursor.visible in
   let style = Option.value style ~default:cursor.style in
-  let _, blinking = Terminal.cursor_style_state t.terminal in
-  Screen.set_cursor t.screen { cursor with visible; style; blinking }
+  Screen.set_cursor t.screen { cursor with visible; style }
 
 let set_cursor_style t ~style ~blinking =
   let cursor = Screen.cursor t.screen in
