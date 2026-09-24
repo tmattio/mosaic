@@ -250,6 +250,48 @@ let test_async_wake_reaches_quiescent_loop () =
         (settled_frames + 1) !frames;
       stop driver)
 
+let test_native_thread_wakes_eio_loop () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let stdin, stdin_writer = Eio_unix.pipe sw in
+  let stdout_reader, stdout = Eio_unix.pipe sw in
+  let app =
+    Matrix_eio.create ~sw
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
+      ~signal_handlers:false ~start_idle:true ()
+  in
+  let worker = ref None in
+  let frames = ref 0 in
+  let result =
+    Fun.protect
+      ~finally:(fun () -> Option.iter Thread.join !worker)
+      (fun () ->
+        Eio.Time.with_timeout (Eio.Stdenv.clock env) 2. (fun () ->
+            Matrix.run app ~on_render:(fun app ->
+                incr frames;
+                if !frames = 1 then
+                  worker :=
+                    Some
+                      (Thread.create
+                         (fun () ->
+                           Thread.delay 0.01;
+                           Matrix.request_redraw app)
+                         ())
+                else begin
+                  Option.iter Thread.join !worker;
+                  worker := None;
+                  Matrix.stop app
+                end);
+            Ok ()))
+  in
+  Eio.Flow.close stdin_writer;
+  Eio.Flow.close stdout_reader;
+  (match result with
+  | Ok () -> ()
+  | Error `Timeout -> fail "native-thread redraw did not wake Eio");
+  equal ~msg:"native-thread notification produces a second frame" int 2 !frames
+
 let test_stdin_eof_stops_the_runtime () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
@@ -619,6 +661,7 @@ let () =
           test "input crosses fibers" test_input_crosses_fibers;
           test "async wake reaches a quiescent loop"
             test_async_wake_reaches_quiescent_loop;
+          test "native thread wakes Eio loop" test_native_thread_wakes_eio_loop;
           test "wake survives a subprocess storm"
             test_wake_survives_subprocess_storm;
           test "stdin EOF stops the runtime" test_stdin_eof_stops_the_runtime;

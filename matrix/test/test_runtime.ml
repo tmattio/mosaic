@@ -11,7 +11,7 @@ type fake_state = {
   mutable cleanup_calls : int;
   mutable raw_restore_calls : int;
   mutable flush_input_calls : int;
-  mutable wake_calls : int;
+  wake_calls : int Atomic.t;
   mutable pending_events : Matrix.Input.t list;
   mutable pending_input_chunks : string list;
   mutable read_timeouts : float option list;
@@ -25,7 +25,7 @@ let make_state events input_chunks =
     cleanup_calls = 0;
     raw_restore_calls = 0;
     flush_input_calls = 0;
-    wake_calls = 0;
+    wake_calls = Atomic.make 0;
     pending_events = events;
     pending_input_chunks = input_chunks;
     read_timeouts = [];
@@ -171,7 +171,7 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   let backend : Matrix.Backend.t =
     {
       now;
-      wake = (fun () -> state.wake_calls <- state.wake_calls + 1);
+      wake = (fun () -> Atomic.incr state.wake_calls);
       write_output;
       read_input;
       wait;
@@ -234,6 +234,59 @@ let test_request_redraw_while_paused () =
       | 2 -> Matrix.stop app
       | _ -> Matrix.stop app);
   equal ~msg:"redraw triggers one-shot frame while paused" int 2 !frames
+
+let test_cross_domain_redraw_during_render () =
+  let app = fst (make_app ~target_fps:None ~stop_after_reads:5 ()) in
+  let frames = ref 0 in
+  Matrix.run app ~on_render:(fun app ->
+      incr frames;
+      is_false ~msg:"the current request is consumed before rendering"
+        (Matrix.redraw_requested app);
+      if !frames = 1 then begin
+        let worker = Domain.spawn (fun () -> Matrix.request_redraw app) in
+        Domain.join worker;
+        is_true ~msg:"worker notification remains pending during rendering"
+          (Matrix.redraw_requested app)
+      end
+      else Matrix.stop app);
+  equal ~msg:"worker notification schedules the following frame" int 2 !frames
+
+let test_redraw_races_lifecycle () =
+  let app, state = make_app ~target_fps:None () in
+  let finished = Atomic.make false in
+  let started = Atomic.make false in
+  let worker =
+    Domain.spawn (fun () ->
+        Atomic.set started true;
+        while not (Atomic.get finished) do
+          Matrix.request_redraw app;
+          Domain.cpu_relax ()
+        done)
+  in
+  Fun.protect
+    ~finally:(fun () ->
+      Atomic.set finished true;
+      Domain.join worker;
+      Matrix.close app)
+    (fun () ->
+      while not (Atomic.get started) do
+        Domain.cpu_relax ()
+      done;
+      for _ = 1 to 50 do
+        Matrix.suspend app;
+        is_false ~msg:"concurrent notifications cannot redraw while suspended"
+          (Matrix.redraw_requested app);
+        Matrix.resume app;
+        is_true ~msg:"resuming schedules a fresh frame"
+          (Matrix.redraw_requested app)
+      done;
+      Matrix.close app;
+      is_false ~msg:"concurrent notifications cannot redraw after close"
+        (Matrix.redraw_requested app));
+  let wakes = Atomic.get state.wake_calls in
+  Matrix.request_redraw app;
+  equal ~msg:"closed apps ignore new wake requests" int wakes
+    (Atomic.get state.wake_calls)
 
 let test_immediate_redraw_bypasses_live_cadence_once () =
   let app, state =
@@ -1875,6 +1928,9 @@ let () =
       group "Control"
         [
           test "request_redraw while paused" test_request_redraw_while_paused;
+          test "cross-domain redraw during render"
+            test_cross_domain_redraw_during_render;
+          test "redraw races lifecycle" test_redraw_races_lifecycle;
           test "immediate redraw bypasses live cadence once"
             test_immediate_redraw_bypasses_live_cadence_once;
           test "idle does not force live loop"

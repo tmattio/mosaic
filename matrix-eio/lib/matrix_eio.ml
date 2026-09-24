@@ -95,7 +95,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
      the wait's fast path takes a pending wake without awaiting, so a wake that
      lands while the loop is out of its wait (mid-render, or descheduled by
      another fiber) is never lost to an edge-triggered broadcast. *)
-  let wake_pending = ref false in
+  let wake_pending = Atomic.make false in
   let original_termios = ref None in
   let restore_winch = ref ignore in
   let restore_termination = ref ignore in
@@ -158,7 +158,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         |> fun ns -> ns *. 1e-9
       in
       let wake () =
-        wake_pending := true;
+        Atomic.set wake_pending true;
         Eio.Condition.broadcast wakeup
       in
       let flush_input () =
@@ -178,11 +178,12 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
             Eio_unix.await_readable fd);
         `Input
       in
-      let await_wake () =
-        Eio.Condition.await_no_mutex wakeup;
-        wake_pending := false;
-        `Wakeup
+      let take_wake () =
+        if Atomic.exchange wake_pending false then Some `Wakeup else None
       in
+      (* Register before checking the atomic latch: a native worker can
+         broadcast between the fast-path check and suspension. *)
+      let await_wake () = Eio.Condition.loop_no_mutex wakeup take_wake in
       let await_deadline () =
         Eio.Time.Mono.sleep clock !wait_deadline;
         `Timeout
@@ -205,9 +206,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
            broadcast nor to a cancelled wake branch. *)
         wait_deadline := effective_timeout;
         let got =
-          if !wake_pending then (
-            wake_pending := false;
-            `Wakeup)
+          if Atomic.exchange wake_pending false then `Wakeup
           else Eio.Fiber.any wait_branches
         in
         check_termination ();

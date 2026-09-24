@@ -59,7 +59,9 @@ module Backend : sig
         (** [now ()] is monotonic time in seconds, with an arbitrary origin. *)
     wake : unit -> unit;
         (** [wake ()] interrupts the current or next [wait]. Wakeups remain
-            pending until consumed by [wait]. *)
+            pending until consumed by [wait]. It must support calls from other
+            threads or domains when {!request_redraw} is used there, including a
+            wake already in flight when [cleanup] runs. *)
     write_output : bytes -> int -> int -> unit;
         (** [write_output buf off len] writes the complete slice before
             returning. The backend must not retain [buf]. *)
@@ -324,7 +326,12 @@ val now : app -> float
 val request_redraw : app -> unit
 (** [request_redraw app] marks the frame dirty for the next iteration. Outside
     live mode, dirty frames render as soon as the target-fps pacing allows, so a
-    burst of requests coalesces instead of rendering back-to-back. *)
+    burst of requests coalesces instead of rendering back-to-back.
+
+    Requests may come from other threads or domains when the backend's [wake]
+    supports this. Requests during suspension or after closure are ignored.
+    Other app operations remain owned by the event-loop thread. Requests made
+    during the render callback remain pending for the next frame. *)
 
 val schedule_wakeup : app -> float option -> unit
 (** [schedule_wakeup app deadline] arms (or, with [None], clears) the loop's

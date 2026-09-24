@@ -112,7 +112,7 @@ type app = {
      before the first backend read. *)
   mutable pending_startup_events : Input.t list;
   mutable running : bool;
-  mutable redraw_requested : bool;
+  redraw_state : [ `Disabled | `Clean | `Dirty ] Atomic.t;
   mutable width : int;
   mutable height : int;
   (* Primary mode layout *)
@@ -323,23 +323,25 @@ let capabilities t = Terminal.capabilities t.terminal
 let running t = t.running
 let now t = t.backend.now ()
 
-let request_redraw t =
-  if t.closed then ()
-  else if t.control_state <> `Explicit_suspended then (
-    t.redraw_requested <- true;
-    t.backend.wake ())
+let rec request_redraw t =
+  match Atomic.get t.redraw_state with
+  | `Disabled -> ()
+  | (`Clean | `Dirty) as state ->
+      if Atomic.compare_and_set t.redraw_state state `Dirty then
+        t.backend.wake ()
+      else request_redraw t
 
 let schedule_wakeup t deadline =
   if not t.closed then (
     t.wakeup_deadline <- deadline;
     t.backend.wake ())
 
-let redraw_requested t = t.redraw_requested
+let redraw_requested t = Atomic.get t.redraw_state = `Dirty
 
 let request_immediate_redraw t =
   if t.closed then ()
   else if t.control_state <> `Explicit_suspended then (
-    t.redraw_requested <- true;
+    Atomic.set t.redraw_state `Dirty;
     if t.loop_active then t.next_frame_deadline <- Some (t.backend.now ())
     else t.last_render_time <- Float.neg_infinity;
     t.backend.wake ())
@@ -568,7 +570,7 @@ let apply_config t =
    per frame instead of clearing here and again downstream. *)
 let prepare t =
   refresh_capabilities t;
-  t.redraw_requested <- false;
+  ignore (Atomic.compare_and_set t.redraw_state `Dirty `Clean);
   refresh_render_region ~effective:true t
 
 let grid t = Screen.next_grid t.screen
@@ -780,7 +782,7 @@ let stop t =
     t.running <- false;
     t.control_state <- `Explicit_stopped;
     update_loop_active t;
-    t.redraw_requested <- false;
+    Atomic.set t.redraw_state `Clean;
     t.backend.wake ())
 
 let request_live t =
@@ -790,7 +792,7 @@ let request_live t =
     if t.control_state = `Idle && t.live_requests > 0 then (
       t.control_state <- `Auto_started;
       update_loop_active t;
-      t.redraw_requested <- true;
+      Atomic.set t.redraw_state `Dirty;
       t.backend.wake ()))
 
 let drop_live t =
@@ -804,12 +806,14 @@ let start t =
     t.control_state <- `Explicit_started;
     update_loop_active t;
     if not t.running then t.running <- true;
-    t.redraw_requested <- true;
+    Atomic.set t.redraw_state `Dirty;
     t.backend.wake ())
 
 let pause t =
   t.control_state <- `Explicit_paused;
-  update_loop_active t
+  update_loop_active t;
+  if not t.closed then
+    ignore (Atomic.compare_and_set t.redraw_state `Disabled `Clean)
 
 (* Frame writes bypass the terminal handle and may stop between mode changes.
    Attempt every reset independently, before handing the terminal back. *)
@@ -826,11 +830,11 @@ let suspend ?(leave_alt = false) t =
      It would also drop a pending [~leave_alt:true] re-enter obligation. *)
   if t.closed || t.control_state = `Explicit_suspended then ()
   else (
+    Atomic.set t.redraw_state `Disabled;
     t.previous_control_state <- t.control_state;
     t.control_state <- `Explicit_suspended;
     update_loop_active t;
     Input.Parser.reset t.parser;
-    t.redraw_requested <- false;
     force_full_redraw t;
     (* The suspended program owns the terminal; whatever cursor state it leaves
        behind is unknown, so the first frame after resume must re-emit. *)
@@ -888,10 +892,8 @@ let resume t =
     if t.control_state = `Auto_started && t.live_requests = 0 then
       t.control_state <- `Idle;
     update_loop_active t;
-    if t.loop_active then (
-      t.redraw_requested <- true;
-      t.backend.wake ())
-    else request_redraw t)
+    Atomic.set t.redraw_state `Dirty;
+    t.backend.wake ())
 
 (* Cursor *)
 
@@ -1016,6 +1018,7 @@ let close t =
   if t.closed then ()
   else
     t.backend.protect (fun () ->
+        Atomic.set t.redraw_state `Disabled;
         t.closed <- true;
         t.running <- false;
         t.control_state <- `Explicit_stopped;
@@ -1169,7 +1172,7 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           submit_buf = Ansi.Writer.create 4096;
           pending_startup_events = List.rev !startup_events;
           running = true;
-          redraw_requested = false;
+          redraw_state = Atomic.make `Clean;
           width;
           height;
           primary;
@@ -1233,13 +1236,25 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   let wakeup_r, wakeup_w = Unix.pipe ~cloexec:true () in
   let release_lifecycle = ref ignore in
   let backend_cleaned = ref false in
+  let wakeup_lock = Mutex.create () in
+  (* A request published before close may reach wake afterwards. Serialize
+     wake with pipe disposal so a reused descriptor can never receive it. *)
+  let wake_locked () = if not !backend_cleaned then wake_fd wakeup_w in
+  let wake () = Mutex.protect wakeup_lock wake_locked in
   let cleanup_backend () =
-    if not !backend_cleaned then (
-      backend_cleaned := true;
-      !release_lifecycle ();
-      winch_received := false;
-      (try Unix.close wakeup_r with _ -> ());
-      try Unix.close wakeup_w with _ -> ())
+    (* Signal handlers cannot take [wakeup_lock]. Revoke their access before
+       disposing of the pipe; worker wakeups use the lock below. *)
+    !release_lifecycle ();
+    let cleaned =
+      Mutex.protect wakeup_lock (fun () ->
+          if !backend_cleaned then false
+          else (
+            backend_cleaned := true;
+            (try Unix.close wakeup_r with _ -> ());
+            (try Unix.close wakeup_w with _ -> ());
+            true))
+    in
+    if cleaned then winch_received := false
   in
   let original_termios = ref None in
   let set_raw_mode enabled =
@@ -1272,7 +1287,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       let backend : Backend.t =
         {
           now = (fun () -> Int64.to_float (Mtime_clock.elapsed_ns ()) *. 1e-9);
-          wake = (fun () -> wake_fd wakeup_w);
+          wake;
           write_output = write_all output_fd;
           read_input = read_input_unix ~input_fd;
           wait = wait_input_unix ~input_fd ~wakeup_r ~output_fd;
@@ -1324,7 +1339,7 @@ let min_timeout a b =
    instant. Live animation still paces off [target_fps] via the frame
    deadline; only one-shots skip the wait. *)
 let one_shot_render_due t ~now =
-  t.redraw_requested && (not t.loop_active)
+  redraw_requested t && (not t.loop_active)
   && ((not t.config.pace_redraws)
      ||
      match compute_loop_interval t with
@@ -1361,7 +1376,7 @@ let compute_timeout t ~now =
     | None -> None
   in
   let redraw_timeout =
-    if t.redraw_requested && not t.loop_active then
+    if redraw_requested t && not t.loop_active then
       if not t.config.pace_redraws then Some 0.
       else
         match compute_loop_interval t with
@@ -1394,7 +1409,7 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
     t.control_state <> `Explicit_suspended
     && t.control_state <> `Explicit_stopped
   then (
-    t.redraw_requested <- true;
+    Atomic.set t.redraw_state `Dirty;
     t.backend.wake ());
   (* [on_resize] always reports the usable surface — {!size}, the live
      viewport in [`Primary] mode — never the raw terminal dimensions of the
