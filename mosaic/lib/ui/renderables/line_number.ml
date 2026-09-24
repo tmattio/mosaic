@@ -218,16 +218,16 @@ let render_gutter t _self grid ~delta:_ =
   else
     let ( line_count,
           display_line_count,
-          line_sources,
-          line_wrap_indices,
+          logical_line_at,
+          continuation_at,
           scroll_y ) =
       match info with
-      | None -> (0, 0, [||], [||], 0)
+      | None -> (0, 0, (fun i -> i), (fun _ -> 0), 0)
       | Some i ->
           ( i.line_count,
             i.display_line_count,
-            i.line_sources,
-            i.line_wrap_indices,
+            i.logical_line,
+            i.continuation,
             i.scroll_y )
     in
     (* Draw gutter background *)
@@ -248,8 +248,8 @@ let render_gutter t _self grid ~delta:_ =
     for row = 0 to gutter_h - 1 do
       let display_line = scroll_y + row in
       if display_line < display_line_count then begin
-        let logical_line = line_sources.(display_line) in
-        let wrap_index = line_wrap_indices.(display_line) in
+        let logical_line = logical_line_at display_line in
+        let wrap_index = continuation_at display_line in
         (* Line color: apply gutter background for this row *)
         (match find_line_color lk logical_line with
         | Some lc ->
@@ -325,7 +325,7 @@ let render_content_colors t _self grid ~delta:_ =
         for row = 0 to ch - 1 do
           let display_line = info.scroll_y + row in
           if display_line < info.display_line_count then begin
-            let logical_line = info.line_sources.(display_line) in
+            let logical_line = info.logical_line display_line in
             match find_line_color lk logical_line with
             | Some lc ->
                 let bg =

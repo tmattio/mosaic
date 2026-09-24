@@ -344,16 +344,16 @@ val selectable : t -> bool
 type line_info = {
   line_count : int;
   display_line_count : int;
-  line_sources : int array;
-  line_wrap_indices : int array;
+  logical_line : int -> int;
+  continuation : int -> int;
   scroll_y : int;
 }
 (** The type for display line metrics used by line-numbering widgets.
     - [line_count]: number of logical lines.
     - [display_line_count]: number of visual lines after wrapping.
-    - [line_sources.(i)]: logical line index for display line [i].
-    - [line_wrap_indices.(i)]: sub-line index within the logical line — [0] for
-      the first display line, [1] for the first continuation, and so on.
+    - [logical_line i]: logical line index for display line [i].
+    - [continuation i]: sub-line index within the logical line — [0] for the
+      first display line, [1] for the first continuation, and so on.
     - [scroll_y]: vertical scroll offset in display lines. *)
 
 val set_line_info_provider : t -> (unit -> line_info) option -> unit
@@ -365,6 +365,17 @@ val set_line_info_provider : t -> (unit -> line_info) option -> unit
 val line_info : t -> line_info option
 (** [line_info t] is the current line metrics from [t]'s provider, or [None] if
     no provider is registered. *)
+
+val iter_lines :
+  t ->
+  first:int ->
+  count:int ->
+  (row:int -> logical_line:int -> continuation:int -> unit) ->
+  unit
+(** [iter_lines t ~first ~count f] observes bounded absolute visual rows against
+    one provider revision. Negative counts visit nothing; [first] is clamped. A
+    provider's counts, scroll origin and query functions describe one geometry
+    value and remain consistent for this iteration. *)
 
 (** {1:pending_work Pending render work} *)
 

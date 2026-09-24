@@ -757,11 +757,11 @@ let source_line_at_row_with_kind patch ~layout ?side row =
 module Split_layout = struct
   let visual_counts line_count (info : Renderable.line_info) =
     let counts = Array.make line_count 0 in
-    Array.iter
-      (fun source ->
-        if source >= 0 && source < line_count then
-          counts.(source) <- counts.(source) + 1)
-      info.line_sources;
+    for row = 0 to info.display_line_count - 1 do
+      let source = info.logical_line row in
+      if source >= 0 && source < line_count then
+        counts.(source) <- counts.(source) + 1
+    done;
     for i = 0 to line_count - 1 do
       if counts.(i) = 0 then counts.(i) <- 1
     done;
@@ -858,9 +858,8 @@ let logical_row_at_visual code visual_row =
     match Renderable.line_info (Code.node code) with
     | Some info ->
         let display_row = info.scroll_y + visual_row in
-        if display_row < 0 || display_row >= Array.length info.line_sources then
-          None
-        else Some info.line_sources.(display_row)
+        if display_row < 0 || display_row >= info.display_line_count then None
+        else Some (info.logical_line display_row)
     | None -> Some visual_row
 
 let side_hit t ~x ~y side line_number code =

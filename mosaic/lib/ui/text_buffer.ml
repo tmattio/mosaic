@@ -1,3 +1,5 @@
+module Source = Matrix.Text.Layout.Source
+
 (* ───── Spans ───── *)
 
 type span = { text : string; style : Ansi.Style.t }
@@ -46,8 +48,8 @@ type t = {
   mutable cached_plain_text : string option;
   mutable cached_lines : line_cache option;
   mutable cached_line_spans : span list array option;
-  mutable cached_grapheme_count : int option;
-  mutable cached_grapheme_offsets : int array option;
+  mutable source : Source.t option;
+  mutable paint : (int * int * Ansi.Style.t) array option;
   mutable version : int;
 }
 
@@ -63,8 +65,8 @@ let create ?(default_style = Ansi.Style.default) ?(width_method = `Unicode)
     cached_plain_text = None;
     cached_lines = None;
     cached_line_spans = None;
-    cached_grapheme_count = None;
-    cached_grapheme_offsets = None;
+    source = None;
+    paint = None;
     version = 0;
   }
 
@@ -74,8 +76,8 @@ let invalidate t =
   t.cached_plain_text <- None;
   t.cached_lines <- None;
   t.cached_line_spans <- None;
-  t.cached_grapheme_count <- None;
-  t.cached_grapheme_offsets <- None;
+  t.source <- None;
+  t.paint <- None;
   t.version <- t.version + 1
 
 (* ───── Span Order ───── *)
@@ -137,29 +139,24 @@ let plain_text t =
       t.cached_plain_text <- Some s;
       s
 
-let ensure_grapheme_offsets t =
-  match t.cached_grapheme_offsets with
-  | Some offsets -> offsets
+let source t =
+  match t.source with
+  | Some source -> source
   | None ->
-      let full = plain_text t in
-      let n = Matrix.Text.grapheme_count full in
-      let offsets = Array.make (n + 1) (String.length full) in
-      let idx = ref 0 in
-      Matrix.Text.iter_graphemes
-        (fun ~offset ~len:_ ->
-          offsets.(!idx) <- offset;
-          incr idx)
-        full;
-      t.cached_grapheme_offsets <- Some offsets;
-      t.cached_grapheme_count <- Some n;
-      offsets
+      let source = Source.of_string (plain_text t) in
+      t.source <- Some source;
+      source
 
-let grapheme_count t =
-  match t.cached_grapheme_count with
-  | Some n -> n
-  | None ->
-      let offsets = ensure_grapheme_offsets t in
-      Array.length offsets - 1
+let set_source t source =
+  match t.source with
+  | Some current when current == source -> ()
+  | _ ->
+      if not (String.equal (plain_text t) (Source.text source)) then
+        set_text t (Source.text source);
+      t.source <- Some source;
+      t.version <- t.version + 1
+
+let grapheme_count t = Source.length (source t)
 
 (* ───── Default Style ───── *)
 
@@ -167,6 +164,7 @@ let default_style t = t.default_style
 
 let set_default_style t s =
   t.default_style <- s;
+  t.paint <- None;
   (* Cached slices carry the default style on empty lines. *)
   t.cached_line_spans <- None
 
@@ -176,51 +174,25 @@ let set_default_style t s =
    byte-range bounds. The bounds are reused by line_spans to avoid rescanning
    the full text for every line lookup. *)
 let compute_lines t =
-  let tab_width = t.tab_width in
-  let full_text = plain_text t in
-  let text_len = String.length full_text in
-  if text_len = 0 then
-    {
-      line_count = 1;
-      line_widths = [| 0 |];
-      max_line_width = 0;
-      bounds = [| (0, 0) |];
-    }
-  else begin
-    let breaks = ref [] in
-    Matrix.Text.iter_line_breaks
-      (fun ~pos ~kind -> breaks := (pos, kind) :: !breaks)
-      full_text;
-    let breaks = List.rev !breaks in
-    let bounds_rev = ref [] in
-    let line_start = ref 0 in
-    List.iter
-      (fun (brk_pos, kind) ->
-        let line_end =
-          match kind with `CRLF -> brk_pos - 1 | `LF | `CR -> brk_pos
-        in
-        bounds_rev := (!line_start, line_end) :: !bounds_rev;
-        line_start := brk_pos + 1)
-      breaks;
-    bounds_rev := (!line_start, text_len) :: !bounds_rev;
-    let bounds = Array.of_list (List.rev !bounds_rev) in
-    let width_method = t.width_method in
-    let n = Array.length bounds in
-    let widths = Array.make n 0 in
-    let max_w = ref 0 in
-    for i = 0 to n - 1 do
-      let pos, end_ = bounds.(i) in
-      let len = end_ - pos in
-      let w =
-        if len = 0 then 0
-        else
-          Matrix.Text.measure_sub ~width_method ~tab_width full_text ~pos ~len
-      in
-      widths.(i) <- w;
-      if w > !max_w then max_w := w
-    done;
-    { line_count = n; line_widths = widths; max_line_width = !max_w; bounds }
-  end
+  let src = source t in
+  let line_count = Source.line_count src in
+  let line_widths =
+    Array.init line_count (fun line ->
+        Source.columns ~width_method:t.width_method ~tab_width:t.tab_width src
+          ~first:(Source.line_start src line)
+          ~last:(Source.line_end src line))
+  in
+  let bounds =
+    Array.init line_count (fun line ->
+        ( Source.byte_offset src (Source.line_start src line),
+          Source.byte_offset src (Source.line_end src line) ))
+  in
+  {
+    line_count;
+    line_widths;
+    max_line_width = Array.fold_left max 0 line_widths;
+    bounds;
+  }
 
 let ensure_line_cache t =
   match t.cached_lines with
@@ -308,27 +280,22 @@ let line_spans t line_idx =
 
 let text_in_range t ~start ~len =
   if len <= 0 then ""
-  else
-    let offsets = ensure_grapheme_offsets t in
-    let n = Array.length offsets - 1 in
-    if start >= n then ""
-    else
-      let full = plain_text t in
-      let byte_start = offsets.(start) in
-      let byte_end =
-        if start + len >= n then String.length full else offsets.(start + len)
-      in
-      String.sub full byte_start (byte_end - byte_start)
+  else Source.slice (source t) ~first:start ~last:(start + len)
 
 (* ───── Highlights ───── *)
 
-let add_highlight t h = t.highlights <- h :: t.highlights
+let add_highlight t h =
+  t.paint <- None;
+  t.highlights <- h :: t.highlights
 
 let remove_highlights_by_ref t ref_id =
+  t.paint <- None;
   t.highlights <-
     List.filter (fun h -> Highlight.ref_id h <> ref_id) t.highlights
 
-let clear_highlights t = t.highlights <- []
+let clear_highlights t =
+  t.paint <- None;
+  t.highlights <- []
 
 let highlights_in_range t ~start ~len =
   let end_offset = start + len in
@@ -364,3 +331,86 @@ let set_width_method t m =
 (* ───── Versioning ───── *)
 
 let version t = t.version
+
+(* Sorting is O(E log E); partial-style resolution is O(E * A), where A is
+   simultaneous overlays. This preparation never repeats on unchanged paint. *)
+let paint_runs t =
+  match t.paint with
+  | Some runs -> runs
+  | None ->
+      ensure_span_order t;
+      let src = source t in
+      let n = Source.length src in
+      let events = ref [] and byte = ref 0 in
+      List.iter
+        (fun (span : span) ->
+          let g = Source.grapheme_of_byte src ~affinity:Downstream !byte in
+          if g < n && String.length span.text > 0 then
+            events := (g, `Base span.style) :: !events;
+          byte := !byte + String.length span.text)
+        t.spans;
+      let highlights =
+        List.stable_sort
+          (fun a b -> compare (Highlight.priority a) (Highlight.priority b))
+          t.highlights
+      in
+      List.iteri
+        (fun id hl ->
+          let first = max 0 hl.Highlight.start_offset in
+          let last = min n hl.Highlight.end_offset in
+          if first < last then begin
+            events := (first, `Start (id, hl.Highlight.style)) :: !events;
+            events := (last, `Stop id) :: !events
+          end)
+        highlights;
+      let events =
+        List.stable_sort (fun (a, _) (b, _) -> compare a b) (List.rev !events)
+      in
+      let active = ref [] and base = ref t.default_style in
+      let runs = Dynarray.create () in
+      let rec sweep pos events =
+        let rec apply = function
+          | (g, event) :: rest when g = pos ->
+              (match event with
+              | `Base style -> base := style
+              | `Start entry ->
+                  active :=
+                    List.merge
+                      (fun (a, _) (b, _) -> compare a b)
+                      [ entry ] !active
+              | `Stop id ->
+                  active := List.filter (fun (key, _) -> key <> id) !active);
+              apply rest
+          | rest -> rest
+        in
+        let rest = apply events in
+        let last = match rest with (g, _) :: _ -> g | [] -> n in
+        if last > pos then begin
+          let style =
+            List.fold_left
+              (fun base (_, overlay) -> Ansi.Style.merge ~base ~overlay)
+              !base !active
+          in
+          Dynarray.add_last runs (pos, last, style)
+        end;
+        if last < n then sweep last rest
+      in
+      if n > 0 then sweep 0 events;
+      let runs = Dynarray.to_array runs in
+      t.paint <- Some runs;
+      runs
+
+let style_at t g =
+  let runs = paint_runs t in
+  let n = Array.length runs in
+  if n = 0 then (t.default_style, max_int)
+  else begin
+    let lo = ref 0 and hi = ref (n - 1) in
+    while !lo < !hi do
+      let mid = !lo + ((!hi - !lo + 1) / 2) in
+      let first, _, _ = runs.(mid) in
+      if first <= g then lo := mid else hi := mid - 1
+    done;
+    let _, last, style = runs.(!lo) in
+    (style, last)
+  end

@@ -931,9 +931,26 @@ let pp_contains_textarea_prefix () =
 
 (* ── Runner ── *)
 
+let visual_end_keeps_previous_wrapped_row () =
+  let t, ta = make_textarea ~value:"abcdef" ~wrap:`Char () in
+  focus_textarea t ta;
+  ignore (render_textarea ta ~width:3 ~height:2 : Matrix_grid.t);
+  Edit_buffer.set_cursor (Textarea.buffer ta) 1;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Right;
+  let caret = Edit_buffer.caret (Textarea.buffer ta) in
+  equal int 3 caret.grapheme;
+  is_true (caret.affinity = Matrix_text.Layout.Upstream);
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Left;
+  equal int 0 (Edit_buffer.cursor (Textarea.buffer ta))
+
 let () =
   run "mosaic.textarea"
     [
+      group "Caret affinity"
+        [
+          test "visual end stays on the preceding wrapped row"
+            visual_end_keeps_previous_wrapped_row;
+        ];
       group "Props"
         [
           test "default equals make()" props_default_equals_make;

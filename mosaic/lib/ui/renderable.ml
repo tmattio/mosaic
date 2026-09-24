@@ -5,8 +5,8 @@ module Grid = Matrix_grid
 type line_info = {
   line_count : int;
   display_line_count : int;
-  line_sources : int array;
-  line_wrap_indices : int array;
+  logical_line : int -> int;
+  continuation : int -> int;
   scroll_y : int;
 }
 
@@ -991,6 +991,17 @@ let get_selected_text t =
 
 let set_line_info_provider t provider = t.line_info_provider <- provider
 let line_info t = Option.map (fun f -> f ()) t.line_info_provider
+
+let iter_lines t ~first ~count f =
+  match line_info t with
+  | None -> ()
+  | Some info ->
+      let first = max 0 (min info.display_line_count first) in
+      let count = max 0 (min count (info.display_line_count - first)) in
+      for row = first to first + count - 1 do
+        f ~row ~logical_line:(info.logical_line row)
+          ~continuation:(info.continuation row)
+      done
 
 (* ───── Pending Render Work ───── *)
 

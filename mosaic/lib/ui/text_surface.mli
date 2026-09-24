@@ -107,31 +107,16 @@ val max_scroll_y : t -> int
 
 (** {1:display Display lines} *)
 
-type display_line = Text_buffer.span list
-(** A display line is a list of styled spans that fit within the wrap width. *)
-
-type display_info = {
-  lines : display_line array;  (** The wrapped display lines. *)
-  line_sources : int array;
-      (** [line_sources.(i)] is the logical line index that display line [i]
-          originates from. *)
-  line_grapheme_offsets : int array;
-      (** [line_grapheme_offsets.(i)] is the grapheme offset of display line [i]
-          in the full text. Used for mapping highlights and cursor positions. *)
-  line_wrap_indices : int array;
-      (** [line_wrap_indices.(i)] is the sub-line index within its logical line:
-          [0] for the first display line, [1] for the first continuation, etc.
-          Useful for line numbering and gutter rendering. *)
-  max_line_width : int;  (** The widest display line in columns. *)
-}
-(** Wrapped display line metrics. *)
-
-val display_info : t -> display_info
-(** [display_info t] is the current wrapped line metrics. Cached; recomputed
-    when content or wrap settings change. *)
+val layout : t -> Matrix.Text.Layout.t
+(** [layout t] is the current immutable source-backed geometry. Width probes do
+    not change it. Its source remains valid after buffer mutation. *)
 
 val display_line_count : t -> int
-(** [display_line_count t] is [Array.length (display_info t).lines]. *)
+(** [display_line_count t] is the current number of visual rows. *)
+
+val local_caret : t -> x:int -> y:int -> Matrix.Text.Layout.caret
+(** [local_caret t ~x ~y] maps viewport-local cells to insertion boundaries,
+    accounting for scrolling and soft-wrap affinity. *)
 
 (** {1:selection Selection} *)
 
@@ -155,17 +140,16 @@ val selection : t -> (int * int) option
 val set_local_selection :
   t -> anchor_x:int -> anchor_y:int -> focus_x:int -> focus_y:int -> bool
 (** [set_local_selection t ~anchor_x ~anchor_y ~focus_x ~focus_y] sets the
-    selection from viewport-local coordinates. Coordinates are converted to
-    grapheme offsets accounting for scroll position. Activates the selection
-    unconditionally. Returns [true] if the selection changed.
+    selection from viewport-local cells, accounting for scrolling. A stationary
+    press is empty; a drag includes the source coverage of both endpoint cells.
+    An ellipsis covers the omitted source suffix. Returns [true] if changed.
 
     See {!update_local_selection} for updating an existing drag. *)
 
 val update_local_selection :
   t -> anchor_x:int -> anchor_y:int -> focus_x:int -> focus_y:int -> bool
 (** [update_local_selection t ~anchor_x ~anchor_y ~focus_x ~focus_y] is like
-    {!set_local_selection} but only considers offset changes (does not re-check
-    active state). Returns [true] if the selection changed. *)
+    {!set_local_selection}. Returns [true] if the selection changed. *)
 
 val reset_selection : t -> unit
 (** [reset_selection t] clears any active selection and requests a render. *)

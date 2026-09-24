@@ -96,12 +96,12 @@ let register_line_info t =
   Renderable.set_line_info_provider t.node
     (Some
        (fun () ->
-         let di = Text_surface.display_info t.surface in
+         let di = Text_surface.layout t.surface in
          {
            Renderable.line_count = Text_buffer.line_count t.buffer;
-           display_line_count = Array.length di.lines;
-           line_sources = di.line_sources;
-           line_wrap_indices = di.line_wrap_indices;
+           display_line_count = Matrix.Text.Layout.row_count di;
+           logical_line = Matrix.Text.Layout.logical_line di;
+           continuation = Matrix.Text.Layout.continuation di;
            scroll_y = Text_surface.scroll_y t.surface;
          }))
 

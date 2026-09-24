@@ -32,7 +32,14 @@
  (name test_text_surface)
  (modules test_text_surface)
  (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.ansi matrix.text test_harness))
+ (libraries
+  windtrap
+  mosaic.ui
+  toffee
+  matrix.ansi
+  matrix.text
+  matrix.grid
+  test_harness))
 
 (test
  (name test_syntax_highlight)
@@ -147,6 +154,7 @@
   matrix.grid
   matrix.ansi
   matrix.input
+  matrix.text
   test_harness))
 
 (test

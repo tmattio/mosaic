@@ -174,3 +174,15 @@ val version : t -> int
 (** [version t] is a monotonically increasing counter incremented whenever
     content, tab width, or width method changes. Useful for cache invalidation
     in consumers (e.g. {!Text_surface}). *)
+
+val source : t -> Matrix.Text.Layout.Source.t
+(** [source t] is the indexed installed text, shared across width layouts. *)
+
+val set_source : t -> Matrix.Text.Layout.Source.t -> unit
+(** [set_source t source] installs [source]. Existing styles are retained when
+    its bytes equal the current text; otherwise the default style is used. *)
+
+val style_at : t -> int -> Ansi.Style.t * int
+(** [style_at t g] is the resolved style at source grapheme [g] and the next
+    style boundary. Overlays follow existing priority order. Preparation is
+    cached until content, base style, or highlights change. *)

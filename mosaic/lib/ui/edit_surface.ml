@@ -1,3 +1,5 @@
+module Layout = Matrix.Text.Layout
+
 (* Defaults *)
 
 let default_text_color = Ansi.Color.white
@@ -293,12 +295,12 @@ let register_line_info t =
   Renderable.set_line_info_provider t.node
     (Some
        (fun () ->
-         let di = Text_surface.display_info t.surface in
+         let di = Text_surface.layout t.surface in
          {
            Renderable.line_count = Edit_buffer.line_count t.buf;
-           display_line_count = Array.length di.lines;
-           line_sources = di.line_sources;
-           line_wrap_indices = di.line_wrap_indices;
+           display_line_count = Matrix.Text.Layout.row_count di;
+           logical_line = Matrix.Text.Layout.logical_line di;
+           continuation = Matrix.Text.Layout.continuation di;
            scroll_y = Text_surface.scroll_y t.surface;
          }))
 
@@ -371,7 +373,8 @@ let sync_content t =
   let text = Edit_buffer.text t.buf in
   if t.props.spans <> [] && spans_text_equals t.props.spans text then
     Text_buffer.set_styled_text t.text_buf t.props.spans
-  else Text_buffer.set_text t.text_buf text
+  else Text_buffer.set_text t.text_buf text;
+  Text_buffer.set_source t.text_buf (Edit_buffer.source t.buf)
 
 let sync t =
   sync_content t;
@@ -398,69 +401,19 @@ let handle_blur t =
 (* Display line mapping *)
 
 let find_cursor_display_line t =
-  let di = Text_surface.display_info t.surface in
-  let n = Array.length di.line_grapheme_offsets in
-  if n = 0 then 0
-  else
-    let cursor = Edit_buffer.cursor t.buf in
-    let lo = ref 0 in
-    let hi = ref (n - 1) in
-    while !lo < !hi do
-      let mid = !lo + ((!hi - !lo + 1) / 2) in
-      if di.line_grapheme_offsets.(mid) <= cursor then lo := mid
-      else hi := mid - 1
-    done;
-    !lo
+  fst (Layout.locate (Text_surface.layout t.surface) (Edit_buffer.caret t.buf))
 
 let cursor_visual_col t display_line =
-  let di = Text_surface.display_info t.surface in
-  let line_start = di.line_grapheme_offsets.(display_line) in
-  let cursor = Edit_buffer.cursor t.buf in
-  let count = cursor - line_start in
-  if count <= 0 then 0
-  else
-    let text =
-      Text_buffer.text_in_range t.text_buf ~start:line_start ~len:count
-    in
-    let tab_width = Text_buffer.tab_width t.text_buf in
-    let width_method = Text_buffer.width_method t.text_buf in
-    Matrix.Text.measure ~width_method ~tab_width text
+  let row, column =
+    Layout.locate (Text_surface.layout t.surface) (Edit_buffer.caret t.buf)
+  in
+  if row = display_line then column else 0
 
 let display_line_end_offset t display_line =
-  let di = Text_surface.display_info t.surface in
-  let n = Array.length di.line_grapheme_offsets in
-  let next_start =
-    if display_line + 1 < n then di.line_grapheme_offsets.(display_line + 1)
-    else Text_buffer.grapheme_count t.text_buf
-  in
-  if
-    display_line + 1 < n
-    && di.line_sources.(display_line) <> di.line_sources.(display_line + 1)
-  then next_start - 1
-  else next_start
+  Layout.row_end (Text_surface.layout t.surface) display_line
 
-let offset_at_col t target_line target_col =
-  let di = Text_surface.display_info t.surface in
-  let line_start = di.line_grapheme_offsets.(target_line) in
-  let line_end = display_line_end_offset t target_line in
-  let count = line_end - line_start in
-  if count <= 0 then line_start
-  else
-    let text =
-      Text_buffer.text_in_range t.text_buf ~start:line_start ~len:count
-    in
-    let tab_width = Text_buffer.tab_width t.text_buf in
-    let width_method = Text_buffer.width_method t.text_buf in
-    let result = ref line_start in
-    let col = ref 0 in
-    Matrix.Text.iter_grapheme_info ~width_method ~tab_width
-      (fun ~offset:_ ~len:_ ~width ->
-        if !col + width <= target_col then begin
-          col := !col + width;
-          incr result
-        end)
-      text;
-    !result
+let caret_at_col t target_line target_col =
+  Layout.hit (Text_surface.layout t.surface) ~row:target_line ~column:target_col
 
 (* Scroll *)
 
@@ -628,13 +581,6 @@ let cursor_provider t _self =
 
 (* Selection *)
 
-let sync_buffer_selection_from_surface t =
-  match Text_surface.selection t.surface with
-  | None -> Edit_buffer.clear_selection t.buf
-  | Some (lo, hi) ->
-      Edit_buffer.set_cursor t.buf lo;
-      Edit_buffer.set_cursor_offset ~select:true t.buf hi
-
 let register_selection t =
   if t.props.selectable then
     Renderable.set_selection t.node
@@ -658,16 +604,15 @@ let register_selection t =
             let focus = Selection.focus sel in
             let ax = anchor.x - nx and ay = anchor.y - ny in
             let fx = focus.x - nx and fy = focus.y - ny in
+            let anchor = Text_surface.local_caret t.surface ~x:ax ~y:ay in
+            let focus = Text_surface.local_caret t.surface ~x:fx ~y:fy in
             let changed =
-              if Selection.is_start sel then
-                Text_surface.set_local_selection t.surface ~anchor_x:ax
-                  ~anchor_y:ay ~focus_x:fx ~focus_y:fy
-              else
-                Text_surface.update_local_selection t.surface ~anchor_x:ax
-                  ~anchor_y:ay ~focus_x:fx ~focus_y:fy
+              Text_surface.set_selection t.surface ~start:anchor.grapheme
+                ~end_:focus.grapheme
             in
+            Edit_buffer.set_caret t.buf anchor;
+            Edit_buffer.set_caret ~select:true t.buf focus;
             if changed then begin
-              sync_buffer_selection_from_surface t;
               ignore (fire_on_cursor t : bool);
               ensure_cursor_visible t;
               Renderable.request_render t.node
@@ -688,8 +633,8 @@ let register_selection t =
 (* Vertical movement *)
 
 let move_vertical t ~select ~delta =
-  let di = Text_surface.display_info t.surface in
-  let n = Array.length di.line_grapheme_offsets in
+  let di = Text_surface.layout t.surface in
+  let n = Layout.row_count di in
   if n > 0 then begin
     let dl = find_cursor_display_line t in
     let target_line = dl + delta in
@@ -702,8 +647,8 @@ let move_vertical t ~select ~delta =
             t.preferred_col <- Some c;
             c
       in
-      let target = offset_at_col t target_line col in
-      Edit_buffer.set_cursor_offset ~select t.buf target;
+      let target = caret_at_col t target_line col in
+      Edit_buffer.set_caret ~select t.buf target;
       true
     end
     else false
@@ -713,23 +658,24 @@ let move_vertical t ~select ~delta =
 (* Visual line navigation *)
 
 let move_visual_line_start t ~select =
-  let di = Text_surface.display_info t.surface in
-  let n = Array.length di.line_grapheme_offsets in
+  let di = Text_surface.layout t.surface in
+  let n = Layout.row_count di in
   if n > 0 then begin
     let dl = find_cursor_display_line t in
-    let target = di.line_grapheme_offsets.(dl) in
-    Edit_buffer.set_cursor_offset ~select t.buf target;
+    let grapheme = Layout.row_start di dl in
+    Edit_buffer.set_caret ~select t.buf
+      Layout.{ grapheme; affinity = Downstream };
     true
   end
   else false
 
 let move_visual_line_end t ~select =
-  let di = Text_surface.display_info t.surface in
-  let n = Array.length di.line_grapheme_offsets in
+  let di = Text_surface.layout t.surface in
+  let n = Layout.row_count di in
   if n > 0 then begin
     let dl = find_cursor_display_line t in
-    let target = display_line_end_offset t dl in
-    Edit_buffer.set_cursor_offset ~select t.buf target;
+    let grapheme = display_line_end_offset t dl in
+    Edit_buffer.set_caret ~select t.buf Layout.{ grapheme; affinity = Upstream };
     true
   end
   else false

@@ -4,7 +4,16 @@ open Test_harness
 
 (* ── Helpers ── *)
 
-let span_text (s : Text_buffer.span) = s.text
+module Layout = Matrix_text.Layout
+
+let row_text layout row =
+  let out = Buffer.create 32 in
+  let source = Layout.source layout in
+  Layout.iter_cells layout ~row ~first_column:0 ~last_column:max_int
+    (fun ~first ~last ~column:_ ~width:_ ~ellipsis ->
+      Buffer.add_string out
+        (if ellipsis then "…" else Layout.Source.slice source ~first ~last));
+  Buffer.contents out
 
 let make_surface ?(width = 40) ?(height = 10) ?content ?wrap () =
   let t = make_ctx () in
@@ -20,6 +29,29 @@ let make_surface ?(width = 40) ?(height = 10) ?content ?wrap () =
   surface
 
 (* ── Construction ── *)
+
+let width_cache_reuses_and_releases () =
+  let surface = make_surface ~wrap:`Char ~content:(String.make 100 'x') () in
+  Text_surface.set_wrap_width surface (Some 5);
+  let first = Text_surface.layout surface in
+  Text_surface.set_wrap_width surface (Some 7);
+  ignore (Text_surface.layout surface : Layout.t);
+  Text_surface.set_wrap_width surface (Some 5);
+  is_true (first == Text_surface.layout surface);
+  let old = Weak.create 1 in
+  let retain_old () = Weak.set old 0 (Some (Text_surface.layout surface)) in
+  retain_old ();
+  Text_buffer.set_text (Text_surface.buffer surface) "replacement";
+  ignore (Text_surface.layout surface : Layout.t);
+  ignore (Sys.opaque_identity first);
+  (* Check reachability after this scope drops the explicit geometry reference. *)
+  (surface, old)
+
+let replacement_releases_geometry () =
+  let surface, old = width_cache_reuses_and_releases () in
+  Gc.full_major ();
+  is_false (Weak.check old 0);
+  ignore (Sys.opaque_identity surface)
 
 let defaults () =
   let s = make_surface () in
@@ -55,34 +87,34 @@ let wrap_char_short_line_no_wrap () =
 
 let wrap_char_line_sources () =
   let s = make_surface ~width:5 ~content:"abcdefghij\nxy" ~wrap:`Char () in
-  let info = Text_surface.display_info s in
+  let info = Text_surface.layout s in
   (* "abcdefghij" wraps into 2 display lines, "xy" is 1 *)
-  equal ~msg:"display_line_count" int 3 (Array.length info.lines);
-  equal ~msg:"source 0" int 0 info.line_sources.(0);
-  equal ~msg:"source 1" int 0 info.line_sources.(1);
-  equal ~msg:"source 2" int 1 info.line_sources.(2)
+  equal ~msg:"display_line_count" int 3 (Layout.row_count info);
+  equal ~msg:"source 0" int 0 (Layout.logical_line info 0);
+  equal ~msg:"source 1" int 0 (Layout.logical_line info 1);
+  equal ~msg:"source 2" int 1 (Layout.logical_line info 2)
 
 let wrap_char_wrap_indices () =
   let s = make_surface ~width:5 ~content:"abcdefghij" ~wrap:`Char () in
-  let info = Text_surface.display_info s in
-  equal ~msg:"wrap_index 0" int 0 info.line_wrap_indices.(0);
-  equal ~msg:"wrap_index 1" int 1 info.line_wrap_indices.(1)
+  let info = Text_surface.layout s in
+  equal ~msg:"wrap_index 0" int 0 (Layout.continuation info 0);
+  equal ~msg:"wrap_index 1" int 1 (Layout.continuation info 1)
 
 (* ── Wrapping — Word ── *)
 
 let wrap_word_at_boundary () =
   let s = make_surface ~width:10 ~content:"hello world foo" ~wrap:`Word () in
-  let info = Text_surface.display_info s in
+  let info = Text_surface.layout s in
   (* "hello " fits in 10, "world foo" doesn't all fit, should wrap *)
-  ge ~msg:"wraps" ~than:2 (Array.length info.lines)
+  ge ~msg:"wraps" ~than:2 (Layout.row_count info)
 
 let wrap_word_preserves_sources () =
   let s =
     make_surface ~width:10 ~content:"hello world\nfoo bar baz" ~wrap:`Word ()
   in
-  let info = Text_surface.display_info s in
+  let info = Text_surface.layout s in
   (* First logical line wraps, second might wrap too *)
-  let last_source = info.line_sources.(Array.length info.line_sources - 1) in
+  let last_source = Layout.logical_line info (Layout.row_count info - 1) in
   equal ~msg:"last source is line 1" int 1 last_source
 
 (* ── set_wrap ── *)
@@ -111,34 +143,31 @@ let wrap_width_none_derives_from_node () =
 let truncate_long_line () =
   let s = make_surface ~width:5 ~content:"hello world" () in
   Text_surface.set_truncate s true;
-  let info = Text_surface.display_info s in
+  let info = Text_surface.layout s in
   (* Should still be 1 display line, but truncated *)
-  equal ~msg:"1 display line" int 1 (Array.length info.lines);
+  equal ~msg:"1 display line" int 1 (Layout.row_count info);
   (* The text should end with ellipsis (U+2026 = \xe2\x80\xa6) *)
-  let line = info.lines.(0) in
-  let last_span = List.nth line (List.length line - 1) in
-  equal ~msg:"ends with ellipsis" string "\xe2\x80\xa6" (span_text last_span)
+  equal ~msg:"truncated source with marker" string "hell…" (row_text info 0)
 
 let truncate_short_line_unchanged () =
   let s = make_surface ~width:40 ~content:"hi" () in
   Text_surface.set_truncate s true;
-  let info = Text_surface.display_info s in
-  let line = info.lines.(0) in
-  equal ~msg:"no truncation" string "hi" (span_text (List.hd line))
+  let info = Text_surface.layout s in
+  equal ~msg:"no truncation" string "hi" (row_text info 0)
 
 (* ── Display Info ── *)
 
 let display_info_grapheme_offsets () =
   let s = make_surface ~content:"abc\ndef" () in
-  let info = Text_surface.display_info s in
-  equal ~msg:"offset line 0" int 0 info.line_grapheme_offsets.(0);
+  let info = Text_surface.layout s in
+  equal ~msg:"offset line 0" int 0 (Layout.row_start info 0);
   (* "abc" = 3 graphemes + 1 for newline = offset 4 for "def" *)
-  equal ~msg:"offset line 1" int 4 info.line_grapheme_offsets.(1)
+  equal ~msg:"offset line 1" int 4 (Layout.row_start info 1)
 
 let display_info_max_line_width () =
   let s = make_surface ~content:"hi\nhello world\nbye" () in
-  let info = Text_surface.display_info s in
-  equal ~msg:"max_line_width" int 11 info.max_line_width
+  let info = Text_surface.layout s in
+  equal ~msg:"max_line_width" int 11 (Layout.max_width info)
 
 (* ── Viewport / Scroll ── *)
 
@@ -229,7 +258,8 @@ let set_local_selection_basic () =
   in
   is_true ~msg:"changed" changed;
   is_true ~msg:"has_selection" (Text_surface.has_selection s);
-  equal ~msg:"selected text" string "hello" (Text_surface.selected_text s)
+  (* Static drags occupy their endpoint cells, including the space at column 5. *)
+  equal ~msg:"selected text" string "hello " (Text_surface.selected_text s)
 
 let update_local_selection_extends () =
   let s = make_surface ~width:40 ~content:"hello world" () in
@@ -249,7 +279,7 @@ let update_local_selection_extends () =
 let invalidate_clears_cache () =
   let s = make_surface ~content:"hello" () in
   (* Access display info to populate cache *)
-  let _ = Text_surface.display_info s in
+  let _ = Text_surface.layout s in
   (* Change buffer content directly *)
   Text_buffer.set_text (Text_surface.buffer s) "hello\nworld";
   Text_surface.invalidate s;
@@ -257,18 +287,18 @@ let invalidate_clears_cache () =
 
 let buffer_version_triggers_recompute () =
   let s = make_surface ~content:"hello" () in
-  let _ = Text_surface.display_info s in
+  let _ = Text_surface.layout s in
   Text_buffer.set_text (Text_surface.buffer s) "ab\ncd\nef";
-  let info = Text_surface.display_info s in
-  equal ~msg:"3 lines" int 3 (Array.length info.lines)
+  let info = Text_surface.layout s in
+  equal ~msg:"3 lines" int 3 (Layout.row_count info)
 
 let buffer_tab_width_triggers_recompute () =
   let s = make_surface ~content:"a\tb" () in
-  let info = Text_surface.display_info s in
-  equal ~msg:"width with default tab" int 4 info.max_line_width;
+  let info = Text_surface.layout s in
+  equal ~msg:"width with default tab" int 4 (Layout.max_width info);
   Text_buffer.set_tab_width (Text_surface.buffer s) 8;
-  let info = Text_surface.display_info s in
-  equal ~msg:"width with updated tab" int 10 info.max_line_width
+  let info = Text_surface.layout s in
+  equal ~msg:"width with updated tab" int 10 (Layout.max_width info)
 
 (* ── Measurement ── *)
 
@@ -334,11 +364,11 @@ let alternating_width_probes_stay_consistent () =
 let truncation_is_keyed_by_width () =
   let s = make_surface ~width:10 ~content:"abcdefghijklmnopqrst" () in
   Text_surface.set_truncate s true;
-  let info = Text_surface.display_info s in
-  equal ~msg:"truncated to node width" int 10 info.max_line_width;
+  let info = Text_surface.layout s in
+  equal ~msg:"truncated to node width" int 10 (Layout.max_width info);
   layout_node (Text_surface.node s) ~x:0 ~y:0 ~width:25 ~height:10;
-  let info = Text_surface.display_info s in
-  equal ~msg:"wider layout sees full line" int 20 info.max_line_width
+  let info = Text_surface.layout s in
+  equal ~msg:"wider layout sees full line" int 20 (Layout.max_width info)
 
 let measure_max_content_returns_natural_width () =
   let s = make_surface ~content:"hello world" () in
@@ -539,9 +569,9 @@ let selection_with_styled_text () =
 let wrap_word_long_word_fallback () =
   (* Word exceeding wrap width should fall back to char break *)
   let s = make_surface ~width:5 ~content:"abcdefghij" ~wrap:`Word () in
-  let info = Text_surface.display_info s in
+  let info = Text_surface.layout s in
   (* "abcdefghij" (10 chars) can't break at word boundaries, must char-break *)
-  ge ~msg:"wraps" ~than:2 (Array.length info.lines)
+  ge ~msg:"wraps" ~than:2 (Layout.row_count info)
 
 let wrap_word_empty_lines_preserved () =
   let s = make_surface ~width:40 ~content:"a\n\nb" ~wrap:`Word () in
@@ -549,8 +579,8 @@ let wrap_word_empty_lines_preserved () =
 
 let wrap_word_single_char_words () =
   let s = make_surface ~width:5 ~content:"a b c d e f" ~wrap:`Word () in
-  let info = Text_surface.display_info s in
-  ge ~msg:"wraps" ~than:2 (Array.length info.lines)
+  let info = Text_surface.layout s in
+  ge ~msg:"wraps" ~than:2 (Layout.row_count info)
 
 (* ── Property Tests ── *)
 
@@ -559,9 +589,82 @@ let small_string = Gen.string_of (Gen.char_range 'a' 'z')
 
 (* ── Runner ── *)
 
+let truncated_source_selection () =
+  let s = make_surface ~width:3 ~content:"abcdef\nXY" () in
+  Text_surface.set_truncate s true;
+  ignore
+    (Text_surface.set_local_selection s ~anchor_x:0 ~anchor_y:1 ~focus_x:2
+       ~focus_y:1);
+  equal string "XY" (Text_surface.selected_text s)
+
+let zero_width_source_selection () =
+  let s = make_surface ~content:"a\226\128\139b" () in
+  ignore
+    (Text_surface.set_local_selection s ~anchor_x:0 ~anchor_y:0 ~focus_x:2
+       ~focus_y:0);
+  equal string "a\226\128\139b" (Text_surface.selected_text s)
+
+let styled_cluster_paints_as_one () =
+  let s = make_surface ~width:8 () in
+  let red = Ansi.Style.make ~fg:Ansi.Color.red () in
+  Text_buffer.set_styled_text (Text_surface.buffer s)
+    [
+      { Text_buffer.text = "e"; style = red };
+      { Text_buffer.text = "\204\129👩‍💻x"; style = Ansi.Style.default };
+    ];
+  let grid = make_grid ~width:8 ~height:2 ~width_method:`Wcwidth () in
+  Renderable.Private.render (Text_surface.node s) grid ~delta:0.;
+  equal string "e\204\129" (Matrix_grid.get_text grid 0);
+  is_true (Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_fg grid 0));
+  equal string "👩‍💻" (Matrix_grid.get_text grid 1);
+  equal string "x" (Matrix_grid.get_text grid 3)
+
+let clipped_text_uses_absolute_source_rows () =
+  let s =
+    make_surface ~width:10 ~height:10000 ~content:"zero\none\ntwo\nthree" ()
+  in
+  let grid = make_grid ~width:10 ~height:4 () in
+  Matrix_grid.push_clip grid { x = 0; y = 2; width = 3; height = 1 };
+  Renderable.Private.render (Text_surface.node s) grid ~delta:0.;
+  equal string "t" (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:0 ~y:2));
+  equal string " " (Matrix_grid.get_text grid 0)
+
+let clipped_wide_start_stays_inside_node () =
+  let s = make_surface ~width:2 ~height:1 ~content:"界abc" () in
+  layout_node (Text_surface.node s) ~x:2 ~y:0 ~width:2 ~height:1;
+  Text_surface.set_scroll_x s 1;
+  let grid = make_grid ~width:6 ~height:1 () in
+  Matrix_grid.draw_text grid ~x:1 ~y:0 ~text:"N";
+  Renderable.Private.render (Text_surface.node s) grid ~delta:0.;
+  equal string "N" (Matrix_grid.get_text grid 1);
+  equal string "a" (Matrix_grid.get_text grid 3)
+
+let ellipsis_drag_and_press () =
+  let s = make_surface ~width:3 ~content:"abcdef" () in
+  Text_surface.set_truncate s true;
+  ignore
+    (Text_surface.set_local_selection s ~anchor_x:2 ~anchor_y:0 ~focus_x:2
+       ~focus_y:0);
+  is_false (Text_surface.has_selection s);
+  ignore
+    (Text_surface.set_local_selection s ~anchor_x:0 ~anchor_y:0 ~focus_x:2
+       ~focus_y:0);
+  equal string "abcdef" (Text_surface.selected_text s)
+
 let () =
   run "mosaic.text_surface"
     [
+      group "Shared geometry paint"
+        [
+          test "style boundaries and grid defaults cannot split geometry"
+            styled_cluster_paints_as_one;
+          test "scissor rows retain source identity"
+            clipped_text_uses_absolute_source_rows;
+          test "clipped wide start cannot paint before its node"
+            clipped_wide_start_stays_inside_node;
+          test "ellipsis drag copies hidden source, press stays empty"
+            ellipsis_drag_and_press;
+        ];
       group "Construction" [ test "defaults" defaults ];
       group "Wrapping — None"
         [
@@ -630,6 +733,8 @@ let () =
             buffer_tab_width_triggers_recompute;
           test "measure probe does not poison display"
             measure_probe_does_not_poison_display;
+          test "width cache reuses and releases obsolete geometry"
+            replacement_releases_geometry;
           test "alternating width probes stay consistent"
             alternating_width_probes_stay_consistent;
           test "truncation is keyed by width" truncation_is_keyed_by_width;
@@ -672,6 +777,13 @@ let () =
           test "long word falls back to char" wrap_word_long_word_fallback;
           test "empty lines preserved" wrap_word_empty_lines_preserved;
           test "single char words" wrap_word_single_char_words;
+        ];
+      group "Source geometry regressions"
+        [
+          test "truncation keeps later source offsets"
+            truncated_source_selection;
+          test "invisible clusters stay in source ranges"
+            zero_width_source_selection;
         ];
       group "Properties"
         [
