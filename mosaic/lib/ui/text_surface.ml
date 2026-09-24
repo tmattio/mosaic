@@ -2,12 +2,6 @@ module Layout = Matrix.Text.Layout
 
 type wrap = Layout.wrap
 
-type selection_state = {
-  mutable anchor_offset : int;
-  mutable focus_offset : int;
-  mutable active : bool;
-}
-
 type t = {
   node : Renderable.t;
   buffer : Text_buffer.t;
@@ -18,7 +12,7 @@ type t = {
   mutable scroll_y : int;
   mutable selection_bg : Ansi.Color.t option;
   mutable selection_fg : Ansi.Color.t option;
-  selection : selection_state;
+  mutable selection : (int * int) option;
   mutable render_enabled : bool;
   (* Retain a bounded set of source-version/width geometries. Measurement
      probes use count-only results unless geometry already exists. Wrap-mode
@@ -195,43 +189,30 @@ let invalidate t =
 let set_selection_bg t bg =
   if not (Option.equal Ansi.Color.equal t.selection_bg bg) then begin
     t.selection_bg <- bg;
-    if t.selection.active then Renderable.request_render t.node
+    if Option.is_some t.selection then Renderable.request_render t.node
   end
 
 let set_selection_fg t fg =
   if not (Option.equal Ansi.Color.equal t.selection_fg fg) then begin
     t.selection_fg <- fg;
-    if t.selection.active then Renderable.request_render t.node
+    if Option.is_some t.selection then Renderable.request_render t.node
   end
-
-let normalize_selection sel =
-  if sel.anchor_offset <= sel.focus_offset then
-    (sel.anchor_offset, sel.focus_offset)
-  else (sel.focus_offset, sel.anchor_offset)
 
 let local_caret t ~x ~y =
   Layout.hit (layout t) ~row:(t.scroll_y + y) ~column:(t.scroll_x + x)
 
 let set_selection t ~start ~end_ =
   let len = Text_buffer.grapheme_count t.buffer in
-  let s = max 0 (min start len) in
-  let e = max 0 (min end_ len) in
-  let changed =
-    (not t.selection.active)
-    || t.selection.anchor_offset <> s
-    || t.selection.focus_offset <> e
-  in
-  t.selection.anchor_offset <- s;
-  t.selection.focus_offset <- e;
-  t.selection.active <- s <> e;
-  if changed then Renderable.request_render t.node;
+  let s = max 0 (min start len) and e = max 0 (min end_ len) in
+  let selection = if s = e then None else Some (min s e, max s e) in
+  let changed = t.selection <> selection in
+  if changed then begin
+    t.selection <- selection;
+    Renderable.request_render t.node
+  end;
   changed
 
-let selection t =
-  if t.selection.active then
-    let s, e = normalize_selection t.selection in
-    Some (s, e)
-  else None
+let selection t = t.selection
 
 let set_local_selection t ~anchor_x ~anchor_y ~focus_x ~focus_y =
   let geometry = layout t in
@@ -249,21 +230,18 @@ let set_local_selection t ~anchor_x ~anchor_y ~focus_x ~focus_y =
 let update_local_selection = set_local_selection
 
 let reset_selection t =
-  if t.selection.active then begin
-    t.selection.active <- false;
+  if Option.is_some t.selection then begin
+    t.selection <- None;
     Renderable.request_render t.node
   end
 
-let has_selection t = t.selection.active
+let has_selection t = Option.is_some t.selection
 
 let selected_text t =
-  if not t.selection.active then ""
-  else begin
-    let start_off, end_off = normalize_selection t.selection in
-    let len = end_off - start_off in
-    if len <= 0 then ""
-    else Text_buffer.text_in_range t.buffer ~start:start_off ~len
-  end
+  match t.selection with
+  | None -> ""
+  | Some (first, last) ->
+      Text_buffer.text_in_range t.buffer ~start:first ~len:(last - first)
 
 (* ───── Rendering ───── *)
 
@@ -280,7 +258,7 @@ let render t _self grid ~delta:_ =
     let text = Layout.Source.text src in
     let tab_width = Text_buffer.tab_width t.buffer in
     let width_method = Text_buffer.width_method t.buffer in
-    let sel_start, sel_end = normalize_selection t.selection in
+    let sel_start, sel_end = Option.value ~default:(0, 0) t.selection in
     for y = y0 to y1 - 1 do
       let row = t.scroll_y + y - oy in
       let first_byte = ref 0 and last_byte = ref 0 and batch_x = ref 0 in
@@ -304,7 +282,7 @@ let render t _self grid ~delta:_ =
             style_end := stop
           end;
           let style =
-            if t.selection.active && first < sel_end && last > sel_start then
+            if first < sel_end && last > sel_start then
               let s =
                 match t.selection_bg with
                 | None -> !base_style
@@ -398,7 +376,7 @@ let create node buffer =
       scroll_y = 0;
       selection_bg = None;
       selection_fg = None;
-      selection = { anchor_offset = 0; focus_offset = 0; active = false };
+      selection = None;
       render_enabled = true;
       display_cache = [];
       measure_cache = [];

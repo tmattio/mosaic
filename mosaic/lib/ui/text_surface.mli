@@ -129,8 +129,8 @@ val set_selection_fg : t -> Ansi.Color.t option -> unit
 val set_selection : t -> start:int -> end_:int -> bool
 (** [set_selection t ~start ~end_] sets the selection range by grapheme offsets
     into the buffer content. Offsets are clamped to content bounds. The
-    selection is active when [start <> end_]. Returns [true] if the selection
-    state changed. *)
+    selection is active when the clamped offsets differ. Returns [true] if the
+    normalized range changed; reversing its endpoints is not a change. *)
 
 val selection : t -> (int * int) option
 (** [selection t] is [Some (start, end_)] when a selection is active, with

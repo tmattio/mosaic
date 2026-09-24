@@ -743,6 +743,28 @@ let mouse_selection_syncs_to_buffer () =
   equal ~msg:"selected text" string "hello"
     (Edit_buffer.selected_text (Textarea.buffer ta))
 
+let mouse_click_reports_cursor_without_selection () =
+  let r = Renderer.create () in
+  let fired = ref [] in
+  let ta =
+    Textarea.create ~parent:(Renderer.root r)
+      ~style:(sized_style ~width:20 ~height:3)
+      ~value:"hello world"
+      ~on_cursor:(fun ~cursor ~selection ->
+        fired := (cursor, selection) :: !fired)
+      ()
+  in
+  render_frame r ~width:20 ~height:3;
+  List.iter
+    (fun x ->
+      fired := [];
+      dispatch_mouse r (mouse_down ~x ~y:0);
+      dispatch_mouse r (mouse_up ~x ~y:0);
+      equal int x (Textarea.cursor ta);
+      is_true ~msg:"cursor notification without an active selection"
+        (List.mem (x, None) !fired))
+    [ 2; 4 ]
+
 let mouse_selection_disabled_when_not_selectable () =
   let r = Renderer.create () in
   let ta =
@@ -1097,6 +1119,8 @@ let () =
       group "Mouse"
         [
           test "selection syncs to buffer" mouse_selection_syncs_to_buffer;
+          test "click reports cursor without selection"
+            mouse_click_reports_cursor_without_selection;
           test "selection disabled when not selectable"
             mouse_selection_disabled_when_not_selectable;
           test "wheel scrolls surface" mouse_wheel_scrolls_surface;

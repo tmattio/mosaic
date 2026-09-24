@@ -67,6 +67,17 @@ let oversized_layout_is_released_on_width_switch () =
   is_false ~msg:"oversized inactive rows are collectible" (Weak.check old 0);
   ignore (Sys.opaque_identity surface)
 
+let selection_updates_compare_normalized_ranges () =
+  let surface = make_surface ~content:"abcdef" () in
+  is_false ~msg:"empty to empty"
+    (Text_surface.set_selection surface ~start:2 ~end_:2);
+  is_true (Text_surface.set_selection surface ~start:1 ~end_:4);
+  is_false ~msg:"same normalized range"
+    (Text_surface.set_selection surface ~start:4 ~end_:1);
+  Text_surface.reset_selection surface;
+  is_false ~msg:"cleared stays empty"
+    (Text_surface.set_selection surface ~start:0 ~end_:0)
+
 let defaults () =
   let s = make_surface () in
   equal ~msg:"wrap" int 0
@@ -684,6 +695,8 @@ let () =
           test "defaults" defaults;
           test "oversized geometry is released after switching widths"
             oversized_layout_is_released_on_width_switch;
+          test "selection changes compare normalized ranges"
+            selection_updates_compare_normalized_ranges;
         ];
       group "Wrapping — None"
         [

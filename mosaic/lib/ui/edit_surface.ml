@@ -610,9 +610,10 @@ let register_selection t =
               Text_surface.set_selection t.surface ~start:anchor.grapheme
                 ~end_:focus.grapheme
             in
+            let before = Edit_buffer.caret t.buf in
             Edit_buffer.set_caret t.buf anchor;
             Edit_buffer.set_caret ~select:true t.buf focus;
-            if changed then begin
+            if changed || before <> Edit_buffer.caret t.buf then begin
               ignore (fire_on_cursor t : bool);
               ensure_cursor_visible t;
               Renderable.request_render t.node
