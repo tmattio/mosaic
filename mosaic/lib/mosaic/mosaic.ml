@@ -928,6 +928,57 @@ let text ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_style ?wrap ?selectable ?selection_bg ?selection_fg ?tab_width
     ?truncate content
 
+let button ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_focus_request ?on_size
+    ?(focused = false) ?border ?border_style ?border_sides ?border_color
+    ?focused_border_color ?background ?fill ?title ?title_alignment ?text_style
+    ?(disabled = false) ~on_activate label =
+  let text_style = Option.value text_style ~default:Ansi.Style.default in
+  let text_style =
+    if disabled then Ansi.Style.with_dim true text_style
+    else if focused then Ansi.Style.with_inverse true text_style
+    else text_style
+  in
+  let on_focus_request = if disabled then None else on_focus_request in
+  let on_key event =
+    if
+      (not disabled)
+      && (not (Event.Key.default_prevented event))
+      && (Event.Key.data event).event_type = Matrix.Input.Key.Press
+      && (Shortcut.matches Shortcut.enter event
+         || Shortcut.matches Shortcut.space event)
+    then begin
+      Event.Key.prevent_default event;
+      Some on_activate
+    end
+    else None
+  in
+  let on_click event =
+    if disabled || Event.Mouse.default_prevented event then None
+    else begin
+      Event.Mouse.prevent_default event;
+      Some on_activate
+    end
+  in
+  box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width ?text_align
+    ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items ?size
+    ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_focus_request ?on_size
+    ~focused:(focused && not disabled) ?border ?border_style ?border_sides
+    ?border_color ?focused_border_color ?background ?fill ?title
+    ?title_alignment ~on_key ~on_click
+    [ text ~text_style ~selectable:false label ]
+
 let slider ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width

@@ -18,6 +18,7 @@ type pointer_state = {
   mutable position : (int * int) option;
   mutable modifiers : Input.Modifier.t;
   mutable rejected_press : bool;
+  mutable press_target : Renderable.t option;
 }
 
 type selection_state = {
@@ -666,7 +667,12 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
   let dirty = Atomic.make true in
   let focused = ref None in
   let pointer =
-    { position = None; modifiers = Input.Modifier.none; rejected_press = false }
+    {
+      position = None;
+      modifiers = Input.Modifier.none;
+      rejected_press = false;
+      press_target = None;
+    }
   in
   let selection_state =
     {
@@ -1097,28 +1103,72 @@ let dispatch_key ?(capture = Fun.const ()) t (key : Input.Key.event) =
   | Some _ -> ());
   ev
 
+let rec ancestor_of ancestor node =
+  ancestor == node
+  ||
+  match Renderable.parent node with
+  | None -> false
+  | Some parent -> ancestor_of ancestor parent
+
+let dispatch_click t pressed event =
+  if alive_visible pressed then
+    let hit =
+      query_input_hit t ~x:(Event.Mouse.x event) ~y:(Event.Mouse.y event)
+    in
+    let rec bubble node =
+      if
+        alive_visible node
+        && (not (Event.Mouse.default_prevented event))
+        && not (Event.Mouse.propagation_stopped event)
+      then begin
+        if ancestor_of node pressed then
+          Renderable.Private.emit_click node event;
+        if alive_visible node then Option.iter bubble (Renderable.parent node)
+      end
+    in
+    if hit > 0 then Option.iter bubble (find_node t hit)
+
 let dispatch_mouse ?(autofocus = true) t (mouse : Input.Mouse.event) =
-  let x = mouse.x in
-  let y = mouse.y in
-  let modifiers = mouse.modifiers in
-  match mouse.kind with
-  | Input.Mouse.Down { button } ->
-      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers
-        (Event.Mouse.Down { button = map_button button })
-  | Input.Mouse.Up { button } ->
-      let button =
-        match button with Some button -> map_button button | None -> Button 0
-      in
-      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers
-        (Event.Mouse.Up { button; is_dragging = false })
-  | Input.Mouse.Move ->
-      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers Event.Mouse.Move
-  | Input.Mouse.Drag { button } ->
-      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers
-        (Event.Mouse.Drag { button = map_button button; is_dragging = true })
-  | Input.Mouse.Scroll { direction; delta } ->
-      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers
-        (Event.Mouse.Scroll { direction; delta })
+  let kind =
+    match mouse.kind with
+    | Input.Mouse.Down { button } ->
+        Event.Mouse.Down { button = map_button button }
+    | Input.Mouse.Up { button } ->
+        let button =
+          Option.fold ~none:(Event.Mouse.Button 0) ~some:map_button button
+        in
+        Event.Mouse.Up { button; is_dragging = false }
+    | Input.Mouse.Move -> Event.Mouse.Move
+    | Input.Mouse.Drag { button } ->
+        Event.Mouse.Drag { button = map_button button; is_dragging = true }
+    | Input.Mouse.Scroll { direction; delta } ->
+        Event.Mouse.Scroll { direction; delta }
+  in
+  let pressed = t.pointer.press_target in
+  (match kind with
+  | Event.Mouse.Down _ | Event.Mouse.Drag _
+  | Event.Mouse.Up { button = Left | Button 0; _ } ->
+      t.pointer.press_target <- None
+  | _ -> ());
+  let event =
+    dispatch_mouse_internal ~autofocus t ~x:mouse.x ~y:mouse.y
+      ~modifiers:mouse.modifiers kind
+  in
+  if not (Event.Mouse.default_prevented event) then
+    begin match kind with
+    | Event.Mouse.Down { button = Left } -> (
+        match Event.Mouse.target event with
+        | Some num when num = query_input_hit t ~x:mouse.x ~y:mouse.y -> (
+            match find_node t num with
+            | Some node when alive_visible node ->
+                t.pointer.press_target <- Some node
+            | _ -> ())
+        | _ -> ())
+    | Event.Mouse.Up { button = Left | Button 0; _ } ->
+        Option.iter (fun node -> dispatch_click t node event) pressed
+    | _ -> ()
+    end;
+  event
 
 let dispatch_paste ?(capture = Fun.const ()) t text =
   let ev = Event.Paste.of_text text in

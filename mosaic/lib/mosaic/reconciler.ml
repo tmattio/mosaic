@@ -633,15 +633,10 @@ let create_fiber ~(parent : Renderable.t) (elem : unit Vnode.element) : fiber =
   let size_ref = ref elem.handlers.on_size in
   let callback_refs = create_callback_refs instance elem.callbacks in
   Renderable.on_mouse node (fun ev ->
-      Option.iter (fun f -> ignore (f ev : unit option)) !mouse_ref;
-      if
-        (not (Renderable.destroyed node))
-        && not (Event.Mouse.propagation_stopped ev)
-      then
-        match Event.Mouse.kind ev with
-        | Event.Mouse.Up { button = Left; is_dragging = false } ->
-            Option.iter (fun f -> ignore (f ev : unit option)) !click_ref
-        | _ -> ());
+      Option.iter (fun f -> ignore (f ev : unit option)) !mouse_ref);
+  Renderable.Private.set_click_handler node
+    (Some
+       (fun ev -> Option.iter (fun f -> ignore (f ev : unit option)) !click_ref));
   Renderable.Private.set_size_observer node
     (Some
        (fun node ->

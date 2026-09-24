@@ -82,6 +82,7 @@ Components compose via `map : ('a -> 'b) -> 'a t -> 'b t`.
 | Widget         | Constructor    | Description                                    |
 | -------------- | -------------- | ---------------------------------------------- |
 | Box            | `box`          | Container with border, background, layout      |
+| Button         | `button`       | Primary click or Enter/Space activation        |
 | Text           | `text`         | Styled text with fragments, wrapping           |
 | Text input     | `input`        | Single-line input with cursor, placeholder     |
 | Textarea       | `textarea`     | Multi-line editor with undo/redo, wrapping      |
@@ -158,6 +159,26 @@ Those defaults proceed only if the application accepts focus on that live node.
 Rejecting the request or removing the node leaves its editor unchanged.
 `~on_click` remains a release gesture callback. `Focus.next` and `Focus.prev`
 provide model-owned keyboard traversal.
+
+Buttons share that focus contract:
+
+```ocaml
+type form_focus = Name_field | Submit_button
+type form_msg = Focus of form_focus | Submit
+
+let submit_button focus =
+  button ~focused:(focus = Submit_button)
+    ~on_focus_request:(Focus Submit_button) ~on_activate:Submit
+    ~border:true "Submit"
+```
+
+A button activates on a primary press and release inside without dragging, or an
+unmodified Enter/Space press while focused. Reported key repeats and releases do
+not activate it. Focus adds inverse video to the label. `~disabled:true` dims
+the label and suppresses activation and focus requests; custom label colors and
+other attributes are preserved. Include buttons in the application's focus traversal order; use input
+`on_submit` for form submission so a global Enter shortcut does not intercept
+button activation. `Mosaic_mlx.button` takes string-list `~children` as its label.
 
 Selection widgets associate display items with application values:
 

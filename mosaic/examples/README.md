@@ -100,8 +100,9 @@ vertical scrolling with mouse wheel and keyboard support.
 
 ### `12-form` – Form layout
 
-Multi-field form combining text inputs and select components. Shows focus
-management with Tab navigation and form submission.
+Multi-field form combining text inputs, selection and buttons. Typed focus
+identifiers and Tab/Shift+Tab traversal include Submit and Reset; buttons
+activate with Enter/Space or a completed primary click.
 
 ### `13-markdown` – Markdown rendering
 

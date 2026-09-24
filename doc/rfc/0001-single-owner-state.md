@@ -435,6 +435,15 @@ Already-focused nodes need no request; Shift/native-selection gestures do not
 request focus. Constructing or mapping a view does not dispatch the message.
 `~on_click` remains a release gesture callback.
 
+`button ~on_activate:msg label` composes the existing box and text elements.
+It activates once for a primary press/release inside without dragging, or an
+unmodified Enter/Space press; reported Repeat/Release events do not activate it.
+Focus adds inverse video to the label; `~disabled:true` adds dim instead and
+suppresses activation and focus requests. Caller label styles are preserved.
+Buttons participate
+in the application's focus order alongside inputs and selectors. Form inputs
+use `on_submit`; a global Enter binding must not steal button activation.
+
 `Cmd.focus`, the `~id` namespace, the one-frame retry, framework
 click-to-focus mutation, and `~autofocus` are deleted. Tab traversal is
 application-owned; `Focus.next` and `Focus.prev` traverse an application-supplied

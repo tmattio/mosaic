@@ -3,13 +3,14 @@
 open Mosaic
 
 type role = Developer | Designer | Manager | Analyst
+type field = Name | Email | Role | Submit_button | Reset_button
 
 type model = {
   name : Editor.t;
   email : Editor.t;
   role : role option;
   submitted : bool;
-  focus : int; (* index into all_fields *)
+  focus : field;
 }
 
 type msg =
@@ -17,7 +18,7 @@ type msg =
   | Reset
   | Quit
   | Set_role of role
-  | Focus of int
+  | Focus of field
   | Set_name of Editor.t
   | Set_email of Editor.t
   | Focus_next
@@ -43,11 +44,11 @@ let init () =
       email = Editor.empty;
       role = Some Developer;
       submitted = false;
-      focus = 0;
+      focus = Name;
     },
     Cmd.none )
 
-let num_fields = 3
+let fields = [ Name; Email; Role; Submit_button; Reset_button ]
 
 let update msg model =
   match msg with
@@ -58,7 +59,7 @@ let update msg model =
           email = Editor.empty;
           role = Some Developer;
           submitted = false;
-          focus = 0;
+          focus = Name;
         },
         Cmd.none )
   | Set_role role -> ({ model with role = Some role }, Cmd.none)
@@ -77,11 +78,17 @@ let update msg model =
       ({ model with email; submitted }, Cmd.none)
   | Quit -> (model, Cmd.quit)
   | Focus_next ->
-      let next = (model.focus + 1) mod num_fields in
-      ({ model with focus = next }, Cmd.none)
+      let focus =
+        Focus.next ~equal:( = ) fields (Some model.focus)
+        |> Option.value ~default:Name
+      in
+      ({ model with focus }, Cmd.none)
   | Focus_prev ->
-      let prev = (model.focus - 1 + num_fields) mod num_fields in
-      ({ model with focus = prev }, Cmd.none)
+      let focus =
+        Focus.prev ~equal:( = ) fields (Some model.focus)
+        |> Option.value ~default:Name
+      in
+      ({ model with focus }, Cmd.none)
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100
@@ -119,9 +126,10 @@ let view model =
                   box ~size:{ width = px 8; height = px 1 } [ text "Name:" ];
                   input
                     ~size:{ width = px 25; height = px 1 }
-                    ~focused:(model.focus = 0) ~on_focus_request:(Focus 0)
+                    ~focused:(model.focus = Name) ~on_focus_request:(Focus Name)
                     ~placeholder:"Enter your name..." ~state:model.name
                     ~on_change:(fun v -> Set_name v)
+                    ~on_submit:(fun _ -> Submit)
                     ();
                 ];
               (* Email field *)
@@ -130,9 +138,11 @@ let view model =
                   box ~size:{ width = px 8; height = px 1 } [ text "Email:" ];
                   input
                     ~size:{ width = px 25; height = px 1 }
-                    ~focused:(model.focus = 1) ~on_focus_request:(Focus 1)
+                    ~focused:(model.focus = Email)
+                    ~on_focus_request:(Focus Email)
                     ~placeholder:"Enter your email..." ~state:model.email
                     ~on_change:(fun v -> Set_email v)
+                    ~on_submit:(fun _ -> Submit)
                     ();
                 ];
               (* Role selector *)
@@ -141,7 +151,7 @@ let view model =
                   box ~size:{ width = px 8; height = px 1 } [ text "Role:" ];
                   select
                     ~size:{ width = px 25; height = px 5 }
-                    ~focused:(model.focus = 2) ~on_focus_request:(Focus 2)
+                    ~focused:(model.focus = Role) ~on_focus_request:(Focus Role)
                     ~show_description:true ~selected_background:accent
                     ~selected_text_color:Ansi.Color.black ~equal:( = )
                     ~selected:model.role
@@ -151,18 +161,14 @@ let view model =
               (* Buttons *)
               box ~flex_direction:Row ~gap:(gap 2)
                 [
-                  box ~border:true ~border_color ~padding:(padding 1)
-                    ~on_mouse:(fun ev ->
-                      match Event.Mouse.kind ev with
-                      | Down _ -> Some Submit
-                      | _ -> None)
-                    [ text "Submit" ];
-                  box ~border:true ~border_color ~padding:(padding 1)
-                    ~on_mouse:(fun ev ->
-                      match Event.Mouse.kind ev with
-                      | Down _ -> Some Reset
-                      | _ -> None)
-                    [ text "Reset" ];
+                  button ~border:true ~border_color ~padding:(padding 1)
+                    ~focused:(model.focus = Submit_button)
+                    ~on_focus_request:(Focus Submit_button)
+                    ~focused_border_color:accent ~on_activate:Submit "Submit";
+                  button ~border:true ~border_color ~padding:(padding 1)
+                    ~focused:(model.focus = Reset_button)
+                    ~on_focus_request:(Focus Reset_button)
+                    ~focused_border_color:accent ~on_activate:Reset "Reset";
                 ];
               (* Submission feedback *)
               (if model.submitted then
@@ -183,26 +189,18 @@ let view model =
       box ~padding:(padding 1) ~background:footer_bg
         [
           text ~style:hint
-            "Tab/Shift+Tab navigate  •  Enter submit  •  Ctrl+q quit";
+            "Tab/Shift+Tab navigate  •  Enter/Space activate buttons  •  \
+             Ctrl+q quit";
         ];
     ]
 
 let subscriptions _model =
-  Sub.batch
+  Sub.on_keys
     [
-      Sub.on_key (fun ev ->
-          let data = Event.Key.data ev in
-          match data.key with
-          | Tab ->
-              Event.Key.prevent_default ev;
-              if data.modifier.shift then Some Focus_prev else Some Focus_next
-          | _ -> None);
-      Sub.on_keys
-        [
-          (Shortcut.enter, Submit);
-          (Shortcut.ctrl 'q', Quit);
-          (Shortcut.escape, Quit);
-        ];
+      (Shortcut.tab, Focus_next);
+      (Shortcut.key ~shift:true Tab, Focus_prev);
+      (Shortcut.ctrl 'q', Quit);
+      (Shortcut.escape, Quit);
     ]
 
 let () = run { init; update; view; subscriptions }

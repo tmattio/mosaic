@@ -11,7 +11,7 @@ independently:
 | [Matrix](matrix/README.md)   | Terminal toolkit: rendering, input, PTY, VTE               |
 | [Toffee](toffee/README.md)   | CSS layout engine (Flexbox, Grid, Block) ported from Taffy |
 
-**Mosaic** provides a TEA runtime (model / update / view), 18 built-in
+**Mosaic** provides a TEA runtime (model / update / view), built-in
 widgets, and CSS layout via Toffee. Editors, scrolling, selection, and focus
 are model values; semantic callbacks return messages that `update` accepts,
 transforms, or rejects. Selection follows application values across reordering.

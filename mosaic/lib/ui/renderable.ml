@@ -125,6 +125,7 @@ and node = {
   mutable blur_handler : (node -> unit) option;
   (* Events *)
   mutable mouse_handlers : (Event.mouse -> unit) list;
+  mutable click_handler : (Event.mouse -> unit) option;
   mutable key_handlers : (Event.key -> unit) list;
   mutable paste_handlers : (Event.paste -> unit) list;
   mutable default_key_handler : (Event.key -> unit) option;
@@ -346,6 +347,7 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     focus_handler = None;
     blur_handler = None;
     mouse_handlers = [];
+    click_handler = None;
     key_handlers = [];
     paste_handlers = [];
     default_key_handler = None;
@@ -674,6 +676,7 @@ let destroy t =
     t.frame_buffer <- None;
     t.child_target <- None;
     t.mouse_handlers <- [];
+    t.click_handler <- None;
     t.key_handlers <- [];
     t.paste_handlers <- [];
     t.default_key_handler <- None;
@@ -1233,6 +1236,11 @@ module Private = struct
   let set_on_live_count_change t cb = t.live_count_change <- cb
   let set_lifecycle_pass = set_lifecycle_pass
   let run_lifecycle_pass = run_lifecycle_pass
+  let set_click_handler t handler = t.click_handler <- handler
+
+  let emit_click t event =
+    Option.iter (fun handler -> handler event) t.click_handler
+
   let emit_mouse = emit_mouse
   let emit_key = emit_key
   let emit_default_key = emit_default_key

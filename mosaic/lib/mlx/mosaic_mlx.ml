@@ -25,6 +25,30 @@ let box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?border_sides ?border_color ?focused_border_color ?background ?fill ?title
     ?title_alignment children
 
+let button ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_focus_request ?on_size
+    ?focused ?border ?border_style ?border_sides ?border_color
+    ?focused_border_color ?background ?fill ?title ?title_alignment ?text_style
+    ?disabled ~on_activate ?(children = []) () =
+  Mosaic.button ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_focus_request ?on_size
+    ?focused ?border ?border_style ?border_sides ?border_color
+    ?focused_border_color ?background ?fill ?title ?title_alignment ?text_style
+    ?disabled ~on_activate
+    (String.concat "" children)
+
 let scroll_box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width

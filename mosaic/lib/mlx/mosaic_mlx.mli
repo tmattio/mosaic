@@ -89,6 +89,70 @@ val box :
   'msg t
 (** Like {!Mosaic.box}. [children] defaults to [[]]. *)
 
+val button :
+  ?key:string ->
+  ?display:Display.t ->
+  ?box_sizing:Box_sizing.t ->
+  ?position:Position.t ->
+  ?overflow:Overflow.t point ->
+  ?scrollbar_width:float ->
+  ?text_align:Text_align.t ->
+  ?inset:length_percentage_auto rect ->
+  ?flex_direction:Flex_direction.t ->
+  ?flex_wrap:Flex_wrap.t ->
+  ?justify_content:Justify.t ->
+  ?align_items:Align.t ->
+  ?size:dimension size ->
+  ?min_size:dimension size ->
+  ?max_size:dimension size ->
+  ?aspect_ratio:float ->
+  ?gap:length_percentage size ->
+  ?padding:length_percentage rect ->
+  ?margin:length_percentage_auto rect ->
+  ?border_width:length_percentage rect ->
+  ?align_self:Align.t ->
+  ?align_content:Justify.t ->
+  ?justify_items:Align.t ->
+  ?justify_self:Align.t ->
+  ?flex_grow:float ->
+  ?flex_shrink:float ->
+  ?flex_basis:dimension ->
+  ?grid_template_rows:Grid.template list ->
+  ?grid_template_columns:Grid.template list ->
+  ?grid_auto_rows:Grid.track list ->
+  ?grid_auto_columns:Grid.track list ->
+  ?grid_auto_flow:Grid_auto_flow.t ->
+  ?grid_template_areas:Grid.area list ->
+  ?grid_template_column_names:string list list ->
+  ?grid_template_row_names:string list list ->
+  ?grid_row:Grid.placement line ->
+  ?grid_column:Grid.placement line ->
+  ?visible:bool ->
+  ?z_index:int ->
+  ?opacity:float ->
+  ?buffered:bool ->
+  ?live:bool ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
+  ?border:bool ->
+  ?border_style:Border.t ->
+  ?border_sides:Border.side list ->
+  ?border_color:Ansi.Color.t ->
+  ?focused_border_color:Ansi.Color.t ->
+  ?background:Ansi.Color.t ->
+  ?fill:bool ->
+  ?title:string ->
+  ?title_alignment:[ `Left | `Center | `Right ] ->
+  ?text_style:Ansi.Style.t ->
+  ?disabled:bool ->
+  on_activate:'msg ->
+  ?children:string list ->
+  unit ->
+  'msg t
+(** Like {!Mosaic.button}. [children] defaults to [[]] and is concatenated to
+    form the label. *)
+
 val scroll_box :
   ?key:string ->
   ?display:Display.t ->

@@ -613,6 +613,13 @@ module Private : sig
 
   (** {2:event_emission Event emission} *)
 
+  val set_click_handler : t -> (Event.mouse -> unit) option -> unit
+  (** [set_click_handler t handler] installs the callback for completed clicks.
+      The renderer validates the press/release gesture before calling it. *)
+
+  val emit_click : t -> Event.mouse -> unit
+  (** [emit_click t event] calls [t]'s click handler without bubbling. *)
+
   val emit_mouse : t -> Event.mouse -> unit
   (** [emit_mouse t event] dispatches [event] to [t]'s mouse handlers, bubbling
       to ancestors unless propagation is stopped via

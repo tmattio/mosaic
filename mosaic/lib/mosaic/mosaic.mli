@@ -1176,10 +1176,11 @@ val inset_lrtb : int -> int -> int -> int -> length_percentage_auto rect
     request, hiding or removing the element cancels that press's default
     interaction. Shift-click does not request focus.
 
-    Generic event callbacks return a message or [None]. [on_click] runs on
-    primary-button release without dragging; [on_size] reports changed allocated
-    dimensions in cells. Neither callback changes application state by itself.
-    Interactive [state] values belong to the model. Semantic
+    Generic event callbacks return a message or [None]. [on_click] runs after a
+    primary-button press and release on the element, without dragging.
+    Preventing the mouse event default cancels activation; [on_size] reports
+    changed allocated dimensions in cells. Neither callback changes application
+    state by itself. Interactive [state] values belong to the model. Semantic
     callbacks such as [on_change], [on_scroll], [on_submit] and [on_activate]
     return messages directly; acceptance or rejection belongs in [update].
     Storing an [on_change] proposal accepts it. Subsequent events derive from
@@ -1282,6 +1283,81 @@ val box :
 (** [box children] is a container for [children]. Widget-specific visual options
     follow {!Mosaic_ui.Box}; layout and paint use the labelled arguments above.
 *)
+
+val button :
+  ?key:string ->
+  ?display:Display.t ->
+  ?box_sizing:Box_sizing.t ->
+  ?position:Position.t ->
+  ?overflow:Overflow.t point ->
+  ?scrollbar_width:float ->
+  ?text_align:Text_align.t ->
+  ?inset:length_percentage_auto rect ->
+  ?flex_direction:Flex_direction.t ->
+  ?flex_wrap:Flex_wrap.t ->
+  ?justify_content:Justify.t ->
+  ?align_items:Align.t ->
+  ?size:dimension size ->
+  ?min_size:dimension size ->
+  ?max_size:dimension size ->
+  ?aspect_ratio:float ->
+  ?gap:length_percentage size ->
+  ?padding:length_percentage rect ->
+  ?margin:length_percentage_auto rect ->
+  ?border_width:length_percentage rect ->
+  ?align_self:Align.t ->
+  ?align_content:Justify.t ->
+  ?justify_items:Align.t ->
+  ?justify_self:Align.t ->
+  ?flex_grow:float ->
+  ?flex_shrink:float ->
+  ?flex_basis:dimension ->
+  ?grid_template_rows:Grid.template list ->
+  ?grid_template_columns:Grid.template list ->
+  ?grid_auto_rows:Grid.track list ->
+  ?grid_auto_columns:Grid.track list ->
+  ?grid_auto_flow:Grid_auto_flow.t ->
+  ?grid_template_areas:Grid.area list ->
+  ?grid_template_column_names:string list list ->
+  ?grid_template_row_names:string list list ->
+  ?grid_row:Grid.placement line ->
+  ?grid_column:Grid.placement line ->
+  ?visible:bool ->
+  ?z_index:int ->
+  ?opacity:float ->
+  ?buffered:bool ->
+  ?live:bool ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
+  ?border:bool ->
+  ?border_style:Border.t ->
+  ?border_sides:Border.side list ->
+  ?border_color:Ansi.Color.t ->
+  ?focused_border_color:Ansi.Color.t ->
+  ?background:Ansi.Color.t ->
+  ?fill:bool ->
+  ?title:string ->
+  ?title_alignment:[ `Left | `Center | `Right ] ->
+  ?text_style:Ansi.Style.t ->
+  ?disabled:bool ->
+  on_activate:'msg ->
+  string ->
+  'msg t
+(** [button ~on_activate label] displays [label] and emits [on_activate] on a
+    primary-button click or an unmodified Enter, keypad Enter or Space press. A
+    click requires a press and release inside the button without dragging. Key
+    repeat and release events do not activate it; lock modifiers are ignored.
+
+    [focused] defaults to [false] and is owned by the application. Use
+    [on_focus_request] to accept pointer focus before activation. [disabled],
+    default [false], suppresses activation and focus requests and makes the
+    button unfocused. Layout and box paint defaults follow {!box}; [text_style]
+    styles the label. Focus adds inverse video; disabled adds dim instead.
+    Caller-supplied colors and other attributes are preserved.
+
+    Global key capture can prevent activation with {!Event.Key.prevent_default}.
+    The button composes a box and text; it has no separate widget state. *)
 
 val text :
   ?key:string ->

@@ -307,6 +307,21 @@
  (libraries windtrap mosaic.ui matrix.input))
 
 (test
+ (name test_button)
+ (modules test_button)
+ (package mosaic)
+ (libraries
+  windtrap
+  mosaic
+  mosaic.mlx
+  mosaic.ui
+  matrix
+  matrix.test
+  matrix.input
+  matrix.grid
+  matrix.screen))
+
+(test
  (name test_navigation_keys)
  (modules test_navigation_keys)
  (package mosaic)
