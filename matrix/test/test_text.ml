@@ -695,9 +695,121 @@ let scalar_width_agrees_with_measurement () =
       0x10FFFF;
     ]
 
+let layout_source_boundaries () =
+  let s = Layout.Source.of_string "a\226\128\139b\r\n" in
+  equal int 4 (Layout.Source.length s);
+  equal int 2 (Layout.Source.line_count s);
+  equal int 3 (Layout.Source.line_end s 0);
+  equal int 4 (Layout.Source.line_start s 1);
+  equal string "a\226\128\139b\r\n" (Layout.Source.slice s ~first:0 ~last:4)
+
+let layout_truncated_source () =
+  let source = Layout.Source.of_string "abcdef\nXY" in
+  let t = Layout.create source ~width:3 ~wrap:`None ~truncate:true in
+  equal int 7 (Layout.row_start t 1);
+  equal (pair int int) (2, 6) (Layout.coverage t ~row:0 ~column:2);
+  equal (pair int int) (7, 8) (Layout.coverage t ~row:1 ~column:0);
+  equal (pair int int) (0, 2)
+    (Layout.locate t Layout.{ grapheme = 4; affinity = Upstream });
+  equal (pair int int) (0, 3)
+    (Layout.locate t Layout.{ grapheme = 4; affinity = Downstream })
+
+let layout_affinity () =
+  let t = Layout.create (Layout.Source.of_string "abcd") ~width:2 ~wrap:`Char in
+  equal (pair int int) (0, 2)
+    (Layout.locate t Layout.{ grapheme = 2; affinity = Upstream });
+  equal (pair int int) (1, 0)
+    (Layout.locate t Layout.{ grapheme = 2; affinity = Downstream });
+  let hit = Layout.hit t ~row:0 ~column:2 in
+  equal int 2 hit.grapheme;
+  is_true (hit.affinity = Layout.Upstream)
+
+let layout_whole_clusters () =
+  List.iter
+    (fun width_method ->
+      let source = Layout.Source.of_string "e\204\129👩‍💻界" in
+      equal int 3 (Layout.Source.length source);
+      let t = Layout.create ~width_method source ~width:1 ~wrap:`Char in
+      equal int 3 (Layout.row_count t);
+      for row = 0 to 2 do
+        equal int row (Layout.row_start t row);
+        equal int (row + 1) (Layout.row_end t row)
+      done)
+    [ `Unicode; `Wcwidth ]
+
+let layout_zero_width_snapping () =
+  let source = Layout.Source.of_string "a\226\128\139b" in
+  let t = Layout.create source ~width:20 ~wrap:`None in
+  equal int 1 (Layout.hit ~affinity:Upstream t ~row:0 ~column:1).grapheme;
+  equal int 2 (Layout.hit ~affinity:Downstream t ~row:0 ~column:1).grapheme;
+  let cells = ref [] in
+  Layout.iter_cells t ~row:0 ~first_column:0 ~last_column:2
+    (fun ~first ~last ~column:_ ~width:_ ~ellipsis:_ ->
+      cells := (first, last) :: !cells);
+  equal (list (pair int int)) [ (0, 1); (2, 3) ] (List.rev !cells);
+  let overwide =
+    Layout.create (Layout.Source.of_string "界\226\128\139") ~width:1 ~wrap:`Char
+  in
+  equal int 1 (Layout.row_count overwide);
+  equal int 2 (Layout.row_end overwide 0)
+
+let layout_bounded_iteration () =
+  let source = Layout.Source.of_string (String.make 100_000 'x') in
+  let t = Layout.create source ~width:100_000 ~wrap:`None in
+  let visited = ref 0 in
+  Layout.iter_cells t ~row:0 ~first_column:99_990 ~last_column:99_995
+    (fun ~first ~last:_ ~column ~width:_ ~ellipsis:_ ->
+      equal int first column;
+      incr visited);
+  equal int 5 !visited;
+  let wrapped = Layout.create source ~width:1 ~wrap:`Char in
+  let rows = ref [] in
+  Layout.iter_rows wrapped ~first:99990 ~count:3
+    (fun ~row ~logical_line:_ ~continuation ->
+      rows := (row, continuation) :: !rows);
+  equal
+    (list (pair int int))
+    [ (99990, 99990); (99991, 99991); (99992, 99992) ]
+    (List.rev !rows)
+
+let layout_edge_cases () =
+  List.iter
+    (fun text ->
+      let source = Layout.Source.of_string text in
+      equal string text
+        (Layout.Source.slice source ~first:0
+           ~last:(Layout.Source.length source));
+      List.iter
+        (fun width ->
+          List.iter
+            (fun wrap ->
+              let t = Layout.create source ~width ~wrap in
+              equal (pair int int)
+                (Layout.row_count t, Layout.max_width t)
+                (Layout.measure source ~width ~wrap);
+              equal int 0 (Layout.row_start t 0);
+              equal int
+                (Layout.Source.length source)
+                (Layout.row_end t (Layout.row_count t - 1)))
+            [ `None; `Char; `Word ])
+        [ 0; 1; 2; 7 ])
+    [ ""; "\n"; "\r\n"; "hello world"; "界x"; "\255a\226\128\139" ]
+
 let () =
   run "matrix.text"
     [
+      group "Layout"
+        [
+          test "source boundaries retain invisible clusters and CRLF"
+            layout_source_boundaries;
+          test "truncation retains source coverage" layout_truncated_source;
+          test "soft-wrap caret affinity" layout_affinity;
+          test "whole clusters under both width methods" layout_whole_clusters;
+          test "zero-width snapping and visible iteration"
+            layout_zero_width_snapping;
+          test "bounded row and horizontal iteration" layout_bounded_iteration;
+          test "measurement and rows agree at edges" layout_edge_cases;
+        ];
       group "Conformance"
         [ test "UAX #29 grapheme boundaries" run_grapheme_conformance ];
       group "Measurement"

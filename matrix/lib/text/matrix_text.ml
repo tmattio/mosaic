@@ -716,3 +716,331 @@ let iter_line_breaks f s =
       else loop (i + 1)
   in
   loop 0
+
+module Layout = struct
+  type affinity = Upstream | Downstream
+  type caret = { grapheme : int; affinity : affinity }
+  type wrap = [ `None | `Char | `Word ]
+
+  let clamp n x = max 0 (min n x)
+
+  let lower_bound a first last value =
+    let lo = ref first and hi = ref last in
+    while !lo < !hi do
+      let mid = !lo + ((!hi - !lo) / 2) in
+      if a.(mid) < value then lo := mid + 1 else hi := mid
+    done;
+    !lo
+
+  let upper_bound a first last value =
+    let lo = ref first and hi = ref last in
+    while !lo < !hi do
+      let mid = !lo + ((!hi - !lo) / 2) in
+      if a.(mid) <= value then lo := mid + 1 else hi := mid
+    done;
+    !lo
+
+  type metrics = { columns : int array; next_visible : int array option }
+
+  module Source = struct
+    type t = {
+      text : string;
+      offsets : int array;
+      lines : int array;
+      mutable breaks : bytes option;
+      mutable metrics : (width_method * int * metrics) option;
+    }
+
+    let text t = t.text
+    let length t = Array.length t.offsets - 1
+    let line_count t = Array.length t.lines
+    let byte_offset t g = t.offsets.(clamp (length t) g)
+
+    let grapheme_of_byte t ~affinity byte =
+      let byte = clamp (String.length t.text) byte in
+      let i = lower_bound t.offsets 0 (length t + 1) byte in
+      if affinity = Upstream && t.offsets.(i) <> byte then i - 1 else i
+
+    let line_start t line = t.lines.(clamp (line_count t - 1) line)
+
+    let line_end t line =
+      let line = clamp (line_count t - 1) line in
+      if line + 1 = line_count t then length t else t.lines.(line + 1) - 1
+
+    let line_of_offset t g =
+      max 0 (upper_bound t.lines 0 (line_count t) (clamp (length t) g) - 1)
+
+    let of_string text =
+      let n = grapheme_count text in
+      let offsets = Array.make (n + 1) (String.length text) in
+      let lines = ref [ 0 ] and i = ref 0 in
+      iter_graphemes
+        (fun ~offset ~len:_ ->
+          offsets.(!i) <- offset;
+          if text.[offset] = '\n' || text.[offset] = '\r' then
+            lines := (!i + 1) :: !lines;
+          incr i)
+        text;
+      {
+        text;
+        offsets;
+        lines = Array.of_list (List.rev !lines);
+        breaks = None;
+        metrics = None;
+      }
+
+    let wrap_breaks t =
+      match t.breaks with
+      | Some breaks -> breaks
+      | None ->
+          let n = length t in
+          let breaks = Bytes.make (n + 1) '\000' and g = ref 0 in
+          iter_wrap_breaks
+            (fun ~break_byte_offset:_ ~next_byte_offset ~grapheme_offset:_ ->
+              while !g < n && t.offsets.(!g) < next_byte_offset do
+                incr g
+              done;
+              if t.offsets.(!g) = next_byte_offset then
+                Bytes.set breaks !g '\001')
+            t.text;
+          t.breaks <- Some breaks;
+          breaks
+
+    let metrics t ~width_method ~tab_width =
+      let tab_width = max 1 tab_width in
+      match t.metrics with
+      | Some (m, w, metrics) when m = width_method && w = tab_width -> metrics
+      | _ ->
+          let n = length t in
+          let columns = Array.make (n + 1) 0 in
+          let has_zero = ref false in
+          for g = 0 to n - 1 do
+            let off = t.offsets.(g) in
+            let width =
+              cluster_width ~method_:width_method ~tab_width t.text off
+                (t.offsets.(g + 1) - off)
+            in
+            if width = 0 then has_zero := true;
+            columns.(g + 1) <- columns.(g) + width
+          done;
+          let next_visible =
+            if not !has_zero then None
+            else begin
+              let next = Array.make (n + 1) n in
+              for g = n - 1 downto 0 do
+                next.(g) <-
+                  (if columns.(g + 1) > columns.(g) then g else next.(g + 1))
+              done;
+              Some next
+            end
+          in
+          let metrics = { columns; next_visible } in
+          t.metrics <- Some (width_method, tab_width, metrics);
+          metrics
+
+    let columns ?(width_method = `Unicode) ?(tab_width = 2) t ~first ~last =
+      let m = metrics t ~width_method ~tab_width in
+      m.columns.(clamp (length t) last) - m.columns.(clamp (length t) first)
+
+    let slice t ~first ~last =
+      let first = byte_offset t first and last = byte_offset t last in
+      if last <= first then "" else Stdlib.String.sub t.text first (last - first)
+  end
+
+  type row = {
+    first : int;
+    last : int;
+    visible_last : int;
+    columns : int;
+    line : int;
+    continuation : int;
+  }
+
+  type t = {
+    source : Source.t;
+    metrics : metrics;
+    rows : row array;
+    max_width : int;
+  }
+
+  (* Both measurement and retained geometry use this source-window walk. *)
+  let build source (metrics : metrics) ~width ~wrap ~truncate emit =
+    let p = metrics.columns in
+    let breaks =
+      if wrap = `Word then Source.wrap_breaks source else Bytes.empty
+    in
+    for line = 0 to Source.line_count source - 1 do
+      let first = Source.line_start source line in
+      let last = Source.line_end source line in
+      if wrap = `None || width <= 0 || first = last then begin
+        let natural = p.(last) - p.(first) in
+        let visible_last =
+          if wrap = `None && truncate && width > 0 && natural > width then
+            max first
+              (upper_bound p first (last + 1) (p.(first) + width - 1) - 1)
+          else last
+        in
+        let columns =
+          p.(visible_last) - p.(first) + if visible_last < last then 1 else 0
+        in
+        emit first last visible_last columns line 0
+      end
+      else begin
+        let start = ref first and g = ref first and best = ref first in
+        let continuation = ref 0 in
+        while !g < last do
+          if wrap = `Word && Bytes.get breaks !g <> '\000' && !g > !start then
+            best := !g;
+          let used = p.(!g) - p.(!start) in
+          let next = p.(!g + 1) - p.(!start) in
+          if next > width && used > 0 && p.(!g + 1) > p.(!g) then begin
+            let stop = if wrap = `Word && !best > !start then !best else !g in
+            emit !start stop stop (p.(stop) - p.(!start)) line !continuation;
+            incr continuation;
+            start := stop;
+            g := stop;
+            best := stop
+          end
+          else incr g
+        done;
+        emit !start last last (p.(last) - p.(!start)) line !continuation
+      end
+    done
+
+  let create ?(width_method = `Unicode) ?(tab_width = 2) ?(truncate = false)
+      source ~width ~wrap =
+    let metrics = Source.metrics source ~width_method ~tab_width in
+    let rows = Dynarray.create () and max_width = ref 0 in
+    build source metrics ~width ~wrap ~truncate
+      (fun first last visible_last columns line continuation ->
+        max_width := max !max_width columns;
+        Dynarray.add_last rows
+          { first; last; visible_last; columns; line; continuation });
+    { source; metrics; rows = Dynarray.to_array rows; max_width = !max_width }
+
+  let measure ?(width_method = `Unicode) ?(tab_width = 2) ?(truncate = false)
+      source ~width ~wrap =
+    let metrics = Source.metrics source ~width_method ~tab_width in
+    let count = ref 0 and max_width = ref 0 in
+    build source metrics ~width ~wrap ~truncate (fun _ _ _ columns _ _ ->
+        incr count;
+        max_width := max !max_width columns);
+    (!count, !max_width)
+
+  let source t = t.source
+  let row_count t = Array.length t.rows
+  let max_width t = t.max_width
+  let row t i = t.rows.(clamp (row_count t - 1) i)
+  let row_start t i = (row t i).first
+  let row_end t i = (row t i).last
+  let row_width t i = (row t i).columns
+  let logical_line t i = (row t i).line
+  let continuation t i = (row t i).continuation
+
+  let iter_rows t ~first ~count f =
+    let first = clamp (row_count t) first in
+    let count = max 0 (min count (row_count t - first)) in
+    for i = first to first + count - 1 do
+      let r = t.rows.(i) in
+      f ~row:i ~logical_line:r.line ~continuation:r.continuation
+    done
+
+  let locate t { grapheme; affinity } =
+    let g = clamp (Source.length t.source) grapheme in
+    let lo = ref 0 and hi = ref (row_count t - 1) in
+    while !lo < !hi do
+      let mid = !lo + ((!hi - !lo + 1) / 2) in
+      if t.rows.(mid).first <= g then lo := mid else hi := mid - 1
+    done;
+    let i =
+      if
+        affinity = Upstream && !lo > 0 && t.rows.(!lo).first = g
+        && t.rows.(!lo - 1).last = g
+      then !lo - 1
+      else !lo
+    in
+    let r = t.rows.(i) in
+    let col =
+      if g > r.visible_last then
+        r.columns - if affinity = Upstream then 1 else 0
+      else t.metrics.columns.(min g r.last) - t.metrics.columns.(r.first)
+    in
+    (i, col)
+
+  let hit ?(affinity = Downstream) t ~row:i ~column =
+    if i < 0 then { grapheme = 0; affinity = Downstream }
+    else if i >= row_count t then
+      { grapheme = Source.length t.source; affinity }
+    else
+      let r = t.rows.(i) and p = t.metrics.columns in
+      let g =
+        if r.visible_last < r.last && column >= r.columns - 1 then
+          if column < r.columns then r.visible_last else r.last
+        else
+          let target = p.(r.first) + max 0 column in
+          let next = lower_bound p r.first (r.visible_last + 1) target in
+          if next > r.visible_last then r.visible_last
+          else if p.(next) = target then
+            if affinity = Upstream then next
+            else upper_bound p next (r.visible_last + 1) target - 1
+          else if next = r.first then next
+          else if target - p.(next - 1) < p.(next) - target then next - 1
+          else next
+      in
+      let affinity =
+        if g = r.last && i + 1 < row_count t && t.rows.(i + 1).first = g then
+          Upstream
+        else if g = r.first then Downstream
+        else affinity
+      in
+      { grapheme = g; affinity }
+
+  let coverage t ~row:i ~column =
+    let r = row t i in
+    if i < 0 then (0, 0)
+    else if i >= row_count t then
+      let n = Source.length t.source in
+      (n, n)
+    else if column < 0 then (r.first, r.first)
+    else if column >= r.columns then (r.last, r.last)
+    else if r.visible_last < r.last && column = r.columns - 1 then
+      (r.visible_last, r.last)
+    else
+      let p = t.metrics.columns in
+      let g =
+        max r.first
+          (upper_bound p r.first (r.visible_last + 1) (p.(r.first) + column) - 1)
+      in
+      (g, min r.last (g + 1))
+
+  let iter_cells t ~row:i ~first_column ~last_column f =
+    if i >= 0 && i < row_count t && last_column > first_column then begin
+      let r = t.rows.(i) and p = t.metrics.columns in
+      let origin = p.(r.first) in
+      let g =
+        ref
+          (max r.first
+             (upper_bound p r.first (r.visible_last + 1)
+                (origin + max 0 first_column)
+             - 1))
+      in
+      let next g =
+        match t.metrics.next_visible with None -> g | Some a -> a.(g)
+      in
+      g := next !g;
+      while !g < r.visible_last && p.(!g) - origin < last_column do
+        let column = p.(!g) - origin in
+        let width = p.(!g + 1) - p.(!g) in
+        if column + width > first_column then
+          f ~first:!g ~last:(!g + 1) ~column ~width ~ellipsis:false;
+        g := next (!g + 1)
+      done;
+      if
+        r.visible_last < r.last
+        && r.columns - 1 >= first_column
+        && r.columns - 1 < last_column
+      then
+        f ~first:r.visible_last ~last:r.last ~column:(r.columns - 1) ~width:1
+          ~ellipsis:true
+    end
+end

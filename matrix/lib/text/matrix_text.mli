@@ -144,3 +144,174 @@ val prev_grapheme :
     If [byte_offset] falls inside a grapheme, that containing grapheme is
     returned. In [`Wcwidth] mode, the result is the previous non-zero-width
     codepoint. *)
+
+module Layout : sig
+  (** Source-backed terminal rows. Styles do not affect segmentation. *)
+
+  type affinity =
+    | Upstream
+    | Downstream
+        (** The preceding or following side of an ambiguous visual boundary. *)
+
+  type caret = { grapheme : int; affinity : affinity }
+  (** A source grapheme boundary and its visual side. *)
+
+  type wrap = [ `None | `Char | `Word ]
+  (** No wrapping, grapheme wrapping, or word wrapping with grapheme fallback.
+  *)
+
+  module Source : sig
+    (** Immutable bytes with Unicode grapheme and logical-line indexing.
+        Zero-width clusters remain indexed. CRLF is one cluster and two bytes.
+        Invalid UTF-8 follows the decoder's replacement-unit boundaries without
+        changing the bytes. Width-metric caches are local to a source;
+        concurrent access requires synchronization. *)
+
+    type t
+    (** An indexed source, independent of wrapping width. *)
+
+    val of_string : string -> t
+    (** [of_string s] indexes [s] without normalizing its bytes. *)
+
+    val text : t -> string
+    (** [text t] is the original string. *)
+
+    val length : t -> int
+    (** [length t] is the number of source graphemes. *)
+
+    val byte_offset : t -> int -> int
+    (** [byte_offset t g] maps a grapheme boundary to a byte offset, clamping
+        [g] to the source bounds. *)
+
+    val grapheme_of_byte : t -> affinity:affinity -> int -> int
+    (** [grapheme_of_byte t ~affinity b] clamps [b] to the source bounds and
+        snaps interior bytes backward for [Upstream], forward for [Downstream].
+    *)
+
+    val line_count : t -> int
+    (** [line_count t] includes empty and trailing empty lines; it is at least
+        one. *)
+
+    val line_start : t -> int -> int
+    (** [line_start t line] is the first grapheme boundary of the clamped line.
+    *)
+
+    val line_end : t -> int -> int
+    (** [line_end t line] is the boundary before the clamped line's terminator.
+    *)
+
+    val line_of_offset : t -> int -> int
+    (** [line_of_offset t g] is the logical line containing clamped boundary
+        [g]. *)
+
+    val columns :
+      ?width_method:width_method ->
+      ?tab_width:int ->
+      t ->
+      first:int ->
+      last:int ->
+      int
+    (** [columns t ~first ~last] is the signed cell-width difference between
+        clamped source boundaries. Width defaults to [`Unicode], tabs to a
+        constant two cells (clamped to at least one). Both width methods retain
+        Unicode grapheme boundaries. *)
+
+    val slice : t -> first:int -> last:int -> string
+    (** [slice t ~first ~last] copies the exact bytes between clamped grapheme
+        boundaries; reversed or empty ranges return [""] . *)
+  end
+
+  type t
+  (** Immutable geometry retaining its source. Coordinates are absolute visual
+      rows and terminal columns, before scrolling and clipping. *)
+
+  val create :
+    ?width_method:width_method ->
+    ?tab_width:int ->
+    ?truncate:bool ->
+    Source.t ->
+    width:int ->
+    wrap:wrap ->
+    t
+  (** [create source ~width ~wrap] lays out [source]. Defaults are Unicode
+      width, constant two-cell tabs and no truncation. Nonpositive width keeps
+      one unwrapped row per logical line. Overwide clusters occupy one overflow
+      row. Truncation applies only without wrapping and uses a trailing one-cell
+      ellipsis covering the omitted source suffix. *)
+
+  val measure :
+    ?width_method:width_method ->
+    ?tab_width:int ->
+    ?truncate:bool ->
+    Source.t ->
+    width:int ->
+    wrap:wrap ->
+    int * int
+  (** [measure source ~width ~wrap] returns row count and maximum width using
+      {!create}'s algorithm without retaining rows. *)
+
+  val source : t -> Source.t
+  (** [source t] is the indexed source retained by [t]. *)
+
+  val row_count : t -> int
+  (** [row_count t] is the visual row count, at least one. *)
+
+  val max_width : t -> int
+  (** [max_width t] is the greatest row width in cells. *)
+
+  val row_start : t -> int -> int
+  (** [row_start t row] is the first source boundary of the clamped visual row.
+  *)
+
+  val row_end : t -> int -> int
+  (** [row_end t row] is the last source boundary, excluding line terminators
+      and including a truncated suffix. The row index is clamped. *)
+
+  val row_width : t -> int -> int
+  (** [row_width t row] is the clamped row's display width. *)
+
+  val logical_line : t -> int -> int
+  (** [logical_line t row] is the clamped visual row's logical-line index. *)
+
+  val continuation : t -> int -> int
+  (** [continuation t row] is zero on a logical line's first row and increases
+      on each wrapped continuation. The row index is clamped. *)
+
+  val iter_rows :
+    t ->
+    first:int ->
+    count:int ->
+    (row:int -> logical_line:int -> continuation:int -> unit) ->
+    unit
+  (** [iter_rows t ~first ~count f] visits bounded absolute rows in order.
+      [first] is clamped; negative [count] visits nothing. *)
+
+  val locate : t -> caret -> int * int
+  (** [locate t caret] returns its row and column. Source positions are clamped.
+      Affinity distinguishes soft-wrap sides and the two ellipsis edges. *)
+
+  val hit : ?affinity:affinity -> t -> row:int -> column:int -> caret
+  (** [hit t ~row ~column] is the nearest insertion boundary, with ties forward.
+      Coincident zero-width boundaries use [affinity], default [Downstream]. Row
+      affinity is retained at soft wraps. Out-of-range rows snap to source
+      start/end. Ambiguous boundaries have canonical, not invertible, mapping.
+  *)
+
+  val coverage : t -> row:int -> column:int -> int * int
+  (** [coverage t ~row ~column] is the half-open source-grapheme range occupying
+      the cell, including wide continuations and omitted suffixes. Blanks have
+      empty coverage. This does not decide whether a gesture selects the cell.
+  *)
+
+  val iter_cells :
+    t ->
+    row:int ->
+    first_column:int ->
+    last_column:int ->
+    (first:int -> last:int -> column:int -> width:int -> ellipsis:bool -> unit) ->
+    unit
+  (** [iter_cells t ~row ~first_column ~last_column f] seeks and visits drawable
+      clusters intersecting the half-open column interval. Callback ranges are
+      source graphemes; an ellipsis covers its omitted suffix. Zero-width runs
+      are skipped through the index. Out-of-range rows visit nothing. *)
+end
