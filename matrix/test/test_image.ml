@@ -37,6 +37,35 @@ let box_without_fill_preserves_background () =
 
 let cell_written grid x y = Grid.get_text grid (Grid.idx grid ~x ~y) <> " "
 
+let cropped_padding_stays_empty () =
+  let image =
+    Image.text "ABC" |> Image.with_hit ~id:1 |> Image.hcrop 0 2
+    |> Image.hpad 0 2 |> Image.hcrop 2 0
+  in
+  let grid = Grid.create ~width:3 ~height:1 () in
+  let hits = Screen.Hit_grid.create ~width:3 ~height:1 in
+  Image.draw ~hits ~x:1 image grid;
+  equal ~msg:"cropping into padding does not reveal hidden text" string " "
+    (Grid.get_text grid (Grid.idx grid ~x:1 ~y:0));
+  equal ~msg:"hidden text has no hit region" int Screen.Hit_grid.empty_id
+    (Screen.Hit_grid.get hits ~x:1 ~y:0)
+
+let composed_clips_stay_empty () =
+  let child = Image.text "ABC" |> Image.with_hit ~id:1 |> Image.hcrop 0 2 in
+  let padding =
+    Image.fill ~color:Ansi.Color.transparent ~width:2 ~height:1 ()
+  in
+  let image = Image.hcat [ child; padding ] |> Image.hcrop 2 0 in
+  let grid = Grid.create ~width:3 ~height:1 () in
+  let hits = Screen.Hit_grid.create ~width:3 ~height:1 in
+  Image.draw ~hits ~x:1 image grid;
+  equal ~msg:"disjoint parent and child clips do not reveal hidden text" string
+    " "
+    (Grid.get_text grid (Grid.idx grid ~x:1 ~y:0));
+  equal ~msg:"disjoint clips do not register hidden hits" int
+    Screen.Hit_grid.empty_id
+    (Screen.Hit_grid.get hits ~x:1 ~y:0)
+
 let hsnap_defaults_to_center () =
   let grid = Grid.create ~width:3 ~height:1 () in
   let img = Image.hsnap 3 (Image.text "x") in
@@ -73,6 +102,8 @@ let () =
             text_width_method_is_applied_during_render;
           test "box without fill preserves background"
             box_without_fill_preserves_background;
+          test "cropped padding stays empty" cropped_padding_stays_empty;
+          test "composed clips stay empty" composed_clips_stay_empty;
         ];
       group "defaults"
         [

@@ -73,20 +73,18 @@ let default_width_method = `Unicode
 
 type region = Grid.region
 
-let intersect_rect (a : region) (b : region) : region option =
+let intersect_rect (a : region) (b : region) : region =
   let open Grid in
   let x = max a.x b.x in
   let y = max a.y b.y in
   let x2 = min (a.x + a.width) (b.x + b.width) in
   let y2 = min (a.y + a.height) (b.y + b.height) in
-  let width = x2 - x in
-  let height = y2 - y in
-  if width <= 0 || height <= 0 then None else Some { x; y; width; height }
+  { x; y; width = max 0 (x2 - x); height = max 0 (y2 - y) }
 
 let merge_clip (a : region option) (b : region option) =
   match (a, b) with
   | None, clip | clip, None -> clip
-  | Some a, Some b -> intersect_rect a b
+  | Some a, Some b -> Some (intersect_rect a b)
 
 let shift_clip rect ~dx ~dy =
   let open Grid in
@@ -481,14 +479,13 @@ let custom ~width ~height draw =
 let add_hit ?clip hits ~x ~y ~width ~height ~id =
   match hits with
   | None -> ()
-  | Some hits -> (
+  | Some hits ->
       let rect = { Grid.x; y; width; height } in
-      let clipped = merge_clip clip (Some rect) in
-      match clipped with
-      | None -> ()
-      | Some rect ->
-          Matrix_screen.Hit_grid.add hits ~x:rect.x ~y:rect.y ~width:rect.width
-            ~height:rect.height ~id)
+      let rect =
+        match clip with None -> rect | Some clip -> intersect_rect clip rect
+      in
+      Matrix_screen.Hit_grid.add hits ~x:rect.x ~y:rect.y ~width:rect.width
+        ~height:rect.height ~id
 
 let draw ?hits ?(x = 0) ?(y = 0) t grid =
   if t.width <= 0 || t.height <= 0 then ()
