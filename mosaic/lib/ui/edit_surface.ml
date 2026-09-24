@@ -145,9 +145,7 @@ let key_binding = Keymap.binding
 
 module Props = struct
   type t = {
-    value : string;
-    cursor : int option;
-    selection : (int * int) option option;
+    state : Editor.t;
     spans : Text_buffer.span list;
     ghost_text : string option;
     ghost_text_color : Ansi.Color.t;
@@ -169,7 +167,7 @@ module Props = struct
     key_aliases : (string * string) list;
   }
 
-  let make ?(value = "") ?cursor ?selection ?(spans = []) ?ghost_text
+  let make ~state ?(spans = []) ?ghost_text
       ?(ghost_text_color = default_ghost_text_color) ?(placeholder = "")
       ?(wrap = `Word) ?(text_color = default_text_color)
       ?(background_color = default_background_color)
@@ -182,9 +180,7 @@ module Props = struct
       ?(cursor_blinking = default_cursor_blinking) ?(selectable = true)
       ?(show_cursor = true) ?(key_bindings = []) ?(key_aliases = []) () =
     {
-      value;
-      cursor;
-      selection;
+      state;
       spans;
       ghost_text;
       ghost_text_color;
@@ -206,7 +202,7 @@ module Props = struct
       key_aliases;
     }
 
-  let default = make ()
+  let default = make ~state:Editor.empty ()
 
   let spans_equal a b =
     List.compare_length_with a (List.length b) = 0
@@ -216,11 +212,7 @@ module Props = struct
          a b
 
   let equal a b =
-    String.equal a.value b.value
-    && Option.equal Int.equal a.cursor b.cursor
-    && Option.equal
-         (Option.equal (fun (a1, a2) (b1, b2) -> a1 = b1 && a2 = b2))
-         a.selection b.selection
+    a.state == b.state
     && spans_equal a.spans b.spans
     && Option.equal String.equal a.ghost_text b.ghost_text
     && Ansi.Color.equal a.ghost_text_color b.ghost_text_color
@@ -248,19 +240,13 @@ end
 
 type t = {
   node : Renderable.t;
-  buf : Edit_buffer.t;
+  mutable buf : Edit_buffer.t;
   text_buf : Text_buffer.t;
   surface : Text_surface.t;
   mutable props : Props.t;
-  mutable last_committed_value : string;
   mutable preferred_col : int option;
-  mutable on_input : (string -> unit) option;
-  mutable on_change : (string -> unit) option;
+  mutable on_change : Editor.t -> unit;
   mutable on_submit : (string -> unit) option;
-  mutable on_cursor :
-    (cursor:int -> selection:(int * int) option -> unit) option;
-  mutable last_cursor : int;
-  mutable last_selection : (int * int) option;
   mode : mode;
   mutable keymap : action Keymap.t;
 }
@@ -268,7 +254,7 @@ type t = {
 (* Accessors *)
 
 let node t = t.node
-let buffer t = t.buf
+let state t = t.props.state
 let surface t = t.surface
 let value t = Edit_buffer.text t.buf
 let cursor t = Edit_buffer.cursor t.buf
@@ -278,16 +264,6 @@ let sanitize_text t s =
   match t.mode with
   | `Multiline -> s
   | `Single_line -> Edit_buffer.strip_newlines s
-
-let controlled_value_matches t desired =
-  let current = Edit_buffer.text t.buf in
-  String.equal current desired
-  ||
-  (* [Edit_buffer.set_text] truncates to [max_length]. A full buffer that is a
-     prefix of the requested value is therefore already authoritative. *)
-  let max_length = Edit_buffer.max_length t.buf in
-  Edit_buffer.length t.buf = max_length
-  && String.starts_with ~prefix:current desired
 
 (* Line info *)
 
@@ -306,52 +282,30 @@ let register_line_info t =
 
 (* Callbacks *)
 
-let set_on_input t h = t.on_input <- h
 let set_on_change t h = t.on_change <- h
 let set_on_submit t h = t.on_submit <- h
-let set_on_cursor t h = t.on_cursor <- h
-let fire_on_input t = match t.on_input with Some f -> f (value t) | None -> ()
-
-let fire_on_change t =
-  let v = value t in
-  if not (String.equal v t.last_committed_value) then begin
-    t.last_committed_value <- v;
-    match t.on_change with Some f -> f v | None -> ()
-  end
 
 let fire_on_submit t =
-  fire_on_change t;
   match t.on_submit with Some f -> f (value t) | None -> ()
 
-let fire_on_cursor t =
-  let c = cursor t in
-  let s = selection t in
-  if c <> t.last_cursor || s <> t.last_selection then begin
-    t.last_cursor <- c;
-    t.last_selection <- s;
-    (match t.on_cursor with Some f -> f ~cursor:c ~selection:s | None -> ());
-    true
-  end
-  else false
+let restore_editor t state =
+  t.buf <- Editor.Private.buffer state;
+  t.preferred_col <- Editor.Private.preferred_col state
 
-let apply_selection t sel_range =
-  let len = Edit_buffer.length t.buf in
-  let normalize (a, b) =
-    let clamp x = Int.max 0 (Int.min len x) in
-    let lo = clamp (Int.min a b) in
-    let hi = clamp (Int.max a b) in
-    if lo < hi then Some (lo, hi) else None
-  in
-  let before_cursor = cursor t in
-  let before_selection = selection t in
-  (match normalize sel_range with
-  | None ->
-      if Option.is_some before_selection then
-        Edit_buffer.set_cursor t.buf before_cursor
-  | Some (lo, hi) ->
-      Edit_buffer.set_cursor t.buf lo;
-      Edit_buffer.set_cursor_offset ~select:true t.buf hi);
-  before_cursor <> cursor t || before_selection <> selection t
+let propose t ~base =
+  if t.props.state == base then begin
+    let next =
+      Editor.Private.propose ~base ~preferred_col:t.preferred_col t.buf
+    in
+    if next != base then begin
+      (* Restore before invoking user code: acceptance can replace props reentrantly. *)
+      restore_editor t base;
+      if
+        t.mode <> `Single_line
+        || Layout.Source.line_count (Editor.source next) = 1
+      then t.on_change next
+    end
+  end
 
 (* Sync *)
 
@@ -390,13 +344,8 @@ let sync_style t ~focused =
   sync_content t;
   Text_surface.invalidate t.surface
 
-let handle_focus t =
-  t.last_committed_value <- value t;
-  sync_style t ~focused:true
-
-let handle_blur t =
-  fire_on_change t;
-  sync_style t ~focused:false
+let handle_focus t = sync_style t ~focused:true
+let handle_blur t = sync_style t ~focused:false
 
 (* Display line mapping *)
 
@@ -467,7 +416,14 @@ let handle_resize t _node =
   else clamp_scroll_offsets t
 
 let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
-  let content_width = Edit_buffer.display_width t.buf in
+  let source = Edit_buffer.source t.buf in
+  let content_width =
+    Layout.Source.columns source
+      ~width_method:(Text_buffer.width_method t.text_buf)
+      ~tab_width:(Text_buffer.tab_width t.text_buf)
+      ~first:0
+      ~last:(Layout.Source.length source)
+  in
   let placeholder_width =
     Matrix.Text.measure
       ~width_method:(Text_buffer.width_method t.text_buf)
@@ -591,45 +547,31 @@ let register_selection t =
         let h = Renderable.height t.node in
         x >= nx && x < nx + w && y >= ny && y < ny + h)
       ~on_change:(fun sel ->
-        match sel with
-        | None ->
-            Text_surface.reset_selection t.surface;
-            Edit_buffer.clear_selection t.buf;
-            ignore (fire_on_cursor t : bool);
-            true
+        let base = t.props.state in
+        (match sel with
+        | None -> Edit_buffer.clear_selection t.buf
         | Some sel ->
-            let nx = Renderable.x t.node in
-            let ny = Renderable.y t.node in
-            let anchor = Selection.anchor sel in
-            let focus = Selection.focus sel in
-            let ax = anchor.x - nx and ay = anchor.y - ny in
-            let fx = focus.x - nx and fy = focus.y - ny in
-            let anchor = Text_surface.local_caret t.surface ~x:ax ~y:ay in
-            let focus = Text_surface.local_caret t.surface ~x:fx ~y:fy in
-            let changed =
-              Text_surface.set_selection t.surface ~start:anchor.grapheme
-                ~end_:focus.grapheme
+            let nx = Renderable.x t.node and ny = Renderable.y t.node in
+            let anchor = Selection.anchor sel and focus = Selection.focus sel in
+            let anchor =
+              Text_surface.local_caret t.surface ~x:(anchor.x - nx)
+                ~y:(anchor.y - ny)
             in
-            let before = Edit_buffer.caret t.buf in
+            let focus =
+              Text_surface.local_caret t.surface ~x:(focus.x - nx)
+                ~y:(focus.y - ny)
+            in
             Edit_buffer.set_caret t.buf anchor;
-            Edit_buffer.set_caret ~select:true t.buf focus;
-            if changed || before <> Edit_buffer.caret t.buf then begin
-              ignore (fire_on_cursor t : bool);
-              ensure_cursor_visible t;
-              Renderable.request_render t.node
-            end;
-            Edit_buffer.has_selection t.buf)
+            Edit_buffer.set_caret ~select:true t.buf focus);
+        t.preferred_col <- None;
+        propose t ~base;
+        Edit_buffer.has_selection t.buf)
       ~clear:(fun () ->
-        Text_surface.reset_selection t.surface;
+        let base = t.props.state in
         Edit_buffer.clear_selection t.buf;
-        ignore (fire_on_cursor t : bool))
+        propose t ~base)
       ~get_text:(fun () -> Edit_buffer.selected_text t.buf)
-  else begin
-    Text_surface.reset_selection t.surface;
-    Edit_buffer.clear_selection t.buf;
-    ignore (fire_on_cursor t : bool);
-    Renderable.unset_selection t.node
-  end
+  else Renderable.unset_selection t.node
 
 (* Vertical movement *)
 
@@ -683,18 +625,15 @@ let move_visual_line_end t ~select =
 
 (* Key handling *)
 
-type key_result = {
-  handled : bool;
-  changed : bool;
-  moved : bool;
-  vertical : bool;
-}
+type key_result = Unhandled | Handled | Vertical
 
-let key_result ?(changed = false) ?(moved = false) ?(vertical = false) () =
-  { handled = true; changed; moved; vertical }
+let handled result =
+  ignore (result : bool);
+  Handled
 
-let unhandled =
-  { handled = false; changed = false; moved = false; vertical = false }
+let vertical result =
+  ignore (result : bool);
+  Vertical
 
 let line_home t ~select =
   if Edit_buffer.move_line_start ~select t.buf then true
@@ -708,12 +647,6 @@ let line_end t ~select =
     let line = Edit_buffer.cursor_line t.buf in
     line < Edit_buffer.line_count t.buf - 1
     && Edit_buffer.move_right ~select t.buf
-
-let select_all_changed t =
-  let old_cursor = cursor t in
-  let old_selection = selection t in
-  Edit_buffer.select_all t.buf;
-  old_cursor <> cursor t || old_selection <> selection t
 
 let regular_text data c =
   let m = data.Matrix_input.Key.modifier in
@@ -733,76 +666,57 @@ let regular_text data c =
 
 let run_action t action =
   match action with
-  | Move_left -> key_result ~moved:(Edit_buffer.move_left t.buf) ()
-  | Move_right -> key_result ~moved:(Edit_buffer.move_right t.buf) ()
+  | Move_left -> handled (Edit_buffer.move_left t.buf)
+  | Move_right -> handled (Edit_buffer.move_right t.buf)
   | Move_up when t.mode = `Multiline ->
-      key_result
-        ~moved:(move_vertical t ~select:false ~delta:(-1))
-        ~vertical:true ()
+      vertical (move_vertical t ~select:false ~delta:(-1))
   | Move_down when t.mode = `Multiline ->
-      key_result
-        ~moved:(move_vertical t ~select:false ~delta:1)
-        ~vertical:true ()
-  | Move_up | Move_down -> unhandled
-  | Select_left ->
-      key_result ~moved:(Edit_buffer.move_left ~select:true t.buf) ()
-  | Select_right ->
-      key_result ~moved:(Edit_buffer.move_right ~select:true t.buf) ()
+      vertical (move_vertical t ~select:false ~delta:1)
+  | Move_up | Move_down -> Unhandled
+  | Select_left -> handled (Edit_buffer.move_left ~select:true t.buf)
+  | Select_right -> handled (Edit_buffer.move_right ~select:true t.buf)
   | Select_up when t.mode = `Multiline ->
-      key_result
-        ~moved:(move_vertical t ~select:true ~delta:(-1))
-        ~vertical:true ()
+      vertical (move_vertical t ~select:true ~delta:(-1))
   | Select_down when t.mode = `Multiline ->
-      key_result
-        ~moved:(move_vertical t ~select:true ~delta:1)
-        ~vertical:true ()
-  | Select_up | Select_down -> unhandled
-  | Line_home -> key_result ~moved:(line_home t ~select:false) ()
-  | Line_end -> key_result ~moved:(line_end t ~select:false) ()
-  | Select_line_home -> key_result ~moved:(line_home t ~select:true) ()
-  | Select_line_end -> key_result ~moved:(line_end t ~select:true) ()
-  | Visual_line_home ->
-      key_result ~moved:(move_visual_line_start t ~select:false) ()
-  | Visual_line_end ->
-      key_result ~moved:(move_visual_line_end t ~select:false) ()
-  | Select_visual_line_home ->
-      key_result ~moved:(move_visual_line_start t ~select:true) ()
-  | Select_visual_line_end ->
-      key_result ~moved:(move_visual_line_end t ~select:true) ()
-  | Buffer_home -> key_result ~moved:(Edit_buffer.move_home t.buf) ()
-  | Buffer_end -> key_result ~moved:(Edit_buffer.move_end t.buf) ()
-  | Select_buffer_home ->
-      key_result ~moved:(Edit_buffer.move_home ~select:true t.buf) ()
-  | Select_buffer_end ->
-      key_result ~moved:(Edit_buffer.move_end ~select:true t.buf) ()
-  | Delete_line -> key_result ~changed:(Edit_buffer.delete_line t.buf) ()
-  | Delete_to_line_end ->
-      key_result ~changed:(Edit_buffer.delete_to_line_end t.buf) ()
-  | Delete_to_line_start ->
-      key_result ~changed:(Edit_buffer.delete_to_line_start t.buf) ()
-  | Backspace -> key_result ~changed:(Edit_buffer.delete_backward t.buf) ()
-  | Delete -> key_result ~changed:(Edit_buffer.delete_forward t.buf) ()
-  | Newline when t.mode = `Multiline ->
-      key_result ~changed:(Edit_buffer.insert t.buf "\n") ()
+      vertical (move_vertical t ~select:true ~delta:1)
+  | Select_up | Select_down -> Unhandled
+  | Line_home -> handled (line_home t ~select:false)
+  | Line_end -> handled (line_end t ~select:false)
+  | Select_line_home -> handled (line_home t ~select:true)
+  | Select_line_end -> handled (line_end t ~select:true)
+  | Visual_line_home -> handled (move_visual_line_start t ~select:false)
+  | Visual_line_end -> handled (move_visual_line_end t ~select:false)
+  | Select_visual_line_home -> handled (move_visual_line_start t ~select:true)
+  | Select_visual_line_end -> handled (move_visual_line_end t ~select:true)
+  | Buffer_home -> handled (Edit_buffer.move_home t.buf)
+  | Buffer_end -> handled (Edit_buffer.move_end t.buf)
+  | Select_buffer_home -> handled (Edit_buffer.move_home ~select:true t.buf)
+  | Select_buffer_end -> handled (Edit_buffer.move_end ~select:true t.buf)
+  | Delete_line -> handled (Edit_buffer.delete_line t.buf)
+  | Delete_to_line_end -> handled (Edit_buffer.delete_to_line_end t.buf)
+  | Delete_to_line_start -> handled (Edit_buffer.delete_to_line_start t.buf)
+  | Backspace -> handled (Edit_buffer.delete_backward t.buf)
+  | Delete -> handled (Edit_buffer.delete_forward t.buf)
+  | Newline when t.mode = `Multiline -> handled (Edit_buffer.insert t.buf "\n")
   | Newline ->
       fire_on_submit t;
-      key_result ()
-  | Undo -> key_result ~changed:(Edit_buffer.undo t.buf) ()
-  | Redo -> key_result ~changed:(Edit_buffer.redo t.buf) ()
-  | Word_forward -> key_result ~moved:(Edit_buffer.move_word_forward t.buf) ()
-  | Word_backward -> key_result ~moved:(Edit_buffer.move_word_backward t.buf) ()
+      Handled
+  | Undo -> handled (Edit_buffer.undo t.buf)
+  | Redo -> handled (Edit_buffer.redo t.buf)
+  | Word_forward -> handled (Edit_buffer.move_word_forward t.buf)
+  | Word_backward -> handled (Edit_buffer.move_word_backward t.buf)
   | Select_word_forward ->
-      key_result ~moved:(Edit_buffer.move_word_forward ~select:true t.buf) ()
+      handled (Edit_buffer.move_word_forward ~select:true t.buf)
   | Select_word_backward ->
-      key_result ~moved:(Edit_buffer.move_word_backward ~select:true t.buf) ()
-  | Delete_word_forward ->
-      key_result ~changed:(Edit_buffer.delete_word_forward t.buf) ()
-  | Delete_word_backward ->
-      key_result ~changed:(Edit_buffer.delete_word_backward t.buf) ()
-  | Select_all -> key_result ~moved:(select_all_changed t) ()
+      handled (Edit_buffer.move_word_backward ~select:true t.buf)
+  | Delete_word_forward -> handled (Edit_buffer.delete_word_forward t.buf)
+  | Delete_word_backward -> handled (Edit_buffer.delete_word_backward t.buf)
+  | Select_all ->
+      Edit_buffer.select_all t.buf;
+      Handled
   | Submit ->
       fire_on_submit t;
-      key_result ()
+      Handled
 
 let key_result_of_event t data =
   match Keymap.action t.keymap data with
@@ -812,23 +726,9 @@ let key_result_of_event t data =
       | Matrix_input.Key.Char c -> (
           match regular_text data c with
           | Some text ->
-              key_result
-                ~changed:(Edit_buffer.insert t.buf (sanitize_text t text))
-                ()
-          | None -> unhandled)
-      | _ -> unhandled)
-
-let apply_key_result t ev result =
-  if result.handled then begin
-    Event.Key.prevent_default ev;
-    if result.changed then sync t;
-    if result.changed then fire_on_input t;
-    let cursor_changed = fire_on_cursor t in
-    if result.changed || result.moved || cursor_changed then
-      ensure_cursor_visible t;
-    if not result.vertical then t.preferred_col <- None;
-    Renderable.request_render t.node
-  end
+              handled (Edit_buffer.insert t.buf (sanitize_text t text))
+          | None -> Unhandled)
+      | _ -> Unhandled)
 
 let handle_key t (ev : Event.key) =
   let data = Event.Key.data ev in
@@ -836,7 +736,17 @@ let handle_key t (ev : Event.key) =
   match data.event_type with
   | Release -> ()
   | _ when Event.Key.default_prevented ev -> ()
-  | _ -> apply_key_result t ev (key_result_of_event t data)
+  | _ -> (
+      let base = t.props.state in
+      let result = key_result_of_event t data in
+      match result with
+      | Unhandled -> ()
+      | Handled | Vertical ->
+          Event.Key.prevent_default ev;
+          if t.props.state == base then begin
+            if result <> Vertical then t.preferred_col <- None;
+            propose t ~base
+          end)
 
 (* Mouse handling *)
 
@@ -852,65 +762,35 @@ let handle_mouse t ev =
 (* Paste *)
 
 let handle_paste t text =
+  let base = t.props.state in
   let text = sanitize_text t (Ansi.strip text) in
-  if Edit_buffer.insert t.buf text then begin
-    sync t;
-    fire_on_input t;
-    ignore (fire_on_cursor t : bool);
-    ensure_cursor_visible t;
-    t.preferred_col <- None;
-    Renderable.request_render t.node
-  end
+  ignore (Edit_buffer.insert t.buf text : bool);
+  t.preferred_col <- None;
+  propose t ~base
 
 (* Construction *)
 
-let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
-    ?selection ?spans ?ghost_text ?ghost_text_color ?placeholder ?wrap
-    ?text_color ?background_color ?focused_text_color ?focused_background_color
+let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
+    ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
+    ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?(mode = `Multiline)
-    ?key_bindings ?key_aliases ?max_length ?on_input ?on_change ?on_submit
-    ?on_cursor () =
+    ?key_bindings ?key_aliases ~on_change ?on_submit () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let props =
-    Props.make ?value ?cursor ?selection ?spans ?ghost_text ?ghost_text_color
-      ?placeholder ?wrap ?text_color ?background_color ?focused_text_color
+    Props.make ~state ?spans ?ghost_text ?ghost_text_color ?placeholder ?wrap
+      ?text_color ?background_color ?focused_text_color
       ?focused_background_color ?placeholder_color ?selection_color
       ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable
       ?show_cursor ?key_bindings ?key_aliases ()
   in
-  let max_length =
-    match max_length with
-    | Some max_length -> max_length
-    | None -> ( match mode with `Multiline -> max_int | `Single_line -> 1000)
-  in
-  let initial_value =
-    match mode with
-    | `Multiline -> props.value
-    | `Single_line -> Edit_buffer.strip_newlines props.value
-  in
   let width_method = Renderable.Private.width_method node in
-  let buf = Edit_buffer.create ~max_length ~width_method initial_value in
-  Option.iter (Edit_buffer.set_cursor buf) props.cursor;
-  (match props.selection with
-  | None | Some None -> ()
-  | Some (Some (a, b)) ->
-      let len = Edit_buffer.length buf in
-      let clamp x = Int.max 0 (Int.min len x) in
-      let lo = clamp (Int.min a b) in
-      let hi = clamp (Int.max a b) in
-      if lo < hi then begin
-        Edit_buffer.set_cursor buf lo;
-        Edit_buffer.set_cursor_offset ~select:true buf hi
-      end);
+  let buf = Editor.Private.buffer state in
   let text_buf = Text_buffer.create ~width_method () in
   let surface = Text_surface.create node text_buf in
   Text_surface.set_wrap surface props.wrap;
-  let initial_value = Edit_buffer.text buf in
-  let initial_cursor = Edit_buffer.cursor buf in
-  let initial_selection = Edit_buffer.selection buf in
   let t =
     {
       node;
@@ -918,14 +798,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
       text_buf;
       surface;
       props;
-      last_committed_value = initial_value;
-      preferred_col = None;
-      on_input;
+      preferred_col = Editor.Private.preferred_col state;
       on_change;
       on_submit;
-      on_cursor;
-      last_cursor = initial_cursor;
-      last_selection = initial_selection;
       mode;
       keymap =
         Action.keymap ~aliases:props.key_aliases ~custom:props.key_bindings mode;
@@ -942,8 +817,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
     (Some
        (fun ev ->
          if not (Event.Paste.default_prevented ev) then begin
-           (* The editor is the paste's default consumer: mark the event so
-              hosts can tell it was handled, mirroring [apply_key_result]. *)
+           (* Mark consumed before synchronous proposal callbacks run. *)
            Event.Paste.prevent_default ev;
            handle_paste t (Event.Paste.text ev)
          end));
@@ -955,46 +829,6 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
   register_line_info t;
   sync_style t ~focused:false;
   t
-
-(* Value *)
-
-let set_value t s =
-  let before = value t in
-  Edit_buffer.set_text t.buf (sanitize_text t s);
-  let changed = not (String.equal before (value t)) in
-  ignore (fire_on_cursor t : bool);
-  sync t;
-  if changed then fire_on_input t;
-  ensure_cursor_visible t;
-  t.preferred_col <- None;
-  Renderable.request_render t.node
-
-let edit t f =
-  if f t.buf then begin
-    sync t;
-    fire_on_input t;
-    ignore (fire_on_cursor t : bool);
-    ensure_cursor_visible t;
-    t.preferred_col <- None;
-    Renderable.request_render t.node
-  end
-
-let set_max_length t n =
-  let before_value = value t in
-  let before_cursor = cursor t in
-  let before_selection = selection t in
-  Edit_buffer.set_max_length t.buf n;
-  let value_changed = not (String.equal before_value (value t)) in
-  let cursor_changed =
-    before_cursor <> cursor t || before_selection <> selection t
-  in
-  if value_changed then sync t;
-  if cursor_changed then ignore (fire_on_cursor t : bool);
-  if value_changed || cursor_changed then begin
-    ensure_cursor_visible t;
-    t.preferred_col <- None;
-    Renderable.request_render t.node
-  end
 
 (* Apply props *)
 
@@ -1020,29 +854,11 @@ let apply_props t (props : Props.t) =
          (Ansi.Color.equal t.props.focused_background_color
             props.focused_background_color)
   in
-  let value_replaced = ref false in
-  let desired_value = sanitize_text t props.value in
-  if not (controlled_value_matches t desired_value) then begin
-    Edit_buffer.set_text t.buf desired_value;
-    value_replaced := true;
-    t.preferred_col <- None
-  end;
-  let cursor_changed =
-    match props.cursor with
-    | Some c when Edit_buffer.cursor t.buf <> c ->
-        Edit_buffer.set_cursor t.buf c;
-        true
-    | _ -> false
+  let state_changed = t.props.state != props.state in
+  let source_changed =
+    Editor.source t.props.state != Editor.source props.state
   in
-  let selection_changed =
-    match props.selection with
-    | None -> false
-    | Some None ->
-        let had_selection = Option.is_some (selection t) in
-        if had_selection then Edit_buffer.set_cursor t.buf (cursor t);
-        had_selection
-    | Some (Some sel) -> apply_selection t sel
-  in
+  if state_changed then restore_editor t props.state;
   if t.props.wrap <> props.wrap then Text_surface.set_wrap t.surface props.wrap;
   t.props <- props;
   if keymap_changed then
@@ -1050,10 +866,8 @@ let apply_props t (props : Props.t) =
       Action.keymap ~aliases:props.key_aliases ~custom:props.key_bindings t.mode;
   if selectable_changed then register_selection t;
   if style_changed then sync_style t ~focused:(Renderable.focused t.node)
-  else if !value_replaced || spans_changed then sync t;
-  let state_changed = fire_on_cursor t in
-  if !value_replaced || cursor_changed || selection_changed || state_changed
-  then ensure_cursor_visible t;
+  else if source_changed || spans_changed then sync t;
+  if state_changed then ensure_cursor_visible t;
   Renderable.request_render t.node
 
 (* Formatting *)

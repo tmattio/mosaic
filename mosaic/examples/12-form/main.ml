@@ -2,20 +2,12 @@
 
 open Mosaic
 
-(* Field identifiers for focus management *)
-type field = Name | Email | Role
-
-let all_fields = [| Name; Email; Role |]
-
-let field_id = function
-  | Name -> "name-input"
-  | Email -> "email-input"
-  | Role -> "role-select"
+type role = Developer | Designer | Manager | Analyst
 
 type model = {
-  name : string;
-  email : string;
-  role : int;
+  name : Editor.t;
+  email : Editor.t;
+  role : role option;
   submitted : bool;
   focus : int; (* index into all_fields *)
 }
@@ -24,42 +16,72 @@ type msg =
   | Submit
   | Reset
   | Quit
-  | Set_role of int
-  | Set_name of string
-  | Set_email of string
+  | Set_role of role
+  | Focus of int
+  | Set_name of Editor.t
+  | Set_email of Editor.t
   | Focus_next
   | Focus_prev
 
+let role_label = function
+  | Developer -> "Developer"
+  | Designer -> "Designer"
+  | Manager -> "Manager"
+  | Analyst -> "Analyst"
+
 let roles =
   [
-    Select.{ label = "Developer"; description = Some "Write code" };
-    { label = "Designer"; description = Some "Create designs" };
-    { label = "Manager"; description = Some "Lead teams" };
-    { label = "Analyst"; description = Some "Analyze data" };
+    Select.item Developer ~description:"Write code" "Developer";
+    Select.item Designer ~description:"Create designs" "Designer";
+    Select.item Manager ~description:"Lead teams" "Manager";
+    Select.item Analyst ~description:"Analyze data" "Analyst";
   ]
 
 let init () =
-  ( { name = ""; email = ""; role = 0; submitted = false; focus = 0 },
-    Cmd.focus (field_id Name) )
+  ( {
+      name = Editor.empty;
+      email = Editor.empty;
+      role = Some Developer;
+      submitted = false;
+      focus = 0;
+    },
+    Cmd.none )
 
-let num_fields = Array.length all_fields
+let num_fields = 3
 
 let update msg model =
   match msg with
   | Submit -> ({ model with submitted = true }, Cmd.none)
   | Reset ->
-      ( { name = ""; email = ""; role = 0; submitted = false; focus = 0 },
-        Cmd.focus (field_id Name) )
-  | Set_role role -> ({ model with role }, Cmd.none)
-  | Set_name name -> ({ model with name; submitted = false }, Cmd.none)
-  | Set_email email -> ({ model with email; submitted = false }, Cmd.none)
+      ( {
+          name = Editor.empty;
+          email = Editor.empty;
+          role = Some Developer;
+          submitted = false;
+          focus = 0;
+        },
+        Cmd.none )
+  | Set_role role -> ({ model with role = Some role }, Cmd.none)
+  | Focus focus -> ({ model with focus }, Cmd.none)
+  | Set_name name ->
+      let submitted =
+        model.submitted
+        && String.equal (Editor.text model.name) (Editor.text name)
+      in
+      ({ model with name; submitted }, Cmd.none)
+  | Set_email email ->
+      let submitted =
+        model.submitted
+        && String.equal (Editor.text model.email) (Editor.text email)
+      in
+      ({ model with email; submitted }, Cmd.none)
   | Quit -> (model, Cmd.quit)
   | Focus_next ->
       let next = (model.focus + 1) mod num_fields in
-      ({ model with focus = next }, Cmd.focus (field_id all_fields.(next)))
+      ({ model with focus = next }, Cmd.none)
   | Focus_prev ->
       let prev = (model.focus - 1 + num_fields) mod num_fields in
-      ({ model with focus = prev }, Cmd.focus (field_id all_fields.(prev)))
+      ({ model with focus = prev }, Cmd.none)
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100
@@ -95,32 +117,35 @@ let view model =
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
                   box ~size:{ width = px 8; height = px 1 } [ text "Name:" ];
-                  input ~id:(field_id Name) ~placeholder:"Enter your name..."
+                  input
                     ~size:{ width = px 25; height = px 1 }
-                    ~value:model.name
-                    ~on_input:(fun v -> Some (Set_name v))
+                    ~focused:(model.focus = 0) ~on_focus_request:(Focus 0)
+                    ~placeholder:"Enter your name..." ~state:model.name
+                    ~on_change:(fun v -> Set_name v)
                     ();
                 ];
               (* Email field *)
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
                   box ~size:{ width = px 8; height = px 1 } [ text "Email:" ];
-                  input ~id:(field_id Email) ~placeholder:"Enter your email..."
+                  input
                     ~size:{ width = px 25; height = px 1 }
-                    ~value:model.email
-                    ~on_input:(fun v -> Some (Set_email v))
+                    ~focused:(model.focus = 1) ~on_focus_request:(Focus 1)
+                    ~placeholder:"Enter your email..." ~state:model.email
+                    ~on_change:(fun v -> Set_email v)
                     ();
                 ];
               (* Role selector *)
               box ~flex_direction:Row ~align_items:Flex_start ~gap:(gap 1)
                 [
                   box ~size:{ width = px 8; height = px 1 } [ text "Role:" ];
-                  select ~id:(field_id Role) ~show_description:true
-                    ~selected_background:accent
-                    ~selected_text_color:Ansi.Color.black
-                    ~selected_index:model.role
-                    ~on_change:(fun idx -> Some (Set_role idx))
+                  select
                     ~size:{ width = px 25; height = px 5 }
+                    ~focused:(model.focus = 2) ~on_focus_request:(Focus 2)
+                    ~show_description:true ~selected_background:accent
+                    ~selected_text_color:Ansi.Color.black ~equal:( = )
+                    ~selected:model.role
+                    ~on_change:(fun role -> Set_role role)
                     roles;
                 ];
               (* Buttons *)
@@ -146,8 +171,10 @@ let view model =
                    [
                      text
                        ~style:(Ansi.Style.make ~fg:Ansi.Color.green ())
-                       (Printf.sprintf "Submitted: %s <%s> as %s" model.name
-                          model.email (List.nth roles model.role).label);
+                       (Printf.sprintf "Submitted: %s <%s> as %s"
+                          (Editor.text model.name) (Editor.text model.email)
+                          (Option.fold ~none:"no role" ~some:role_label
+                             model.role));
                    ]
                else text ~style:hint "Fill in the form and click Submit");
             ];
@@ -155,7 +182,8 @@ let view model =
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg
         [
-          text ~style:hint "Tab/Shift+Tab navigate  •  Enter submit  •  q quit";
+          text ~style:hint
+            "Tab/Shift+Tab navigate  •  Enter submit  •  Ctrl+q quit";
         ];
     ]
 
@@ -166,12 +194,13 @@ let subscriptions _model =
           let data = Event.Key.data ev in
           match data.key with
           | Tab ->
+              Event.Key.prevent_default ev;
               if data.modifier.shift then Some Focus_prev else Some Focus_next
           | _ -> None);
       Sub.on_keys
         [
           (Shortcut.enter, Submit);
-          (Shortcut.char 'q', Quit);
+          (Shortcut.ctrl 'q', Quit);
           (Shortcut.escape, Quit);
         ];
     ]

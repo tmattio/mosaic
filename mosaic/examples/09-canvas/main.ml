@@ -121,7 +121,7 @@ let subscriptions _model =
           (Shortcut.char 'q', Quit);
           (Shortcut.escape, Quit);
         ];
-      Sub.on_tick (fun ~dt -> Tick dt);
+      Sub.on_tick ~id:"animation" (fun ~dt -> Tick dt);
     ]
 
 let () = run { init; update; view; subscriptions }

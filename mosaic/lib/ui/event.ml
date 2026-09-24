@@ -1,7 +1,6 @@
 (* {1 Dispatch control} *)
 
-(* Propagation/default-prevention state used by Mouse. Key and Paste target
-   the focused node only, so they carry just a default-prevention flag. *)
+(* Propagation and default actions are independently controlled. *)
 module Input = Matrix_input
 
 module Dispatch_control = struct
@@ -20,12 +19,14 @@ end
 (* {1 Keyboard events} *)
 
 module Key = struct
-  type t = { data : Input.Key.event; mutable default_prevented : bool }
+  type t = { data : Input.Key.event; control : Dispatch_control.t }
 
-  let of_input data = { data; default_prevented = false }
+  let of_input data = { data; control = Dispatch_control.create () }
   let data t = t.data
-  let prevent_default t = t.default_prevented <- true
-  let default_prevented t = t.default_prevented
+  let prevent_default t = Dispatch_control.prevent_default t.control
+  let default_prevented t = Dispatch_control.default_prevented t.control
+  let stop_propagation t = Dispatch_control.stop_propagation t.control
+  let propagation_stopped t = Dispatch_control.propagation_stopped t.control
   let equal a b = Input.Key.equal_event a.data b.data
   let pp ppf t = Input.Key.pp_event ppf t.data
 end
@@ -33,12 +34,14 @@ end
 (* {1 Paste events} *)
 
 module Paste = struct
-  type t = { text : string; mutable default_prevented : bool }
+  type t = { text : string; control : Dispatch_control.t }
 
-  let of_text text = { text; default_prevented = false }
+  let of_text text = { text; control = Dispatch_control.create () }
   let text t = t.text
-  let prevent_default t = t.default_prevented <- true
-  let default_prevented t = t.default_prevented
+  let prevent_default t = Dispatch_control.prevent_default t.control
+  let default_prevented t = Dispatch_control.default_prevented t.control
+  let stop_propagation t = Dispatch_control.stop_propagation t.control
+  let propagation_stopped t = Dispatch_control.propagation_stopped t.control
   let equal a b = String.equal a.text b.text
   let pp ppf t = Format.fprintf ppf "Paste(%S)" t.text
 end

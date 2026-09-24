@@ -2,10 +2,15 @@
 
 open Mosaic
 
-type msg = Quit
+type msg = Quit | Scrolled of Scroll.t
 
-let init () = ((), Cmd.none)
-let update msg () = match msg with Quit -> ((), Cmd.quit)
+let init () = (Scroll.at 0, Cmd.none)
+
+let update msg scroll =
+  match msg with
+  | Quit -> (scroll, Cmd.quit)
+  | Scrolled scroll -> (scroll, Cmd.none)
+
 let section1_style = Ansi.Style.make ~fg:Ansi.Color.white ()
 
 let lorem_lines =
@@ -40,7 +45,7 @@ let footer_bg = Ansi.Color.grayscale ~level:3
 let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
 let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 
-let view () =
+let view scroll =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
@@ -62,9 +67,9 @@ let view () =
           box ~flex_grow:1. ~flex_direction:Column ~gap:(gap 1)
             [
               (* Section 1: Simple text selection *)
-              box ~border:true ~title:"Document Section 1" ~padding:(padding 1)
+              box ~border:true ~padding:(padding 1)
                 ~background:(Ansi.Color.grayscale ~level:2)
-                ~flex_direction:Column ~gap:(gap 0)
+                ~flex_direction:Column ~gap:(gap 0) ~title:"Document Section 1"
                 [
                   text ~style:section1_style ~selectable:true
                     ~selection_bg:(Ansi.Color.of_rgb 88 166 255)
@@ -83,10 +88,10 @@ let view () =
                     ~selection_fg:Ansi.Color.white "Unicode: 世界, 你好世界, 中文, 한글";
                 ];
               (* Section 2: Code example *)
-              box ~border:true ~title:"Code Example" ~padding:(padding 1)
+              box ~border:true ~padding:(padding 1)
                 ~background:(Ansi.Color.grayscale ~level:3)
                 ~border_color:(Ansi.Color.of_rgb 248 81 73)
-                ~flex_direction:Column
+                ~flex_direction:Column ~title:"Code Example"
                 [
                   text
                     ~style:(Ansi.Style.make ~fg:Ansi.Color.cyan ())
@@ -113,16 +118,19 @@ let view () =
           (* Right panel: Scrollable content *)
           box ~flex_grow:1. ~flex_direction:Column
             [
-              box ~border:true ~title:"Scrollable Content" ~flex_grow:1.
+              box ~border:true ~flex_grow:1.
                 ~background:(Ansi.Color.grayscale ~level:1)
+                ~title:"Scrollable Content"
                 [
-                  scroll_box ~scroll_y:true ~scroll_x:false
+                  scroll_box ~scroll
+                    ~on_scroll:(fun value -> Scrolled value)
                     ~size:{ width = pct 100; height = pct 100 }
+                    ~scroll_y:true ~scroll_x:false
                     (List.init 16 (fun i ->
                          let num_lines = 2 + (i mod 4) in
                          let bg = box_colors.(i mod Array.length box_colors) in
-                         box ~key:(string_of_int i) ~padding:(padding 1)
-                           ~background:bg ~flex_direction:Column
+                         box ~padding:(padding 1) ~background:bg
+                           ~flex_direction:Column ~key:(string_of_int i)
                            [
                              text
                                ~style:
@@ -136,10 +144,10 @@ let view () =
                                     let line_idx =
                                       ((i * 3) + j) mod Array.length lorem_lines
                                     in
-                                    text ~key:(string_of_int j)
+                                    text
                                       ~style:
                                         (Ansi.Style.make ~fg:Ansi.Color.white ())
-                                      ~selectable:true
+                                      ~key:(string_of_int j) ~selectable:true
                                       ~selection_bg:
                                         (Ansi.Color.of_rgb 122 162 247)
                                       lorem_lines.(line_idx)));
@@ -155,7 +163,7 @@ let view () =
         ];
     ]
 
-let subscriptions () =
+let subscriptions _scroll =
   Sub.on_keys [ (Shortcut.char 'q', Quit); (Shortcut.escape, Quit) ]
 
 let () = run { init; update; view; subscriptions }

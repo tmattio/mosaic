@@ -1,29 +1,40 @@
 open Mosaic_ui
 open Expect_harness
 
+let input ?app ?ref ?(value = "") ?max_length ?placeholder ?placeholder_color
+    ?text_color ?focused_text_color () =
+  let rec view state =
+    Vnode.input ?ref ~state ?placeholder ?placeholder_color ?text_color
+      ?focused_text_color
+      ~on_change:(fun state ->
+        Option.iter (fun app -> reconcile app (view state)) app)
+      ()
+  in
+  view (Editor.of_string ?max_length value)
+
 let%expect_test "empty unfocused shows placeholder" =
-  render ~width:20 ~height:1 (Vnode.input ~placeholder:"Type here" ());
+  render ~width:20 ~height:1 (input ~placeholder:"Type here" ());
   [%expect_exact {|
 Type here|}]
 
 let%expect_test "empty focused shows cursor area" =
   let app = make_app () in
   let node = ref None in
-  reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ());
+  reconcile app (input ~app ~ref:(fun n -> node := Some n) ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   [%expect_exact {|
 |}]
 
 let%expect_test "content renders left aligned" =
-  render ~width:20 ~height:1 (Vnode.input ~value:"hello" ());
+  render ~width:20 ~height:1 (input ~value:"hello" ());
   [%expect_exact {|
 hello|}]
 
 let%expect_test "content after typing" =
   let app = make_app () in
   let node = ref None in
-  reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ());
+  reconcile app (input ~app ~ref:(fun n -> node := Some n) ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   send_char app 'a';
@@ -37,7 +48,7 @@ abc|}]
 let%expect_test "cursor at end of text" =
   let app = make_app () in
   let node = ref None in
-  reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ~value:"hello" ());
+  reconcile app (input ~app ~ref:(fun n -> node := Some n) ~value:"hello" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   [%expect_exact {|
@@ -46,7 +57,7 @@ hello|}]
 let%expect_test "cursor in middle of text" =
   let app = make_app () in
   let node = ref None in
-  reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ~value:"hello" ());
+  reconcile app (input ~app ~ref:(fun n -> node := Some n) ~value:"hello" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   send_key app Matrix_input.Key.Left;
@@ -59,7 +70,7 @@ hello|}]
 let%expect_test "selection highlight" =
   let app = make_app () in
   let node = ref None in
-  reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ~value:"hello" ());
+  reconcile app (input ~app ~ref:(fun n -> node := Some n) ~value:"hello" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true } in
@@ -71,14 +82,14 @@ hello
 [0;38;5;7mhello[39m               [0m|}]
 
 let%expect_test "narrow width shows start of content" =
-  render ~width:5 ~height:1 (Vnode.input ~value:"hello world" ());
+  render ~width:5 ~height:1 (input ~value:"hello world" ());
   [%expect_exact {|
 hello|}]
 
 let%expect_test "scrolled content after typing" =
   let app = make_app () in
   let node = ref None in
-  reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ());
+  reconcile app (input ~app ~ref:(fun n -> node := Some n) ());
   focus app (Option.get !node);
   frame app ~width:5 ~height:1;
   String.iter (fun c -> send_char app c) "abcdefghij";
@@ -90,7 +101,7 @@ ghij|}]
 let%expect_test "after backspace" =
   let app = make_app () in
   let node = ref None in
-  reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ~value:"abc" ());
+  reconcile app (input ~app ~ref:(fun n -> node := Some n) ~value:"abc" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   send_key app Matrix_input.Key.Backspace;
@@ -103,7 +114,7 @@ let%expect_test "after ctrl u clear to start" =
   let app = make_app () in
   let node = ref None in
   reconcile app
-    (Vnode.input ~ref:(fun n -> node := Some n) ~value:"hello world" ());
+    (input ~app ~ref:(fun n -> node := Some n) ~value:"hello world" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true } in
@@ -116,7 +127,7 @@ hello world
 
 let%expect_test "placeholder color" =
   render_ansi ~width:20 ~height:1
-    (Vnode.input ~placeholder:"Type here" ~placeholder_color:Ansi.Color.red ());
+    (input ~placeholder:"Type here" ~placeholder_color:Ansi.Color.red ());
   [%expect_exact {|
 [0;38;5;1mType here[39m           [0m|}]
 
@@ -124,7 +135,7 @@ let%expect_test "focused vs unfocused styles" =
   let app = make_app () in
   let node = ref None in
   reconcile app
-    (Vnode.input
+    (input ~app
        ~ref:(fun n -> node := Some n)
        ~value:"hi" ~text_color:Ansi.Color.white
        ~focused_text_color:Ansi.Color.green ());
@@ -140,7 +151,7 @@ let%expect_test "placeholder shows when focused and empty" =
   let app = make_app () in
   let node = ref None in
   reconcile app
-    (Vnode.input ~ref:(fun n -> node := Some n) ~placeholder:"Type here" ());
+    (input ~app ~ref:(fun n -> node := Some n) ~placeholder:"Type here" ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   [%expect_exact {|
@@ -149,7 +160,7 @@ Type here|}]
 let%expect_test "max length content" =
   let app = make_app () in
   let node = ref None in
-  reconcile app (Vnode.input ~ref:(fun n -> node := Some n) ~max_length:5 ());
+  reconcile app (input ~app ~ref:(fun n -> node := Some n) ~max_length:5 ());
   focus app (Option.get !node);
   frame app ~width:20 ~height:1;
   send_char app 'a';

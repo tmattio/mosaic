@@ -23,6 +23,7 @@ let make_tab_select ?options ?selected ?tab_width ?wrap_selection
     Tab_select.create ~parent:root ~options ?selected ?tab_width ?wrap_selection
       ?show_description ?show_underline ?show_scroll_arrows ()
   in
+  Tab_select.set_on_change ts (Some (Tab_select.set_selected ts));
   (t, ts)
 
 let emit_key ts key =
@@ -93,9 +94,9 @@ let create_clamps_initial_index () =
   let _t, ts = make_tab_select ~selected:100 () in
   equal ~msg:"clamped" int 4 (Tab_select.selected_index ts)
 
-let create_empty_list_index_zero () =
+let create_empty_list_has_no_selection () =
   let _t, ts = make_tab_select ~options:[] ~selected:5 () in
-  equal ~msg:"zero" int 0 (Tab_select.selected_index ts)
+  equal ~msg:"zero" int (-1) (Tab_select.selected_index ts)
 
 (* ── Selection ── *)
 
@@ -104,14 +105,14 @@ let set_selected_clamps () =
   Tab_select.set_selected ts 100;
   equal ~msg:"clamped high" int 4 (Tab_select.selected_index ts);
   Tab_select.set_selected ts (-5);
-  equal ~msg:"clamped low" int 0 (Tab_select.selected_index ts)
+  equal ~msg:"negative clears selection" int (-1) (Tab_select.selected_index ts)
 
 let set_selected_fires_on_change () =
   let _t, ts = make_tab_select () in
   let log = ref [] in
   Tab_select.set_on_change ts (Some (fun i -> log := i :: !log));
   Tab_select.set_selected ts 2;
-  equal ~msg:"fired" (list int) [ 2 ] !log
+  equal ~msg:"accepted setter is silent" (list int) [] !log
 
 let set_selected_noop_same () =
   let _t, ts = make_tab_select () in
@@ -184,7 +185,11 @@ let enter_fires_on_activate () =
 let navigation_fires_on_change () =
   let _t, ts = make_tab_select () in
   let log = ref [] in
-  Tab_select.set_on_change ts (Some (fun i -> log := i :: !log));
+  Tab_select.set_on_change ts
+    (Some
+       (fun i ->
+         Tab_select.set_selected ts i;
+         log := i :: !log));
   emit_key ts (make_key Right);
   emit_key ts (make_key Right);
   equal ~msg:"two changes" (list int) [ 2; 1 ] !log
@@ -220,7 +225,7 @@ let set_options_clamps_index () =
 let set_options_empty () =
   let _t, ts = make_tab_select () in
   Tab_select.set_options ts [];
-  equal ~msg:"zero" int 0 (Tab_select.selected_index ts);
+  equal ~msg:"zero" int (-1) (Tab_select.selected_index ts);
   match Tab_select.selected_item ts with
   | Some _ -> fail "expected None"
   | None -> ()
@@ -264,14 +269,14 @@ let apply_props_updates () =
   gt ~msg:"scheduled" ~than:before !(t.schedule_count);
   equal ~msg:"index applied" int 3 (Tab_select.selected_index ts)
 
-let apply_props_preserves_uncontrolled_selection () =
+let apply_props_restores_declared_selection () =
   let _t, ts = make_tab_select () in
   Tab_select.set_selected ts 3;
   let log = ref [] in
   Tab_select.set_on_change ts (Some (fun i -> log := i :: !log));
   Tab_select.apply_props ts
     (Tab_select.Props.make ~options:sample_items ~wrap_selection:true ());
-  equal ~msg:"selection survives unrelated prop change" int 3
+  equal ~msg:"omitted selection declares zero" int 0
     (Tab_select.selected_index ts);
   equal ~msg:"no callback echo" (list int) [] !log
 
@@ -323,9 +328,50 @@ let truncation_never_splits_emoji () =
 
 (* ── Runner ── *)
 
+let proposals_do_not_drift () =
+  let _ctx, ts = make_tab_select () in
+  let proposals = ref [] in
+  Tab_select.set_on_change ts
+    (Some (fun next -> proposals := next :: !proposals));
+  emit_key ts (make_key Right);
+  emit_key ts (make_key Right);
+  equal ~msg:"rejected events derive from accepted state" (list int) [ 1; 1 ]
+    !proposals;
+  equal ~msg:"proposal does not mutate selection" int 0
+    (Tab_select.selected_index ts);
+  Tab_select.apply_props ts
+    (Tab_select.Props.make ~options:sample_items ~selected:2 ());
+  emit_key ts (make_key Right);
+  equal ~msg:"transformed accepted state drives next proposal" (list int)
+    [ 3; 1; 1 ] !proposals
+
+let absent_selection_is_preserved () =
+  let context, ts = make_tab_select ~selected:(-1) ~show_description:true () in
+  ignore context;
+  is_none ~msg:"no selected tab" (Tab_select.selected_item ts);
+  let activations = ref [] in
+  Tab_select.set_on_activate ts
+    (Some (fun i -> activations := i :: !activations));
+  emit_key ts (make_key Enter);
+  equal ~msg:"Enter does not activate an absent tab" (list int) [] !activations;
+  let grid = render_tab_select ts ~width:80 ~height:3 in
+  let lines = String.split_on_char '\n' (Matrix_grid.to_text grid) in
+  equal ~msg:"no selected underline" string "" (String.trim (List.nth lines 1));
+  equal ~msg:"no selected description" string ""
+    (String.trim (List.nth lines 2));
+  emit_key ts (make_key Right);
+  equal ~msg:"first Right selects first" int 0 (Tab_select.selected_index ts);
+  Tab_select.apply_props ts
+    (Tab_select.Props.make ~options:sample_items ~selected:(-1) ());
+  emit_key ts (make_key Left);
+  equal ~msg:"first Left selects last without wrapping" int 4
+    (Tab_select.selected_index ts)
+
 let () =
   run "mosaic.tab_select"
     [
+      test "proposals do not drift" proposals_do_not_drift;
+      test "absent selection is preserved" absent_selection_is_preserved;
       group "Props"
         [
           test "default values" props_defaults;
@@ -343,7 +389,7 @@ let () =
           test "is focusable" create_is_focusable;
           test "is buffered" create_is_buffered;
           test "clamps initial index" create_clamps_initial_index;
-          test "empty list index zero" create_empty_list_index_zero;
+          test "empty list has no selection" create_empty_list_has_no_selection;
         ];
       group "Selection"
         [
@@ -384,7 +430,7 @@ let () =
         [
           test "updates all properties" apply_props_updates;
           test "preserves uncontrolled selection"
-            apply_props_preserves_uncontrolled_selection;
+            apply_props_restores_declared_selection;
           test "controlled selection is silent"
             apply_props_controlled_selection_is_silent;
         ];

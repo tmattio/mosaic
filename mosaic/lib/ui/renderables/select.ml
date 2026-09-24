@@ -13,9 +13,7 @@ let items_equal = List.equal item_equal
 module Props = struct
   type t = {
     options : item list;
-    selected_index : int option;
-        (* [Some i] makes the selection controlled by props; [None] leaves the
-           widget's own selection untouched across prop updates. *)
+    selected_index : int;
     background : Ansi.Color.t;
     text_color : Ansi.Color.t;
     focused_background : Ansi.Color.t;
@@ -31,7 +29,7 @@ module Props = struct
     fast_scroll_step : int;
   }
 
-  let make ?(options = []) ?selected_index ?background ?text_color
+  let make ?(options = []) ?(selected_index = 0) ?background ?text_color
       ?focused_background ?focused_text_color
       ?(selected_background = Ansi.Color.of_rgb 51 68 85)
       ?(selected_text_color = Ansi.Color.of_rgb 255 255 0)
@@ -60,7 +58,7 @@ module Props = struct
     in
     {
       options;
-      selected_index = Option.map (max 0) selected_index;
+      selected_index = max (-1) selected_index;
       background;
       text_color;
       focused_background;
@@ -80,7 +78,7 @@ module Props = struct
 
   let equal a b =
     items_equal a.options b.options
-    && Option.equal Int.equal a.selected_index b.selected_index
+    && Int.equal a.selected_index b.selected_index
     && Ansi.Color.equal a.background b.background
     && Ansi.Color.equal a.text_color b.text_color
     && Ansi.Color.equal a.focused_background b.focused_background
@@ -128,7 +126,7 @@ let option_count t = Array.length t.items
 
 let clamp_index t idx =
   let len = option_count t in
-  if len = 0 then 0 else max 0 (min (len - 1) idx)
+  if len = 0 then -1 else max (-1) (min (len - 1) idx)
 
 let effective_bg t focused =
   if focused then t.props.focused_background else t.props.background
@@ -159,16 +157,13 @@ let update_scroll_offset t =
     let desired = t.selected_index - half in
     t.scroll_offset <- max 0 (min desired max_off)
 
-let set_selected_index t idx =
+let propose_selected_index t idx =
   let len = option_count t in
   if len = 0 then ()
   else
     let idx = clamp_index t idx in
-    if idx <> t.selected_index then (
-      t.selected_index <- idx;
-      update_scroll_offset t;
-      (match t.on_change with None -> () | Some f -> f t.selected_index);
-      request t)
+    if idx <> t.selected_index then
+      match t.on_change with None -> () | Some f -> f idx
 
 (* ───── Public Accessors ───── *)
 
@@ -177,7 +172,8 @@ let selected_index t = t.selected_index
 
 let selected_item t =
   let len = option_count t in
-  if len = 0 then None else Some t.items.(t.selected_index)
+  if len = 0 || t.selected_index < 0 then None
+  else Some t.items.(t.selected_index)
 
 (* ───── Options ───── *)
 
@@ -192,20 +188,22 @@ let set_options t opts =
 let move_up ?(steps = 1) t =
   let len = option_count t in
   if len = 0 then ()
+  else if t.selected_index < 0 then propose_selected_index t (len - 1)
   else
     let new_index = t.selected_index - steps in
-    if new_index >= 0 then set_selected_index t new_index
-    else if t.props.wrap_selection then set_selected_index t (len - 1)
-    else set_selected_index t 0
+    if new_index >= 0 then propose_selected_index t new_index
+    else if t.props.wrap_selection then propose_selected_index t (len - 1)
+    else propose_selected_index t 0
 
 let move_down ?(steps = 1) t =
   let len = option_count t in
   if len = 0 then ()
+  else if t.selected_index < 0 then propose_selected_index t 0
   else
     let new_index = t.selected_index + steps in
-    if new_index < len then set_selected_index t new_index
-    else if t.props.wrap_selection then set_selected_index t 0
-    else set_selected_index t (len - 1)
+    if new_index < len then propose_selected_index t new_index
+    else if t.props.wrap_selection then propose_selected_index t 0
+    else propose_selected_index t (len - 1)
 
 (* ───── Display Setters ───── *)
 
@@ -309,7 +307,7 @@ let handle_key t (event : Event.key) =
         move_down t;
         true
     | Enter | KP_enter ->
-        (if option_count t > 0 then
+        (if t.selected_index >= 0 then
            match t.on_activate with None -> () | Some f -> f t.selected_index);
         true
     | _ -> false
@@ -329,7 +327,7 @@ let handle_mouse t (event : Event.mouse) =
         (* Map pixel row to item index via lines_per_item stride *)
         let index = t.scroll_offset + (y / max 1 t.lines_per_item) in
         if index < option_count t then (
-          set_selected_index t index;
+          propose_selected_index t index;
           Event.Mouse.stop_propagation event)
   | Scroll { direction; delta } -> (
       match direction with
@@ -411,7 +409,7 @@ let render t _self grid ~delta:_ =
        positioned proportionally to the selection within the list. *)
     if t.props.show_scroll_indicator && option_count t > max_visible then
       let len = max 1 (option_count t - 1) in
-      let scroll_percent = float t.selected_index /. float len in
+      let scroll_percent = float (max 0 t.selected_index) /. float len in
       (* Reserve first and last row, place indicator in the range [1,
          height-2] *)
       let indicator_height = max 1 (height - 2) in
@@ -462,8 +460,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
       on_activate = None;
     }
   in
-  t.selected_index <-
-    clamp_index t (Option.value props.selected_index ~default:0);
+  t.selected_index <- clamp_index t props.selected_index;
   recalc_lines_per_item t;
   recalc_max_visible t (Renderable.height node);
   update_scroll_offset t;
@@ -486,22 +483,18 @@ let set_style t style = Renderable.set_style t.node style
 
 (* Controlled application: move the selection without echoing [on_change] —
    the value came from the app, not from a user gesture. *)
-let apply_selected_index t idx =
-  let len = option_count t in
-  if len > 0 then
-    let idx = clamp_index t idx in
-    if idx <> t.selected_index then begin
-      t.selected_index <- idx;
-      update_scroll_offset t;
-      request t
-    end
+let set_selected_index t idx =
+  let idx = clamp_index t idx in
+  if idx <> t.selected_index then begin
+    t.selected_index <- idx;
+    update_scroll_offset t;
+    request t
+  end
 
 let apply_props t (props : Props.t) =
   if not (items_equal (Array.to_list t.items) props.options) then
     set_options t props.options;
-  (match props.selected_index with
-  | Some idx -> apply_selected_index t idx
-  | None -> ());
+  set_selected_index t props.selected_index;
   set_wrap_selection t props.wrap_selection;
   set_show_description t props.show_description;
   set_show_scroll_indicator t props.show_scroll_indicator;

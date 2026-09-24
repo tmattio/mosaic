@@ -74,7 +74,7 @@ let viewport_switch_selects_only_matching_branch () =
     Vnode.viewport_switch ~at_least_width:80
       ~wide:(Vnode.spinner ~ref:(fun node -> wide_node := Some node) ())
       ~narrow:
-        (Vnode.input ~autofocus:true
+        (Vnode.input ~state:Editor.empty ~on_change:ignore ~autofocus:true
            ~ref:(fun node -> narrow_node := Some node)
            ())
   in
@@ -105,21 +105,34 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
       ~style:(column_style |> Toffee.Style.set_flex_shrink 0.)
       (List.init 20 (fun index -> Vnode.text (string_of_int index)))
   in
-  let transcript =
+  let scroll = ref (Scroll.at 0) in
+  let transcript () =
     Vnode.scroll_box ~key:"transcript" ~style:scroll_style ~focusable:false
-      ~show_scrollbars:false
-      ~on_scroll:(fun ~x:_ ~y -> last_scroll := Some y)
+      ~show_scrollbars:false ~scroll:!scroll
+      ~on_scroll:(fun next ->
+        scroll := next;
+        last_scroll :=
+          Some
+            (snd
+               (Scroll.resolve next ~width:10 ~height:4 ~content_width:10
+                  ~content_height:20)))
       [ content ]
   in
   let root children =
     Vnode.box ~key:"responsive-root" ~style:column_style children
   in
-  let view =
+  let view () =
     Vnode.viewport_switch ~at_least_width:80
-      ~wide:(root [ transcript; Vnode.spinner () ])
-      ~narrow:(root [ transcript; Vnode.input ~autofocus:true () ])
+      ~wide:(root [ transcript (); Vnode.spinner () ])
+      ~narrow:
+        (root
+           [
+             transcript ();
+             Vnode.input ~state:Editor.empty ~on_change:ignore ~autofocus:true
+               ();
+           ])
   in
-  render_view ~viewport_width:79 reconciler view;
+  render_view ~viewport_width:79 reconciler (view ());
   do_frame ~width:79 renderer;
   ignore (Renderer.render ~full:true renderer : string);
   let first_root = List.hd (children_of renderer) in
@@ -136,7 +149,7 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
     | Some y when y > 0 -> y
     | _ -> fail "expected the transcript to scroll before resize"
   in
-  render_view ~viewport_width:80 reconciler view;
+  render_view ~viewport_width:80 reconciler (view ());
   do_frame ~width:80 renderer;
   ignore (Renderer.render ~full:true renderer : string);
   let wide_root = List.hd (children_of renderer) in
@@ -161,7 +174,7 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
         (fun pos -> pos > first_scroll)
         y
   | None -> fail "expected the retained transcript to keep scrolling");
-  render_view ~viewport_width:79 reconciler view;
+  render_view ~viewport_width:79 reconciler (view ());
   do_frame ~width:79 renderer;
   let second_root = List.hd (children_of renderer) in
   let second_transcript = List.hd (Renderable.children second_root) in
@@ -196,7 +209,13 @@ let non_focusable_scroll_box_still_scrolls_with_wheel () =
   in
   render_view reconciler
     (Vnode.scroll_box ~style ~focusable:false ~show_scrollbars:false
-       ~on_scroll:(fun ~x:_ ~y -> last_scroll := Some y)
+       ~scroll:(Scroll.at 0)
+       ~on_scroll:(fun next ->
+         last_scroll :=
+           Some
+             (snd
+                (Scroll.resolve next ~width:10 ~height:3 ~content_width:10
+                   ~content_height:10)))
        [ content ]);
   do_frame renderer;
   ignore (Renderer.render ~full:true renderer : string);
@@ -216,9 +235,9 @@ let non_focusable_scroll_box_still_scrolls_with_wheel () =
         y
   | None -> fail "expected wheel scroll callback"
 
-let keyed_scroll_by_applies_once_after_layout () =
+let declared_scroll_survives_rerender_and_remount () =
   let renderer, reconciler = make () in
-  let last_scroll = ref None in
+  let proposals = ref [] in
   let style =
     Toffee.Style.default
     |> Toffee.Style.set_size (Vnode.size ~width:10 ~height:4)
@@ -227,82 +246,44 @@ let keyed_scroll_by_applies_once_after_layout () =
     Vnode.box
       ~style:
         (Toffee.Style.default
-        |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column
+        |> Toffee.Style.set_flex_direction Column
         |> Toffee.Style.set_flex_shrink 0.)
-      (List.init 20 (fun index -> Vnode.text (string_of_int index)))
+      (List.init 20 (fun i -> Vnode.text (string_of_int i)))
   in
-  let scroll_request key : Scroll_box.scroll_by =
-    { key; x = None; y = Some 1.; unit = `Viewport }
-  in
-  let view ?background request =
-    Vnode.scroll_box ~key:"paged" ~style ~show_scrollbars:false ?background
-      ~scroll_by:request
-      ~on_scroll:(fun ~x ~y -> last_scroll := Some (x, y))
+  let view key scroll =
+    Vnode.scroll_box ~key ~style ~show_scrollbars:false ~scroll
+      ~on_scroll:(fun next ->
+        proposals :=
+          snd
+            (Scroll.resolve next ~width:10 ~height:4 ~content_width:10
+               ~content_height:20)
+          :: !proposals)
       [ content ]
   in
-  let expect_scroll message expected =
-    match !last_scroll with
-    | Some (x, y) ->
-        equal ~msg:(message ^ ": horizontal offset") int 0 x;
-        equal ~msg:message int expected y
-    | None -> fail (message ^ ": expected a scroll callback")
+  let wheel () =
+    match Matrix_input.mouse_scroll 1 1 Matrix_input.Mouse.Scroll_up with
+    | Matrix_input.Mouse mouse ->
+        ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse)
+    | _ -> assert false
   in
-  let request = scroll_request "page-1" in
-  render_view reconciler (view request);
-  do_frame renderer;
-  expect_scroll "first request uses the measured viewport" 4;
-  render_view reconciler (view ~background:Ansi.Color.blue request);
-  do_frame renderer;
-  expect_scroll "unrelated prop update does not replay the key" 4;
-  render_view reconciler (view (scroll_request "page-2"));
-  do_frame renderer;
-  expect_scroll "a new key applies exactly once" 8
-
-let acknowledged_scroll_by_does_not_replay_after_remount () =
-  let renderer, reconciler = make () in
-  let request = ref (Some "page-1") in
-  let acknowledgements = ref [] in
-  let scrolls = ref [] in
-  let style =
-    Toffee.Style.default
-    |> Toffee.Style.set_size (Vnode.size ~width:10 ~height:4)
+  let show key scroll =
+    render_view reconciler (view key scroll);
+    do_frame renderer;
+    ignore (Renderer.render ~full:true renderer : string);
+    wheel ()
   in
-  let content =
-    Vnode.box
-      ~style:
-        (Toffee.Style.default
-        |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column
-        |> Toffee.Style.set_flex_shrink 0.)
-      (List.init 20 (fun index -> Vnode.text (string_of_int index)))
-  in
-  let view instance_key =
-    let scroll_by =
-      Option.map
-        (fun key ->
-          ({ key; x = None; y = Some 1.; unit = `Viewport }
-            : Scroll_box.scroll_by))
-        !request
-    in
-    Vnode.scroll_box ~key:instance_key ~style ~show_scrollbars:false ?scroll_by
-      ~on_scroll:(fun ~x:_ ~y -> scrolls := y :: !scrolls)
-      ~on_scroll_by_applied:(fun ~key ->
-        acknowledgements := key :: !acknowledgements;
-        if Option.equal String.equal !request (Some key) then request := None)
-      [ content ]
-  in
-  render_view reconciler (view "first-mount");
-  do_frame renderer;
-  equal ~msg:"request moved by one viewport" (list int) [ 4 ]
-    (List.rev !scrolls);
-  equal ~msg:"request acknowledged" (list string) [ "page-1" ]
-    (List.rev !acknowledgements);
-  is_none ~msg:"caller retired acknowledged request" !request;
-  render_view reconciler (view "second-mount");
-  do_frame renderer;
-  equal ~msg:"remount cannot replay retired request" (list int) [ 4 ]
-    (List.rev !scrolls);
-  equal ~msg:"remount emits no stale acknowledgement" (list string) [ "page-1" ]
-    (List.rev !acknowledgements)
+  show "first" (Scroll.at 4);
+  show "first" (Scroll.at 4);
+  show "remounted" (Scroll.at 4);
+  equal
+    ~msg:
+      "rejected proposals leave accepted position intact across rerender and \
+       remount"
+    (list int) [ 3; 3; 3 ] (List.rev !proposals);
+  show "remounted" (Scroll.follow `Bottom (Scroll.at 0));
+  equal ~msg:"follow resolves from measured content" int 15 (List.hd !proposals);
+  show "remounted" (Scroll.reveal ~line:10 (Scroll.at 0));
+  equal ~msg:"reveal resolves nearest visible row" int 6 (List.hd !proposals)
 
 (* ── Re-rendering (Update in Place) ── *)
 
@@ -373,79 +354,72 @@ let rerender_updates_id () =
     (Printf.sprintf "node-%d" (Renderable.Private.num node))
     (Renderable.id node)
 
-let controlled_input_reapplies_equal_value () =
+let rejected_input_preserves_accepted_state () =
   let renderer, reconciler = make () in
   let inputs = ref [] in
   let submissions = ref [] in
   let view () =
-    Vnode.input ~key:"controlled-input" ~autofocus:true ~value:""
-      ~on_input:(fun value -> inputs := value :: !inputs)
+    Vnode.input ~key:"controlled-input" ~autofocus:true ~state:Editor.empty
+      ~on_change:(fun state -> inputs := Editor.text state :: !inputs)
       ~on_submit:(fun value -> submissions := value :: !submissions)
       ()
   in
   render_view reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
-  equal ~msg:"live input accepted the edit" (list string) [ "x" ]
-    (List.rev !inputs);
+  equal ~msg:"input proposes the edit" (list string) [ "x" ] (List.rev !inputs);
   render_view reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer
        (Matrix_input.Key.make Matrix_input.Key.Enter)
       : Event.key);
-  equal ~msg:"equal controlled value replaced live input state" (list string)
+  equal ~msg:"rejected edit leaves submitted text unchanged" (list string)
     [ "" ] (List.rev !submissions)
 
-let controlled_textarea_reapplies_equal_value () =
+let rejected_textarea_preserves_accepted_state () =
   let renderer, reconciler = make () in
   let inputs = ref [] in
   let submissions = ref [] in
-  let node = ref None in
   let view () =
-    Vnode.textarea ~key:"controlled-textarea" ~autofocus:true ~value:""
-      ~ref:(fun renderable -> node := Some renderable)
-      ~on_input:(fun value -> inputs := value :: !inputs)
+    Vnode.textarea ~key:"controlled-textarea" ~autofocus:true
+      ~state:Editor.empty
+      ~on_change:(fun state -> inputs := Editor.text state :: !inputs)
       ~on_submit:(fun value -> submissions := value :: !submissions)
       ()
   in
   render_view reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
-  equal ~msg:"live textarea accepted the edit" (list string) [ "x" ]
+  equal ~msg:"textarea proposes the edit" (list string) [ "x" ]
     (List.rev !inputs);
   do_frame renderer;
   render_view reconciler (view ());
-  (match !node with
-  | Some renderable ->
-      is_true ~msg:"controlled replacement invalidates intrinsic layout"
-        (Renderable.Private.layout_dirty renderable)
-  | None -> fail "expected textarea ref");
   let modifier = { Matrix_input.Modifier.none with ctrl = true } in
   ignore
     (Renderer.dispatch_key renderer
        (Matrix_input.Key.make ~modifier Matrix_input.Key.Enter)
       : Event.key);
-  equal ~msg:"equal controlled value replaced live textarea state" (list string)
+  equal ~msg:"rejected edit leaves submitted text unchanged" (list string)
     [ "" ] (List.rev !submissions)
 
-let converged_controlled_value_preserves_cursor () =
+let accepted_editor_state_preserves_cursor () =
   let renderer, reconciler = make () in
-  let inputs = ref [] in
-  let view =
-    Vnode.textarea ~key:"controlled-cursor" ~autofocus:true ~value:"ab"
-      ~on_input:(fun value -> inputs := value :: !inputs)
+  let state = ref (Editor.of_string "ab") in
+  let view () =
+    Vnode.textarea ~autofocus:true ~state:!state
+      ~on_change:(fun next -> state := next)
       ()
   in
-  render_view reconciler view;
+  render_view reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer
        (Matrix_input.Key.make Matrix_input.Key.Left)
       : Event.key);
-  render_view reconciler view;
+  equal ~msg:"cursor proposal accepted by model" int 1 (Editor.cursor !state);
+  render_view reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
-  equal ~msg:"same vnode preserves the live cursor when value has converged"
-    (list string) [ "axb" ] (List.rev !inputs)
+  equal ~msg:"accepted caret guides next edit" string "axb" (Editor.text !state)
 
 (* ── Keyed Reconciliation ── *)
 
@@ -711,7 +685,7 @@ let on_key_handler_fires () =
   let renderer, reconciler = make () in
   let received = ref false in
   render_view reconciler
-    (Vnode.box ~focusable:true ~on_key:(fun _ -> received := true) []);
+    (Vnode.box ~focusable:true ~on_key:(fun _ -> Some (received := true)) []);
   do_frame renderer;
   let node = List.hd (children_of renderer) in
   ignore (Renderer.focus renderer node : bool);
@@ -723,7 +697,9 @@ let on_key_handler_updates_on_rerender () =
   let renderer, reconciler = make () in
   let log = ref [] in
   render_view reconciler
-    (Vnode.box ~focusable:true ~on_key:(fun _ -> log := "first" :: !log) []);
+    (Vnode.box ~focusable:true
+       ~on_key:(fun _ -> Some (log := "first" :: !log))
+       []);
   do_frame renderer;
   let node = List.hd (children_of renderer) in
   ignore (Renderer.focus renderer node : bool);
@@ -731,7 +707,9 @@ let on_key_handler_updates_on_rerender () =
     (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'a') : Event.key);
   equal ~msg:"first handler" (list string) [ "first" ] !log;
   render_view reconciler
-    (Vnode.box ~focusable:true ~on_key:(fun _ -> log := "second" :: !log) []);
+    (Vnode.box ~focusable:true
+       ~on_key:(fun _ -> Some (log := "second" :: !log))
+       []);
   ignore
     (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'b') : Event.key);
   equal ~msg:"second handler" (list string) [ "second"; "first" ] !log
@@ -768,9 +746,176 @@ let unmount_allows_reuse () =
 
 (* ── Runner ── *)
 
+let duplicate_visible_focus_is_rejected () =
+  let renderer, reconciler = make () in
+  render_view reconciler
+    (Vnode.box
+       [ Vnode.text ~focused:true "first"; Vnode.text ~focused:true "second" ]);
+  equal ~msg:"declarations are mounted" int 1 (child_count renderer);
+  raises_match ~msg:"visible focus must be unique"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () -> ignore (Reconciler.focused reconciler : Renderable.t option))
+
+let hidden_subtrees_do_not_contribute_focus () =
+  let renderer, reconciler = make () in
+  let view visible =
+    Vnode.box
+      [
+        Vnode.text ~key:"active" ~focused:true "active";
+        Vnode.box ~key:"hidden" ~visible
+          [
+            Vnode.text ~focused:true "hidden first";
+            Vnode.text ~focused:true "hidden second";
+          ];
+      ]
+  in
+  render_view reconciler (view false);
+  let active =
+    match Renderable.children (List.hd (children_of renderer)) with
+    | active :: _ -> active
+    | [] -> fail "missing active element"
+  in
+  is_true ~msg:"hidden descendants do not conflict with visible focus"
+    (match Reconciler.focused reconciler with
+    | Some focused -> focused == active
+    | None -> false);
+  render_view reconciler (view true);
+  raises_match ~msg:"revealing conflicting declarations rejects ambiguity"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () -> ignore (Reconciler.focused reconciler : Renderable.t option));
+  render_view reconciler (view false);
+  is_true ~msg:"hiding the subtree restores its focus exclusion"
+    (match Reconciler.focused reconciler with
+    | Some focused -> focused == active
+    | None -> false)
+
+let memo_reuses_equal_value_keys () =
+  let renderer, reconciler = make () in
+  let builds = ref 0 in
+  let view values =
+    Vnode.memo ~key:values (fun values ->
+        incr builds;
+        Vnode.text (String.concat "," values))
+  in
+  render_view reconciler (view [ String.make 1 'a' ]);
+  render_view reconciler (view [ String.make 1 'a' ]);
+  equal ~msg:"fresh structurally equal key skips view" int 1 !builds;
+  render_view reconciler (view [ "b" ]);
+  equal ~msg:"changed key rebuilds" int 2 !builds;
+  equal ~msg:"one retained child" int 1 (child_count renderer)
+
+let memo_refreshes_message_mapper () =
+  let renderer, reconciler = make () in
+  let builds = ref 0 and messages = ref [] in
+  let view () =
+    Vnode.memo ~key:0 (fun _ ->
+        incr builds;
+        Vnode.box ~focusable:true ~on_key:(fun _ -> Some "event") [])
+  in
+  let first text = messages := ("first " ^ text) :: !messages in
+  let second text = messages := ("second " ^ text) :: !messages in
+  render_view reconciler (Vnode.map first (view ()));
+  ignore (Renderer.focus renderer (List.hd (children_of renderer)) : bool);
+  let key () =
+    ignore
+      (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x')
+        : Event.key)
+  in
+  key ();
+  render_view reconciler (Vnode.map second (view ()));
+  key ();
+  equal ~msg:"new mapper refreshes mounted callback" (list string)
+    [ "second event"; "first event" ]
+    !messages;
+  equal ~msg:"mapping invalidates memo" int 2 !builds
+
+let nested_memo_keeps_independent_keys () =
+  let renderer, reconciler = make () in
+  let outer_builds = ref 0 and inner_builds = ref 0 in
+  let view epoch value =
+    Vnode.memo ~key:(epoch, value) (fun (_, value) ->
+        incr outer_builds;
+        Vnode.box
+          [
+            Vnode.memo ~key:value (fun value ->
+                incr inner_builds;
+                Vnode.text value);
+          ])
+  in
+  render_view reconciler (view 0 "a");
+  render_view reconciler (view 1 "a");
+  equal ~msg:"outer rebuilt" int 2 !outer_builds;
+  equal ~msg:"equal nested key retained" int 1 !inner_builds;
+  render_view reconciler (view 1 "b");
+  equal ~msg:"changed nested key rebuilt" int 2 !inner_builds;
+  equal ~msg:"one outer child" int 1 (child_count renderer)
+
+let memo_belongs_to_keyed_parent () =
+  let renderer, reconciler = make () in
+  let builds_a = ref 0 and builds_b = ref 0 in
+  let a key =
+    Vnode.box ~key
+      [
+        Vnode.memo ~key:0 (fun _ ->
+            incr builds_a;
+            Vnode.text ~id:"A" "A");
+      ]
+  in
+  let b () =
+    Vnode.box ~key:"b"
+      [
+        Vnode.memo ~key:0 (fun _ ->
+            incr builds_b;
+            Vnode.text ~id:"B" "B");
+      ]
+  in
+  render_view reconciler (Vnode.fragment [ a "a"; b () ]);
+  render_view reconciler (Vnode.fragment [ b (); a "a" ]);
+  let ids =
+    List.map
+      (fun node -> Renderable.id (List.hd (Renderable.children node)))
+      (children_of renderer)
+  in
+  equal ~msg:"memo follows its keyed parent" (list string) [ "B"; "A" ] ids;
+  equal ~msg:"reorder retains A memo" int 1 !builds_a;
+  equal ~msg:"reorder retains B memo" int 1 !builds_b;
+  render_view reconciler (Vnode.fragment [ b (); a "new-a" ]);
+  equal ~msg:"new parent owns fresh memo" int 2 !builds_a
+
+let removed_memo_releases_view () =
+  let renderer, reconciler = make () in
+  let weak = Weak.create 1 in
+  let mount () =
+    let captured = ref 42 in
+    Weak.set weak 0 (Some captured);
+    render_view reconciler
+      (Vnode.memo ~key:0 (fun _ -> Vnode.text (string_of_int !captured)))
+  in
+  mount ();
+  render_view reconciler Vnode.empty;
+  Gc.full_major ();
+  is_false ~msg:"removed memo does not retain captured state"
+    (Weak.check weak 0);
+  equal ~msg:"removed subtree" int 0 (child_count renderer)
+
 let () =
   run "mosaic.reconciler"
     [
+      group "Focus"
+        [
+          test "duplicate visible focus is rejected"
+            duplicate_visible_focus_is_rejected;
+          test "hidden subtrees do not contribute focus"
+            hidden_subtrees_do_not_contribute_focus;
+        ];
+      group "Memo"
+        [
+          test "equal value keys" memo_reuses_equal_value_keys;
+          test "message mapper refresh" memo_refreshes_message_mapper;
+          test "nested memo keys" nested_memo_keeps_independent_keys;
+          test "keyed parent ownership" memo_belongs_to_keyed_parent;
+          test "removed memo releases view" removed_memo_releases_view;
+        ];
       group "Construction"
         [
           test "container returns root" create_returns_container;
@@ -790,10 +935,8 @@ let () =
             viewport_switch_reconciles_selected_branch_on_resize;
           test "non-focusable scroll box still wheels"
             non_focusable_scroll_box_still_scrolls_with_wheel;
-          test "keyed scroll_by applies once after layout"
-            keyed_scroll_by_applies_once_after_layout;
-          test "acknowledged scroll_by does not replay after remount"
-            acknowledged_scroll_by_does_not_replay_after_remount;
+          test "declared scroll survives rerender and remount"
+            declared_scroll_survives_rerender_and_remount;
           test "single spinner" render_single_spinner;
           test "single progress_bar" render_single_progress_bar;
           test "scroll_bar orientation applies at mount"
@@ -811,12 +954,12 @@ let () =
           test "updates z_index" rerender_updates_z_index;
           test "updates opacity" rerender_updates_opacity;
           test "updates id" rerender_updates_id;
-          test "controlled input reapplies equal value"
-            controlled_input_reapplies_equal_value;
-          test "controlled textarea reapplies equal value"
-            controlled_textarea_reapplies_equal_value;
-          test "converged controlled value preserves cursor"
-            converged_controlled_value_preserves_cursor;
+          test "rejected input preserves accepted state"
+            rejected_input_preserves_accepted_state;
+          test "rejected textarea preserves accepted state"
+            rejected_textarea_preserves_accepted_state;
+          test "accepted editor state preserves cursor"
+            accepted_editor_state_preserves_cursor;
         ];
       group "Keyed reconciliation"
         [

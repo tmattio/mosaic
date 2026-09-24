@@ -6,6 +6,7 @@ module Charts = Matrix_charts
 
 (* ---------- Model ---------- *)
 type model = {
+  scrolls : (string * Scroll.t) list;
   cpu : Sysstat.Cpu.stats;
   cpu_per_core : Sysstat.Cpu.stats array;
   memory : Sysstat.Mem.t;
@@ -55,7 +56,7 @@ let mem_swap_used_percent (m : Sysstat.Mem.t) =
 (* Network I/O formatting helpers *)
 let bytes_per_sec_to_mbps bps = bps /. (1024. *. 1024.)
 
-type msg = Quit | Tick of float
+type msg = Quit | Tick of float | Scrolled of string * Scroll.t
 
 (* ---------- Init ---------- *)
 let init () =
@@ -121,6 +122,7 @@ let init () =
   let proc_list_prev = Sysstat.Proc.Table.sample () in
   ( {
       cpu;
+      scrolls = [];
       cpu_per_core;
       memory;
       disk;
@@ -144,6 +146,9 @@ let init () =
 let update msg m =
   match msg with
   | Quit -> (m, Cmd.quit)
+  | Scrolled (id, scroll) ->
+      ( { m with scrolls = (id, scroll) :: List.remove_assoc id m.scrolls },
+        Cmd.none )
   | Tick dt ->
       (* Sample at ~5Hz (every 0.2s) *)
       let sample_acc = m.sample_acc +. dt in
@@ -201,6 +206,7 @@ let update msg m =
         Charts.Sparkline.push m.sparkline_memory mem_used_pct;
         Charts.Sparkline.push m.sparkline_disk (disk_used_percent disk);
         ( {
+            scrolls = m.scrolls;
             cpu;
             cpu_per_core;
             memory;
@@ -245,6 +251,12 @@ let draw_progress_bar grid ~width ~height ~value ~max_value ~fill_color =
 
 (* ---------- View Components ---------- *)
 
+let scroller model id =
+  scroll_box
+    ~scroll:
+      (Option.value (List.assoc_opt id model.scrolls) ~default:(Scroll.at 0))
+    ~on_scroll:(fun value -> Scrolled (id, value))
+
 let view_header () =
   box ~padding:(padding 1) ~background:header_bg
     [
@@ -259,14 +271,15 @@ let view_header () =
 let view_footer () =
   box ~padding:(padding 1) ~background:footer_bg [ text ~style:hint "q quit" ]
 
-let view_per_core_cpu (cpu_per_core : Sysstat.Cpu.stats array) =
+let view_per_core_cpu model (cpu_per_core : Sysstat.Cpu.stats array) =
   if Array.length cpu_per_core > 0 then
     box ~flex_direction:Column ~gap:(gap 1)
       ~size:{ width = pct 100; height = auto }
       [
         text ~style:muted "Per-Core Usage:";
-        scroll_box ~scroll_y:true ~scroll_x:false
+        scroller model "cores"
           ~size:{ width = pct 100; height = px 12 }
+          ~scroll_y:true ~scroll_x:false
           (let cores =
              Array.to_list (Array.mapi (fun i stats -> (i, stats)) cpu_per_core)
            in
@@ -279,10 +292,9 @@ let view_per_core_cpu (cpu_per_core : Sysstat.Cpu.stats array) =
            let rows = chunk_pairs cores in
            List.mapi
              (fun row_idx row ->
-               box
-                 ~key:(Printf.sprintf "row-%d" row_idx)
-                 ~flex_direction:Row ~gap:(gap 1)
+               box ~flex_direction:Row ~gap:(gap 1)
                  ~size:{ width = pct 100; height = auto }
+                 ~key:(Printf.sprintf "row-%d" row_idx)
                  (List.mapi
                     (fun _col_idx (i, (core_stats : Sysstat.Cpu.stats)) ->
                       let total_usage = core_stats.user +. core_stats.system in
@@ -291,13 +303,12 @@ let view_per_core_cpu (cpu_per_core : Sysstat.Cpu.stats array) =
                         else if total_usage > 50. then Ansi.Color.yellow
                         else Ansi.Color.green
                       in
-                      box
-                        ~key:(Printf.sprintf "core-%d" i)
-                        ~padding:(padding 1)
+                      box ~padding:(padding 1)
                         ~background:
                           (if i mod 2 = 0 then Ansi.Color.transparent
                            else Ansi.Color.grayscale ~level:3)
                         ~size:{ width = pct 50; height = auto }
+                        ~key:(Printf.sprintf "core-%d" i)
                         [
                           box ~flex_direction:Column ~gap:(gap 0)
                             ~size:{ width = pct 100; height = auto }
@@ -333,13 +344,13 @@ let view_per_core_cpu (cpu_per_core : Sysstat.Cpu.stats array) =
       ]
   else box ~size:{ width = pct 100; height = px 0 } []
 
-let view_cpu_usage (cpu : Sysstat.Cpu.stats)
+let view_cpu_usage model (cpu : Sysstat.Cpu.stats)
     (cpu_per_core : Sysstat.Cpu.stats array)
     (sparkline_cpu : Charts.Sparkline.t) =
   let is_linux = Sys.file_exists "/proc" in
-  box ~border:true ~padding:(padding 1) ~title:"CPU Usage"
-    ~background:Ansi.Color.transparent
+  box ~border:true ~padding:(padding 1) ~background:Ansi.Color.transparent
     ~size:{ width = pct 100; height = auto }
+    ~title:"CPU Usage"
     [
       box ~flex_direction:Column ~gap:(gap 0)
         ~size:{ width = pct 100; height = auto }
@@ -482,25 +493,26 @@ let view_cpu_usage (cpu : Sysstat.Cpu.stats)
                 ];
             ];
           (* Bottom: Per-Core CPU Usage *)
-          view_per_core_cpu cpu_per_core;
+          view_per_core_cpu model cpu_per_core;
         ];
     ]
 
-let view_top_processes (processes : Sysstat.Proc.Table.stats list) =
-  box ~border:true ~padding:(padding 1) ~title:"Top Processes"
+let view_top_processes model (processes : Sysstat.Proc.Table.stats list) =
+  box ~border:true ~padding:(padding 1)
     ~size:{ width = pct 100; height = auto }
+    ~title:"Top Processes"
     [
       (if List.length processes > 0 then
-         scroll_box ~scroll_y:true ~scroll_x:false
+         scroller model "processes"
            ~size:{ width = pct 100; height = px 10 }
+           ~scroll_y:true ~scroll_x:false
            (List.mapi
               (fun i (proc : Sysstat.Proc.Table.stats) ->
-                box
-                  ~key:(Printf.sprintf "process-%d" proc.pid)
-                  ~padding:(padding 1)
+                box ~padding:(padding 1)
                   ~background:
                     (if i mod 2 = 0 then Ansi.Color.transparent
                      else Ansi.Color.grayscale ~level:3)
+                  ~key:(Printf.sprintf "process-%d" proc.pid)
                   [
                     box ~flex_direction:Row ~justify_content:Space_between
                       ~align_items:Center
@@ -540,8 +552,9 @@ let view_top_processes (processes : Sysstat.Proc.Table.stats list) =
 let view_memory_usage (memory : Sysstat.Mem.t)
     (sparkline_memory : Charts.Sparkline.t) =
   let is_linux = Sys.file_exists "/proc" in
-  box ~border:true ~padding:(padding 1) ~title:"Memory Usage"
+  box ~border:true ~padding:(padding 1)
     ~size:{ width = pct 100; height = auto }
+    ~title:"Memory Usage"
     [
       box ~flex_direction:Row ~gap:(gap 3)
         ~size:{ width = pct 100; height = pct 100 }
@@ -732,9 +745,10 @@ let view_memory_usage (memory : Sysstat.Mem.t)
         ];
     ]
 
-let view_disk_usage (disk : Sysstat.Fs.t) =
-  box ~border:true ~padding:(padding 1) ~title:"Disk Usage"
+let view_disk_usage model (disk : Sysstat.Fs.t) =
+  box ~border:true ~padding:(padding 1)
     ~size:{ width = pct 100; height = auto }
+    ~title:"Disk Usage"
     [
       (* Disk Metrics *)
       box ~flex_direction:Column ~gap:(gap 1)
@@ -782,16 +796,16 @@ let view_disk_usage (disk : Sysstat.Fs.t) =
                ~size:{ width = pct 100; height = auto }
                [
                  text ~style:muted "Partitions:";
-                 scroll_box ~scroll_y:true ~scroll_x:false
+                 scroller model "disks"
                    ~size:{ width = pct 100; height = px 8 }
+                   ~scroll_y:true ~scroll_x:false
                    (List.mapi
                       (fun i (part : Sysstat.Fs.partition) ->
-                        box
-                          ~key:(Printf.sprintf "partition-%d" i)
-                          ~padding:(padding 1)
+                        box ~padding:(padding 1)
                           ~background:
                             (if i mod 2 = 0 then Ansi.Color.transparent
                              else Ansi.Color.grayscale ~level:3)
+                          ~key:(Printf.sprintf "partition-%d" i)
                           [
                             box ~flex_direction:Row
                               ~justify_content:Space_between ~align_items:Center
@@ -832,8 +846,9 @@ let view_disk_usage (disk : Sysstat.Fs.t) =
     ]
 
 let view_network_io (network : Sysstat.Net.stats) =
-  box ~border:true ~padding:(padding 1) ~title:"Network I/O"
+  box ~border:true ~padding:(padding 1)
     ~size:{ width = pct 100; height = auto }
+    ~title:"Network I/O"
     [
       (* Network Metrics *)
       box ~flex_direction:Column ~gap:(gap 1)
@@ -875,8 +890,9 @@ let view_network_io (network : Sysstat.Net.stats) =
     ]
 
 let view_process_self (process : Sysstat.Proc.Self.stats) =
-  box ~border:true ~padding:(padding 1) ~title:"Process (self)"
+  box ~border:true ~padding:(padding 1)
     ~size:{ width = pct 100; height = auto }
+    ~title:"Process (self)"
     [
       (* Process Metrics *)
       box ~flex_direction:Column ~gap:(gap 1)
@@ -921,8 +937,9 @@ let view model =
       (* Header *)
       view_header ();
       (* Content - Merged CPU Column Layout *)
-      scroll_box ~scroll_y:true ~scroll_x:false ~flex_grow:1.
+      scroller model "main" ~flex_grow:1.
         ~size:{ width = pct 100; height = pct 100 }
+        ~scroll_y:true ~scroll_x:false
         [
           box ~padding:(padding 1)
             ~size:{ width = pct 100; height = auto }
@@ -934,9 +951,9 @@ let view model =
                   box ~flex_direction:Column ~gap:(gap 1)
                     ~size:{ width = pct 50; height = auto }
                     [
-                      view_cpu_usage model.cpu model.cpu_per_core
+                      view_cpu_usage model model.cpu model.cpu_per_core
                         model.sparkline_cpu;
-                      view_top_processes model.processes;
+                      view_top_processes model model.processes;
                       view_network_io model.network;
                     ];
                   (* Right: Memory, Disk, and Process Column *)
@@ -945,7 +962,7 @@ let view model =
                     ~size:{ width = pct 50; height = auto }
                     [
                       view_memory_usage model.memory model.sparkline_memory;
-                      view_disk_usage model.disk;
+                      view_disk_usage model model.disk;
                       view_process_self model.process;
                     ];
                 ];
@@ -959,7 +976,7 @@ let view model =
 let subscriptions _model =
   Sub.batch
     [
-      Sub.on_tick (fun ~dt -> Tick dt);
+      Sub.on_tick ~id:"animation" (fun ~dt -> Tick dt);
       Sub.on_keys [ (Shortcut.char 'q', Quit); (Shortcut.escape, Quit) ];
     ]
 

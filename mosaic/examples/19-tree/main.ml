@@ -5,16 +5,15 @@ open Mosaic
 type guide_style_kind = Rounded | Single | Heavy | Double
 
 type model = {
-  selected : int;
+  state : Tree.State.t;
   show_guides : bool;
   guide_style_kind : guide_style_kind;
   activated : string option;
 }
 
 type msg =
-  | Select of int
-  | Activate of int
-  | Expand of int * bool
+  | Select of Tree.State.t
+  | Activate of Tree.item
   | Toggle_guides
   | Toggle_guide_style
   | Quit
@@ -22,26 +21,49 @@ type msg =
 let file_tree =
   let open Tree in
   [
-    item
+    item ~id:"project"
       ~children:
         [
-          item ~children:[ item "main.ml"; item "main.mli"; item "dune" ] "src";
-          item
+          item ~id:"project/src"
             ~children:
-              [ item "test_parser.ml"; item "test_lexer.ml"; item "dune" ]
+              [
+                item ~id:"project/src/main.ml" "main.ml";
+                item ~id:"project/src/main.mli" "main.mli";
+                item ~id:"project/src/dune" "dune";
+              ]
+            "src";
+          item ~id:"project/test"
+            ~children:
+              [
+                item ~id:"project/test/parser" "test_parser.ml";
+                item ~id:"project/test/lexer" "test_lexer.ml";
+                item ~id:"project/test/dune" "dune";
+              ]
             "test";
-          item ~children:[ item "index.mld"; item "tutorial.mld" ] "doc";
-          item "README.md";
-          item "CHANGES.md";
-          item "LICENSE";
-          item "dune-project";
+          item ~id:"project/doc"
+            ~children:
+              [
+                item ~id:"project/doc/index" "index.mld";
+                item ~id:"project/doc/tutorial" "tutorial.mld";
+              ]
+            "doc";
+          item ~id:"project/readme" "README.md";
+          item ~id:"project/changes" "CHANGES.md";
+          item ~id:"project/license" "LICENSE";
+          item ~id:"project/dune-project" "dune-project";
         ]
       "my-project";
-    item
+    item ~id:"library"
       ~children:
         [
-          item ~children:[ item "lib.ml"; item "lib.mli" ] "lib";
-          item "dune-project";
+          item ~id:"library/lib"
+            ~children:
+              [
+                item ~id:"library/lib/ml" "lib.ml";
+                item ~id:"library/lib/mli" "lib.mli";
+              ]
+            "lib";
+          item ~id:"library/dune-project" "dune-project";
         ]
       "my-lib";
   ]
@@ -73,33 +95,28 @@ let next_guide_style = function
 
 let init () =
   ( {
-      selected = 0;
+      state =
+        Tree.State.make ~selected:"project"
+          ~expanded:
+            [
+              "project";
+              "project/src";
+              "project/test";
+              "project/doc";
+              "library";
+              "library/lib";
+            ]
+          ();
       show_guides = true;
       guide_style_kind = Rounded;
       activated = None;
     },
     Cmd.none )
 
-let item_label_at items idx =
-  let flat = ref [] in
-  let rec walk items =
-    List.iter
-      (fun (it : Tree.item) ->
-        flat := it.label :: !flat;
-        walk it.children)
-      items
-  in
-  walk items;
-  let arr = Array.of_list (List.rev !flat) in
-  if idx >= 0 && idx < Array.length arr then Some arr.(idx) else None
-
 let update msg model =
   match msg with
-  | Select i -> ({ model with selected = i; activated = None }, Cmd.none)
-  | Activate i ->
-      let label = item_label_at file_tree i in
-      ({ model with activated = label }, Cmd.none)
-  | Expand _ -> (model, Cmd.none)
+  | Select state -> ({ model with state; activated = None }, Cmd.none)
+  | Activate item -> ({ model with activated = Some item.label }, Cmd.none)
   | Toggle_guides ->
       ({ model with show_guides = not model.show_guides }, Cmd.none)
   | Toggle_guide_style ->
@@ -131,15 +148,14 @@ let view model =
               (* Tree *)
               box ~border:true ~border_color ~flex_grow:1.
                 [
-                  tree ~autofocus:true ~items:file_tree
-                    ~selected_index:model.selected ~expand_depth:(-1)
+                  tree
+                    ~size:{ width = pct 100; height = pct 100 }
+                    ~focused:true ~items:file_tree ~state:model.state
                     ~show_guides:model.show_guides ~guide_style ~indent_size:2
                     ~guide_color:(Ansi.Color.grayscale ~level:10)
                     ~icon_color:Ansi.Color.cyan ~wrap_selection:true
-                    ~size:{ width = pct 100; height = pct 100 }
-                    ~on_change:(fun i -> Some (Select i))
-                    ~on_activate:(fun i -> Some (Activate i))
-                    ~on_expand:(fun i expanded -> Some (Expand (i, expanded)))
+                    ~on_change:(fun i -> Select i)
+                    ~on_activate:(fun i -> Activate i)
                     ();
                 ];
               (* Info panel *)
@@ -148,7 +164,10 @@ let view model =
                 [
                   text ~style:(Ansi.Style.make ~bold:true ()) "Info";
                   text ~style:hint
-                    (Printf.sprintf "Selected: %d" model.selected);
+                    (Printf.sprintf "Selected: %s"
+                       (Option.value
+                          (Tree.State.selected model.state)
+                          ~default:"none"));
                   text ~style:hint
                     (Printf.sprintf "Guides: %s"
                        (if model.show_guides then "on" else "off"));

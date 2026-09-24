@@ -89,7 +89,7 @@ module Scroll_bar = Scroll_bar
 (** Scrollbar with proportional thumb sizing and arrow buttons. *)
 
 module Scroll_box = Scroll_box
-(** Scrollable container with optional scrollbars and sticky scroll. *)
+(** Scrollable container driven by explicit {!Scroll.t} values. *)
 
 module Table = Table
 (** Data table with columns, rows, keyboard navigation, and selection. *)
@@ -105,8 +105,6 @@ module Line_number = Line_number
 
 module Diff = Diff
 (** Unified and split-view diff display. *)
-
-(** {1:theming Theming} *)
 
 (** {1:vdom Declarative UI} *)
 

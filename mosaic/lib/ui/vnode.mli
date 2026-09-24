@@ -10,12 +10,16 @@
 (** {1:handlers Handlers} *)
 
 type 'msg handlers = {
-  on_mouse : (Event.mouse -> 'msg) option;
-  on_key : (Event.key -> 'msg) option;
-  on_paste : (Event.paste -> 'msg) option;
+  on_mouse : (Event.mouse -> 'msg option) option;
+  on_key : (Event.key -> 'msg option) option;
+  on_paste : (Event.paste -> 'msg option) option;
+  on_click : (Event.mouse -> 'msg option) option;
+  on_focus_request : (unit -> 'msg) option;
+  on_size : (w:int -> h:int -> 'msg option) option;
 }
 (** The type for generic terminal event handlers, parameterised by the message
-    type. These are low-level input events that any widget can receive.
+    type. Raw handlers return [None] to ignore an event. [on_focus_request] is
+    invoked lazily on a pointer focus request, never while mapping a view.
     Widget-specific semantic callbacks (e.g. slider value changes) live in
     {!type-widget_callbacks}. *)
 
@@ -53,10 +57,8 @@ type 'msg widget_callbacks =
   | No_callbacks
   | Slider_callbacks of { on_value_change : (float -> 'msg) option }
   | Input_callbacks of {
-      on_input : (string -> 'msg) option;
-      on_change : (string -> 'msg) option;
+      on_change : (Editor.t -> 'msg) option;
       on_submit : (string -> 'msg) option;
-      on_cursor : (cursor:int -> selection:(int * int) option -> 'msg) option;
     }
   | Select_callbacks of {
       on_change : (int -> 'msg) option;
@@ -68,29 +70,26 @@ type 'msg widget_callbacks =
     }
   | Canvas_callbacks of { on_draw : (Canvas.t -> delta:float -> unit) option }
   | Scroll_bar_callbacks of { on_change : (int -> 'msg) option }
-  | Scroll_box_callbacks of {
-      on_scroll : (x:int -> y:int -> 'msg) option;
-      on_scroll_by_applied : (key:string -> 'msg) option;
-      on_reset_sticky_applied : (key:string -> 'msg) option;
-    }
+  | Scroll_box_callbacks of { on_scroll : (Scroll.t -> 'msg) option }
   | Textarea_callbacks of {
-      on_input : (string -> 'msg) option;
-      on_change : (string -> 'msg) option;
+      on_change : (Editor.t -> 'msg) option;
       on_submit : (string -> 'msg) option;
-      on_cursor : (cursor:int -> selection:(int * int) option -> 'msg) option;
     }
-  | Code_callbacks of { on_selection : ((int * int) option -> 'msg) option }
-  | Markdown_callbacks of { on_selection : (string option -> 'msg) option }
-  | Diff_callbacks of { on_line_click : (Diff.line_hit -> 'msg) option }
+  | Code_callbacks of {
+      on_selection : ((int * int) option -> 'msg option) option;
+    }
+  | Markdown_callbacks of {
+      on_selection : (string option -> 'msg option) option;
+    }
+  | Diff_callbacks of { on_line_click : (Diff.line_hit -> 'msg option) option }
   | Table_callbacks of {
       on_change : (int -> 'msg) option;
       on_activate : (int -> 'msg) option;
-      on_hover : (int option -> 'msg) option;
+      on_hover : (int option -> 'msg option) option;
     }
   | Tree_callbacks of {
-      on_change : (int -> 'msg) option;
-      on_activate : (int -> 'msg) option;
-      on_expand : (int -> bool -> 'msg) option;
+      on_change : (Tree.State.t -> 'msg) option;
+      on_activate : (Tree.item -> 'msg) option;
     }
       (** The type for per-widget semantic callbacks, parameterised by the
           message type. Separated from {!type-handlers} so that adding new
@@ -107,6 +106,7 @@ type attrs = {
   z_index : int;
   opacity : float;
   focusable : bool;
+  focused : bool;
   autofocus : bool;
   buffered : bool;
   live : bool;
@@ -123,10 +123,15 @@ type attrs = {
 
 (** {1:vnodes Virtual nodes} *)
 
+type memo_key
+(** An opaque immutable, function-free value used for structural memo
+    comparison. *)
+
 type 'msg t =
   | Element of 'msg element
   | Fragment of 'msg t list
   | Viewport_switch of 'msg viewport_switch
+  | Memo of 'msg memo
   | Embed of Renderable.t
   | Empty
       (** The type for a virtual node in the UI tree.
@@ -139,6 +144,14 @@ type 'msg t =
             but not managed by the reconciler. Use this as an escape hatch for
             imperative code.
           - [Empty] renders nothing. *)
+
+and 'msg memo = {
+  key : memo_key;
+  view : unit -> 'msg t;
+  mappings : memo_key list;
+}
+(** Deferred subtree and message-mapper identities. Reconciler caches are scoped
+    to a mounted position, never global. *)
 
 and 'msg element = {
   kind : kind;
@@ -174,6 +187,16 @@ val embed : Renderable.t -> 'msg t
 (** [embed node] is an {!Embed} vnode wrapping [node]. The renderable is
     attached by the reconciler but not otherwise managed. *)
 
+val memo : key:'key -> ('key -> 'msg t) -> 'msg t
+(** [memo ~key view] defers [view key] and reuses its mounted subtree while
+    [key] is structurally equal. Keys must be immutable, contain no functions,
+    and include every value captured by [view] that affects content or
+    callbacks. A changed message mapper invalidates the cache. *)
+
+val memo_equal : 'a memo -> 'b memo -> bool
+(** [memo_equal a b] compares value keys and message-mapper identities without
+    comparing the deferred view functions. *)
+
 val viewport_switch :
   at_least_width:int -> wide:'msg t -> narrow:'msg t -> 'msg t
 (** [viewport_switch ~at_least_width ~wide ~narrow] is [wide] when the current
@@ -198,13 +221,17 @@ val box :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?border:bool ->
   ?border_style:Matrix_grid.Border.t ->
   ?border_sides:Matrix_grid.Border.side list ->
@@ -256,13 +283,17 @@ val text :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
   ?selectable:bool ->
@@ -295,13 +326,17 @@ val slider :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?orientation:Slider.orientation ->
   ?value:float ->
   ?min:float ->
@@ -333,18 +368,18 @@ val input :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
-  ?value:string ->
-  ?cursor:int ->
-  ?selection:(int * int) option ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?placeholder:string ->
-  ?max_length:int ->
   ?text_color:Ansi.Color.t ->
   ?background_color:Ansi.Color.t ->
   ?focused_text_color:Ansi.Color.t ->
@@ -359,10 +394,9 @@ val input :
   ?show_cursor:bool ->
   ?key_bindings:Text_input.key_binding list ->
   ?key_aliases:(string * string) list ->
-  ?on_input:(string -> 'msg) ->
-  ?on_change:(string -> 'msg) ->
+  on_change:(Editor.t -> 'msg) ->
   ?on_submit:(string -> 'msg) ->
-  ?on_cursor:(cursor:int -> selection:(int * int) option -> 'msg) ->
+  state:Editor.t ->
   unit ->
   'msg t
 (** [input ()] is a single-line text input leaf element. Input does not accept
@@ -412,13 +446,17 @@ val select :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?options:Select.item list ->
   ?selected_index:int ->
   ?background:Ansi.Color.t ->
@@ -476,13 +514,17 @@ val tab_select :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   options:Tab_select.item list ->
   ?selected:int ->
   ?tab_width:int ->
@@ -540,13 +582,17 @@ val canvas :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?on_draw:(Canvas.t -> delta:float -> unit) ->
   unit ->
   'msg t
@@ -571,13 +617,17 @@ val spinner :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?frame_set:Spinner.frame_set ->
   ?color:Ansi.Color.t ->
   unit ->
@@ -604,13 +654,17 @@ val progress_bar :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?value:float ->
   ?min:float ->
   ?max:float ->
@@ -641,13 +695,20 @@ val scroll_bar :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?position:int ->
+  ?scroll_size:int ->
+  ?viewport_size:int ->
   ?orientation:Scroll_bar.orientation ->
   ?show_arrows:bool ->
   ?track_color:Ansi.Color.t ->
@@ -678,25 +739,23 @@ val scroll_box :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?scroll_x:bool ->
   ?scroll_y:bool ->
-  ?sticky_scroll:bool ->
-  ?sticky_start:[ `Top | `Bottom | `Left | `Right ] ->
   ?background:Ansi.Color.t ->
   ?show_scrollbars:bool ->
-  ?reveal:Scroll_box.reveal ->
-  ?scroll_by:Scroll_box.scroll_by ->
-  ?reset_sticky:string ->
-  ?on_scroll:(x:int -> y:int -> 'msg) ->
-  ?on_scroll_by_applied:(key:string -> 'msg) ->
-  ?on_reset_sticky_applied:(key:string -> 'msg) ->
+  on_scroll:(Scroll.t -> 'msg) ->
+  scroll:Scroll.t ->
   'msg t list ->
   'msg t
 (** [scroll_box children] is a scrollable container element. Children are
@@ -739,16 +798,17 @@ val textarea :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
-  ?value:string ->
-  ?cursor:int ->
-  ?selection:(int * int) option ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?spans:Text_buffer.span list ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
@@ -768,10 +828,9 @@ val textarea :
   ?show_cursor:bool ->
   ?key_bindings:Textarea.key_binding list ->
   ?key_aliases:(string * string) list ->
-  ?on_input:(string -> 'msg) ->
-  ?on_change:(string -> 'msg) ->
+  on_change:(Editor.t -> 'msg) ->
   ?on_submit:(string -> 'msg) ->
-  ?on_cursor:(cursor:int -> selection:(int * int) option -> 'msg) ->
+  state:Editor.t ->
   unit ->
   'msg t
 (** [textarea ()] is a multi-line text editing leaf element. Textarea does not
@@ -825,13 +884,17 @@ val table :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?columns:Table.column list ->
   ?rows:Table.cell array list ->
   ?selected_row:int ->
@@ -858,7 +921,7 @@ val table :
   ?fast_scroll_step:int ->
   ?on_change:(int -> 'msg) ->
   ?on_activate:(int -> 'msg) ->
-  ?on_hover:(int option -> 'msg) ->
+  ?on_hover:(int option -> 'msg option) ->
   unit ->
   'msg t
 (** [table ()] is a data table leaf element. Table does not accept children.
@@ -921,13 +984,17 @@ val code :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?syntax:Code.syntax ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
@@ -936,7 +1003,7 @@ val code :
   ?selectable:bool ->
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
-  ?on_selection:((int * int) option -> 'msg) ->
+  ?on_selection:((int * int) option -> 'msg option) ->
   string ->
   'msg t
 (** [code content] is a code display leaf element showing [content]. Code does
@@ -964,13 +1031,17 @@ val line_number :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?fg:Ansi.Color.t ->
   ?bg:Ansi.Color.t ->
   ?min_width:int ->
@@ -1015,13 +1086,17 @@ val markdown :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?md_style:Markdown.style ->
   ?conceal:bool ->
   ?streaming:bool ->
@@ -1029,7 +1104,7 @@ val markdown :
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
   ?code_syntax:(language:string option -> content:string -> Code.syntax option) ->
-  ?on_selection:(string option -> 'msg) ->
+  ?on_selection:(string option -> 'msg option) ->
   string ->
   'msg t
 (** [markdown content] is a markdown display leaf element. Parses [content] as
@@ -1063,13 +1138,17 @@ val diff :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?layout:Diff.layout ->
   ?theme:Diff.theme ->
   ?highlight:Diff.highlight ->
@@ -1080,7 +1159,7 @@ val diff :
   ?wrap:Text_surface.wrap ->
   ?selectable:bool ->
   ?text_style:Ansi.Style.t ->
-  ?on_line_click:(Diff.line_hit -> 'msg) ->
+  ?on_line_click:(Diff.line_hit -> 'msg option) ->
   Diff.Patch.t ->
   'msg t
 (** [diff patch] is a diff display leaf element rendering [patch].
@@ -1116,16 +1195,18 @@ val tree :
   ?z_index:int ->
   ?opacity:float ->
   ?focusable:bool ->
+  ?focused:bool ->
   ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg) ->
-  ?on_key:(Event.key -> 'msg) ->
-  ?on_paste:(Event.paste -> 'msg) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
   ?items:Tree.item list ->
-  ?selected_index:int ->
-  ?expand_depth:int ->
   ?indent_size:int ->
   ?show_guides:bool ->
   ?guide_style:Matrix_grid.Border.t ->
@@ -1142,9 +1223,9 @@ val tree :
   ?icon_color:Ansi.Color.t ->
   ?wrap_selection:bool ->
   ?fast_scroll_step:int ->
-  ?on_change:(int -> 'msg) ->
-  ?on_activate:(int -> 'msg) ->
-  ?on_expand:(int -> bool -> 'msg) ->
+  on_change:(Tree.State.t -> 'msg) ->
+  ?on_activate:(Tree.item -> 'msg) ->
+  state:Tree.State.t ->
   unit ->
   'msg t
 (** [tree ()] is a hierarchical tree leaf element. Tree does not accept

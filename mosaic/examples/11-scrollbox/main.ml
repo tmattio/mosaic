@@ -2,10 +2,14 @@
 
 open Mosaic
 
-type msg = Quit
+type msg = Quit | Scrolled of Scroll.t
 
-let init () = ((), Cmd.none)
-let update msg () = match msg with Quit -> ((), Cmd.quit)
+let init () = (Scroll.at 0, Cmd.none)
+
+let update msg scroll =
+  match msg with
+  | Quit -> (scroll, Cmd.quit)
+  | Scrolled scroll -> (scroll, Cmd.none)
 
 let items =
   List.init 50 (fun i ->
@@ -19,7 +23,7 @@ let border_color = Ansi.Color.grayscale ~level:8
 let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
 let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 
-let view () =
+let view scroll =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
@@ -39,18 +43,22 @@ let view () =
         ~min_size:{ width = px 0; height = px 0 }
         ~padding:(padding 1)
         [
-          box ~border:true ~border_color ~title:"Items" ~flex_grow:1.
+          box ~border:true ~border_color ~flex_grow:1.
             ~min_size:{ width = px 0; height = px 0 }
+            ~title:"Items"
             [
-              scroll_box ~scroll_y:true ~scroll_x:false
+              scroll_box ~scroll
+                ~on_scroll:(fun value -> Scrolled value)
                 ~min_size:{ width = px 0; height = px 0 }
                 ~size:{ width = pct 100; height = pct 100 }
+                ~scroll_y:true ~scroll_x:false
                 (List.mapi
                    (fun i item ->
-                     box ~key:(string_of_int i) ~padding:(padding 1)
+                     box ~padding:(padding 1)
                        ~background:
                          (if i mod 2 = 0 then Ansi.Color.transparent
                           else Ansi.Color.grayscale ~level:3)
+                       ~key:(string_of_int i)
                        [ text item ])
                    items);
             ];
@@ -60,7 +68,7 @@ let view () =
         [ text ~style:hint "scroll with mouse wheel  •  q quit" ];
     ]
 
-let subscriptions () =
+let subscriptions _scroll =
   Sub.on_keys [ (Shortcut.char 'q', Quit); (Shortcut.escape, Quit) ]
 
 let () = run { init; update; view; subscriptions }

@@ -1,11 +1,15 @@
 open Mosaic_ui
 open Expect_harness
 
+let scroll_box ?(scroll = Scroll.at 0) ?(on_scroll = ignore) ?style
+    ?show_scrollbars ?key ?ref children =
+  Vnode.scroll_box ~scroll ~on_scroll ?style ?show_scrollbars ?key ?ref children
+
 (* ── Scroll box with vertical scrolling ── *)
 
 let%expect_test "scroll box renders children in viewport" =
   render ~width:20 ~height:8
-    (Vnode.scroll_box
+    (scroll_box
        ~style:
          (Toffee.Style.default
          |> Toffee.Style.set_size (Vnode.size ~width:20 ~height:8))
@@ -21,7 +25,7 @@ let%expect_test "scroll box inside bordered box" =
   render ~width:22 ~height:8
     (Vnode.box ~border:true
        [
-         Vnode.scroll_box
+         scroll_box
            ~style:
              (Toffee.Style.default
              |> Toffee.Style.set_width (Toffee.Style.Dimension.percent 1.)
@@ -44,14 +48,14 @@ let%expect_test "scroll box inside bordered box" =
 let%expect_test "scroll box reconciles children" =
   let app = make_app () in
   reconcile app
-    (Vnode.scroll_box
+    (scroll_box
        ~style:
          (Toffee.Style.default
          |> Toffee.Style.set_size (Vnode.size ~width:20 ~height:5))
        [ Vnode.text "First" ]);
   frame app ~width:20 ~height:5;
   reconcile app
-    (Vnode.scroll_box
+    (scroll_box
        ~style:
          (Toffee.Style.default
          |> Toffee.Style.set_size (Vnode.size ~width:20 ~height:5))
@@ -73,7 +77,7 @@ let%expect_test "scroll box stays constrained in column flex layout" =
          |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column)
        [
          Vnode.text "head";
-         Vnode.scroll_box
+         scroll_box
            ~style:(Toffee.Style.default |> Toffee.Style.set_flex_grow 1.)
            (List.init 10 (fun i ->
                 Vnode.text (Printf.sprintf "line %d" (i + 1))));
@@ -82,50 +86,48 @@ let%expect_test "scroll box stays constrained in column flex layout" =
   [%expect
     {|
     head
-    line 1
-    line 2
-    line 3
+    line 1             █
+    line 2             █
+    line 3             █
     line 4
     line 5
     line 6
     foot |}]
-
-let reveal ?x ?y ?(align_x = `Nearest) ?(align_y = `Start) ?(margin = 0) key :
-    Scroll_box.reveal =
-  { key; x; y; align_x; align_y; margin }
 
 let numbered_lines count =
   List.init count (fun i -> Vnode.text (Printf.sprintf "line %d" (i + 1)))
 
 let%expect_test "scroll box reveal scrolls to content coordinate" =
   render ~width:20 ~height:5
-    (Vnode.scroll_box
+    (scroll_box
        ~style:
          (Toffee.Style.default
          |> Toffee.Style.set_size (Vnode.size ~width:20 ~height:5))
-       ~reveal:(reveal ~y:6 "line-7") (numbered_lines 12));
-  [%expect {|
-    line 7
-    line 8
-    line 9
-    line 10
-    line 11 |}]
+       ~scroll:(Scroll.reveal ~line:6 (Scroll.at 0))
+       (numbered_lines 12));
+  [%expect
+    {|
+    line 3
+    line 4             █
+    line 5             █
+    line 6
+    line 7 |}]
 
-let%expect_test "scroll box reveal overrides sticky scroll" =
+let%expect_test "scroll box reveal overrides followed edge" =
   let app = make_app () in
   reconcile app
-    (Vnode.scroll_box
+    (scroll_box
        ~style:
          (Toffee.Style.default
          |> Toffee.Style.set_size (Vnode.size ~width:20 ~height:5))
-       ~sticky_scroll:true ~sticky_start:`Bottom ~reveal:(reveal ~y:2 "line-3")
+       ~scroll:(Scroll.reveal ~line:2 (Scroll.follow `Bottom (Scroll.at 0)))
        (numbered_lines 12));
   frame app ~width:20 ~height:5;
   frame app ~width:20 ~height:5;
   [%expect
     {|line 3
-line 4
-line 5
+line 4             █
+line 5             █
 line 6
 line 7
 line 3
@@ -134,14 +136,16 @@ line 5             █
 line 6
 line 7|}]
 
-let%expect_test "reset_sticky returns a parked viewport to its live edge once" =
+let%expect_test "accepted scrolling leaves follow until the model follows again"
+    =
   let app = make_app () in
   let node = ref None in
-  let view ?reset_sticky count =
-    Vnode.scroll_box ~key:"transcript" ~sticky_scroll:true ~sticky_start:`Bottom
-      ~show_scrollbars:false ?reset_sticky
+  let scroll = ref (Scroll.follow `Bottom (Scroll.at 0)) in
+  let view count =
+    scroll_box ~key:"transcript" ~scroll:!scroll
+      ~on_scroll:(fun next -> scroll := next)
+      ~show_scrollbars:false
       ~ref:(fun renderable -> node := Some renderable)
-      ~on_reset_sticky_applied:(fun ~key -> print_endline ("applied " ^ key))
       (numbered_lines count)
   in
   let show label vnode =
@@ -156,11 +160,13 @@ let%expect_test "reset_sticky returns a parked viewport to its live edge once" =
   send_key app Matrix_input.Key.Page_up;
   show "page up" (view 12);
   show "append stays parked" (view 16);
-  show "new reset key follows" (view ~reset_sticky:"turn-2" 16);
+  scroll := Scroll.follow `Bottom !scroll;
+  show "model follows again" (view 16);
   send_key app Matrix_input.Key.Page_up;
-  show "manual page after reset" (view ~reset_sticky:"turn-2" 16);
-  show "stable reset key stays parked" (view ~reset_sticky:"turn-2" 20);
-  show "changed reset key follows again" (view ~reset_sticky:"turn-3" 20);
+  show "manual page after following" (view 16);
+  show "accepted position stays parked" (view 20);
+  scroll := Scroll.follow `Bottom !scroll;
+  show "model follows after append" (view 20);
   [%expect
     {|initial tail
 
@@ -180,27 +186,25 @@ line 7
 line 8
 line 9
 line 10
-new reset key follows
-applied turn-2
+model follows again
 
 line 13
 line 14
 line 15
 line 16
-manual page after reset
+manual page after following
 
 line 11
 line 12
 line 13
 line 14
-stable reset key stays parked
+accepted position stays parked
 
 line 11
 line 12
 line 13
 line 14
-changed reset key follows again
-applied turn-3
+model follows after append
 
 line 17
 line 18
@@ -214,7 +218,7 @@ let ten_lines = List.init 10 (fun i -> Vnode.text (Printf.sprintf "Line %d" i))
 let scrollbar_app ?show_scrollbars () =
   let app = make_app () in
   reconcile app
-    (Vnode.scroll_box ?show_scrollbars
+    (scroll_box ?show_scrollbars
        ~style:
          (Toffee.Style.default
          |> Toffee.Style.set_size (Vnode.size ~width:20 ~height:4))
@@ -255,7 +259,7 @@ let squeezed ~height =
          |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column)
        [
          Vnode.text "HEADER";
-         Vnode.scroll_box ~show_scrollbars:false
+         scroll_box ~show_scrollbars:false
            ~style:
              (Toffee.Style.default
              |> Toffee.Style.set_flex_grow 1.

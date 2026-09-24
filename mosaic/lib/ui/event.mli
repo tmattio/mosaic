@@ -25,13 +25,20 @@ module Key : sig
   (** [data t] is the underlying terminal key event. *)
 
   val prevent_default : t -> unit
-  (** [prevent_default t] marks [t] as consumed: remaining handlers on the
-      focused renderable and its default key behaviour are skipped, and the host
-      runtime treats the key as handled. *)
+  (** [prevent_default t] marks [t] as consumed: the default key action is
+      skipped. Use {!stop_propagation} to stop delivery to subsequent handlers.
+  *)
 
   val default_prevented : t -> bool
   (** [default_prevented t] is [true] iff {!prevent_default} has been called on
       [t]. *)
+
+  val stop_propagation : t -> unit
+  (** [stop_propagation t] stops delivery to subsequent handlers. It does not
+      itself prevent a default action at the current target. *)
+
+  val propagation_stopped : t -> bool
+  (** [propagation_stopped t] is [true] after {!stop_propagation}. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] wrap the same key event. Dispatch
@@ -58,12 +65,20 @@ module Paste : sig
   (** [text t] is the pasted text carried by [t]. *)
 
   val prevent_default : t -> unit
-  (** [prevent_default t] marks [t] as consumed: remaining handlers on the
-      focused renderable and its default paste behaviour are skipped. *)
+  (** [prevent_default t] marks [t] as consumed: the default paste action is
+      skipped. Use {!stop_propagation} to stop delivery to subsequent handlers.
+  *)
 
   val default_prevented : t -> bool
   (** [default_prevented t] is [true] iff {!prevent_default} has been called on
       [t]. *)
+
+  val stop_propagation : t -> unit
+  (** [stop_propagation t] stops delivery to subsequent handlers. It does not
+      itself prevent a default action at the current target. *)
+
+  val propagation_stopped : t -> bool
+  (** [propagation_stopped t] is [true] after {!stop_propagation}. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] contain the same text. Dispatch

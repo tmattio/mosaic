@@ -72,9 +72,9 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
         Slider_instance slider
     | Vnode.Text_input spec ->
         let input =
-          Text_input.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Text_input.create ~state:Editor.empty ~on_change:(Fun.const ())
+            ~parent ?id:attrs.id ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Text_input.apply_props input spec;
         Text_input_instance input
@@ -135,9 +135,9 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
         Scroll_box_instance scroll_box
     | Vnode.Textarea spec ->
         let textarea =
-          Textarea.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Textarea.create ~state:Editor.empty ~on_change:(Fun.const ()) ~parent
+            ?id:attrs.id ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Textarea.apply_props textarea spec;
         Textarea_instance textarea
@@ -191,7 +191,7 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
         Tree_instance tree
   in
   let node = node_of inst in
-  Renderable.set_focusable node attrs.focusable;
+  Renderable.set_focusable node (attrs.focusable || attrs.focused);
   (* Autofocus is deferred to after commit_placement in reconcile_flattened, so
      the node is fully attached to the render tree when focus is applied. *)
   if attrs.buffered then Renderable.set_buffered node true;
@@ -219,8 +219,11 @@ let update_common (node : Renderable.t) ~(old_attrs : Vnode.attrs)
   if old_attrs.opacity <> new_attrs.opacity then (
     Renderable.set_opacity node new_attrs.opacity;
     changed := true);
-  if old_attrs.focusable <> new_attrs.focusable then (
-    Renderable.set_focusable node new_attrs.focusable;
+  if
+    old_attrs.focusable <> new_attrs.focusable
+    || old_attrs.focused <> new_attrs.focused
+  then (
+    Renderable.set_focusable node (new_attrs.focusable || new_attrs.focused);
     changed := true);
   if old_attrs.buffered <> new_attrs.buffered then (
     Renderable.set_buffered node new_attrs.buffered;
@@ -240,22 +243,12 @@ let set_instance_style (inst : instance) (style : Toffee.Style.t) : unit =
   | Markdown_instance md -> Markdown.set_layout_style md style
   | _ -> Renderable.set_style (node_of inst) style
 
-(* Physical equality check (==) on attrs and kind is the fast path: Vnode.map
-   shares both records by reference, so unchanged subtrees skip all diffing.
-   Controlled editors are the exception: their live buffer can diverge from
-   the vnode between reconciliations. *)
+(* Accepted state only changes through declarations, so physical sharing is
+   a valid fast path for every widget. *)
 let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
     ~(new_attrs : Vnode.attrs) ~(old_kind : Vnode.kind) ~(new_kind : Vnode.kind)
     : bool =
-  let has_live_controlled_value =
-    match inst with
-    | Text_input_instance _ | Textarea_instance _ -> true
-    | _ -> false
-  in
-  if
-    old_attrs == new_attrs && old_kind == new_kind
-    && not has_live_controlled_value
-  then false
+  if old_attrs == new_attrs && old_kind == new_kind then false
   else
     let common_changed =
       if old_attrs == new_attrs then false
@@ -270,23 +263,23 @@ let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
     in
     let kind_changed =
       match (inst, old_kind, new_kind) with
-      | ( Text_input_instance input,
-          Vnode.Text_input old_spec,
-          Vnode.Text_input new_spec ) ->
-          let old_value = Text_input.value input in
-          Text_input.apply_props input new_spec;
-          (not (Text_input.Props.equal old_spec new_spec))
-          || not (String.equal old_value (Text_input.value input))
-      | ( Textarea_instance textarea,
-          Vnode.Textarea old_spec,
-          Vnode.Textarea new_spec ) ->
-          let old_value = Textarea.value textarea in
-          Textarea.apply_props textarea new_spec;
-          (not (Textarea.Props.equal old_spec new_spec))
-          || not (String.equal old_value (Textarea.value textarea))
       | _ when old_kind == new_kind -> false
       | _ -> (
           match (inst, old_kind, new_kind) with
+          | ( Text_input_instance input,
+              Vnode.Text_input old_spec,
+              Vnode.Text_input new_spec ) ->
+              if Text_input.Props.equal old_spec new_spec then false
+              else (
+                Text_input.apply_props input new_spec;
+                true)
+          | ( Textarea_instance textarea,
+              Vnode.Textarea old_spec,
+              Vnode.Textarea new_spec ) ->
+              if Textarea.Props.equal old_spec new_spec then false
+              else (
+                Textarea.apply_props textarea new_spec;
+                true)
           | Box_instance box, Vnode.Box old_spec, Vnode.Box new_spec ->
               if Box.Props.equal old_spec new_spec then false
               else (
@@ -390,61 +383,18 @@ let commit_update (inst : instance) : unit =
 
 (* ───── Fiber Tracking ───── *)
 
-type callback_refs =
-  | No_callback_refs
-  | Slider_callback_refs of { value_change_ref : (float -> unit) option ref }
-  | Input_callback_refs of {
-      input_ref : (string -> unit) option ref;
-      change_ref : (string -> unit) option ref;
-      submit_ref : (string -> unit) option ref;
-      cursor_ref :
-        (cursor:int -> selection:(int * int) option -> unit) option ref;
-    }
-  | Select_callback_refs of {
-      select_change_ref : (int -> unit) option ref;
-      select_activate_ref : (int -> unit) option ref;
-    }
-  | Tab_select_callback_refs of {
-      tab_select_change_ref : (int -> unit) option ref;
-      tab_select_activate_ref : (int -> unit) option ref;
-    }
-  | Canvas_callback_refs of {
-      draw_ref : (Canvas.t -> delta:float -> unit) option ref;
-    }
-  | Scroll_bar_callback_refs of {
-      scroll_bar_change_ref : (int -> unit) option ref;
-    }
-  | Scroll_box_callback_refs of {
-      scroll_ref : (x:int -> y:int -> unit) option ref;
-      scroll_by_applied_ref : (key:string -> unit) option ref;
-      reset_sticky_applied_ref : (key:string -> unit) option ref;
-    }
-  | Textarea_callback_refs of {
-      textarea_input_ref : (string -> unit) option ref;
-      textarea_change_ref : (string -> unit) option ref;
-      textarea_submit_ref : (string -> unit) option ref;
-      textarea_cursor_ref :
-        (cursor:int -> selection:(int * int) option -> unit) option ref;
-    }
-  | Code_callback_refs of {
-      code_selection_ref : ((int * int) option -> unit) option ref;
-    }
-  | Markdown_callback_refs of {
-      markdown_selection_ref : (string option -> unit) option ref;
-    }
-  | Diff_callback_refs of {
-      set_diff_line_click : (Diff.line_hit -> unit) option -> unit;
-    }
-  | Table_callback_refs of {
-      table_change_ref : (int -> unit) option ref;
-      table_activate_ref : (int -> unit) option ref;
-      table_hover_ref : (int option -> unit) option ref;
-    }
-  | Tree_callback_refs of {
-      tree_change_ref : (int -> unit) option ref;
-      tree_activate_ref : (int -> unit) option ref;
-      tree_expand_ref : (int -> bool -> unit) option ref;
-    }
+type callback_refs = {
+  callbacks : unit Vnode.widget_callbacks ref;
+  update_presence : unit Vnode.widget_callbacks -> unit;
+}
+
+type memo_cache = {
+  previous : (int, unit Vnode.memo * unit Vnode.t) Hashtbl.t;
+  current : (int, unit Vnode.memo * unit Vnode.t) Hashtbl.t;
+  mutable next : int;
+}
+
+type declared_focus = Focus_none | Focus_one of Renderable.t | Focus_many
 
 type child = Fiber of fiber | Embedded of Renderable.t
 
@@ -454,9 +404,15 @@ and fiber = {
   mutable attrs : Vnode.attrs;
   instance : instance;
   mutable children : child list;
-  mouse_ref : (Event.mouse -> unit) option ref;
-  key_ref : (Event.key -> unit) option ref;
-  paste_ref : (Event.paste -> unit) option ref;
+  mouse_ref : (Event.mouse -> unit option) option ref;
+  key_ref : (Event.key -> unit option) option ref;
+  paste_ref : (Event.paste -> unit option) option ref;
+  click_ref : (Event.mouse -> unit option) option ref;
+  size_ref : (w:int -> h:int -> unit option) option ref;
+  mutable declared_children : unit Vnode.t list;
+  mutable viewport_width : int;
+  mutable memos : memo_cache option;
+  mutable declared_focus : declared_focus;
   callback_refs : callback_refs;
 }
 
@@ -487,252 +443,218 @@ let kind_matches (a : Vnode.kind) (b : Vnode.kind) : bool =
       true
   | _ -> false
 
-(* Register a single stable closure per callback type, dispatching through a
-   mutable ref. This avoids re-registering listeners on every render -- only the
-   ref target is swapped in [update_fiber]. *)
+(* Most widgets use stable callbacks dispatching through a mutable ref.
+   Table instead installs callbacks directly so a press can retain its original
+   row-to-value mapping across synchronous reconciliation. *)
 let create_callback_refs (instance : instance)
-    (callbacks : unit Vnode.widget_callbacks) : callback_refs =
-  match callbacks with
-  | Vnode.No_callbacks -> No_callback_refs
-  | Vnode.Slider_callbacks { on_value_change } ->
-      let value_change_ref = ref on_value_change in
-      (match instance with
-      | Slider_instance slider ->
-          Slider.set_on_change slider
-            (Some
-               (fun v ->
-                 match !value_change_ref with Some h -> h v | None -> ()))
-      | _ -> ());
-      Slider_callback_refs { value_change_ref }
-  | Vnode.Input_callbacks { on_input; on_change; on_submit; on_cursor } ->
-      let input_ref = ref on_input in
-      let change_ref = ref on_change in
-      let submit_ref = ref on_submit in
-      let cursor_ref = ref on_cursor in
-      (match instance with
-      | Text_input_instance input ->
-          Text_input.set_on_input input
-            (Some (fun s -> match !input_ref with Some h -> h s | None -> ()));
-          Text_input.set_on_change input
-            (Some (fun s -> match !change_ref with Some h -> h s | None -> ()));
-          Text_input.set_on_submit input
-            (Some (fun s -> match !submit_ref with Some h -> h s | None -> ()));
-          Text_input.set_on_cursor input
-            (Some
-               (fun ~cursor ~selection ->
-                 match !cursor_ref with
-                 | Some h -> h ~cursor ~selection
-                 | None -> ()))
-      | _ -> ());
-      Input_callback_refs { input_ref; change_ref; submit_ref; cursor_ref }
-  | Vnode.Select_callbacks { on_change; on_activate } ->
-      let select_change_ref = ref on_change in
-      let select_activate_ref = ref on_activate in
-      (match instance with
-      | Select_instance select ->
-          Select.set_on_change select
-            (Some
-               (fun i ->
-                 match !select_change_ref with Some h -> h i | None -> ()));
-          Select.set_on_activate select
-            (Some
-               (fun i ->
-                 match !select_activate_ref with Some h -> h i | None -> ()))
-      | _ -> ());
-      Select_callback_refs { select_change_ref; select_activate_ref }
-  | Vnode.Tab_select_callbacks { on_change; on_activate } ->
-      let tab_select_change_ref = ref on_change in
-      let tab_select_activate_ref = ref on_activate in
-      (match instance with
-      | Tab_select_instance tab_select ->
-          Tab_select.set_on_change tab_select
-            (Some
-               (fun i ->
-                 match !tab_select_change_ref with Some h -> h i | None -> ()));
-          Tab_select.set_on_activate tab_select
-            (Some
-               (fun i ->
-                 match !tab_select_activate_ref with
-                 | Some h -> h i
-                 | None -> ()))
-      | _ -> ());
-      Tab_select_callback_refs
-        { tab_select_change_ref; tab_select_activate_ref }
-  | Vnode.Canvas_callbacks { on_draw } ->
-      let draw_ref = ref on_draw in
-      (match instance with
-      | Canvas_instance canvas ->
-          Canvas.set_on_draw canvas
-            (Some
-               (fun c ~delta ->
-                 match !draw_ref with Some h -> h c ~delta | None -> ()))
-      | _ -> ());
-      Canvas_callback_refs { draw_ref }
-  | Vnode.Scroll_bar_callbacks { on_change } ->
-      let scroll_bar_change_ref = ref on_change in
-      (match instance with
-      | Scroll_bar_instance scroll_bar ->
-          Scroll_bar.set_on_change scroll_bar
-            (Some
-               (fun i ->
-                 match !scroll_bar_change_ref with Some h -> h i | None -> ()))
-      | _ -> ());
-      Scroll_bar_callback_refs { scroll_bar_change_ref }
-  | Vnode.Scroll_box_callbacks
-      { on_scroll; on_scroll_by_applied; on_reset_sticky_applied } ->
-      let scroll_ref = ref on_scroll in
-      let scroll_by_applied_ref = ref on_scroll_by_applied in
-      let reset_sticky_applied_ref = ref on_reset_sticky_applied in
-      (match instance with
-      | Scroll_box_instance scroll_box ->
-          Scroll_box.set_on_scroll scroll_box
-            (Some
-               (fun ~x ~y ->
-                 match !scroll_ref with Some h -> h ~x ~y | None -> ()));
-          Scroll_box.set_on_scroll_by_applied scroll_box
-            (Some
-               (fun ~key ->
-                 match !scroll_by_applied_ref with
-                 | Some handler -> handler ~key
-                 | None -> ()));
-          Scroll_box.set_on_reset_sticky_applied scroll_box
-            (Some
-               (fun ~key ->
-                 match !reset_sticky_applied_ref with
-                 | Some handler -> handler ~key
-                 | None -> ()))
-      | _ -> ());
-      Scroll_box_callback_refs
-        { scroll_ref; scroll_by_applied_ref; reset_sticky_applied_ref }
-  | Vnode.Textarea_callbacks { on_input; on_change; on_submit; on_cursor } ->
-      let textarea_input_ref = ref on_input in
-      let textarea_change_ref = ref on_change in
-      let textarea_submit_ref = ref on_submit in
-      let textarea_cursor_ref = ref on_cursor in
-      (match instance with
-      | Textarea_instance textarea ->
-          Textarea.set_on_input textarea
-            (Some
-               (fun s ->
-                 match !textarea_input_ref with Some h -> h s | None -> ()));
-          Textarea.set_on_change textarea
-            (Some
-               (fun s ->
-                 match !textarea_change_ref with Some h -> h s | None -> ()));
-          Textarea.set_on_submit textarea
-            (Some
-               (fun s ->
-                 match !textarea_submit_ref with Some h -> h s | None -> ()));
-          Textarea.set_on_cursor textarea
-            (Some
-               (fun ~cursor ~selection ->
-                 match !textarea_cursor_ref with
-                 | Some h -> h ~cursor ~selection
-                 | None -> ()))
-      | _ -> ());
-      Textarea_callback_refs
-        {
-          textarea_input_ref;
-          textarea_change_ref;
-          textarea_submit_ref;
-          textarea_cursor_ref;
-        }
-  | Vnode.Code_callbacks { on_selection } ->
-      let code_selection_ref = ref on_selection in
-      (match instance with
-      | Code_instance code ->
-          Code.set_on_selection code
-            (Some
-               (fun selection ->
-                 match !code_selection_ref with
-                 | Some h -> h selection
-                 | None -> ()))
-      | _ -> ());
-      Code_callback_refs { code_selection_ref }
-  | Vnode.Markdown_callbacks { on_selection } ->
-      let markdown_selection_ref = ref on_selection in
-      (match instance with
-      | Markdown_instance markdown ->
-          Markdown.set_on_selection markdown
-            (Some
-               (fun selection ->
-                 match !markdown_selection_ref with
-                 | Some h -> h selection
-                 | None -> ()))
-      | _ -> ());
-      Markdown_callback_refs { markdown_selection_ref }
-  | Vnode.Diff_callbacks { on_line_click } ->
-      let diff_line_click_ref = ref on_line_click in
-      let dispatch hit =
-        match !diff_line_click_ref with Some h -> h hit | None -> ()
-      in
-      let set_diff_line_click callback =
-        diff_line_click_ref := callback;
-        match instance with
-        | Diff_instance diff ->
-            Diff.set_on_line_click diff
-              (Option.map (fun _ -> dispatch) callback)
-        | _ -> ()
-      in
-      set_diff_line_click on_line_click;
-      Diff_callback_refs { set_diff_line_click }
-  | Vnode.Table_callbacks { on_change; on_activate; on_hover } ->
-      let table_change_ref = ref on_change in
-      let table_activate_ref = ref on_activate in
-      let table_hover_ref = ref on_hover in
-      (match instance with
-      | Table_instance table ->
-          Table.set_on_change table
-            (Some
-               (fun i ->
-                 match !table_change_ref with Some h -> h i | None -> ()));
-          Table.set_on_activate table
-            (Some
-               (fun i ->
-                 match !table_activate_ref with Some h -> h i | None -> ()));
-          Table.set_on_hover table
-            (Some
-               (fun i ->
-                 match !table_hover_ref with Some h -> h i | None -> ()))
-      | _ -> ());
-      Table_callback_refs
-        { table_change_ref; table_activate_ref; table_hover_ref }
-  | Vnode.Tree_callbacks { on_change; on_activate; on_expand } ->
-      let tree_change_ref = ref on_change in
-      let tree_activate_ref = ref on_activate in
-      let tree_expand_ref = ref on_expand in
-      (match instance with
-      | Tree_instance tree ->
-          Tree.set_on_change tree
-            (Some
-               (fun i ->
-                 match !tree_change_ref with Some h -> h i | None -> ()));
-          Tree.set_on_activate tree
-            (Some
-               (fun i ->
-                 match !tree_activate_ref with Some h -> h i | None -> ()));
-          Tree.set_on_expand tree
-            (Some
-               (fun i expanded ->
-                 match !tree_expand_ref with
-                 | Some h -> h i expanded
-                 | None -> ()))
-      | _ -> ());
-      Tree_callback_refs { tree_change_ref; tree_activate_ref; tree_expand_ref }
+    (initial : unit Vnode.widget_callbacks) : callback_refs =
+  let callbacks = ref initial in
+  let update_presence =
+    match instance with
+    | Slider_instance widget ->
+        Slider.set_on_change widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Slider_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_value_change
+               | _ -> ()));
+        Fun.const ()
+    | Text_input_instance widget ->
+        Text_input.set_on_change widget (fun value ->
+            match !callbacks with
+            | Vnode.Input_callbacks c ->
+                Option.iter (fun f -> f value) c.on_change
+            | _ -> ());
+        Text_input.set_on_submit widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Input_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_submit
+               | _ -> ()));
+        Fun.const ()
+    | Textarea_instance widget ->
+        Textarea.set_on_change widget (fun value ->
+            match !callbacks with
+            | Vnode.Textarea_callbacks c ->
+                Option.iter (fun f -> f value) c.on_change
+            | _ -> ());
+        Textarea.set_on_submit widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Textarea_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_submit
+               | _ -> ()));
+        Fun.const ()
+    | Select_instance widget ->
+        Select.set_on_change widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Select_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_change
+               | _ -> ()));
+        Select.set_on_activate widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Select_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_activate
+               | _ -> ()));
+        Fun.const ()
+    | Tab_select_instance widget ->
+        Tab_select.set_on_change widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Tab_select_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_change
+               | _ -> ()));
+        Tab_select.set_on_activate widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Tab_select_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_activate
+               | _ -> ()));
+        Fun.const ()
+    | Scroll_bar_instance widget ->
+        Scroll_bar.set_on_change widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Scroll_bar_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_change
+               | _ -> ()));
+        Fun.const ()
+    | Scroll_box_instance widget ->
+        Scroll_box.set_on_scroll widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Scroll_box_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_scroll
+               | _ -> ()));
+        Fun.const ()
+    | Code_instance widget ->
+        Code.set_on_selection widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Code_callbacks c ->
+                   Option.iter
+                     (fun f -> ignore (f value : unit option))
+                     c.on_selection
+               | _ -> ()));
+        Fun.const ()
+    | Markdown_instance widget ->
+        Markdown.set_on_selection widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Markdown_callbacks c ->
+                   Option.iter
+                     (fun f -> ignore (f value : unit option))
+                     c.on_selection
+               | _ -> ()));
+        Fun.const ()
+    | Table_instance widget -> (
+        (* A press snapshots these callbacks before user code can reconcile a
+           different domain-to-row mapping. *)
+        function
+        | Vnode.Table_callbacks c ->
+            Table.set_on_change widget c.on_change;
+            Table.set_on_activate widget c.on_activate;
+            Table.set_on_hover widget
+              (Option.map
+                 (fun f value -> ignore (f value : unit option))
+                 c.on_hover)
+        | _ ->
+            Table.set_on_change widget None;
+            Table.set_on_activate widget None;
+            Table.set_on_hover widget None)
+    | Tree_instance widget ->
+        Tree.set_on_change widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Tree_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_change
+               | _ -> ()));
+        Tree.set_on_activate widget
+          (Some
+             (fun value ->
+               match !callbacks with
+               | Vnode.Tree_callbacks c ->
+                   Option.iter (fun f -> f value) c.on_activate
+               | _ -> ()));
+        Fun.const ()
+    | Canvas_instance widget ->
+        Canvas.set_on_draw widget
+          (Some
+             (fun canvas ~delta ->
+               match !callbacks with
+               | Vnode.Canvas_callbacks c ->
+                   Option.iter (fun f -> f canvas ~delta) c.on_draw
+               | _ -> ()));
+        Fun.const ()
+    | Diff_instance widget -> (
+        let dispatch hit =
+          match !callbacks with
+          | Vnode.Diff_callbacks c ->
+              Option.iter
+                (fun f -> ignore (f hit : unit option))
+                c.on_line_click
+          | _ -> ()
+        in
+        fun current ->
+          match current with
+          | Vnode.Diff_callbacks c ->
+              Diff.set_on_line_click widget
+                (Option.map (Fun.const dispatch) c.on_line_click)
+          | _ -> Diff.set_on_line_click widget None)
+    | Box_instance _ | Text_instance _ | Spinner_instance _
+    | Progress_bar_instance _ | Line_number_instance _ ->
+        Fun.const ()
+  in
+  update_presence initial;
+  { callbacks; update_presence }
 
 let create_fiber ~(parent : Renderable.t) (elem : unit Vnode.element) : fiber =
   let instance = create_instance ~parent elem.kind elem.attrs in
   let node = node_of instance in
+  Renderable.Private.set_focus_request node elem.handlers.on_focus_request;
   let mouse_ref = ref elem.handlers.on_mouse in
   let key_ref = ref elem.handlers.on_key in
   let paste_ref = ref elem.handlers.on_paste in
+  let click_ref = ref elem.handlers.on_click in
+  let size_ref = ref elem.handlers.on_size in
   let callback_refs = create_callback_refs instance elem.callbacks in
   Renderable.on_mouse node (fun ev ->
-      match !mouse_ref with Some h -> h ev | None -> ());
+      Option.iter (fun f -> ignore (f ev : unit option)) !mouse_ref;
+      if
+        (not (Renderable.destroyed node))
+        && not (Event.Mouse.propagation_stopped ev)
+      then
+        match Event.Mouse.kind ev with
+        | Event.Mouse.Up { button = Left; is_dragging = false } ->
+            Option.iter (fun f -> ignore (f ev : unit option)) !click_ref
+        | _ -> ());
+  Renderable.Private.set_size_observer node
+    (Some
+       (fun node ->
+         Option.iter
+           (fun f ->
+             ignore
+               (f ~w:(Renderable.width node) ~h:(Renderable.height node)
+                 : unit option))
+           !size_ref));
   Renderable.on_key node (fun ev ->
-      match !key_ref with Some h -> h ev | None -> ());
+      match !key_ref with Some h -> ignore (h ev : unit option) | None -> ());
   Renderable.on_paste node (fun ev ->
-      match !paste_ref with Some h -> h ev | None -> ());
+      match !paste_ref with Some h -> ignore (h ev : unit option) | None -> ());
   {
     kind = elem.kind;
     key = elem.key;
@@ -742,76 +664,27 @@ let create_fiber ~(parent : Renderable.t) (elem : unit Vnode.element) : fiber =
     mouse_ref;
     key_ref;
     paste_ref;
+    click_ref;
+    size_ref;
+    declared_children = [];
+    viewport_width = 0;
+    memos = None;
+    declared_focus = Focus_none;
     callback_refs;
   }
 
-let update_callback_refs (callback_refs : callback_refs)
-    (callbacks : unit Vnode.widget_callbacks) : unit =
-  match (callback_refs, callbacks) with
-  | Slider_callback_refs { value_change_ref }, Vnode.Slider_callbacks e ->
-      value_change_ref := e.on_value_change
-  | ( Input_callback_refs { input_ref; change_ref; submit_ref; cursor_ref },
-      Vnode.Input_callbacks e ) ->
-      input_ref := e.on_input;
-      change_ref := e.on_change;
-      submit_ref := e.on_submit;
-      cursor_ref := e.on_cursor
-  | ( Select_callback_refs { select_change_ref; select_activate_ref },
-      Vnode.Select_callbacks e ) ->
-      select_change_ref := e.on_change;
-      select_activate_ref := e.on_activate
-  | ( Tab_select_callback_refs { tab_select_change_ref; tab_select_activate_ref },
-      Vnode.Tab_select_callbacks e ) ->
-      tab_select_change_ref := e.on_change;
-      tab_select_activate_ref := e.on_activate
-  | Canvas_callback_refs { draw_ref }, Vnode.Canvas_callbacks e ->
-      draw_ref := e.on_draw
-  | ( Scroll_bar_callback_refs { scroll_bar_change_ref },
-      Vnode.Scroll_bar_callbacks e ) ->
-      scroll_bar_change_ref := e.on_change
-  | ( Scroll_box_callback_refs
-        { scroll_ref; scroll_by_applied_ref; reset_sticky_applied_ref },
-      Vnode.Scroll_box_callbacks e ) ->
-      scroll_ref := e.on_scroll;
-      scroll_by_applied_ref := e.on_scroll_by_applied;
-      reset_sticky_applied_ref := e.on_reset_sticky_applied
-  | ( Textarea_callback_refs
-        {
-          textarea_input_ref;
-          textarea_change_ref;
-          textarea_submit_ref;
-          textarea_cursor_ref;
-        },
-      Vnode.Textarea_callbacks e ) ->
-      textarea_input_ref := e.on_input;
-      textarea_change_ref := e.on_change;
-      textarea_submit_ref := e.on_submit;
-      textarea_cursor_ref := e.on_cursor
-  | Code_callback_refs { code_selection_ref }, Vnode.Code_callbacks e ->
-      code_selection_ref := e.on_selection
-  | ( Markdown_callback_refs { markdown_selection_ref },
-      Vnode.Markdown_callbacks e ) ->
-      markdown_selection_ref := e.on_selection
-  | Diff_callback_refs { set_diff_line_click }, Vnode.Diff_callbacks e ->
-      set_diff_line_click e.on_line_click
-  | ( Table_callback_refs
-        { table_change_ref; table_activate_ref; table_hover_ref },
-      Vnode.Table_callbacks e ) ->
-      table_change_ref := e.on_change;
-      table_activate_ref := e.on_activate;
-      table_hover_ref := e.on_hover
-  | ( Tree_callback_refs { tree_change_ref; tree_activate_ref; tree_expand_ref },
-      Vnode.Tree_callbacks e ) ->
-      tree_change_ref := e.on_change;
-      tree_activate_ref := e.on_activate;
-      tree_expand_ref := e.on_expand
-  | No_callback_refs, Vnode.No_callbacks -> ()
-  | _ -> ()
+let update_callback_refs refs callbacks =
+  refs.callbacks := callbacks;
+  refs.update_presence callbacks
 
 let update_fiber (f : fiber) (elem : unit Vnode.element) : bool =
+  Renderable.Private.set_focus_request (fiber_node f)
+    elem.handlers.on_focus_request;
   f.mouse_ref := elem.handlers.on_mouse;
   f.key_ref := elem.handlers.on_key;
   f.paste_ref := elem.handlers.on_paste;
+  f.click_ref := elem.handlers.on_click;
+  f.size_ref := elem.handlers.on_size;
   update_callback_refs f.callback_refs elem.callbacks;
   let changed =
     update_instance f.instance ~old_attrs:f.attrs ~new_attrs:elem.attrs
@@ -838,24 +711,69 @@ type flattened =
   | Flat_element of unit Vnode.element
   | Flat_embed of Renderable.t
 
-let rec flatten_vnode ~viewport_width (vnode : unit Vnode.t)
+let rec flatten_vnode ~cache ~viewport_width (vnode : unit Vnode.t)
     (acc : flattened list) : flattened list =
   match vnode with
   | Vnode.Empty -> acc
+  | Vnode.Memo memo ->
+      let memo_cache =
+        match !cache with
+        | Some memo_cache -> memo_cache
+        | None ->
+            let memo_cache =
+              {
+                previous = Hashtbl.create 4;
+                current = Hashtbl.create 4;
+                next = 0;
+              }
+            in
+            cache := Some memo_cache;
+            memo_cache
+      in
+      let slot = memo_cache.next in
+      memo_cache.next <- slot + 1;
+      let view =
+        match Hashtbl.find_opt memo_cache.previous slot with
+        | Some (previous, view) when Vnode.memo_equal previous memo -> view
+        | _ -> memo.view ()
+      in
+      Hashtbl.replace memo_cache.current slot (memo, view);
+      flatten_vnode ~cache ~viewport_width view acc
   | Vnode.Embed node -> Flat_embed node :: acc
   | Vnode.Element elem -> Flat_element elem :: acc
   | Vnode.Fragment children ->
       List.fold_right
-        (fun child acc -> flatten_vnode ~viewport_width child acc)
+        (fun child acc -> flatten_vnode ~cache ~viewport_width child acc)
         children acc
   | Vnode.Viewport_switch { at_least_width; wide; narrow } ->
       let selected =
         if viewport_width >= at_least_width then wide else narrow
       in
-      flatten_vnode ~viewport_width selected acc
+      flatten_vnode ~cache ~viewport_width selected acc
 
-let flatten ~viewport_width (vnode : unit Vnode.t) : flattened list =
-  flatten_vnode ~viewport_width vnode []
+let flatten_children ~memos ~viewport_width children =
+  let cache =
+    ref
+      (Option.map
+         (fun previous ->
+           let cache =
+             {
+               previous = previous.current;
+               current = previous.previous;
+               next = 0;
+             }
+           in
+           Hashtbl.clear cache.current;
+           cache)
+         memos)
+  in
+  let flattened =
+    List.fold_right
+      (fun child acc -> flatten_vnode ~cache ~viewport_width child acc)
+      children []
+  in
+  Option.iter (fun cache -> Hashtbl.clear cache.previous) !cache;
+  (!cache, flattened)
 
 (* ───── Fiber Maps ───── *)
 
@@ -967,10 +885,11 @@ type t = {
   container : Renderable.t;
   mutable root_children : child list;
   mutable pending_autofocus : Renderable.t list;
+  mutable memos : memo_cache option;
 }
 
 let create ~container =
-  { container; root_children = []; pending_autofocus = [] }
+  { container; root_children = []; pending_autofocus = []; memos = None }
 
 let container t = t.container
 
@@ -981,38 +900,70 @@ let apply_pending_autofocus t =
       List.iter (fun node -> ignore (Renderable.focus node : bool)) nodes;
       t.pending_autofocus <- []
 
+let combine_focus left right =
+  match (left, right) with
+  | Focus_none, focus | focus, Focus_none -> focus
+  | _ -> Focus_many
+
+let children_focus children =
+  List.fold_left
+    (fun focus -> function
+      | Embedded _ -> focus
+      | Fiber fiber -> combine_focus focus fiber.declared_focus)
+    Focus_none children
+
+let update_declared_focus fiber =
+  fiber.declared_focus <-
+    (if not fiber.attrs.visible then Focus_none
+     else
+       combine_focus
+         (if fiber.attrs.focused then Focus_one (fiber_node fiber)
+          else Focus_none)
+         (children_focus fiber.children))
+
 let rec reconcile_element (t : t) ~(parent_node : Renderable.t)
     (maps : fiber_maps) (pos : int) ~viewport_width (elem : unit Vnode.element)
     : fiber =
   match find_match maps pos elem with
   | Some f ->
-      ignore (update_fiber f elem : bool);
-      let old_children = f.children in
-      let flattened = flatten_children ~viewport_width elem.children in
-      let new_children =
-        reconcile_flattened t ~parent_node:(fiber_node f) ~viewport_width
-          old_children flattened
+      let focus_changed =
+        f.attrs.focused <> elem.attrs.focused
+        || f.attrs.visible <> elem.attrs.visible
       in
-      f.children <- new_children;
+      let children_changed =
+        f.declared_children != elem.children
+        || f.viewport_width <> viewport_width
+      in
+      ignore (update_fiber f elem : bool);
+      if children_changed then begin
+        let memos, flattened =
+          flatten_children ~memos:f.memos ~viewport_width elem.children
+        in
+        f.memos <- memos;
+        f.children <-
+          reconcile_flattened t ~parent_node:(fiber_node f) ~viewport_width
+            f.children flattened;
+        f.declared_children <- elem.children;
+        f.viewport_width <- viewport_width
+      end;
+      if focus_changed || children_changed then update_declared_focus f;
       f
   | None ->
       let f = create_fiber ~parent:parent_node elem in
-      (match elem.attrs.ref with
-      | Some ref_cb -> ref_cb (fiber_node f)
-      | None -> ());
+      Option.iter (fun callback -> callback (fiber_node f)) elem.attrs.ref;
       if elem.attrs.autofocus && elem.attrs.focusable then
         t.pending_autofocus <- fiber_node f :: t.pending_autofocus;
-      let flattened = flatten_children ~viewport_width elem.children in
-      let new_children =
-        reconcile_flattened t ~parent_node:(fiber_node f) ~viewport_width []
-          flattened
+      let memos, flattened =
+        flatten_children ~memos:None ~viewport_width elem.children
       in
-      f.children <- new_children;
+      f.memos <- memos;
+      f.children <-
+        reconcile_flattened t ~parent_node:(fiber_node f) ~viewport_width []
+          flattened;
+      f.declared_children <- elem.children;
+      f.viewport_width <- viewport_width;
+      update_declared_focus f;
       f
-
-and flatten_children ~viewport_width (vnodes : unit Vnode.t list) :
-    flattened list =
-  List.fold_right (fun v acc -> flatten_vnode ~viewport_width v acc) vnodes []
 
 and reconcile_flattened (t : t) ~(parent_node : Renderable.t) ~viewport_width
     (old_children : child list) (flattened : flattened list) : child list =
@@ -1049,7 +1000,10 @@ and reconcile_flattened (t : t) ~(parent_node : Renderable.t) ~viewport_width
 let render (t : t) ~viewport_width (vnode : unit Vnode.t) : unit =
   if viewport_width < 1 then
     invalid_arg "Reconciler.render: viewport_width must be positive";
-  let flattened = flatten ~viewport_width vnode in
+  let memos, flattened =
+    flatten_children ~memos:t.memos ~viewport_width [ vnode ]
+  in
+  t.memos <- memos;
   let new_children =
     reconcile_flattened t ~parent_node:t.container ~viewport_width
       t.root_children flattened
@@ -1062,4 +1016,11 @@ let unmount (t : t) : unit =
     (function Fiber f -> destroy_fiber f | Embedded n -> Renderable.detach n)
     t.root_children;
   t.root_children <- [];
+  t.memos <- None;
   Renderable.request_render t.container
+
+let focused t =
+  match children_focus t.root_children with
+  | Focus_none -> None
+  | Focus_one node -> Some node
+  | Focus_many -> invalid_arg "Mosaic: more than one focused element"

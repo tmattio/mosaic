@@ -9,7 +9,7 @@ dune exec ./mosaic/examples/18-textarea/main.exe
 
 ## Controls
 
-- `Ctrl+W` &mdash; cycle wrap mode (Word, Char, None).
+- `F2` &mdash; cycle wrap mode (Word, Char, None).
 - `Ctrl+Enter` &mdash; submit text.
 - `Esc` &mdash; quit.
 
@@ -23,6 +23,6 @@ dune exec ./mosaic/examples/18-textarea/main.exe
 
 ## Highlights
 
-- Demonstrates the `textarea` widget with `on_input` and `on_submit`.
+- Demonstrates the `textarea` widget with model-owned `Editor.t`, `on_change`, and `on_submit`.
 - Shows `~wrap` mode switching at runtime.
-- Uses `autofocus:true` for immediate input readiness.
+- Uses `focused:true` for immediate input readiness.

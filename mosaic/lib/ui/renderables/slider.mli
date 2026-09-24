@@ -44,8 +44,8 @@ val create :
       [max (max -. min) *. 0.1], minimum [1.0].
     - [track_color] defaults to dark gray (RGB 37 37 39).
     - [thumb_color] defaults to medium gray (RGB 154 158 163).
-    - [on_change] is called when the clamped value changes, whether from mouse
-      interaction or {!set_value}. *)
+    - [on_change] receives clamped proposals from mouse interaction. Input
+      proposes a value; it does not accept it. *)
 
 val node : t -> Renderable.t
 (** [node t] is [t]'s underlying renderable. *)
@@ -67,10 +67,8 @@ module Props : sig
     ?thumb_color:Ansi.Color.t ->
     unit ->
     t
-  (** [make ()] is a property set. Defaults match {!create}, except [value]:
-      when omitted, {!apply_props} preserves the widget's own value across prop
-      updates (re-clamped to the new range) instead of resetting it to [min];
-      when provided, the value is controlled by props. *)
+  (** [make ()] declares an accepted value (default [min]), clamped to the
+      declared range. There is no uncontrolled value. *)
 
   val default : t
   (** [default] is [make ()]. *)
@@ -81,19 +79,15 @@ module Props : sig
 end
 
 val apply_props : t -> Props.t -> unit
-(** [apply_props t props] replaces all properties at once. When [props] carries
-    a value it becomes the new value; otherwise the current value is kept.
-    Either way the value is clamped to the new range. Always triggers a
-    re-render. Does {e not} fire [on_change]. *)
-
-(** {1:value Value} *)
+(** [apply_props t props] accepts all properties, clamps the value to the
+    declared range, and requests rendering without firing [on_change]. *)
 
 val value : t -> float
 (** [value t] is the current value, always in \[[min];[max]\]. *)
 
 val set_value : t -> float -> unit
-(** [set_value t v] sets the value to [v] clamped to \[[min];[max]\]. Fires
-    [on_change] if the clamped result differs from the current value. *)
+(** [set_value t value] accepts and clamps [value] without firing [on_change].
+*)
 
 val min : t -> float
 (** [min t] is the lower bound of the range. *)

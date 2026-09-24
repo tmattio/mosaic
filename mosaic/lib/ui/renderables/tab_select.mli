@@ -1,3 +1,7 @@
+(** Input/navigation proposes selection through [on_change]. A proposal does not
+    change the accepted selection. [apply_props] and explicit setters accept
+    values without emitting another proposal. *)
+
 (** Horizontal tab navigation bar with scrolling and descriptions.
 
     A tab selector renders fixed-width tabs in a horizontal strip with keyboard
@@ -60,7 +64,9 @@ val create :
 (** [create ~parent ~options ()] is a tab selector attached to [parent]. The
     node is focusable and uses buffered rendering.
 
-    - [selected] defaults to [0], clamped to \[[0];[List.length options - 1]\].
+    - [selected] defaults to [0] for a nonempty list. Negative values mean no
+      selection ([-1]); positive overflow clamps to the last tab. Empty lists
+      have no selection.
     - [tab_width] defaults to [12] (minimum [1]).
     - [background] defaults to transparent (RGBA 0 0 0 0).
     - [text_color] defaults to light gray (RGB 226 232 240).
@@ -109,9 +115,8 @@ module Props : sig
     unit ->
     t
   (** [make ~options ()] is a property set with the same defaults as
-      {!val-create}, except [selected]: when omitted, {!apply_props} preserves
-      the widget's own selection across prop updates; when provided, the
-      selection is controlled by props. *)
+      {!val-create}. [selected] is the accepted index, defaulting to [0].
+      {!apply_props} accepts it without firing the change callback. *)
 
   val default : t
   (** [default] is [make ~options:[] ()]. *)
@@ -139,16 +144,17 @@ val set_options : t -> item list -> unit
 (** {1:selection Selection} *)
 
 val selected_index : t -> int
-(** [selected_index t] is the zero-based index of the selected tab. [0] when the
-    tab list is empty. *)
+(** [selected_index t] is the zero-based selected index, or [-1] when no tab is
+    selected. *)
 
 val selected_item : t -> item option
-(** [selected_item t] is the selected tab, or [None] if the tab list is empty.
-*)
+(** [selected_item t] is the selected tab, or [None] when no tab is selected. *)
 
 val set_selected : t -> int -> unit
-(** [set_selected t i] selects the tab at index [i], clamped to
-    \[[0];[length - 1]\]. Fires [on_change] if the index changed. *)
+(** [set_selected t value] accepts [value] without firing [on_change]. Negative
+    values clear selection; positive overflow clamps to the last tab. The result
+    is [-1] for an empty list. From no selection, Right proposes the first tab
+    and Left the last. *)
 
 (** {1:tab_width Tab width} *)
 

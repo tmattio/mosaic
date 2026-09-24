@@ -3,26 +3,17 @@
 
 open Mosaic
 
-type completion = {
-  prefix : string;
-  cursor_byte : int;
-  items : string list;
-  selected : int;
-}
+type completion = { prefix : string; items : string list; selected : int }
 
 type model = {
-  code : string;
-  cursor : int;
-  selection : (int * int) option;
-  cursor_override : int option;
+  editor : Editor.t;
   popup_open : bool;
   completion : completion option;
   status : string;
 }
 
 type msg =
-  | Set_code of string
-  | Cursor_changed of int * (int * int) option
+  | Edit of Editor.t
   | Trigger_completion
   | Next_completion
   | Prev_completion
@@ -43,8 +34,6 @@ let () =
   let total = sum values in
   greet "Mosaic";
   Printf.printf "total=%d\n" total|}
-
-let clamp lo hi x = if x < lo then lo else if x > hi then hi else x
 
 let lowercase_codepoint i =
   if i >= Char.code 'A' && i <= Char.code 'Z' then i + 32 else i
@@ -127,28 +116,15 @@ let ocaml_keywords =
 let completion_pool code =
   unique_sorted (ocaml_keywords @ collect_identifiers code)
 
-let grapheme_byte_offsets s =
-  let n = Matrix.Text.grapheme_count s in
-  let offsets = Array.make (n + 1) (String.length s) in
-  let i = ref 0 in
-  Matrix.Text.iter_graphemes
-    (fun ~offset ~len:_ ->
-      offsets.(!i) <- offset;
-      incr i)
-    s;
-  offsets
-
-let cursor_byte_of code cursor =
-  let offsets = grapheme_byte_offsets code in
-  let max_cursor = Array.length offsets - 1 in
-  let cursor = clamp 0 max_cursor cursor in
-  (cursor, offsets.(cursor))
-
-let find_prefix_at_cursor code ~cursor ~selection =
-  match selection with
+let find_prefix_at_cursor editor =
+  let code = Editor.text editor in
+  match Editor.selection editor with
   | Some _ -> None
   | None ->
-      let cursor, cursor_byte = cursor_byte_of code cursor in
+      let cursor_byte =
+        Matrix.Text.Layout.Source.byte_offset (Editor.source editor)
+          (Editor.cursor editor)
+      in
       let len = String.length code in
       let at_ident_end =
         cursor_byte = len || not (is_ident_char code.[cursor_byte])
@@ -164,7 +140,7 @@ let find_prefix_at_cursor code ~cursor ~selection =
           if cursor_byte > start then String.sub code start (cursor_byte - start)
           else ""
         in
-        Some (cursor, cursor_byte, prefix)
+        Some prefix
 
 let selected_completion_item c =
   match c.items with
@@ -186,10 +162,11 @@ let cycle_completion c delta =
   if len = 0 then c
   else { c with selected = (c.selected + delta + len) mod len }
 
-let build_completion ?(force = false) code ~cursor ~selection =
-  match find_prefix_at_cursor code ~cursor ~selection with
+let build_completion ?(force = false) editor =
+  let code = Editor.text editor in
+  match find_prefix_at_cursor editor with
   | None -> None
-  | Some (_, cursor_byte, prefix) -> (
+  | Some prefix -> (
       if (not force) && String.length prefix = 0 then None
       else
         let items =
@@ -200,7 +177,7 @@ let build_completion ?(force = false) code ~cursor ~selection =
         in
         match items with
         | [] -> None
-        | _ -> Some { prefix; cursor_byte; items; selected = 0 })
+        | _ -> Some { prefix; items; selected = 0 })
 
 let preserve_selection prev next =
   match (prev, next) with
@@ -215,10 +192,7 @@ let preserve_selection prev next =
 
 let recompute_completion model =
   let force = model.popup_open in
-  let next =
-    build_completion ~force model.code ~cursor:model.cursor
-      ~selection:model.selection
-  in
+  let next = build_completion ~force model.editor in
   { model with completion = preserve_selection model.completion next }
 
 let completion_status completion =
@@ -243,11 +217,6 @@ let ghost_text model =
           if String.length suffix = 0 then None else Some suffix
       | Some _ -> None)
 
-let insert_at_byte s ~byte text =
-  let len = String.length s in
-  let byte = clamp 0 len byte in
-  String.sub s 0 byte ^ text ^ String.sub s byte (len - byte)
-
 let apply_completion model c choice =
   let suffix =
     if starts_with ~prefix:c.prefix choice then
@@ -259,13 +228,8 @@ let apply_completion model c choice =
     { model with popup_open = false; status = "No completion change." }
     |> recompute_completion
   else
-    let code = insert_at_byte model.code ~byte:c.cursor_byte suffix in
-    let cursor = model.cursor + Matrix.Text.grapheme_count suffix in
     {
-      code;
-      cursor;
-      selection = None;
-      cursor_override = Some cursor;
+      editor = Editor.insert suffix model.editor;
       popup_open = false;
       completion = None;
       status = Printf.sprintf "Completed: %s" choice;
@@ -275,14 +239,6 @@ let apply_completion model c choice =
 let rec take n xs =
   if n <= 0 then []
   else match xs with [] -> [] | x :: tl -> x :: take (n - 1) tl
-
-let cursor_line code cursor =
-  let _, cursor_byte = cursor_byte_of code cursor in
-  let line = ref 0 in
-  for i = 0 to cursor_byte - 1 do
-    if code.[i] = '\n' then incr line
-  done;
-  !line
 
 let editor_on_key model ev =
   let data = Event.Key.data ev in
@@ -303,7 +259,7 @@ let editor_on_key model ev =
     | Tab when model.popup_open ->
         Event.Key.prevent_default ev;
         Some Accept_completion
-    | Tab when Option.is_none model.selection ->
+    | Tab when Option.is_none (Editor.selection model.editor) ->
         Event.Key.prevent_default ev;
         Some Trigger_completion
     | Char c
@@ -322,13 +278,8 @@ let editor_on_key model ev =
     | _ -> None
 
 let init () =
-  let code = ocaml_sample in
-  let cursor = Matrix.Text.grapheme_count code in
   ( {
-      code;
-      cursor;
-      selection = None;
-      cursor_override = None;
+      editor = Editor.of_string ocaml_sample;
       popup_open = false;
       completion = None;
       status =
@@ -339,27 +290,18 @@ let init () =
 
 let update msg model =
   match msg with
-  | Set_code code ->
-      let model = { model with code; cursor_override = None } in
-      let model =
-        if Option.is_some model.selection then { model with popup_open = false }
-        else model
-      in
-      (recompute_completion model, Cmd.none)
-  | Cursor_changed (cursor, selection) ->
+  | Edit editor ->
       let model =
         {
           model with
-          cursor;
-          selection;
-          cursor_override = None;
+          editor;
           popup_open =
-            (match selection with Some _ -> false | None -> model.popup_open);
+            model.popup_open && Option.is_none (Editor.selection editor);
         }
       in
       (recompute_completion model, Cmd.none)
   | Trigger_completion ->
-      if Option.is_some model.selection then
+      if Option.is_some (Editor.selection model.editor) then
         ( { model with status = "Dismiss selection before completion." },
           Cmd.none )
       else
@@ -407,8 +349,11 @@ let border_color = Ansi.Color.grayscale ~level:8
 let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:17) ()
 
-let active_line_colors code cursor =
-  let line = cursor_line code cursor in
+let active_line_colors editor =
+  let line =
+    Matrix.Text.Layout.Source.line_of_offset (Editor.source editor)
+      (Editor.cursor editor)
+  in
   [
     ( line,
       {
@@ -450,7 +395,7 @@ let highlight_ocaml code =
   |> Syntax_highlight.to_spans ~style:Syntax_style.default ~content:code
 
 let view model =
-  let spans = highlight_ocaml model.code in
+  let spans = highlight_ocaml (Editor.text model.editor) in
   let ghost_text = ghost_text model in
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
@@ -473,18 +418,15 @@ let view model =
           text ~style:hint "Editor";
           box ~flex_grow:1. ~border:true ~border_color
             [
-              line_number
-                ~line_colors:(active_line_colors model.code model.cursor)
-                ~flex_grow:1.
-                (textarea ~autofocus:true ~value:model.code
-                   ?cursor:model.cursor_override ~spans ?ghost_text
+              line_number ~flex_grow:1.
+                ~line_colors:(active_line_colors model.editor)
+                (textarea
+                   ~size:{ width = pct 100; height = pct 100 }
+                   ~focused:true ~state:model.editor ~spans ?ghost_text
                    ~ghost_text_color:(Ansi.Color.grayscale ~level:10)
                    ~wrap:`None ~cursor_style:`Line
-                   ~size:{ width = pct 100; height = pct 100 }
                    ~on_key:(fun ev -> editor_on_key model ev)
-                   ~on_input:(fun v -> Some (Set_code v))
-                   ~on_cursor:(fun ~cursor ~selection ->
-                     Some (Cursor_changed (cursor, selection)))
+                   ~on_change:(fun editor -> Edit editor)
                    ());
             ];
           completion_panel model;

@@ -33,14 +33,28 @@ type t
 
 (** {1:item Item} *)
 
-type item = { label : string; children : item list }
+type item = { id : string; label : string; children : item list }
 (** The type for tree nodes. [label] is the display string; [children] is the
     (possibly empty) list of child nodes. *)
 
-val item : ?children:item list -> string -> item
-(** [item label] is a tree node with [label] and no children.
+val item : id:string -> ?children:item list -> string -> item
+(** [item ~id label] is a tree node with [label] and no children.
 
     [children] defaults to [[]]. *)
+
+module State : sig
+  type t
+  (** Persistent selection and expansion, using IDs unique within the tree. *)
+
+  val empty : t
+  val make : ?selected:string -> ?expanded:string list -> unit -> t
+  val selected : t -> string option
+  val expanded : t -> string list
+  val select : string option -> t -> t
+  val set_expanded : string -> bool -> t -> t
+  val is_expanded : string -> t -> bool
+  val equal : t -> t -> bool
+end
 
 (** {1:construction Construction} *)
 
@@ -53,8 +67,7 @@ val create :
   ?z_index:int ->
   ?opacity:float ->
   ?items:item list ->
-  ?selected_index:int ->
-  ?expand_depth:int ->
+  ?state:State.t ->
   ?indent_size:int ->
   ?show_guides:bool ->
   ?guide_style:Matrix_grid.Border.t ->
@@ -90,8 +103,7 @@ module Props : sig
 
   val make :
     ?items:item list ->
-    ?selected_index:int ->
-    ?expand_depth:int ->
+    ?state:State.t ->
     ?indent_size:int ->
     ?show_guides:bool ->
     ?guide_style:Matrix_grid.Border.t ->
@@ -112,14 +124,7 @@ module Props : sig
     t
   (** [make ()] is a property bundle with defaults:
       - [items]: [[]].
-      - [selected_index]: app-controlled 0-based index in the visible list,
-        clamped to the valid range. When provided, {!apply_props} moves the
-        selection to it without firing the change callback; when omitted, the
-        widget's own selection survives prop updates. {!val-create} uses it as
-        the initial selection, defaulting to [0].
-      - [expand_depth]: initial expansion depth. [0] means all nodes collapsed
-        (default); [1] means the first level expanded; [-1] means all nodes
-        expanded.
+      - [state]: accepted selection and expansion; defaults to [State.empty].
       - [indent_size]: columns per depth level; defaults to [2].
       - [show_guides]: draw box-drawing guide lines; defaults to [false].
       - [guide_style]: border character set for guide lines; defaults to
@@ -164,24 +169,22 @@ val items : t -> item list
 (** [items t] is the current item list of [t]. *)
 
 val set_items : t -> item list -> unit
-(** [set_items t items] replaces the item tree with [items]. Resets the
-    expansion state according to [expand_depth], clamps the selection to a valid
-    index, and triggers a re-render. *)
+(** [set_items t items] replaces the item tree while preserving accepted IDs. *)
 
 (** {1:selection Selection} *)
 
 val selected_index : t -> int
 (** [selected_index t] is the 0-based index of the selected entry in the visible
-    (flattened) list of [t]. *)
+    (flattened) list of [t], or [-1] when its selected ID is not visible. *)
 
 val set_selected_index : t -> int -> unit
-(** [set_selected_index t i] selects the visible entry at index [i]. The index
-    is clamped to the valid range. Fires [on_change] if the index actually
-    changes. *)
+(** [set_selected_index t i] proposes selecting the visible entry at index [i],
+    clamped to the valid range. The accepted state is unchanged until
+    {!apply_props} receives the proposal. *)
 
 val selected_item : t -> item option
 (** [selected_item t] is the currently selected item of [t], or [None] if the
-    tree is empty. *)
+    selected ID is absent or hidden. *)
 
 val visible_count : t -> int
 (** [visible_count t] is the number of currently visible entries in [t]. *)
@@ -269,18 +272,12 @@ val set_fast_scroll_step : t -> int -> unit
 
 (** {1:callbacks Callbacks} *)
 
-val set_on_change : t -> (int -> unit) option -> unit
-(** [set_on_change t cb] registers [cb] to be called when the selected index
-    changes. [cb] receives the new selected index. *)
+val set_on_change : t -> (State.t -> unit) option -> unit
+(** [set_on_change t cb] receives complete proposed states. No proposal is
+    applied until accepted through [apply_props]. *)
 
-val set_on_activate : t -> (int -> unit) option -> unit
-(** [set_on_activate t cb] registers [cb] to be called when the focused node is
-    activated via Enter. [cb] receives the activated visible index. *)
-
-val set_on_expand : t -> (int -> bool -> unit) option -> unit
-(** [set_on_expand t cb] registers [cb] to be called when a node is expanded or
-    collapsed. [cb] receives the visible index and the new expanded state
-    ([true] for expanded, [false] for collapsed). *)
+val set_on_activate : t -> (item -> unit) option -> unit
+(** [set_on_activate t cb] receives the activated logical item. *)
 
 (** {1:layout Layout} *)
 

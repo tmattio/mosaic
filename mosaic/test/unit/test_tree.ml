@@ -7,26 +7,65 @@ open Test_harness
 let sample_items =
   Tree.
     [
-      item "src" ~children:[ item "main.ml"; item "utils.ml" ];
-      item "test" ~children:[ item "test_main.ml" ];
-      item "README.md";
+      item ~id:"src" "src"
+        ~children:
+          [ item ~id:"main.ml" "main.ml"; item ~id:"utils.ml" "utils.ml" ];
+      item ~id:"test" "test"
+        ~children:[ item ~id:"test_main.ml" "test_main.ml" ];
+      item ~id:"README.md" "README.md";
     ]
 
 let deep_items =
   Tree.
     [
-      item "a"
-        ~children:[ item "b" ~children:[ item "c" ~children:[ item "d" ] ] ];
+      item ~id:"a" "a"
+        ~children:
+          [
+            item ~id:"b" "b"
+              ~children:[ item ~id:"c" "c" ~children:[ item ~id:"d" "d" ] ];
+          ];
     ]
 
-let make_tree ?items ?selected_index ?expand_depth ?indent_size ?show_guides
-    ?guide_style ?wrap_selection ?fast_scroll_step () =
+(* Tests explicitly accept proposals; rejection cases replace this handler. *)
+let state_for_items items selected_index expand_depth =
+  let rec walk depth items =
+    List.concat_map
+      (fun (item : Tree.item) ->
+        if item.children <> [] && (expand_depth < 0 || depth < expand_depth)
+        then item.id :: walk (depth + 1) item.children
+        else [])
+      items
+  in
+  let expanded = walk 0 items in
+  let rec visible items =
+    List.concat_map
+      (fun (item : Tree.item) ->
+        item.id
+        :: (if List.mem item.id expanded then visible item.children else []))
+      items
+  in
+  let ids = visible items in
+  let selected =
+    List.nth_opt ids (max 0 (min (List.length ids - 1) selected_index))
+  in
+  Tree.State.make ?selected ~expanded ()
+
+let make_tree ?(items = []) ?(selected_index = 0) ?(expand_depth = 0)
+    ?indent_size ?show_guides ?guide_style ?wrap_selection ?fast_scroll_step ()
+    =
   let t = make_ctx () in
   let root = make_root t in
-  let tree =
-    Tree.create ~parent:root ?items ?selected_index ?expand_depth ?indent_size
-      ?show_guides ?guide_style ?wrap_selection ?fast_scroll_step ()
+  let state = state_for_items items selected_index expand_depth in
+  let props state items =
+    Tree.Props.make ~items ~state ?indent_size ?show_guides ?guide_style
+      ?wrap_selection ?fast_scroll_step ()
   in
+  let tree =
+    Tree.create ~parent:root ~items ~state ?indent_size ?show_guides
+      ?guide_style ?wrap_selection ?fast_scroll_step ()
+  in
+  Tree.set_on_change tree
+    (Some (fun state -> Tree.apply_props tree (props state (Tree.items tree))));
   (t, tree)
 
 let emit_key tree key =
@@ -55,13 +94,13 @@ let props_detects_items_diff () =
   is_false ~msg:"different" (Tree.Props.equal a b)
 
 let props_detects_selected_index_diff () =
-  let a = Tree.Props.make ~selected_index:0 () in
-  let b = Tree.Props.make ~selected_index:1 () in
+  let a = Tree.Props.make ~state:(Tree.State.make ~selected:"0" ()) () in
+  let b = Tree.Props.make ~state:(Tree.State.make ~selected:"1" ()) () in
   is_false ~msg:"different" (Tree.Props.equal a b)
 
 let props_detects_expand_depth_diff () =
-  let a = Tree.Props.make ~expand_depth:0 () in
-  let b = Tree.Props.make ~expand_depth:1 () in
+  let a = Tree.Props.make ~state:(Tree.State.make ~expanded:[ "0" ] ()) () in
+  let b = Tree.Props.make ~state:(Tree.State.make ~expanded:[ "1" ] ()) () in
   is_false ~msg:"different" (Tree.Props.equal a b)
 
 let props_detects_show_guides_diff () =
@@ -101,7 +140,7 @@ let create_clamps_initial_index () =
 
 let create_empty_items_index_zero () =
   let _t, tree = make_tree ~selected_index:5 () in
-  equal ~msg:"zero" int 0 (Tree.selected_index tree)
+  equal ~msg:"no selection" int (-1) (Tree.selected_index tree)
 
 (* ── Selection ── *)
 
@@ -115,16 +154,18 @@ let set_selected_index_clamps () =
 let set_selected_index_fires_on_change () =
   let _t, tree = make_tree ~items:sample_items ~expand_depth:(-1) () in
   let log = ref [] in
-  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.set_on_change tree
+    (Some (fun state -> log := Tree.State.selected state :: !log));
   Tree.set_selected_index tree 2;
-  equal ~msg:"fired" (list int) [ 2 ] !log
+  equal ~msg:"fired" (list (option string)) [ Some "utils.ml" ] !log
 
 let set_selected_index_noop_same () =
   let _t, tree = make_tree ~items:sample_items ~expand_depth:(-1) () in
   let log = ref [] in
-  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.set_on_change tree
+    (Some (fun state -> log := Tree.State.selected state :: !log));
   Tree.set_selected_index tree 0;
-  equal ~msg:"no fire" (list int) [] !log
+  equal ~msg:"no fire" (list (option string)) [] !log
 
 let selected_item_returns_item () =
   let _t, tree = make_tree ~items:sample_items ~expand_depth:(-1) () in
@@ -204,9 +245,9 @@ let fast_scroll_up () =
 let enter_fires_on_activate () =
   let _t, tree = make_tree ~items:sample_items ~selected_index:1 () in
   let log = ref [] in
-  Tree.set_on_activate tree (Some (fun i -> log := i :: !log));
+  Tree.set_on_activate tree (Some (fun item -> log := item.Tree.id :: !log));
   emit_key tree (make_key Enter);
-  equal ~msg:"activated" (list int) [ 1 ] !log
+  equal ~msg:"activated" (list string) [ "test" ] !log
 
 let on_activate_empty_tree () =
   let _t, tree = make_tree () in
@@ -218,19 +259,22 @@ let on_activate_empty_tree () =
 let unhandled_key_ignored () =
   let _t, tree = make_tree ~items:sample_items ~selected_index:1 () in
   let log = ref [] in
-  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.set_on_change tree
+    (Some (fun state -> log := Tree.State.selected state :: !log));
   emit_key tree (make_key (Char (Uchar.of_char 'a')));
-  equal ~msg:"no change" (list int) [] !log;
+  equal ~msg:"no change" (list (option string)) [] !log;
   equal ~msg:"index unchanged" int 1 (Tree.selected_index tree)
 
 let navigation_on_empty_tree () =
   let _t, tree = make_tree () in
   let log = ref [] in
-  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.set_on_change tree
+    (Some (fun state -> log := Tree.State.selected state :: !log));
   emit_key tree (make_key Down);
   emit_key tree (make_key Up);
-  equal ~msg:"no callbacks" (list int) [] !log;
-  equal ~msg:"index zero" int 0 (Tree.selected_index tree)
+  equal ~msg:"no callbacks" (list (option string)) [] !log;
+  equal ~msg:"empty tree has no selected entry" int (-1)
+    (Tree.selected_index tree)
 
 (* ── Expand/Collapse via Keys ── *)
 
@@ -320,18 +364,20 @@ let toggle_expand_works () =
 let expand_fires_on_expand () =
   let _t, tree = make_tree ~items:sample_items () in
   let log = ref [] in
-  Tree.set_on_expand tree
-    (Some (fun i expanded -> log := (i, expanded) :: !log));
+  Tree.set_on_change tree
+    (Some
+       (fun state -> log := ("src", Tree.State.is_expanded "src" state) :: !log));
   Tree.expand tree 0;
-  equal ~msg:"fired" (list (pair int bool)) [ (0, true) ] !log
+  equal ~msg:"fired" (list (pair string bool)) [ ("src", true) ] !log
 
 let collapse_fires_on_expand () =
   let _t, tree = make_tree ~items:sample_items ~expand_depth:1 () in
   let log = ref [] in
-  Tree.set_on_expand tree
-    (Some (fun i expanded -> log := (i, expanded) :: !log));
+  Tree.set_on_change tree
+    (Some
+       (fun state -> log := ("src", Tree.State.is_expanded "src" state) :: !log));
   Tree.collapse tree 0;
-  equal ~msg:"fired" (list (pair int bool)) [ (0, false) ] !log
+  equal ~msg:"fired" (list (pair string bool)) [ ("src", false) ] !log
 
 let expand_leaf_noop () =
   let _t, tree = make_tree ~items:sample_items ~selected_index:2 () in
@@ -361,19 +407,20 @@ let expand_depth_one () =
 
 let set_items_replaces () =
   let _t, tree = make_tree ~items:sample_items () in
-  let new_items = Tree.[ item "one"; item "two" ] in
+  let new_items = Tree.[ item ~id:"one" "one"; item ~id:"two" "two" ] in
   Tree.set_items tree new_items;
   equal ~msg:"count" int 2 (List.length (Tree.items tree))
 
 let set_items_clamps_index () =
   let _t, tree = make_tree ~items:sample_items ~selected_index:2 () in
-  Tree.set_items tree [ Tree.item "only" ];
-  equal ~msg:"clamped" int 0 (Tree.selected_index tree)
+  Tree.set_items tree [ Tree.item ~id:"only" "only" ];
+  equal ~msg:"removed ID has no visible selection" int (-1)
+    (Tree.selected_index tree)
 
 let set_items_empty () =
   let _t, tree = make_tree ~items:sample_items () in
   Tree.set_items tree [];
-  equal ~msg:"zero" int 0 (Tree.selected_index tree);
+  equal ~msg:"no selection" int (-1) (Tree.selected_index tree);
   equal ~msg:"no visible" int 0 (Tree.visible_count tree)
 
 (* ── Queries ── *)
@@ -440,9 +487,10 @@ let mouse_click_beyond_items_ignored () =
   let _t, tree = make_tree ~items:sample_items () in
   with_layout tree ~width:40 ~height:10;
   let log = ref [] in
-  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.set_on_change tree
+    (Some (fun state -> log := Tree.State.selected state :: !log));
   emit_mouse tree (mouse_down ~x:5 ~y:8);
-  equal ~msg:"no fire" (list int) [] !log
+  equal ~msg:"no fire" (list (option string)) [] !log
 
 (* ── Setter No-ops ── *)
 
@@ -513,8 +561,9 @@ let set_fast_scroll_step_changes_behavior () =
 let apply_props_updates () =
   let t, tree = make_tree ~items:sample_items () in
   let props =
-    Tree.Props.make ~items:sample_items ~selected_index:1 ~wrap_selection:true
-      ()
+    Tree.Props.make ~items:sample_items
+      ~state:(state_for_items sample_items 1 0)
+      ~wrap_selection:true ()
   in
   let before = !(t.schedule_count) in
   Tree.apply_props tree props;
@@ -529,31 +578,55 @@ let apply_props_same_no_extra_render () =
   Tree.apply_props tree props;
   equal ~msg:"no extra schedule" int before !(t.schedule_count)
 
-let apply_props_preserves_uncontrolled_selection () =
+let apply_props_restores_declared_selection () =
   let _t, tree = make_tree ~items:sample_items () in
   Tree.set_selected_index tree 2;
   let log = ref [] in
-  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.set_on_change tree
+    (Some (fun state -> log := Tree.State.selected state :: !log));
   Tree.apply_props tree
     (Tree.Props.make ~items:sample_items ~wrap_selection:true ());
-  equal ~msg:"selection survives unrelated prop change" int 2
+  equal ~msg:"missing selection explicitly declares none" int (-1)
     (Tree.selected_index tree);
-  equal ~msg:"no callback echo" (list int) [] !log
+  equal ~msg:"no callback echo" (list (option string)) [] !log
 
 let apply_props_controlled_selection_is_silent () =
   let _t, tree = make_tree ~items:sample_items () in
   let log = ref [] in
-  Tree.set_on_change tree (Some (fun i -> log := i :: !log));
+  Tree.set_on_change tree
+    (Some (fun state -> log := Tree.State.selected state :: !log));
   Tree.apply_props tree
-    (Tree.Props.make ~items:sample_items ~selected_index:1 ());
+    (Tree.Props.make ~items:sample_items
+       ~state:(state_for_items sample_items 1 0)
+       ());
   equal ~msg:"controlled selection applied" int 1 (Tree.selected_index tree);
-  equal ~msg:"no callback echo" (list int) [] !log
+  equal ~msg:"no callback echo" (list (option string)) [] !log
+
+let rejected_state_and_reorder () =
+  let _ctx, tree = make_tree ~items:sample_items () in
+  let proposals = ref [] in
+  Tree.set_on_change tree (Some (fun state -> proposals := state :: !proposals));
+  emit_key tree (make_key Down);
+  emit_key tree (make_key Down);
+  equal ~msg:"rejected events derive from accepted selection"
+    (list (option string))
+    [ Some "test"; Some "test" ]
+    (List.map Tree.State.selected !proposals);
+  equal ~msg:"rejected proposal does not move selection" int 0
+    (Tree.selected_index tree);
+  let state = Tree.State.make ~selected:"src" ~expanded:[ "src" ] () in
+  Tree.apply_props tree
+    (Tree.Props.make ~items:(List.rev sample_items) ~state ());
+  equal ~msg:"logical selection survives reorder" (option string) (Some "src")
+    (Option.map (fun item -> item.Tree.id) (Tree.selected_item tree));
+  equal ~msg:"expansion survives reorder" int 5 (Tree.visible_count tree)
 
 (* ── Runner ── *)
 
 let () =
   run "mosaic.tree"
     [
+      test "accepted state and stable IDs" rejected_state_and_reorder;
       group "Props"
         [
           test "default values" props_defaults;
@@ -669,7 +742,7 @@ let () =
           test "updates all properties" apply_props_updates;
           test "same props no extra render" apply_props_same_no_extra_render;
           test "preserves uncontrolled selection"
-            apply_props_preserves_uncontrolled_selection;
+            apply_props_restores_declared_selection;
           test "controlled selection is silent"
             apply_props_controlled_selection_is_silent;
         ];

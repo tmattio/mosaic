@@ -8,18 +8,22 @@ type model = {
   time_remaining : int;
   initial_time : int;
   state : timer_state;
-  input_minutes : string;
-  input_seconds : string;
+  input_minutes : Editor.t;
+  input_seconds : Editor.t;
   elapsed_time : float;
+  scroll : Scroll.t;
+  focused : [ `Minutes | `Seconds ];
 }
 
 type msg =
+  | Scrolled of Scroll.t
+  | Focus of [ `Minutes | `Seconds ]
   | Start
   | Stop
   | Reset
   | Tick of float
-  | Set_minutes of string
-  | Set_seconds of string
+  | Set_minutes of Editor.t
+  | Set_seconds of Editor.t
   | Set_time
   | Quit
 
@@ -40,14 +44,18 @@ let init () =
       time_remaining = 0;
       initial_time = 0;
       state = Idle;
-      input_minutes = "";
-      input_seconds = "";
+      input_minutes = Editor.empty;
+      input_seconds = Editor.empty;
+      scroll = Scroll.at 0;
+      focused = `Minutes;
       elapsed_time = 0.0;
     },
     Cmd.none )
 
 let update msg m =
   match msg with
+  | Scrolled scroll -> ({ m with scroll }, Cmd.none)
+  | Focus focused -> ({ m with focused }, Cmd.none)
   | Start -> (
       match m.state with
       | Idle | Paused -> ({ m with state = Running }, Cmd.none)
@@ -82,8 +90,12 @@ let update msg m =
   | Set_minutes s -> ({ m with input_minutes = s }, Cmd.none)
   | Set_seconds s -> ({ m with input_seconds = s }, Cmd.none)
   | Set_time ->
-      let minutes = try int_of_string m.input_minutes with _ -> 0 in
-      let seconds = try int_of_string m.input_seconds with _ -> 0 in
+      let minutes =
+        try int_of_string (Editor.text m.input_minutes) with _ -> 0
+      in
+      let seconds =
+        try int_of_string (Editor.text m.input_seconds) with _ -> 0
+      in
       let total_seconds = (minutes * 60) + seconds in
       ( {
           m with
@@ -113,8 +125,10 @@ let view model =
       (* Content *)
       box ~flex_grow:1. ~align_items:Center ~justify_content:Center
         [
-          scroll_box ~scroll_y:true ~scroll_x:false
+          scroll_box ~scroll:model.scroll
+            ~on_scroll:(fun scroll -> Scrolled scroll)
             ~size:{ width = pct 100; height = pct 100 }
+            ~scroll_y:true ~scroll_x:false
             [
               box ~flex_direction:Column ~align_items:Center ~gap:(gap 2)
                 ~border:true ~border_color ~padding:(padding 3)
@@ -137,14 +151,18 @@ let view model =
                       text "Minutes:";
                       input
                         ~size:{ width = px 5; height = px 1 }
-                        ~value:model.input_minutes
-                        ~on_input:(fun v -> Some (Set_minutes v))
+                        ~state:model.input_minutes
+                        ~focused:(model.focused = `Minutes)
+                        ~on_focus_request:(Focus `Minutes)
+                        ~on_change:(fun v -> Set_minutes v)
                         ();
                       text "Seconds:";
                       input
                         ~size:{ width = px 5; height = px 1 }
-                        ~value:model.input_seconds
-                        ~on_input:(fun v -> Some (Set_seconds v))
+                        ~state:model.input_seconds
+                        ~focused:(model.focused = `Seconds)
+                        ~on_focus_request:(Focus `Seconds)
+                        ~on_change:(fun v -> Set_seconds v)
                         ();
                     ];
                   box ~border:true ~padding:(padding 1)
@@ -202,10 +220,11 @@ let view model =
 let subscriptions model =
   Sub.batch
     [
-      Sub.on_tick (fun ~dt -> Tick dt);
+      Sub.on_tick ~id:"animation" (fun ~dt -> Tick dt);
       Sub.on_key (fun ev ->
-          if Shortcut.matches Shortcut.space ev then
-            Some (match model.state with Running -> Stop | _ -> Start)
+          if Shortcut.matches Shortcut.space ev then (
+            Event.Key.prevent_default ev;
+            Some (match model.state with Running -> Stop | _ -> Start))
           else None);
       Sub.on_keys
         [

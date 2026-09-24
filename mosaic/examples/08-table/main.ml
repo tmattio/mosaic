@@ -3,13 +3,14 @@
 open Mosaic
 
 type border_style = Rounded | Heavy | Double | Ascii | Single
-type model = { style : border_style }
-type msg = Cycle_style | Quit
+type model = { style : border_style; selected : string option }
+type msg = Cycle_style | Selected of string | Quit
 
-let init () = ({ style = Rounded }, Cmd.none)
+let init () = ({ style = Rounded; selected = Some "web-prod-01" }, Cmd.none)
 
 let update msg model =
   match msg with
+  | Selected selected -> ({ model with selected = Some selected }, Cmd.none)
   | Cycle_style ->
       let style =
         match model.style with
@@ -19,7 +20,7 @@ let update msg model =
         | Ascii -> Single
         | Single -> Rounded
       in
-      ({ style }, Cmd.none)
+      ({ model with style }, Cmd.none)
   | Quit -> (model, Cmd.quit)
 
 let style_to_border = function
@@ -47,41 +48,46 @@ let columns =
 
 let rows =
   [
-    [|
-      Table.cell "web-prod-01";
-      Table.cell "us-east-1";
-      Table.cell "12%";
-      Table.cell "4.2 GB";
-      Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.green ()) "Healthy";
-    |];
-    [|
-      Table.cell "web-prod-02";
-      Table.cell "us-east-1";
-      Table.cell "45%";
-      Table.cell "6.8 GB";
-      Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.green ()) "Healthy";
-    |];
-    [|
-      Table.cell "api-prod-01";
-      Table.cell "eu-west-1";
-      Table.cell "78%";
-      Table.cell "12.1 GB";
-      Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.yellow ()) "Warning";
-    |];
-    [|
-      Table.cell "db-primary";
-      Table.cell "us-east-1";
-      Table.cell "34%";
-      Table.cell "28.4 GB";
-      Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.green ()) "Healthy";
-    |];
-    [|
-      Table.cell "cache-01";
-      Table.cell "ap-south-1";
-      Table.cell "8%";
-      Table.cell "1.9 GB";
-      Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.red ()) "Critical";
-    |];
+    Table.row "web-prod-01"
+      [|
+        Table.cell "web-prod-01";
+        Table.cell "us-east-1";
+        Table.cell "12%";
+        Table.cell "4.2 GB";
+        Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.green ()) "Healthy";
+      |];
+    Table.row "web-prod-02"
+      [|
+        Table.cell "web-prod-02";
+        Table.cell "us-east-1";
+        Table.cell "45%";
+        Table.cell "6.8 GB";
+        Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.green ()) "Healthy";
+      |];
+    Table.row "api-prod-01"
+      [|
+        Table.cell "api-prod-01";
+        Table.cell "eu-west-1";
+        Table.cell "78%";
+        Table.cell "12.1 GB";
+        Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.yellow ()) "Warning";
+      |];
+    Table.row "db-primary"
+      [|
+        Table.cell "db-primary";
+        Table.cell "us-east-1";
+        Table.cell "34%";
+        Table.cell "28.4 GB";
+        Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.green ()) "Healthy";
+      |];
+    Table.row "cache-01"
+      [|
+        Table.cell "cache-01";
+        Table.cell "ap-south-1";
+        Table.cell "8%";
+        Table.cell "1.9 GB";
+        Table.cell ~style:(Ansi.Style.make ~fg:Ansi.Color.red ()) "Critical";
+      |];
   ]
 
 (* Palette *)
@@ -111,10 +117,11 @@ let view model =
           box ~flex_direction:Column ~gap:(gap 2)
             [
               (* Table with current style *)
-              table ~columns ~rows
+              table ~focused:true ~equal:String.equal ~selected:model.selected
+                ~on_change:(fun value -> Selected value)
                 ~border_style:(style_to_border model.style)
-                ~show_header:true ~border:true ~show_row_separator:true
-                ~cell_padding:1
+                ~border:true ~columns ~rows ~show_header:true
+                ~show_row_separator:true ~cell_padding:1
                 ~row_styles:
                   [
                     Ansi.Style.default;

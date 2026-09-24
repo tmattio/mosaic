@@ -7,12 +7,19 @@ type job = { id : int; name : string; duration : float; status : job_status }
 
 type model = {
   jobs : job list;
+  scroll : Scroll.t;
   next_id : int;
   now : unit -> float;
   sleep : float -> unit;
 }
 
-type msg = Add_job | Job_started of int | Job_done of int | Tick | Quit
+type msg =
+  | Scrolled of Scroll.t
+  | Add_job
+  | Job_started of int
+  | Job_done of int
+  | Tick
+  | Quit
 
 let job_names =
   [|
@@ -42,12 +49,13 @@ let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 let init ~clock () =
   let now () = Eio.Time.now clock in
   let sleep d = Eio.Time.sleep clock d in
-  ({ jobs = []; next_id = 1; now; sleep }, Cmd.none)
+  ({ jobs = []; scroll = Scroll.at 0; next_id = 1; now; sleep }, Cmd.none)
 
 let update_job id f jobs = List.map (fun j -> if j.id = id then f j else j) jobs
 
 let update msg model =
   match msg with
+  | Scrolled scroll -> ({ model with scroll }, Cmd.none)
   | Add_job ->
       let id = model.next_id in
       let duration = random_duration () in
@@ -102,8 +110,10 @@ let view model =
       (* Content *)
       box ~flex_grow:1. ~padding:(padding 2)
         [
-          scroll_box ~scroll_y:true ~scroll_x:false
+          scroll_box ~scroll:model.scroll
+            ~on_scroll:(fun scroll -> Scrolled scroll)
             ~size:{ width = pct 100; height = pct 100 }
+            ~scroll_y:true ~scroll_x:false
             [
               box ~flex_direction:Column ~gap:(gap 1)
                 (if model.jobs = [] then
@@ -143,7 +153,8 @@ let has_running_jobs model =
 let subscriptions model =
   Sub.batch
     [
-      (if has_running_jobs model then Sub.on_tick (fun ~dt:_ -> Tick)
+      (if has_running_jobs model then
+         Sub.on_tick ~id:"animation" (fun ~dt:_ -> Tick)
        else Sub.none);
       Sub.on_keys
         [

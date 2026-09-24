@@ -33,6 +33,7 @@ let make_transcript_pair () =
     Scroll_box.create ~parent:(Renderer.root renderer) ~style:viewport_style
       ~show_scrollbars:false ()
   in
+  Scroll_box.set_on_scroll scroll (Some (Scroll_box.set_scroll scroll));
   for _ = 1 to transcript_rows do
     ignore
       (Text.create ~parent:(Scroll_box.node scroll) ~style:row_style
@@ -76,6 +77,7 @@ let make_scroll_by_one () =
     Scroll_box.create ~parent:(Renderer.root renderer) ~style:viewport_style
       ~show_scrollbars:false ()
   in
+  Scroll_box.set_on_scroll scroll (Some (Scroll_box.set_scroll scroll));
   for i = 1 to transcript_rows do
     let content =
       Printf.sprintf "%04d %s" i

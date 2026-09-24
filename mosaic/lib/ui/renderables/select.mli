@@ -1,3 +1,7 @@
+(** Input/navigation proposes selection through [on_change]. A proposal does not
+    change the accepted selection. [apply_props] and explicit setters accept
+    values without emitting another proposal. *)
+
 (** Vertical list selector with optional descriptions.
 
     A focusable, keyboard-navigable list where exactly one item is highlighted
@@ -97,11 +101,9 @@ module Props : sig
     t
   (** [make ()] is a property set with the same defaults as {!val-create}, with:
       - [options] items to display. Defaults to [[]].
-      - [selected_index] the app-controlled selection, clamped to
-        \[[0];[length - 1]\]. When provided, {!apply_props} moves the selection
-        to it without firing the change callback; when omitted, the widget's own
-        selection survives prop updates. {!val-create} uses it as the initial
-        selection, defaulting to [0].
+      - [selected_index] the accepted index. Negative values mean no selection
+        ([-1]); other values clamp to the last item. The default [0] selects the
+        first item of a nonempty list. Empty lists have no selection.
       - [background] unfocused background color. Defaults to transparent.
       - [text_color] unfocused text color. Defaults to white.
       - [focused_background] focused background color. Defaults to [background]
@@ -148,16 +150,18 @@ val set_options : t -> item list -> unit
 (** {1:selection Selection} *)
 
 val selected_index : t -> int
-(** [selected_index t] is the 0-based index of the selected item. *)
+(** [selected_index t] is the 0-based selected index, or [-1] when no item is
+    selected. *)
 
 val selected_item : t -> item option
-(** [selected_item t] is the currently selected item, or [None] when the list is
-    empty. *)
+(** [selected_item t] is the currently selected item, or [None] when no item is
+    selected. *)
 
 val set_selected_index : t -> int -> unit
-(** [set_selected_index t i] moves the selection to index [i], clamped to
-    \[[0];[length - 1]\]. Fires the {!val-set_on_change} callback when the
-    clamped index differs from the current selection; no-op otherwise. *)
+(** [set_selected_index t value] accepts [value] without firing [on_change].
+    Negative values clear selection; positive overflow clamps to the last item.
+    The result is [-1] for an empty list. From no selection, Down proposes the
+    first item and Up the last. *)
 
 (** {1:display Display} *)
 

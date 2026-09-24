@@ -80,6 +80,13 @@ val is_settled : t -> bool
 
 (** {1:rendering Rendering} *)
 
+val prepare_layout : t -> width:int -> height:int -> unit
+(** [prepare_layout t ~width ~height] refreshes layout and widget geometry for
+    input dispatch without painting or running animation callbacks. Synchronous
+    layout invalidations, including scrollbar visibility changes, settle before
+    it returns. Raises [Invalid_argument] if layout callbacks do not converge.
+*)
+
 val render_frame :
   ?layout_height:int -> t -> width:int -> height:int -> delta:float -> unit
 (** [render_frame t ~width ~height ~delta] builds the next frame.
@@ -96,8 +103,14 @@ val render_frame :
       occurred since the last pass and the frame dimensions are unchanged.
     - Walks the tree: extracts layout and builds the render command list,
       omitting subtrees whose ancestor clip does not intersect the frame.
-    - Executes render commands: draws to the grid and populates the hit grid.
+    - Settles layout changes made by update/resize hooks before drawing.
+    - Executes render commands: draws to the grid and populates the hit grid. If
+      drawing invalidates layout, rebuilds the unpresented frame. Animation
+      callbacks run once per call, not once per settlement pass.
     - Rechecks hover state against the frame's hit grid.
+
+    Raises [Invalid_argument] if callbacks repeatedly invalidate layout without
+    converging. External asynchronous work remains pending for a later frame.
 
     [width] and [height] are the frame dimensions in terminal cells. [delta] is
     elapsed milliseconds since the last frame.
@@ -154,16 +167,18 @@ val render_frame_until_settled :
 
 (** {1:events Event dispatch} *)
 
-val dispatch_key : t -> Matrix_input.Key.event -> Event.key
-(** [dispatch_key t key] sends [key] to the focused renderable and returns the
-    resulting event.
+val dispatch_key :
+  ?capture:(Event.key -> unit) -> t -> Matrix_input.Key.event -> Event.key
+(** [dispatch_key ?capture t key] calls [capture] before the focused handler,
+    then sends [key] to the focused renderable and returns the resulting event.
 
     If the focused node does not prevent default, the default key handler runs.
     The returned event carries the [default_prevented] flag set by the focused
     node's handler; callers can inspect it to determine whether the key was
     consumed. *)
 
-val dispatch_mouse : t -> Matrix_input.Mouse.event -> Event.mouse
+val dispatch_mouse :
+  ?autofocus:bool -> t -> Matrix_input.Mouse.event -> Event.mouse
 (** [dispatch_mouse t mouse] runs the full mouse dispatch pipeline:
     - Updates pointer state.
     - Hit-tests the mouse position. Wheel events that hit nothing are retargeted
@@ -174,19 +189,30 @@ val dispatch_mouse : t -> Matrix_input.Mouse.event -> Event.mouse
     - Redirects events other than wheel events to the drag-captured node when
       active.
     - Dispatches with bubbling to the hit-tested node.
-    - Auto-focuses on left click.
+    - Auto-focuses on left click when [autofocus] is [true] (the default).
+      Declarative runtimes pass [false] and derive focus from their model.
     - Clears stale selection if not prevented.
 
     Returns the event the tree saw, mirroring {!dispatch_key}: the drag-capture
     and selection paths may adjust the kind (e.g. [is_dragging] on a release),
     and the [default_prevented] flag reflects whether a handler consumed the
-    event. *)
+    event.
 
-val dispatch_paste : t -> string -> Event.paste
-(** [dispatch_paste t text] sends [text] as a paste event to the focused
-    renderable and returns the event. Its [default_prevented] flag reflects
-    whether the focused node (including a widget's default paste behavior)
-    consumed the paste. *)
+    With [autofocus:false], a primary press first invokes the nearest focusable
+    node's application focus request, if present and unfocused. It refreshes hit
+    geometry after acceptance. The press must still target the accepted
+    focusable node or one of its descendants. Selection callbacks are checked
+    again before mouse dispatch: losing focus, hiding or destroying the target,
+    or replacing the hit target cancels the press and its following drag and
+    release. Shift-click does not request focus. Without a request handler,
+    selection remains available without transferring focus. *)
+
+val dispatch_paste :
+  ?capture:(Event.paste -> unit) -> t -> string -> Event.paste
+(** [dispatch_paste ?capture t text] calls [capture] before the focused handler,
+    then sends [text] as a paste event to the focused renderable and returns the
+    event. Its [default_prevented] flag reflects whether the focused node
+    (including a widget's default paste behavior) consumed the paste. *)
 
 (** {1:focus Focus} *)
 

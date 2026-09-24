@@ -12,7 +12,9 @@ type t
 (** The type for editable text surfaces. *)
 
 type mode = [ `Multiline | `Single_line ]
-(** The editing mode. [`Single_line] strips newlines and submits on Enter. *)
+(** The editing mode. [`Single_line] strips inserted newlines and submits on
+    Enter. Undo and redo that would restore multiline text are ignored, leaving
+    the accepted editor and its history intact. *)
 
 (** Editing actions resolved from key bindings. *)
 type action =
@@ -74,9 +76,7 @@ module Props : sig
   (** Declarative properties for an editable text surface. *)
 
   val make :
-    ?value:string ->
-    ?cursor:int ->
-    ?selection:(int * int) option ->
+    state:Editor.t ->
     ?spans:Text_buffer.span list ->
     ?ghost_text:string ->
     ?ghost_text_color:Ansi.Color.t ->
@@ -98,10 +98,10 @@ module Props : sig
     ?key_aliases:(string * string) list ->
     unit ->
     t
-  (** [make ()] is a property set with textarea defaults. *)
+  (** [make ~state ()] describes [state] with textarea visual defaults. *)
 
   val default : t
-  (** [default] is [make ()]. *)
+  (** [default] is [make ~state:Editor.empty ()]. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] describe identical properties. *)
@@ -121,9 +121,7 @@ val create :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?value:string ->
-  ?cursor:int ->
-  ?selection:(int * int) option ->
+  state:Editor.t ->
   ?spans:Text_buffer.span list ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
@@ -144,22 +142,22 @@ val create :
   ?mode:mode ->
   ?key_bindings:key_binding list ->
   ?key_aliases:(string * string) list ->
-  ?max_length:int ->
-  ?on_input:(string -> unit) ->
-  ?on_change:(string -> unit) ->
+  on_change:(Editor.t -> unit) ->
   ?on_submit:(string -> unit) ->
-  ?on_cursor:(cursor:int -> selection:(int * int) option -> unit) ->
   unit ->
   t
-(** [create ~parent ()] is an editable text surface attached to [parent]. *)
+(** [create ~parent ~state ~on_change ()] renders the accepted [state]. Default
+    editing events propose a complete next state through [on_change]; they do
+    not mutate the accepted editor. Apply new properties to accept a proposal.
+    [on_submit] reports accepted text. Focus and blur do not commit edits. *)
 
 (** {1:accessors Accessors} *)
 
+val state : t -> Editor.t
+(** [state t] is the accepted editor. *)
+
 val node : t -> Renderable.t
 (** [node t] is the underlying renderable. *)
-
-val buffer : t -> Edit_buffer.t
-(** [buffer t] is the underlying edit buffer. *)
 
 val surface : t -> Text_surface.t
 (** [surface t] is the underlying text surface. *)
@@ -175,39 +173,24 @@ val selection : t -> (int * int) option
 
 (** {1:mutation Mutation} *)
 
-val set_value : t -> string -> unit
-(** [set_value t s] replaces the text content with [s]. *)
-
-val set_max_length : t -> int -> unit
-(** [set_max_length t n] updates the backing buffer's maximum grapheme count. *)
-
-val edit : t -> (Edit_buffer.t -> bool) -> unit
-(** [edit t f] runs [f] on the underlying edit buffer and synchronizes the
-    surface if [f] returns [true]. *)
-
 val apply_props : t -> Props.t -> unit
-(** [apply_props t props] updates [t] to match [props]. *)
+(** [apply_props t props] installs the complete accepted editor and visual
+    properties. It does not emit proposals. Source indexes and geometry are
+    reused when only the caret or selection changes. *)
 
 (** {1:callbacks Callbacks} *)
 
-val set_on_input : t -> (string -> unit) option -> unit
-(** [set_on_input t handler] sets the input callback. *)
-
-val set_on_change : t -> (string -> unit) option -> unit
-(** [set_on_change t handler] sets the committed-change callback. *)
+val set_on_change : t -> (Editor.t -> unit) -> unit
+(** [set_on_change t f] sets the complete-state proposal callback. *)
 
 val set_on_submit : t -> (string -> unit) option -> unit
-(** [set_on_submit t handler] sets the submit callback. *)
-
-val set_on_cursor :
-  t -> (cursor:int -> selection:(int * int) option -> unit) option -> unit
-(** [set_on_cursor t handler] sets the cursor/selection callback. *)
+(** [set_on_submit t f] sets the submit notification. [None] clears it. *)
 
 (** {1:paste Paste} *)
 
 val handle_paste : t -> string -> unit
-(** [handle_paste t text] inserts [text] as pasted text after removing ANSI
-    escape sequences. *)
+(** [handle_paste t text] proposes insertion of pasted text after stripping ANSI
+    escapes. *)
 
 (** {1:formatting Formatting} *)
 

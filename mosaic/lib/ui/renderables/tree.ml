@@ -1,11 +1,13 @@
 (* ───── Item ───── *)
 
-type item = { label : string; children : item list }
+type item = { id : string; label : string; children : item list }
 
-let item ?(children = []) label = { label; children }
+let item ~id ?(children = []) label = { id; label; children }
 
 let rec item_equal a b =
-  String.equal a.label b.label && items_equal a.children b.children
+  String.equal a.id b.id
+  && String.equal a.label b.label
+  && items_equal a.children b.children
 
 and items_equal xs ys =
   match (xs, ys) with
@@ -13,15 +15,40 @@ and items_equal xs ys =
   | x :: xs, y :: ys -> item_equal x y && items_equal xs ys
   | _ -> false
 
+module State = struct
+  module Ids = Set.Make (String)
+
+  type t = { selected : string option; expanded : Ids.t }
+
+  let empty = { selected = None; expanded = Ids.empty }
+
+  let make ?selected ?(expanded = []) () =
+    { selected; expanded = Ids.of_list expanded }
+
+  let selected t = t.selected
+  let expanded t = Ids.elements t.expanded
+  let select selected t = { t with selected }
+
+  let set_expanded id expanded t =
+    {
+      t with
+      expanded =
+        (if expanded then Ids.add id t.expanded else Ids.remove id t.expanded);
+    }
+
+  let is_expanded id t = Ids.mem id t.expanded
+
+  let equal a b =
+    Option.equal String.equal a.selected b.selected
+    && Ids.equal a.expanded b.expanded
+end
+
 (* ───── Props ───── *)
 
 module Props = struct
   type t = {
     items : item list;
-    selected_index : int option;
-        (* [Some i] makes the selection controlled by props; [None] leaves the
-           widget's own selection untouched across prop updates. *)
-    expand_depth : int;
+    state : State.t;
     indent_size : int;
     show_guides : bool;
     guide_style : Matrix_grid.Border.t;
@@ -40,7 +67,7 @@ module Props = struct
     fast_scroll_step : int;
   }
 
-  let make ?(items = []) ?selected_index ?(expand_depth = 0) ?(indent_size = 2)
+  let make ?(items = []) ?(state = State.empty) ?(indent_size = 2)
       ?(show_guides = false) ?(guide_style = Matrix_grid.Border.single)
       ?(expand_icon = "\xe2\x96\xb6") ?(collapse_icon = "\xe2\x96\xbc")
       ?(leaf_icon = " ") ?(background = Ansi.Color.of_rgba 0 0 0 0)
@@ -63,8 +90,7 @@ module Props = struct
     in
     {
       items;
-      selected_index = Option.map (max 0) selected_index;
-      expand_depth;
+      state;
       indent_size = max 1 indent_size;
       show_guides;
       guide_style;
@@ -87,8 +113,7 @@ module Props = struct
 
   let equal a b =
     items_equal a.items b.items
-    && Option.equal Int.equal a.selected_index b.selected_index
-    && Int.equal a.expand_depth b.expand_depth
+    && State.equal a.state b.state
     && Int.equal a.indent_size b.indent_size
     && Bool.equal a.show_guides b.show_guides
     && a.guide_style = b.guide_style
@@ -118,19 +143,7 @@ type visible_entry = {
   expanded : bool;
   is_last_child : bool;
   parent_guides : bool list;
-  path : int list;
 }
-
-(* ───── Expansion State ───── *)
-
-module Path_key = struct
-  type t = int list
-
-  let equal = List.equal Int.equal
-  let hash path = List.fold_left (fun acc i -> (acc * 31) + i + 1) 0 path
-end
-
-module Expansion = Hashtbl.Make (Path_key)
 
 (* ───── Types ───── *)
 
@@ -142,10 +155,8 @@ type t = {
   mutable selected_index : int;
   mutable scroll_offset : int;
   mutable max_visible : int;
-  expansion : bool Expansion.t;
-  mutable on_change : (int -> unit) option;
-  mutable on_activate : (int -> unit) option;
-  mutable on_expand : (int -> bool -> unit) option;
+  mutable on_change : (State.t -> unit) option;
+  mutable on_activate : (item -> unit) option;
 }
 
 let node t = t.node
@@ -158,29 +169,6 @@ let visible_count t = Array.length t.visible
 let clamp_index t idx =
   let len = visible_count t in
   if len = 0 then 0 else max 0 (min (len - 1) idx)
-
-(* ───── Expansion Management ───── *)
-
-let is_path_expanded t path = Expansion.find_opt t.expansion path = Some true
-
-let set_path_expanded t path v =
-  if v then Expansion.replace t.expansion path true
-  else Expansion.remove t.expansion path
-
-let init_expansion t ~expand_depth =
-  Expansion.clear t.expansion;
-  if expand_depth <> 0 then
-    let rec walk items depth path_prefix =
-      List.iteri
-        (fun i it ->
-          if it.children <> [] then
-            let path = List.rev (i :: path_prefix) in
-            if expand_depth < 0 || depth < expand_depth then (
-              Expansion.replace t.expansion path true;
-              walk it.children (depth + 1) (i :: path_prefix)))
-        items
-    in
-    walk t.tree_items 0 []
 
 (* ───── Visible List Computation ───── *)
 
@@ -198,13 +186,12 @@ let recompute_visible t =
     !buf.(!count) <- entry;
     incr count
   in
-  let rec walk items depth parent_guides path_prefix =
+  let rec walk items depth parent_guides =
     let n = List.length items in
     List.iteri
       (fun i it ->
-        let path = List.rev (i :: path_prefix) in
         let expandable = it.children <> [] in
-        let expanded = expandable && is_path_expanded t path in
+        let expanded = expandable && State.is_expanded it.id t.props.state in
         let is_last = i = n - 1 in
         add
           {
@@ -214,17 +201,22 @@ let recompute_visible t =
             expanded;
             is_last_child = is_last;
             parent_guides;
-            path;
           };
         if expanded then
           let guide_continues = not is_last in
-          walk it.children (depth + 1)
-            (guide_continues :: parent_guides)
-            (i :: path_prefix))
+          walk it.children (depth + 1) (guide_continues :: parent_guides))
       items
   in
-  walk t.tree_items 0 [] [];
-  t.visible <- Array.sub !buf 0 !count
+  walk t.tree_items 0 [];
+  t.visible <- Array.sub !buf 0 !count;
+  t.selected_index <- -1;
+  Array.iteri
+    (fun i entry ->
+      if
+        Option.equal String.equal (Some entry.item.id)
+          (State.selected t.props.state)
+      then t.selected_index <- i)
+    t.visible
 
 (* ───── Scrolling ───── *)
 
@@ -244,11 +236,10 @@ let set_selected_index_internal t idx =
   if len = 0 then ()
   else
     let idx = clamp_index t idx in
-    if idx <> t.selected_index then (
-      t.selected_index <- idx;
-      update_scroll_offset t;
-      (match t.on_change with None -> () | Some f -> f t.selected_index);
-      request t)
+    if idx <> t.selected_index then
+      Option.iter
+        (fun f -> f (State.select (Some t.visible.(idx).item.id) t.props.state))
+        t.on_change
 
 (* ───── Public Accessors ───── *)
 
@@ -257,7 +248,8 @@ let selected_index t = t.selected_index
 
 let selected_item t =
   let len = visible_count t in
-  if len = 0 then None else Some t.visible.(t.selected_index).item
+  if len = 0 || t.selected_index < 0 then None
+  else Some t.visible.(t.selected_index).item
 
 let depth_of t i =
   if i < 0 || i >= visible_count t then 0 else t.visible.(i).depth
@@ -266,9 +258,7 @@ let depth_of t i =
 
 let set_items t its =
   t.tree_items <- its;
-  init_expansion t ~expand_depth:t.props.expand_depth;
   recompute_visible t;
-  t.selected_index <- clamp_index t t.selected_index;
   update_scroll_offset t;
   request t
 
@@ -278,58 +268,44 @@ let set_selected_index t idx = set_selected_index_internal t idx
 
 (* ───── Expansion ───── *)
 
-let expand t i =
+let propose_expansion t i expanded =
   if i >= 0 && i < visible_count t then
     let entry = t.visible.(i) in
-    if entry.expandable && not entry.expanded then (
-      set_path_expanded t entry.path true;
-      recompute_visible t;
-      update_scroll_offset t;
-      (match t.on_expand with None -> () | Some f -> f i true);
-      request t)
+    if entry.expandable && entry.expanded <> expanded then
+      let state = State.set_expanded entry.item.id expanded t.props.state in
+      let state =
+        if (not expanded) && t.selected_index > i then
+          let rec contains id item =
+            String.equal item.id id || List.exists (contains id) item.children
+          in
+          match State.selected state with
+          | Some id when contains id entry.item ->
+              State.select (Some entry.item.id) state
+          | _ -> state
+        else state
+      in
+      Option.iter (fun f -> f state) t.on_change
 
-let collapse t i =
-  if i >= 0 && i < visible_count t then
-    let entry = t.visible.(i) in
-    if entry.expandable && entry.expanded then (
-      set_path_expanded t entry.path false;
-      let old_count = visible_count t in
-      recompute_visible t;
-      let new_count = visible_count t in
-      let removed = old_count - new_count in
-      if t.selected_index > i && t.selected_index <= i + removed then
-        t.selected_index <- i;
-      t.selected_index <- clamp_index t t.selected_index;
-      update_scroll_offset t;
-      (match t.on_expand with None -> () | Some f -> f i false);
-      request t)
+let expand t i = propose_expansion t i true
+let collapse t i = propose_expansion t i false
 
 let toggle_expand t i =
   if i >= 0 && i < visible_count t then
-    let entry = t.visible.(i) in
-    if entry.expandable then if entry.expanded then collapse t i else expand t i
+    propose_expansion t i (not t.visible.(i).expanded)
 
 let expand_all t =
-  let rec walk items path_prefix =
-    List.iteri
-      (fun i it ->
-        if it.children <> [] then (
-          let path = List.rev (i :: path_prefix) in
-          Expansion.replace t.expansion path true;
-          walk it.children (i :: path_prefix)))
-      items
+  let rec walk state items =
+    List.fold_left
+      (fun state item ->
+        if item.children = [] then state
+        else walk (State.set_expanded item.id true state) item.children)
+      state items
   in
-  walk t.tree_items [];
-  recompute_visible t;
-  update_scroll_offset t;
-  request t
+  Option.iter (fun f -> f (walk t.props.state t.tree_items)) t.on_change
 
 let collapse_all t =
-  Expansion.clear t.expansion;
-  recompute_visible t;
-  t.selected_index <- clamp_index t t.selected_index;
-  update_scroll_offset t;
-  request t
+  let state = State.make ?selected:(State.selected t.props.state) () in
+  Option.iter (fun f -> f state) t.on_change
 
 let is_expanded t i =
   if i >= 0 && i < visible_count t then t.visible.(i).expanded else false
@@ -460,7 +436,6 @@ let set_fast_scroll_step t n =
 
 let set_on_change t cb = t.on_change <- cb
 let set_on_activate t cb = t.on_activate <- cb
-let set_on_expand t cb = t.on_expand <- cb
 
 (* ───── Rendering Helpers ───── *)
 
@@ -487,7 +462,7 @@ let handle_key t (event : Event.key) =
         move_down t;
         true
     | Right ->
-        (if visible_count t > 0 then
+        (if t.selected_index >= 0 && visible_count t > 0 then
            let entry = t.visible.(t.selected_index) in
            if entry.expandable && not entry.expanded then
              expand t t.selected_index
@@ -497,7 +472,7 @@ let handle_key t (event : Event.key) =
              if next < visible_count t then set_selected_index_internal t next);
         true
     | Left ->
-        (if visible_count t > 0 then
+        (if t.selected_index >= 0 && visible_count t > 0 then
            let entry = t.visible.(t.selected_index) in
            if entry.expandable && entry.expanded then
              collapse t t.selected_index
@@ -507,11 +482,14 @@ let handle_key t (event : Event.key) =
              | None -> ());
         true
     | Char c when Uchar.equal c (Uchar.of_char ' ') ->
-        if visible_count t > 0 then toggle_expand t t.selected_index;
+        if t.selected_index >= 0 && visible_count t > 0 then
+          toggle_expand t t.selected_index;
         true
     | Enter | KP_enter ->
-        (if visible_count t > 0 then
-           match t.on_activate with None -> () | Some f -> f t.selected_index);
+        (if t.selected_index >= 0 && visible_count t > 0 then
+           match t.on_activate with
+           | None -> ()
+           | Some f -> f t.visible.(t.selected_index).item);
         true
     | _ -> false
   in
@@ -659,21 +637,20 @@ let on_resize t _node =
 
 (* ───── Construction ───── *)
 
-let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items
-    ?selected_index ?expand_depth ?indent_size ?show_guides ?guide_style
-    ?expand_icon ?collapse_icon ?leaf_icon ?background ?text_color
-    ?selected_background ?selected_text_color ?focused_selected_background
-    ?focused_selected_text_color ?guide_color ?icon_color ?wrap_selection
-    ?fast_scroll_step () =
+let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items ?state
+    ?indent_size ?show_guides ?guide_style ?expand_icon ?collapse_icon
+    ?leaf_icon ?background ?text_color ?selected_background ?selected_text_color
+    ?focused_selected_background ?focused_selected_text_color ?guide_color
+    ?icon_color ?wrap_selection ?fast_scroll_step () =
   let rnode =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let props =
-    Props.make ?items ?selected_index ?expand_depth ?indent_size ?show_guides
-      ?guide_style ?expand_icon ?collapse_icon ?leaf_icon ?background
-      ?text_color ?selected_background ?selected_text_color
-      ?focused_selected_background ?focused_selected_text_color ?guide_color
-      ?icon_color ?wrap_selection ?fast_scroll_step ()
+    Props.make ?items ?state ?indent_size ?show_guides ?guide_style ?expand_icon
+      ?collapse_icon ?leaf_icon ?background ?text_color ?selected_background
+      ?selected_text_color ?focused_selected_background
+      ?focused_selected_text_color ?guide_color ?icon_color ?wrap_selection
+      ?fast_scroll_step ()
   in
   let t =
     {
@@ -684,16 +661,11 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items
       selected_index = 0;
       scroll_offset = 0;
       max_visible = 1;
-      expansion = Expansion.create 16;
       on_change = None;
       on_activate = None;
-      on_expand = None;
     }
   in
-  init_expansion t ~expand_depth:props.expand_depth;
   recompute_visible t;
-  t.selected_index <-
-    clamp_index t (Option.value props.selected_index ~default:0);
   recalc_max_visible t (Renderable.height rnode);
   update_scroll_offset t;
   Renderable.set_render rnode (render t);
@@ -711,28 +683,16 @@ let set_style t style = Renderable.set_style t.node style
 
 (* ───── Apply Props ───── *)
 
-(* Controlled application: move the selection without echoing [on_change] —
-   the value came from the app, not from a user gesture. *)
-let apply_selected_index t idx =
-  let len = visible_count t in
-  if len > 0 then
-    let idx = clamp_index t idx in
-    if idx <> t.selected_index then begin
-      t.selected_index <- idx;
-      update_scroll_offset t;
-      request t
-    end
-
 let apply_props t (props : Props.t) =
-  if not (items_equal t.tree_items props.items) then set_items t props.items;
-  (match props.selected_index with
-  | Some idx -> apply_selected_index t idx
-  | None -> ());
-  if props.expand_depth <> t.props.expand_depth then (
-    t.props <- { t.props with expand_depth = props.expand_depth };
-    init_expansion t ~expand_depth:props.expand_depth;
+  let changed =
+    not
+      (items_equal t.tree_items props.items
+      && State.equal t.props.state props.state)
+  in
+  t.tree_items <- props.items;
+  t.props <- { t.props with state = props.state };
+  if changed then (
     recompute_visible t;
-    t.selected_index <- clamp_index t t.selected_index;
     update_scroll_offset t;
     request t);
   set_indent_size t props.indent_size;

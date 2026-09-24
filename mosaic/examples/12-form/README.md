@@ -4,7 +4,9 @@ Multi-component form with focus management.
 
 ## Concepts
 
-- Combining Text_input and Select components
+- Combining model-owned `Editor.t` and integer selection
+- Declarative `focused` attributes derived from the model
+- Tab/Shift+Tab traversal owned by the application
 - Form layout with labels
 - Submit and reset actions
 - Mouse click handlers on buttons

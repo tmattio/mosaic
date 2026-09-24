@@ -4,21 +4,47 @@ open Expect_harness
 let items =
   Tree.
     [
-      item "src"
+      item ~id:"src" "src"
         ~children:
           [
-            item "main.ml";
-            item "utils.ml";
-            item "lib" ~children:[ item "parser.ml"; item "lexer.ml" ];
+            item ~id:"main.ml" "main.ml";
+            item ~id:"utils.ml" "utils.ml";
+            item ~id:"lib" "lib"
+              ~children:
+                [
+                  item ~id:"parser.ml" "parser.ml";
+                  item ~id:"lexer.ml" "lexer.ml";
+                ];
           ];
-      item "test" ~children:[ item "test_main.ml" ];
-      item "README.md";
+      item ~id:"test" "test"
+        ~children:[ item ~id:"test_main.ml" "test_main.ml" ];
+      item ~id:"README.md" "README.md";
     ]
+
+let tree ?(items = items) ?(expanded = []) ?(selected = "src") ?show_guides ?ref
+    () =
+  Vnode.tree ~items
+    ~state:(Tree.State.make ~selected ~expanded ())
+    ~on_change:ignore ?show_guides ?ref ()
+
+let mount_tree app ?(expanded = []) () =
+  let node = ref None
+  and state = ref (Tree.State.make ~selected:"src" ~expanded ()) in
+  let refresh () =
+    reconcile app
+      (Vnode.tree ~items ~state:!state
+         ~on_change:(fun next -> state := next)
+         ~ref:(fun n -> node := Some n)
+         ())
+  in
+  refresh ();
+  focus app (Option.get !node);
+  refresh
 
 (* ── Static rendering ── *)
 
 let%expect_test "all collapsed (default)" =
-  render ~width:30 ~height:8 (Vnode.tree ~items ());
+  render ~width:30 ~height:8 (tree ~items ());
   [%expect_exact {|
 ▶ src
 ▶ test
@@ -29,8 +55,8 @@ let%expect_test "all collapsed (default)" =
 
 |}]
 
-let%expect_test "expand_depth:1 expands first level" =
-  render ~width:30 ~height:10 (Vnode.tree ~items ~expand_depth:1 ());
+let%expect_test "explicit first-level expansion expands first level" =
+  render ~width:30 ~height:10 (tree ~items ~expanded:[ "src"; "test" ] ());
   [%expect_exact
     {|
 ▼ src
@@ -44,8 +70,9 @@ let%expect_test "expand_depth:1 expands first level" =
 
 |}]
 
-let%expect_test "expand_depth:-1 expands everything" =
-  render ~width:30 ~height:12 (Vnode.tree ~items ~expand_depth:(-1) ());
+let%expect_test "explicit full expansion expands everything" =
+  render ~width:30 ~height:12
+    (tree ~items ~expanded:[ "src"; "test"; "lib" ] ());
   [%expect_exact
     {|
 ▼ src
@@ -61,9 +88,9 @@ let%expect_test "expand_depth:-1 expands everything" =
 
 |}]
 
-let%expect_test "selected_index:2" =
+let%expect_test "selected logical ID" =
   render ~width:30 ~height:10
-    (Vnode.tree ~items ~expand_depth:1 ~selected_index:2 ());
+    (tree ~items ~expanded:[ "src"; "test" ] ~selected:"utils.ml" ());
   [%expect_exact
     {|
 ▼ src
@@ -77,9 +104,9 @@ let%expect_test "selected_index:2" =
 
 |}]
 
-let%expect_test "show_guides with expand_depth:-1" =
+let%expect_test "show_guides with explicit full expansion" =
   render ~width:30 ~height:12
-    (Vnode.tree ~items ~expand_depth:(-1) ~show_guides:true ());
+    (tree ~items ~expanded:[ "src"; "test"; "lib" ] ~show_guides:true ());
   [%expect_exact
     {|
 ▼ src
@@ -95,9 +122,9 @@ let%expect_test "show_guides with expand_depth:-1" =
 
 |}]
 
-let%expect_test "show_guides with expand_depth:1" =
+let%expect_test "show_guides with explicit first-level expansion" =
   render ~width:30 ~height:10
-    (Vnode.tree ~items ~expand_depth:1 ~show_guides:true ());
+    (tree ~items ~expanded:[ "src"; "test" ] ~show_guides:true ());
   [%expect_exact
     {|
 ▼ src
@@ -115,12 +142,10 @@ let%expect_test "show_guides with expand_depth:1" =
 
 let%expect_test "navigation Down moves selection" =
   let app = make_app () in
-  let node = ref None in
-  reconcile app
-    (Vnode.tree ~ref:(fun n -> node := Some n) ~items ~expand_depth:1 ());
-  focus app (Option.get !node);
+  let refresh = mount_tree app ~expanded:[ "src"; "test" ] () in
   frame app ~width:30 ~height:10;
   send_key app Matrix_input.Key.Down;
+  refresh ();
   frame app ~width:30 ~height:10;
   [%expect_exact
     {|
@@ -147,11 +172,10 @@ let%expect_test "navigation Down moves selection" =
 
 let%expect_test "Right expands collapsed node" =
   let app = make_app () in
-  let node = ref None in
-  reconcile app (Vnode.tree ~ref:(fun n -> node := Some n) ~items ());
-  focus app (Option.get !node);
+  let refresh = mount_tree app () in
   frame app ~width:30 ~height:10;
   send_key app Matrix_input.Key.Right;
+  refresh ();
   frame app ~width:30 ~height:10;
   [%expect_exact
     {|
@@ -178,12 +202,10 @@ let%expect_test "Right expands collapsed node" =
 
 let%expect_test "Left collapses expanded node" =
   let app = make_app () in
-  let node = ref None in
-  reconcile app
-    (Vnode.tree ~ref:(fun n -> node := Some n) ~items ~expand_depth:1 ());
-  focus app (Option.get !node);
+  let refresh = mount_tree app ~expanded:[ "src"; "test" ] () in
   frame app ~width:30 ~height:10;
   send_key app Matrix_input.Key.Left;
+  refresh ();
   frame app ~width:30 ~height:10;
   [%expect_exact
     {|
@@ -210,13 +232,13 @@ let%expect_test "Left collapses expanded node" =
 
 let%expect_test "Space toggles expand" =
   let app = make_app () in
-  let node = ref None in
-  reconcile app (Vnode.tree ~ref:(fun n -> node := Some n) ~items ());
-  focus app (Option.get !node);
+  let refresh = mount_tree app () in
   frame app ~width:30 ~height:8;
   send_char app ' ';
+  refresh ();
   frame app ~width:30 ~height:8;
   send_char app ' ';
+  refresh ();
   frame app ~width:30 ~height:8;
   [%expect_exact
     {|
@@ -249,17 +271,21 @@ let%expect_test "deep nesting with guides" =
   let deep =
     Tree.
       [
-        item "a"
+        item ~id:"a" "a"
           ~children:
             [
-              item "b"
+              item ~id:"b" "b"
                 ~children:
-                  [ item "c" ~children:[ item "d" ~children:[ item "e" ] ] ];
+                  [
+                    item ~id:"c" "c"
+                      ~children:
+                        [ item ~id:"d" "d" ~children:[ item ~id:"e" "e" ] ];
+                  ];
             ];
       ]
   in
   render ~width:30 ~height:8
-    (Vnode.tree ~items:deep ~expand_depth:(-1) ~show_guides:true ());
+    (tree ~items:deep ~expanded:[ "a"; "b"; "c"; "d" ] ~show_guides:true ());
   [%expect_exact {|
 ▼ a
 └─▼ b

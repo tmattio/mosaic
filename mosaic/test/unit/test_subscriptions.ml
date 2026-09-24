@@ -1,8 +1,6 @@
-(** Tests for the TEA subscription mechanism.
-
-    These tests verify that [Sub.on_tick] and [Sub.every] subscriptions produce
-    correct messages when driven by a simulated TEA runtime. The runtime is not
-    real -- we manually call the same logic that the on_frame callback uses. *)
+(* Subscription constructors, mappings and a small timer model. Complete-loop
+   tests in test_loop cover dispatch ordering: earlier command messages drain
+   before input, and accepted declarations refresh before the next event. *)
 
 module Input = Matrix_input
 open Windtrap
@@ -53,9 +51,10 @@ let rec flatten_sub (sub : msg Sub.t) : msg Sub.t list =
 
 let sub_on_tick_produces_messages () =
   (* Verify that Sub.on_tick produces a message with the correct dt. *)
-  let sub = Sub.on_tick (fun ~dt -> Tick dt) in
+  let sub = Sub.on_tick ~id:"frame" (fun ~dt -> Tick dt) in
   match sub with
-  | Sub.On_tick f -> (
+  | Sub.On_tick (id, f) -> (
+      equal string "frame" id;
       let msg = f ~dt:0.016 in
       match msg with
       | Tick dt -> equal ~msg:"dt" (float 0.001) 0.016 dt
@@ -64,12 +63,22 @@ let sub_on_tick_produces_messages () =
 
 let sub_every_produces_messages () =
   (* Verify that Sub.every produces a message when called. *)
-  let sub = Sub.every 1.0 (fun () -> Every_fired) in
+  let sub = Sub.every ~id:"countdown" 1.0 (fun () -> Every_fired) in
   match sub with
-  | Sub.Every (interval, f) -> (
+  | Sub.Every (id, interval, f) -> (
+      equal ~msg:"stable timer identity" string "countdown" id;
       equal ~msg:"interval" (float 0.001) 1.0 interval;
       let msg = f () in
       match msg with Every_fired -> () | _ -> fail "expected Every_fired msg")
+  | _ -> fail "expected Every sub"
+
+let sub_every_map_preserves_identity () =
+  let original = Sub.every ~id:"refresh" 0.5 (fun () -> 3) in
+  match Sub.map (fun n -> n + 1) original with
+  | Sub.Every (id, interval, f) ->
+      equal string "refresh" id;
+      equal float_exact 0.5 interval;
+      equal int 4 (f ())
   | _ -> fail "expected Every sub"
 
 let timer_model_accumulates_elapsed () =
@@ -104,9 +113,9 @@ let sub_batch_flattens () =
   let subs =
     Sub.batch
       [
-        Sub.on_tick (fun ~dt -> Tick dt);
+        Sub.on_tick ~id:"frame" (fun ~dt -> Tick dt);
         Sub.on_key (fun _ -> None);
-        Sub.every 2.0 (fun () -> Every_fired);
+        Sub.every ~id:"batch-timer" 2.0 (fun () -> Every_fired);
       ]
   in
   let flat = flatten_sub subs in
@@ -114,10 +123,11 @@ let sub_batch_flattens () =
 
 let sub_map_transforms_messages () =
   (* Verify that Sub.map correctly transforms messages. *)
-  let sub = Sub.on_tick (fun ~dt -> Tick dt) in
+  let sub = Sub.on_tick ~id:"frame" (fun ~dt -> Tick dt) in
   let mapped : msg Sub.t = Sub.map (fun msg -> msg) sub in
   match mapped with
-  | Sub.On_tick f -> (
+  | Sub.On_tick (id, f) -> (
+      equal string "frame" id;
       match f ~dt:0.5 with
       | Tick dt -> equal ~msg:"mapped dt" (float 0.001) 0.5 dt
       | _ -> fail "expected Tick")
@@ -180,7 +190,7 @@ let cmd_copy_to_clipboard_maps_without_changing_payload () =
   | Cmd.Copy_to_clipboard other ->
       failf "unexpected clipboard payload: %S" other
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
-  | Cmd.Clear_selection | Cmd.Focus _ | Cmd.Static_commit _ | Cmd.Static_clear
+  | Cmd.Clear_selection | Cmd.Static_commit _ | Cmd.Static_clear
   | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _ ->
       fail "expected Copy_to_clipboard"
 
@@ -188,27 +198,24 @@ let cmd_clear_selection_maps_to_itself () =
   match Cmd.map (fun msg -> msg) Cmd.clear_selection with
   | Cmd.Clear_selection -> ()
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
-  | Cmd.Copy_to_clipboard _ | Cmd.Focus _ | Cmd.Static_commit _
-  | Cmd.Static_clear | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell
-  | Cmd.Notify _ ->
+  | Cmd.Copy_to_clipboard _ | Cmd.Static_commit _ | Cmd.Static_clear
+  | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _ ->
       fail "expected Clear_selection"
 
 let cmd_copy_selection_maps_to_itself () =
   match Cmd.map (fun msg -> msg) Cmd.copy_selection with
   | Cmd.Copy_selection -> ()
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
-  | Cmd.Copy_to_clipboard _ | Cmd.Clear_selection | Cmd.Focus _
-  | Cmd.Static_commit _ | Cmd.Static_clear | Cmd.Query_color_scheme | Cmd.Bell
-  | Cmd.Notify _ ->
+  | Cmd.Copy_to_clipboard _ | Cmd.Clear_selection | Cmd.Static_commit _
+  | Cmd.Static_clear | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _ ->
       fail "expected Copy_selection"
 
 let cmd_query_color_scheme_maps_to_itself () =
   match Cmd.map (fun msg -> msg) Cmd.query_color_scheme with
   | Cmd.Query_color_scheme -> ()
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
-  | Cmd.Copy_to_clipboard _ | Cmd.Clear_selection | Cmd.Focus _
-  | Cmd.Static_commit _ | Cmd.Static_clear | Cmd.Copy_selection | Cmd.Bell
-  | Cmd.Notify _ ->
+  | Cmd.Copy_to_clipboard _ | Cmd.Clear_selection | Cmd.Static_commit _
+  | Cmd.Static_clear | Cmd.Copy_selection | Cmd.Bell | Cmd.Notify _ ->
       fail "expected Query_color_scheme"
 
 let sub_on_color_scheme_delivers_reports () =
@@ -237,6 +244,8 @@ let () =
     [
       test "Sub.on_tick produces messages" sub_on_tick_produces_messages;
       test "Sub.every produces messages" sub_every_produces_messages;
+      test "Sub.every mapping preserves identity"
+        sub_every_map_preserves_identity;
       test "timer model accumulates elapsed" timer_model_accumulates_elapsed;
       test "timer model goes idle at zero" timer_model_goes_idle_at_zero;
       test "Sub.batch flattens" sub_batch_flattens;

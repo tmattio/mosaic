@@ -12,7 +12,12 @@ type model = {
   note : string;
 }
 
-type msg = Pressed of string | Tick | Resized of int * int | Note of string
+type msg =
+  | Pressed of string
+  | Tick
+  | Resized of int * int
+  | Note of string
+  | Ignored
 
 let initial = { keys = []; ticks = 0; size = None; note = "-" }
 
@@ -32,6 +37,7 @@ let update msg model =
   | Tick -> ({ model with ticks = model.ticks + 1 }, Mosaic.Cmd.none)
   | Resized (w, h) -> ({ model with size = Some (w, h) }, Mosaic.Cmd.none)
   | Note note -> ({ model with note }, Mosaic.Cmd.none)
+  | Ignored -> (model, Mosaic.Cmd.none)
 
 let view model =
   Mosaic.text
@@ -144,7 +150,8 @@ let%expect_test "in-frame geometry changes settle without input" =
       base with
       Mosaic.view =
         (fun _model ->
-          Mosaic.scroll_box
+          Mosaic.scroll_box ~scroll:(Mosaic.Scroll.at 0)
+            ~on_scroll:(fun _ -> Ignored)
             ~size:(Mosaic.size ~width:20 ~height:4)
             (List.init 10 (fun i -> Mosaic.text (Printf.sprintf "Line %d" i))));
     }
@@ -167,7 +174,7 @@ let%expect_test "escape sequences decode as single keys" =
 
 let%expect_test "virtual time drives every-subscriptions deterministically" =
   drive
-    (app ~subs:(fun _ -> Mosaic.Sub.every 1.0 (fun () -> Tick)) ())
+    (app ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 1.0 (fun () -> Tick)) ())
     [
       `Snap;
       `Advance 1.0;
@@ -204,7 +211,10 @@ let%expect_test "live animation frames deliver a millisecond delta" =
   let last_delta = ref Float.nan in
   let application =
     {
-      (app ~subs:(fun _ -> Mosaic.Sub.every 0.2 (fun () -> Tick)) ()) with
+      (app
+         ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 0.2 (fun () -> Tick))
+         ())
+      with
       Mosaic.view =
         (fun model ->
           if model.ticks = 0 then
@@ -227,7 +237,9 @@ let%expect_test "a pending every-timer renders only when it fires" =
      witness: it must not move as virtual time approaches the deadline, and
      must move exactly once when the timer fires. *)
   let views = ref 0 in
-  let base = app ~subs:(fun _ -> Mosaic.Sub.every 1.0 (fun () -> Tick)) () in
+  let base =
+    app ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 1.0 (fun () -> Tick)) ()
+  in
   let application =
     {
       base with
@@ -289,24 +301,26 @@ let%expect_test "a transparent table realigns every row when it widens" =
   in
   let rows =
     [
-      [|
-        Mosaic.Table.cell "❯";
-        Mosaic.Table.cell "Retained parser investigation";
-        Mosaic.Table.cell "active";
-        Mosaic.Table.cell "idle";
-        Mosaic.Table.cell "1 turn";
-        Mosaic.Table.cell "just now";
-        Mosaic.Table.cell "today";
-      |];
-      [|
-        Mosaic.Table.cell "";
-        Mosaic.Table.cell "session-visual-2";
-        Mosaic.Table.cell "active";
-        Mosaic.Table.cell "idle";
-        Mosaic.Table.cell "1 turn";
-        Mosaic.Table.cell "just now";
-        Mosaic.Table.cell "today";
-      |];
+      Mosaic.Table.row "first"
+        [|
+          Mosaic.Table.cell "❯";
+          Mosaic.Table.cell "Retained parser investigation";
+          Mosaic.Table.cell "active";
+          Mosaic.Table.cell "idle";
+          Mosaic.Table.cell "1 turn";
+          Mosaic.Table.cell "just now";
+          Mosaic.Table.cell "today";
+        |];
+      Mosaic.Table.row "second"
+        [|
+          Mosaic.Table.cell "";
+          Mosaic.Table.cell "session-visual-2";
+          Mosaic.Table.cell "active";
+          Mosaic.Table.cell "idle";
+          Mosaic.Table.cell "1 turn";
+          Mosaic.Table.cell "just now";
+          Mosaic.Table.cell "today";
+        |];
     ]
   in
   let base = app ~subs:on_keys () in
@@ -316,10 +330,13 @@ let%expect_test "a transparent table realigns every row when it widens" =
       Mosaic.view =
         (fun model ->
           let width = if model.keys = [] then 76 else 80 in
-          Mosaic.table ~columns ~rows ~selected_row:0 ~border:false
+          Mosaic.table
+            ~size:(Mosaic.size ~width ~height:3)
+            ~columns ~rows ~border:false ~equal:String.equal
+            ~selected:(Some "first")
+            ~on_change:(fun _ -> Ignored)
             ~show_header:true ~cell_padding:0
             ~selected_background:(Matrix.Ansi.Color.grayscale ~level:3)
-            ~size:(Mosaic.size ~width ~height:3)
             ());
     }
   in
@@ -422,13 +439,15 @@ let%expect_test "replaying the output stream through a VTE matches the grid" =
 
 let%expect_test
     "startup focus emits blinking cursor style when it becomes visible" =
-  let base = app ~init_cmd:(Mosaic.Cmd.focus "editor") () in
+  let base = app () in
   let application =
     {
       base with
       Mosaic.view =
         (fun _ ->
-          Mosaic.input ~id:"editor" ~cursor_style:`Block ~cursor_blinking:true
+          Mosaic.input ~state:Mosaic.Editor.empty
+            ~on_change:(fun _ -> Ignored)
+            ~focused:true ~cursor_style:`Block ~cursor_blinking:true
             ~cursor_color:Matrix.Ansi.Color.red ());
     }
   in
@@ -456,7 +475,7 @@ let%expect_test "an every-timer stepped exactly onto its deadline keeps firing"
     steps := `Snap :: `Advance 0.1 :: !steps
   done;
   drive
-    (app ~subs:(fun _ -> Mosaic.Sub.every 0.1 (fun () -> Tick)) ())
+    (app ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 0.1 (fun () -> Tick)) ())
     (List.rev !steps);
   [%expect
     {|
@@ -535,15 +554,19 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
     |
     |}]
 
-let%expect_test "a paste consumed by a focused editor skips on_paste" =
-  (* Sub.on_paste must only see pastes the UI tree left unconsumed; a focused
-     editor inserting the paste consumes it. Sub.on_paste_all sees both. *)
+let%expect_test "paste capture runs before the focused editor" =
+  (* Paste subscriptions run in declaration order before default insertion.
+     A later editor proposal cannot retroactively consume their delivery. *)
+  let order = ref [] in
+  let record step = order := step :: !order in
   let subs _ =
     Mosaic.Sub.batch
       [
         Mosaic.Sub.on_paste (fun ev ->
+            record "capture";
             Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev)));
         Mosaic.Sub.on_paste_all (fun ev ->
+            record "all";
             Some (Pressed ("P:" ^ Mosaic.Event.Paste.text ev)));
       ]
   in
@@ -553,29 +576,41 @@ let%expect_test "a paste consumed by a focused editor skips on_paste" =
       base with
       Mosaic.view =
         (fun model ->
-          Mosaic.box
+          Mosaic.box ~flex_direction:Row
             [
-              Mosaic.textarea ~autofocus:true
+              Mosaic.textarea ~state:Mosaic.Editor.empty
+                ~on_change:(fun editor ->
+                  record "editor";
+                  equal ~msg:"paste reaches the editor proposal" string "hi"
+                    (Mosaic.Editor.text editor);
+                  Ignored)
                 ~size:(Mosaic.size ~width:10 ~height:1)
-                ();
+                ~focused:true ();
               base.Mosaic.view model;
             ]);
     }
   in
   drive ~height:3 with_editor [ `Feed "\027[200~hi\027[201~"; `Snap ];
+  equal ~msg:"capture precedes the editor default action" (list string)
+    [ "capture"; "all"; "editor" ]
+    (List.rev !order);
+  order := [];
   drive base [ `Feed "\027[200~hi\027[201~"; `Snap ];
+  equal ~msg:"unfocused delivery keeps declaration order" (list string)
+    [ "capture"; "all" ] (List.rev !order);
   [%expect
     {|
-    |          keys:[P:hi] ticks:0 size:- note:-
+    |          keys:[p:hi,P:hi] ticks:0 size:- note:-
     |
     |
-    |keys:[P:hi,p:hi] ticks:0 size:- note:-
+    |keys:[p:hi,P:hi] ticks:0 size:- note:-
     |
     |}]
 
 let%expect_test "a mouse press consumed by a widget skips on_mouse" =
-  (* A widget handler that calls prevent_default consumes the event for
-     Sub.on_mouse, while Sub.on_mouse_all still observes it. *)
+  (* Mouse delivery follows widget dispatch. A consuming widget suppresses
+     Sub.on_mouse; on_mouse_all still runs. Unconsumed subscriptions update the
+     model synchronously in their declaration order. *)
   let log_downs tag ev =
     match Mosaic.Event.Mouse.kind ev with
     | Mosaic.Event.Mouse.Down _ -> Some (Pressed tag)
@@ -597,8 +632,8 @@ let%expect_test "a mouse press consumed by a widget skips on_mouse" =
   in
   let view consuming model =
     Mosaic.box
-      ?on_mouse:(if consuming then Some consume_down else None)
       ~size:(Mosaic.size ~width:48 ~height:2)
+      ?on_mouse:(if consuming then Some consume_down else None)
       [ base.Mosaic.view model ]
   in
   let press = "\027[<0;41;2M\027[<0;41;2m" in
@@ -608,45 +643,49 @@ let%expect_test "a mouse press consumed by a widget skips on_mouse" =
     {|
     |keys:[M] ticks:0 size:- note:-
     |
-    |keys:[M,m] ticks:0 size:- note:-
+    |keys:[m,M] ticks:0 size:- note:-
     |
     |}]
 
-let%expect_test "Cmd.focus lands on a reused element whose id changed" =
-  (* A fiber reused across renders must track its id attr: with the stale id,
-     focus addressed at the new id never lands even though the element
-     visibly renders it. The focused input's cursor becoming visible is the
-     witness that focus landed. *)
-  let base =
-    app ~subs:(fun _ -> Mosaic.Sub.on_key (fun _ -> Some (Note "x"))) ()
-  in
+let%expect_test "model focus follows a remounted editor" =
+  let observed = ref Mosaic.Editor.empty in
   let application =
     {
-      base with
-      Mosaic.update =
-        (fun msg model ->
+      Mosaic.init = (fun () -> ((0, Mosaic.Editor.empty), Mosaic.Cmd.none));
+      update =
+        (fun msg (generation, editor) ->
           match msg with
-          | Note note ->
-              ({ model with note }, Mosaic.Cmd.focus ("field-" ^ note))
-          | msg -> update msg model);
-      Mosaic.view =
-        (fun model ->
-          Mosaic.box
-            [
-              Mosaic.input ~id:("field-" ^ model.note)
-                ~size:(Mosaic.size ~width:10 ~height:1)
-                ();
-              base.Mosaic.view model;
-            ]);
+          | `Remount -> ((generation + 1, editor), Mosaic.Cmd.none)
+          | `Edited editor ->
+              observed := editor;
+              ((generation, editor), Mosaic.Cmd.none));
+      view =
+        (fun (generation, editor) ->
+          Mosaic.input ~key:(string_of_int generation) ~focused:true
+            ~state:editor
+            ~on_change:(fun editor -> `Edited editor)
+            ());
+      subscriptions =
+        (fun _ ->
+          Mosaic.Sub.on_key (fun ev ->
+              if Mosaic.Shortcut.matches (Mosaic.Shortcut.f 2) ev then (
+                Mosaic.Event.Key.prevent_default ev;
+                Some `Remount)
+              else None));
     }
   in
-  drive ~height:3 application
+  drive ~width:20 ~height:1 application
     [
-      `Feed "x";
+      `Feed "a";
+      `Feed "\027OQ";
+      `Feed "b";
       `Run
         (fun t ->
-          contains ~msg:"cursor shown after focus" ~sub:"\027[?25h"
-            (Matrix_test.output t));
+          equal ~msg:"accepted editor survives remount" string "ab"
+            (Mosaic.Editor.text !observed);
+          equal ~msg:"remounted focused editor paints accepted state" string
+            "ab"
+            (String.trim (Matrix_test.screen t)));
     ];
   [%expect {| |}]
 
@@ -659,10 +698,10 @@ let%expect_test "same-interval timers keep independent phases" =
   let subs model =
     Mosaic.Sub.batch
       (Mosaic.Sub.on_key (fun _ -> Some (Note "on"))
-      :: Mosaic.Sub.every 1.0 (fun () -> Pressed "a")
+      :: Mosaic.Sub.every ~id:"first" 1.0 (fun () -> Pressed "a")
       ::
       (if String.equal model.note "on" then
-         [ Mosaic.Sub.every 1.0 (fun () -> Pressed "b") ]
+         [ Mosaic.Sub.every ~id:"second" 1.0 (fun () -> Pressed "b") ]
        else []))
   in
   drive (app ~subs ())
@@ -691,7 +730,7 @@ let%expect_test "a timer stepped deadline by deadline keeps the nominal grid" =
      and an exact comparison then lost the final fire beyond the stop (19,
      then 29). The accumulating driver above is the mirror image: there the
      clock is the side that drifts. *)
-  let subs _ = Mosaic.Sub.every 0.1 (fun () -> Tick) in
+  let subs _ = Mosaic.Sub.every ~id:"timer" 0.1 (fun () -> Tick) in
   drive (app ~subs ()) [ `Step_to 2.0; `Snap; `Step_to 3.0; `Snap ];
   [%expect
     {||keys:[] ticks:20 size:- note:-
@@ -699,11 +738,7 @@ let%expect_test "a timer stepped deadline by deadline keeps the nominal grid" =
 |keys:[] ticks:30 size:- note:-
 ||}]
 
-let%expect_test "an unmatched Cmd.focus expires after one deferred attempt" =
-  (* Cmd.focus retries once after the next completed render (covering an
-     element the same update's view creates), then drops. An element whose id
-     only appears two updates later must not be focused — and the runtime
-     must not keep scanning the tree for the id forever. *)
+let%expect_test "a late unfocused editor never steals focus" =
   let base =
     app ~subs:(fun _ -> Mosaic.Sub.on_key (fun _ -> Some (Note "shown"))) ()
   in
@@ -711,14 +746,14 @@ let%expect_test "an unmatched Cmd.focus expires after one deferred attempt" =
     {
       base with
       Mosaic.init =
-        (fun () -> ({ initial with note = "hidden" }, Mosaic.Cmd.focus "late"));
-      Mosaic.view =
+        (fun () -> ({ initial with note = "hidden" }, Mosaic.Cmd.none));
+      view =
         (fun model ->
           Mosaic.box
             [
-              (if String.equal model.note "shown" then
-                 Mosaic.input ~id:"late"
-                   ~size:(Mosaic.size ~width:10 ~height:1)
+              (if model.note = "shown" then
+                 Mosaic.input ~state:Mosaic.Editor.empty ~focused:false
+                   ~on_change:(fun _ -> Ignored)
                    ()
                else Mosaic.empty);
               base.Mosaic.view model;
@@ -727,7 +762,7 @@ let%expect_test "an unmatched Cmd.focus expires after one deferred attempt" =
   in
   drive ~height:3 application
     [
-      `Feed "x" (* creates input#late, well after the focus request *);
+      `Feed "x";
       `Run
         (fun t ->
           not_contains ~msg:"late element must not steal focus" ~sub:"\027[?25h"
@@ -876,4 +911,391 @@ let%expect_test "application exit cancels queued highlighting" =
       equal ~msg:"closed application leaves no queued work" (list string)
         [ "first" ] (Atomic.get calls))
     [ false; true ];
+  [%expect {| |}]
+
+let%expect_test
+    "rejected edits do not become the base of the next key in a burst" =
+  let proposals = ref [] in
+  let accepted = ref Mosaic.Editor.empty in
+  let application =
+    {
+      Mosaic.init = (fun () -> (Mosaic.Editor.empty, Mosaic.Cmd.none));
+      update =
+        (fun proposal editor ->
+          let text = Mosaic.Editor.text proposal in
+          proposals := text :: !proposals;
+          let editor = if text = "a" then editor else proposal in
+          accepted := editor;
+          (editor, Mosaic.Cmd.none));
+      view =
+        (fun editor ->
+          Mosaic.input ~state:editor ~focused:true
+            ~on_change:(fun state -> state)
+            ());
+      subscriptions = (fun _ -> Mosaic.Sub.none);
+    }
+  in
+  drive ~width:20 ~height:1 application
+    [
+      `Feed "ab";
+      `Run
+        (fun t ->
+          equal ~msg:"second proposal starts from the accepted empty state"
+            (list string) [ "a"; "b" ] (List.rev !proposals);
+          equal ~msg:"model accepts only second key" string "b"
+            (Mosaic.Editor.text !accepted);
+          equal ~msg:"screen agrees with model" string "b"
+            (String.trim (Matrix_test.screen t)));
+    ];
+  [%expect {| |}]
+
+let%expect_test "normalization is authoritative before the next key in a burst"
+    =
+  let proposals = ref [] in
+  let accepted = ref Mosaic.Editor.empty in
+  let application =
+    {
+      Mosaic.init = (fun () -> (Mosaic.Editor.empty, Mosaic.Cmd.none));
+      update =
+        (fun proposal _ ->
+          let text = Mosaic.Editor.text proposal in
+          proposals := text :: !proposals;
+          let editor = Mosaic.Editor.of_string (String.uppercase_ascii text) in
+          accepted := editor;
+          (editor, Mosaic.Cmd.none));
+      view =
+        (fun editor ->
+          Mosaic.input ~state:editor ~focused:true
+            ~on_change:(fun state -> state)
+            ());
+      subscriptions = (fun _ -> Mosaic.Sub.none);
+    }
+  in
+  drive ~width:20 ~height:1 application
+    [
+      `Feed "ab";
+      `Run
+        (fun t ->
+          equal ~msg:"second proposal starts from normalized text" (list string)
+            [ "a"; "Ab" ] (List.rev !proposals);
+          equal ~msg:"model retains normalization" string "AB"
+            (Mosaic.Editor.text !accepted);
+          equal ~msg:"screen agrees with normalized model" string "AB"
+            (String.trim (Matrix_test.screen t)));
+    ];
+  [%expect {| |}]
+
+let%expect_test "global capture updates focus and editor before default editing"
+    =
+  let accepted = ref (Mosaic.Editor.empty, Mosaic.Editor.empty) in
+  let application =
+    {
+      Mosaic.init =
+        (fun () ->
+          ( (true, Mosaic.Editor.of_string "L", Mosaic.Editor.empty),
+            Mosaic.Cmd.none ));
+      update =
+        (fun msg (left_focused, left, right) ->
+          let model =
+            match msg with
+            | `Transfer -> (false, left, Mosaic.Editor.of_string "R")
+            | `Left editor -> (left_focused, editor, right)
+            | `Right editor -> (left_focused, left, editor)
+          in
+          let _, left, right = model in
+          accepted := (left, right);
+          (model, Mosaic.Cmd.none));
+      view =
+        (fun (left_focused, left, right) ->
+          Mosaic.box ~flex_direction:Column
+            [
+              Mosaic.input ~state:left ~focused:left_focused
+                ~on_change:(fun state -> `Left state)
+                ();
+              Mosaic.input ~state:right ~focused:(not left_focused)
+                ~on_change:(fun state -> `Right state)
+                ();
+            ]);
+      subscriptions =
+        (fun _ ->
+          Mosaic.Sub.on_key (fun ev ->
+              if Mosaic.Shortcut.matches (Mosaic.Shortcut.char 'x') ev then
+                Some `Transfer
+              else None));
+    }
+  in
+  drive ~width:20 ~height:2 application
+    [
+      `Feed "x";
+      `Run
+        (fun t ->
+          let left, right = !accepted in
+          equal ~msg:"previously focused editor is untouched" string "L"
+            (Mosaic.Editor.text left);
+          equal ~msg:"default action edits newly accepted target" string "Rx"
+            (Mosaic.Editor.text right);
+          equal ~msg:"both accepted editors are painted" string "L\nRx"
+            (String.trim (Matrix_test.screen t)));
+    ];
+  [%expect {| |}]
+
+let%expect_test "non-key subscriptions accumulate in declaration order" =
+  let observed = ref initial in
+  let base =
+    app
+      ~subs:(fun _ ->
+        Mosaic.Sub.batch
+          [
+            Mosaic.Sub.on_resize (fun ~width:_ ~height:_ -> Pressed "r1");
+            Mosaic.Sub.on_resize (fun ~width:_ ~height:_ -> Pressed "r2");
+            Mosaic.Sub.on_focus (Pressed "f1");
+            Mosaic.Sub.on_focus (Pressed "f2");
+            Mosaic.Sub.on_blur (Pressed "b1");
+            Mosaic.Sub.on_blur (Pressed "b2");
+            Mosaic.Sub.on_color_scheme (fun _ -> Some (Pressed "c1"));
+            Mosaic.Sub.on_color_scheme (fun _ -> Some (Pressed "c2"));
+          ])
+      ()
+  in
+  let application =
+    {
+      base with
+      Mosaic.update =
+        (fun msg model ->
+          let model, cmd = update msg model in
+          observed := model;
+          (model, cmd));
+    }
+  in
+  drive ~width:70 ~height:1 application
+    [
+      `Run
+        (fun _ ->
+          equal ~msg:"startup geometry reaches both resize subscribers"
+            (list string) [ "r1"; "r2" ] !observed.keys);
+      `Resize (71, 1);
+      `Run (fun t -> Matrix_test.feed_event t Matrix.Input.Blur);
+      `Run (fun t -> Matrix_test.feed_event t Matrix.Input.Focus);
+      `Run (fun t -> Matrix_test.feed_event t (Matrix.Input.Color_scheme `Dark));
+      `Run
+        (fun t ->
+          equal ~msg:"every subscriber sees its event in source order"
+            (list string)
+            [ "r1"; "r2"; "r1"; "r2"; "b1"; "b2"; "f1"; "f2"; "c1"; "c2" ]
+            !observed.keys;
+          contains ~msg:"screen reflects all delivered messages"
+            ~sub:"keys:[r1,r2,r1,r2,b1,b2,f1,f2,c1,c2]" (Matrix_test.screen t));
+    ];
+  [%expect {| |}]
+
+let%expect_test
+    "reordering timer IDs preserves independent equal-interval phases" =
+  let observed = ref initial in
+  let subs model =
+    let a = Mosaic.Sub.every ~id:"a" 1.0 (fun () -> Pressed "a") in
+    let b = Mosaic.Sub.every ~id:"b" 1.0 (fun () -> Pressed "b") in
+    let timers =
+      match model.note with "-" -> [ a ] | "added" -> [ a; b ] | _ -> [ b; a ]
+    in
+    Mosaic.Sub.batch
+      (Mosaic.Sub.on_key (fun _ ->
+           Some (Note (if model.note = "-" then "added" else "reordered")))
+      :: timers)
+  in
+  let base = app ~subs () in
+  let application =
+    {
+      base with
+      Mosaic.update =
+        (fun msg model ->
+          let model, cmd = update msg model in
+          observed := model;
+          (model, cmd));
+    }
+  in
+  drive ~width:70 ~height:1 application
+    [
+      `Step_to 1.0;
+      `Step_to 1.4;
+      `Feed "+";
+      `Step_to 1.6;
+      `Feed "+";
+      `Step_to 2.0;
+      `Run
+        (fun _ ->
+          equal ~msg:"reorder preserves first deadline" (list string)
+            [ "a"; "a" ] !observed.keys);
+      `Step_to 2.4;
+      `Run
+        (fun t ->
+          equal ~msg:"newer timer keeps its later phase" (list string)
+            [ "a"; "a"; "b" ] !observed.keys;
+          contains ~msg:"screen records timer order" ~sub:"keys:[a,a,b]"
+            (Matrix_test.screen t));
+    ];
+  [%expect {| |}]
+
+let%expect_test
+    "pointer focus requests precede caret defaults and keyboard input" =
+  let observed =
+    ref (true, Mosaic.Editor.of_string "L", Mosaic.Editor.of_string "old")
+  in
+  let events = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> (!observed, Mosaic.Cmd.none));
+      update =
+        (fun msg (left_focused, left, right) ->
+          let model =
+            match msg with
+            | `Focus ->
+                events := "focus" :: !events;
+                (false, left, Mosaic.Editor.of_string "abcd")
+            | `Left next -> (left_focused, next, right)
+            | `Right next ->
+                events := "edit" :: !events;
+                (left_focused, left, next)
+          in
+          observed := model;
+          (model, Mosaic.Cmd.none));
+      view =
+        (fun (left_focused, left, right) ->
+          Mosaic.box ~flex_direction:Column
+            [
+              Mosaic.input
+                ~size:(Mosaic.size ~width:20 ~height:1)
+                ~state:left ~focused:left_focused
+                ~on_change:(fun next -> `Left next)
+                ();
+              Mosaic.input
+                ~size:(Mosaic.size ~width:20 ~height:1)
+                ~state:right ~focused:(not left_focused)
+                ~on_focus_request:`Focus
+                ~on_change:(fun next -> `Right next)
+                ();
+            ]);
+      subscriptions = (fun _ -> Mosaic.Sub.none);
+    }
+  in
+  drive ~width:20 ~height:2 application
+    [
+      `Feed "\027[<0;2;2M\027[<0;2;2mX";
+      `Run
+        (fun _ ->
+          let left_focused, left, right = !observed in
+          is_false left_focused;
+          equal string "L" (Mosaic.Editor.text left);
+          equal ~msg:"caret uses the source accepted during focus" string
+            "aXbcd" (Mosaic.Editor.text right);
+          equal int 2 (Mosaic.Editor.cursor right);
+          equal ~msg:"focus accepted before any editor proposal" string "focus"
+            (List.hd (List.rev !events)));
+    ];
+  [%expect {| |}]
+
+let%expect_test "rejected or unmounted focus targets cannot edit or steal focus"
+    =
+  List.iter
+    (fun unmount ->
+      let right = Mosaic.Editor.of_string "right" in
+      let observed = ref (true, Mosaic.Editor.of_string "L", right) in
+      let requested = ref 0 and edited_right = ref 0 in
+      let clicks = ref 0 in
+      let application =
+        {
+          Mosaic.init = (fun () -> (!observed, Mosaic.Cmd.none));
+          update =
+            (fun msg (visible, left, right) ->
+              let model =
+                match msg with
+                | `Focus ->
+                    incr requested;
+                    (not unmount, left, right)
+                | `Left next -> (visible, next, right)
+                | `Right next ->
+                    incr edited_right;
+                    (visible, left, next)
+              in
+              observed := model;
+              (model, Mosaic.Cmd.none));
+          view =
+            (fun (visible, left, right) ->
+              Mosaic.box ~flex_direction:Column
+                [
+                  Mosaic.input
+                    ~size:(Mosaic.size ~width:20 ~height:1)
+                    ~state:left ~focused:true
+                    ~on_change:(fun next -> `Left next)
+                    ();
+                  (if visible then
+                     Mosaic.input
+                       ~size:(Mosaic.size ~width:20 ~height:1)
+                       ~state:right ~focused:false ~on_focus_request:`Focus
+                       ~on_click:(fun _ ->
+                         incr clicks;
+                         None)
+                       ~on_change:(fun next -> `Right next)
+                       ()
+                   else Mosaic.empty);
+                ]);
+          subscriptions = (fun _ -> Mosaic.Sub.none);
+        }
+      in
+      drive ~width:20 ~height:2 application
+        [
+          `Feed "\027[<0;2;2M\027[<0;2;2mX";
+          `Run
+            (fun _ ->
+              let _, left, current_right = !observed in
+              equal int 1 !requested;
+              equal ~msg:"no stale default editor callback" int 0 !edited_right;
+              equal ~msg:"rejected press does not click on release" int 0
+                !clicks;
+              equal string "LX" (Mosaic.Editor.text left);
+              is_true ~msg:"unaccepted target remains unchanged"
+                (current_right == right));
+        ])
+    [ false; true ];
+  [%expect {| |}]
+
+let%expect_test "memo and message mapping defer focus requests until input" =
+  let mapped = ref 0 and delivered = ref 0 in
+  let map_message message =
+    incr mapped;
+    message
+  in
+  let application =
+    {
+      Mosaic.init = (fun () -> ((), Mosaic.Cmd.none));
+      update =
+        (fun message () ->
+          (match message with
+          | `Focus -> incr delivered
+          | `Edited -> fail "unaccepted edit");
+          ((), Mosaic.Cmd.none));
+      view =
+        (fun () ->
+          Mosaic.memo ~key:() (fun () ->
+              Mosaic.input
+                ~size:(Mosaic.size ~width:20 ~height:1)
+                ~state:Mosaic.Editor.empty ~focused:false
+                ~on_focus_request:`Focus
+                ~on_change:(fun _ -> `Edited)
+                ())
+          |> Mosaic.map map_message);
+      subscriptions = (fun () -> Mosaic.Sub.none);
+    }
+  in
+  drive ~width:20 ~height:1 application
+    [
+      `Run
+        (fun _ ->
+          equal int 0 !mapped;
+          equal int 0 !delivered);
+      `Feed "\027[<0;1;1M\027[<0;1;1m";
+      `Run
+        (fun _ ->
+          equal int 1 !mapped;
+          equal int 1 !delivered);
+    ];
   [%expect {| |}]

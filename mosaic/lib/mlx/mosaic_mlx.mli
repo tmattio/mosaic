@@ -25,7 +25,6 @@ val fragment : ?children:'msg t list -> unit -> 'msg t
 
 val box :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -65,14 +64,15 @@ val box :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?border:bool ->
   ?border_style:Border.t ->
   ?border_sides:Border.side list ->
@@ -87,9 +87,69 @@ val box :
   'msg t
 (** Like {!Mosaic.box}. [children] defaults to [[]]. *)
 
+val scroll_box :
+  ?key:string ->
+  ?display:Display.t ->
+  ?box_sizing:Box_sizing.t ->
+  ?position:Position.t ->
+  ?overflow:Overflow.t point ->
+  ?scrollbar_width:float ->
+  ?text_align:Text_align.t ->
+  ?inset:length_percentage_auto rect ->
+  ?flex_direction:Flex_direction.t ->
+  ?flex_wrap:Flex_wrap.t ->
+  ?justify_content:Justify.t ->
+  ?align_items:Align.t ->
+  ?size:dimension size ->
+  ?min_size:dimension size ->
+  ?max_size:dimension size ->
+  ?aspect_ratio:float ->
+  ?gap:length_percentage size ->
+  ?padding:length_percentage rect ->
+  ?margin:length_percentage_auto rect ->
+  ?border_width:length_percentage rect ->
+  ?align_self:Align.t ->
+  ?align_content:Justify.t ->
+  ?justify_items:Align.t ->
+  ?justify_self:Align.t ->
+  ?flex_grow:float ->
+  ?flex_shrink:float ->
+  ?flex_basis:dimension ->
+  ?grid_template_rows:Grid.template list ->
+  ?grid_template_columns:Grid.template list ->
+  ?grid_auto_rows:Grid.track list ->
+  ?grid_auto_columns:Grid.track list ->
+  ?grid_auto_flow:Grid_auto_flow.t ->
+  ?grid_template_areas:Grid.area list ->
+  ?grid_template_column_names:string list list ->
+  ?grid_template_row_names:string list list ->
+  ?grid_row:Grid.placement line ->
+  ?grid_column:Grid.placement line ->
+  ?visible:bool ->
+  ?z_index:int ->
+  ?opacity:float ->
+  ?buffered:bool ->
+  ?live:bool ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
+  ?scroll_x:bool ->
+  ?scroll_y:bool ->
+  ?background:Ansi.Color.t ->
+  ?show_scrollbars:bool ->
+  on_scroll:(Scroll.t -> 'msg) ->
+  scroll:Scroll.t ->
+  ?children:'msg t list ->
+  unit ->
+  'msg t
+(** Like {!Mosaic.scroll_box}. [children] defaults to [[]]. *)
+
 val text :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -130,14 +190,15 @@ val text :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
   ?selectable:bool ->
@@ -148,76 +209,10 @@ val text :
   ?children:string list ->
   unit ->
   'msg t
-(** Like {!Mosaic.text}. [children] is a [string list] whose items are
-    concatenated. Defaults to [[]]. *)
-
-val scroll_box :
-  ?key:string ->
-  ?id:string ->
-  ?display:Display.t ->
-  ?box_sizing:Box_sizing.t ->
-  ?position:Position.t ->
-  ?overflow:Overflow.t point ->
-  ?scrollbar_width:float ->
-  ?text_align:Text_align.t ->
-  ?inset:length_percentage_auto rect ->
-  ?flex_direction:Flex_direction.t ->
-  ?flex_wrap:Flex_wrap.t ->
-  ?justify_content:Justify.t ->
-  ?align_items:Align.t ->
-  ?size:dimension size ->
-  ?min_size:dimension size ->
-  ?max_size:dimension size ->
-  ?aspect_ratio:float ->
-  ?gap:length_percentage size ->
-  ?padding:length_percentage rect ->
-  ?margin:length_percentage_auto rect ->
-  ?border_width:length_percentage rect ->
-  ?align_self:Align.t ->
-  ?align_content:Justify.t ->
-  ?justify_items:Align.t ->
-  ?justify_self:Align.t ->
-  ?flex_grow:float ->
-  ?flex_shrink:float ->
-  ?flex_basis:dimension ->
-  ?grid_template_rows:Grid.template list ->
-  ?grid_template_columns:Grid.template list ->
-  ?grid_auto_rows:Grid.track list ->
-  ?grid_auto_columns:Grid.track list ->
-  ?grid_auto_flow:Grid_auto_flow.t ->
-  ?grid_template_areas:Grid.area list ->
-  ?grid_template_column_names:string list list ->
-  ?grid_template_row_names:string list list ->
-  ?grid_row:Grid.placement line ->
-  ?grid_column:Grid.placement line ->
-  ?visible:bool ->
-  ?z_index:int ->
-  ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
-  ?buffered:bool ->
-  ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
-  ?on_mouse:(Event.mouse -> 'msg option) ->
-  ?on_key:(Event.key -> 'msg option) ->
-  ?on_paste:(Event.paste -> 'msg option) ->
-  ?scroll_x:bool ->
-  ?scroll_y:bool ->
-  ?sticky_scroll:bool ->
-  ?sticky_start:[ `Top | `Bottom | `Left | `Right ] ->
-  ?background:Ansi.Color.t ->
-  ?reveal:Scroll_box.reveal ->
-  ?reset_sticky:string ->
-  ?on_scroll:(x:int -> y:int -> 'msg option) ->
-  ?on_reset_sticky_applied:(key:string -> 'msg option) ->
-  ?children:'msg t list ->
-  unit ->
-  'msg t
-(** Like {!Mosaic.scroll_box}. [children] defaults to [[]]. *)
+(** Like {!Mosaic.text}. [children] defaults to [[]]. *)
 
 val code :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -257,14 +252,15 @@ val code :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?syntax:Code.syntax ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
@@ -276,12 +272,10 @@ val code :
   ?children:string list ->
   unit ->
   'msg t
-(** Like {!Mosaic.code}. [children] is a [string list] whose items are
-    concatenated. Defaults to [[]]. *)
+(** Like {!Mosaic.code}. [children] defaults to [[]]. *)
 
 val markdown :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -321,26 +315,30 @@ val markdown :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?md_style:Markdown.style ->
   ?conceal:bool ->
   ?streaming:bool ->
+  ?selectable:bool ->
+  ?selection_bg:Ansi.Color.t ->
+  ?selection_fg:Ansi.Color.t ->
+  ?code_syntax:(language:string option -> content:string -> Code.syntax option) ->
+  ?on_selection:(string option -> 'msg option) ->
   ?children:string list ->
   unit ->
   'msg t
-(** Like {!Mosaic.markdown}. [children] is a [string list] whose items are
-    concatenated. Defaults to [[]]. *)
+(** Like {!Mosaic.markdown}. [children] defaults to [[]]. *)
 
 val input :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -380,19 +378,16 @@ val input :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
-  ?value:string ->
-  ?cursor:int ->
-  ?selection:(int * int) option ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?placeholder:string ->
-  ?max_length:int ->
   ?text_color:Ansi.Color.t ->
   ?background_color:Ansi.Color.t ->
   ?focused_text_color:Ansi.Color.t ->
@@ -403,18 +398,21 @@ val input :
   ?cursor_style:[ `Block | `Line | `Underline ] ->
   ?cursor_color:Ansi.Color.t ->
   ?cursor_blinking:bool ->
-  ?on_input:(string -> 'msg option) ->
-  ?on_change:(string -> 'msg option) ->
-  ?on_submit:(string -> 'msg option) ->
-  ?on_cursor:(cursor:int -> selection:(int * int) option -> 'msg option) ->
+  ?selectable:bool ->
+  ?show_cursor:bool ->
+  ?key_bindings:Mosaic_ui.Text_input.key_binding list ->
+  ?key_aliases:(string * string) list ->
+  on_change:(Editor.t -> 'msg) ->
+  ?on_submit:(string -> 'msg) ->
+  state:Editor.t ->
   ?children:'msg t list ->
   unit ->
   'msg t
-(** Like {!Mosaic.input}. [children] defaults to [[]]. *)
+(** Like {!Mosaic.input}. [children] defaults to [[]]. Children are ignored;
+    text is supplied by [state]. *)
 
 val textarea :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -454,18 +452,16 @@ val textarea :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
-  ?value:string ->
-  ?cursor:int ->
-  ?selection:(int * int) option ->
-  ?spans:Mosaic.span list ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
+  ?spans:span list ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->
@@ -480,18 +476,21 @@ val textarea :
   ?cursor_style:[ `Block | `Line | `Underline ] ->
   ?cursor_color:Ansi.Color.t ->
   ?cursor_blinking:bool ->
-  ?on_input:(string -> 'msg option) ->
-  ?on_change:(string -> 'msg option) ->
-  ?on_submit:(string -> 'msg option) ->
-  ?on_cursor:(cursor:int -> selection:(int * int) option -> 'msg option) ->
+  ?selectable:bool ->
+  ?show_cursor:bool ->
+  ?key_bindings:Mosaic_ui.Textarea.key_binding list ->
+  ?key_aliases:(string * string) list ->
+  on_change:(Editor.t -> 'msg) ->
+  ?on_submit:(string -> 'msg) ->
+  state:Editor.t ->
   ?children:'msg t list ->
   unit ->
   'msg t
-(** Like {!Mosaic.textarea}. [children] defaults to [[]]. *)
+(** Like {!Mosaic.textarea}. [children] defaults to [[]]. Children are ignored;
+    text is supplied by [state]. *)
 
 val line_number :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -531,14 +530,15 @@ val line_number :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?fg:Ansi.Color.t ->
   ?bg:Ansi.Color.t ->
   ?min_width:int ->
@@ -551,7 +551,5 @@ val line_number :
   ?children:'msg t list ->
   unit ->
   'msg t
-(** Like {!Mosaic.line_number}. Pass the wrapped element (e.g. a {!val-code}) as
-    a single-item list.
-
-    Raises [Invalid_argument] unless [children] holds exactly one element. *)
+(** Like {!Mosaic.line_number}. [children] defaults to [[]]. Raises
+    [Invalid_argument] unless [children] has exactly one element. *)

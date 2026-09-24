@@ -23,6 +23,7 @@ let make_select ?options ?selected_index ?wrap_selection ?show_description
       ?show_description ?show_scroll_indicator ?item_spacing ?fast_scroll_step
       ()
   in
+  Select.set_on_change sel (Some (Select.set_selected_index sel));
   (t, sel)
 
 let emit_key sel key =
@@ -89,9 +90,9 @@ let create_clamps_initial_index () =
   let _t, sel = make_select ~options:sample_items ~selected_index:100 () in
   equal ~msg:"clamped" int 4 (Select.selected_index sel)
 
-let create_empty_list_index_zero () =
+let create_empty_list_has_no_selection () =
   let _t, sel = make_select ~selected_index:5 () in
-  equal ~msg:"zero" int 0 (Select.selected_index sel)
+  equal ~msg:"zero" int (-1) (Select.selected_index sel)
 
 (* ── Selection ── *)
 
@@ -100,14 +101,14 @@ let set_selected_index_clamps () =
   Select.set_selected_index sel 100;
   equal ~msg:"clamped high" int 4 (Select.selected_index sel);
   Select.set_selected_index sel (-5);
-  equal ~msg:"clamped low" int 0 (Select.selected_index sel)
+  equal ~msg:"negative clears selection" int (-1) (Select.selected_index sel)
 
 let set_selected_index_fires_on_change () =
   let _t, sel = make_select ~options:sample_items () in
   let log = ref [] in
   Select.set_on_change sel (Some (fun i -> log := i :: !log));
   Select.set_selected_index sel 2;
-  equal ~msg:"fired" (list int) [ 2 ] !log
+  equal ~msg:"accepted setter is silent" (list int) [] !log
 
 let set_selected_index_noop_same () =
   let _t, sel = make_select ~options:sample_items () in
@@ -229,7 +230,7 @@ let navigation_on_empty_list () =
   emit_key sel (make_key Down);
   emit_key sel (make_key Up);
   equal ~msg:"no callbacks" (list int) [] !log;
-  equal ~msg:"index zero" int 0 (Select.selected_index sel)
+  equal ~msg:"index zero" int (-1) (Select.selected_index sel)
 
 let single_option_navigation () =
   let single = Select.[ { label = "Only"; description = None } ] in
@@ -336,7 +337,7 @@ let set_options_clamps_index () =
 let set_options_empty () =
   let _t, sel = make_select ~options:sample_items () in
   Select.set_options sel [];
-  equal ~msg:"zero" int 0 (Select.selected_index sel);
+  equal ~msg:"zero" int (-1) (Select.selected_index sel);
   match Select.selected_item sel with
   | Some _ -> fail "expected None"
   | None -> ()
@@ -465,15 +466,14 @@ let apply_props_same_options_no_extra_render () =
   Select.apply_props sel props;
   equal ~msg:"no extra schedule" int before !(t.schedule_count)
 
-let apply_props_preserves_uncontrolled_selection () =
+let apply_props_restores_declared_selection () =
   let _t, sel = make_select ~options:sample_items () in
   Select.set_selected_index sel 3;
   let log = ref [] in
   Select.set_on_change sel (Some (fun i -> log := i :: !log));
   Select.apply_props sel
     (Select.Props.make ~options:sample_items ~wrap_selection:true ());
-  equal ~msg:"selection survives unrelated prop change" int 3
-    (Select.selected_index sel);
+  equal ~msg:"omitted selection declares zero" int 0 (Select.selected_index sel);
   equal ~msg:"no callback echo" (list int) [] !log
 
 let apply_props_controlled_selection_is_silent () =
@@ -487,9 +487,56 @@ let apply_props_controlled_selection_is_silent () =
 
 (* ── Runner ── *)
 
+let proposals_do_not_drift () =
+  let _ctx, sel = make_select ~options:sample_items () in
+  let proposals = ref [] in
+  Select.set_on_change sel (Some (fun next -> proposals := next :: !proposals));
+  emit_key sel (make_key Down);
+  emit_key sel (make_key Down);
+  equal ~msg:"rejected events derive from accepted state" (list int) [ 1; 1 ]
+    !proposals;
+  equal ~msg:"proposal does not mutate selection" int 0
+    (Select.selected_index sel);
+  Select.apply_props sel
+    (Select.Props.make ~options:sample_items ~selected_index:2 ());
+  emit_key sel (make_key Down);
+  equal ~msg:"transformed accepted state drives next proposal" (list int)
+    [ 3; 1; 1 ] !proposals
+
+let absent_selection_is_preserved () =
+  let context, sel =
+    make_select ~options:sample_items ~selected_index:(-1) ()
+  in
+  ignore context;
+  is_none ~msg:"no selected item" (Select.selected_item sel);
+  let activations = ref [] in
+  Select.set_on_activate sel (Some (fun i -> activations := i :: !activations));
+  emit_key sel (make_key Enter);
+  equal ~msg:"Enter does not activate an absent selection" (list int) []
+    !activations;
+  with_layout sel ~width:30 ~height:10;
+  let grid = make_grid ~width:30 ~height:10 () in
+  Renderable.Private.render_full (Select.node sel) ~grid ~delta:0.;
+  is_false ~msg:"no selection marker"
+    (String.contains (Matrix_grid.to_text grid) '\226');
+  emit_key sel (make_key ~shift:true Down);
+  equal ~msg:"first Down selects first even with a larger step" int 0
+    (Select.selected_index sel);
+  Select.apply_props sel
+    (Select.Props.make ~options:sample_items ~selected_index:(-1) ());
+  emit_key sel (make_key Up);
+  equal ~msg:"first Up selects last without wrapping" int 4
+    (Select.selected_index sel);
+  Select.set_selected_index sel (-1);
+  emit_mouse sel (mouse_down ~x:5 ~y:2);
+  equal ~msg:"click selects a valid item from absence" int 1
+    (Select.selected_index sel)
+
 let () =
   run "mosaic.select"
     [
+      test "proposals do not drift" proposals_do_not_drift;
+      test "absent selection is preserved" absent_selection_is_preserved;
       group "Props"
         [
           test "default values" props_defaults;
@@ -506,7 +553,7 @@ let () =
           test "is focusable" create_is_focusable;
           test "is buffered" create_is_buffered;
           test "clamps initial index" create_clamps_initial_index;
-          test "empty list index zero" create_empty_list_index_zero;
+          test "empty list has no selection" create_empty_list_has_no_selection;
         ];
       group "Selection"
         [
@@ -587,7 +634,7 @@ let () =
           test "same options no extra render"
             apply_props_same_options_no_extra_render;
           test "preserves uncontrolled selection"
-            apply_props_preserves_uncontrolled_selection;
+            apply_props_restores_declared_selection;
           test "controlled selection is silent"
             apply_props_controlled_selection_is_silent;
         ];

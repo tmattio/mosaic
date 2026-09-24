@@ -35,6 +35,7 @@ let make_table ?columns ?rows ?selected_row ?border ?border_style ?show_header
       ?selection_visible ?show_scroll_indicator ?activate_on_click
       ?wheel_navigation ?fast_scroll_step ?background ?selected_background ()
   in
+  Table.set_on_change tbl (Some (Table.set_selected_row tbl));
   (t, tbl)
 
 let emit_key tbl key =
@@ -128,9 +129,9 @@ let create_clamps_initial_index () =
   in
   equal ~msg:"clamped" int 4 (Table.selected_row tbl)
 
-let create_empty_rows_index_zero () =
+let create_empty_rows_has_no_selection () =
   let _t, tbl = make_table ~selected_row:5 () in
-  equal ~msg:"zero" int 0 (Table.selected_row tbl)
+  equal ~msg:"zero" int (-1) (Table.selected_row tbl)
 
 (* ── Selection ── *)
 
@@ -139,14 +140,14 @@ let set_selected_row_clamps () =
   Table.set_selected_row tbl 100;
   equal ~msg:"clamped high" int 4 (Table.selected_row tbl);
   Table.set_selected_row tbl (-5);
-  equal ~msg:"clamped low" int 0 (Table.selected_row tbl)
+  equal ~msg:"negative clears selection" int (-1) (Table.selected_row tbl)
 
 let set_selected_row_fires_on_change () =
   let _t, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
   let log = ref [] in
   Table.set_on_change tbl (Some (fun i -> log := i :: !log));
   Table.set_selected_row tbl 2;
-  equal ~msg:"fired" (list int) [ 2 ] !log
+  equal ~msg:"accepted setter is silent" (list int) [] !log
 
 let set_selected_row_noop_same () =
   let _t, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
@@ -242,7 +243,11 @@ let page_down_uses_bordered_body_height () =
   in
   render_with_layout tbl ~width:20 ~height:8;
   let changes = ref [] in
-  Table.set_on_change tbl (Some (fun index -> changes := index :: !changes));
+  Table.set_on_change tbl
+    (Some
+       (fun index ->
+         Table.set_selected_row tbl index;
+         changes := index :: !changes));
   emit_key tbl (make_key Page_down);
   equal ~msg:"moves by four measured data rows" int 6 (Table.selected_row tbl);
   equal ~msg:"reports the new selection" (list int) [ 6 ] !changes
@@ -256,7 +261,11 @@ let page_up_accounts_for_row_separators () =
   in
   render_with_layout tbl ~width:20 ~height:5;
   let changes = ref [] in
-  Table.set_on_change tbl (Some (fun index -> changes := index :: !changes));
+  Table.set_on_change tbl
+    (Some
+       (fun index ->
+         Table.set_selected_row tbl index;
+         changes := index :: !changes));
   emit_key tbl (make_key Page_up);
   equal ~msg:"moves by three measured data rows" int 4 (Table.selected_row tbl);
   equal ~msg:"reports the new selection" (list int) [ 4 ] !changes
@@ -270,7 +279,11 @@ let page_navigation_clamps_when_selection_wraps () =
   in
   render_with_layout tbl ~width:20 ~height:4;
   let changes = ref [] in
-  Table.set_on_change tbl (Some (fun index -> changes := index :: !changes));
+  Table.set_on_change tbl
+    (Some
+       (fun index ->
+         Table.set_selected_row tbl index;
+         changes := index :: !changes));
   emit_key tbl (make_key Page_up);
   emit_key tbl (make_key Page_up);
   equal ~msg:"page up clamps at the first row" int 0 (Table.selected_row tbl);
@@ -331,7 +344,7 @@ let navigation_on_empty_table () =
   emit_key tbl (make_key Down);
   emit_key tbl (make_key Up);
   equal ~msg:"no callbacks" (list int) [] !log;
-  equal ~msg:"index zero" int 0 (Table.selected_row tbl)
+  equal ~msg:"index zero" int (-1) (Table.selected_row tbl)
 
 let single_row_navigation () =
   let _t, tbl =
@@ -534,7 +547,7 @@ let set_rows_empty () =
   let _t, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
   Table.set_rows tbl [];
   equal ~msg:"zero count" int 0 (Table.row_count tbl);
-  equal ~msg:"zero index" int 0 (Table.selected_row tbl)
+  equal ~msg:"zero index" int (-1) (Table.selected_row tbl)
 
 let set_rows_preserves_valid_index () =
   let _t, tbl =
@@ -722,7 +735,7 @@ let apply_props_same_no_extra_render () =
   Table.apply_props tbl props;
   equal ~msg:"no extra schedule" int before !(t.schedule_count)
 
-let apply_props_preserves_uncontrolled_selection () =
+let apply_props_restores_declared_selection () =
   let _t, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
   Table.set_selected_row tbl 3;
   let log = ref [] in
@@ -730,8 +743,7 @@ let apply_props_preserves_uncontrolled_selection () =
   Table.apply_props tbl
     (Table.Props.make ~columns:sample_columns ~rows:sample_rows
        ~wrap_selection:true ());
-  equal ~msg:"selection survives unrelated prop change" int 3
-    (Table.selected_row tbl);
+  equal ~msg:"omitted selection declares zero" int 0 (Table.selected_row tbl);
   equal ~msg:"no callback echo" (list int) [] !log
 
 let apply_props_controlled_selection_is_silent () =
@@ -746,9 +758,61 @@ let apply_props_controlled_selection_is_silent () =
 
 (* ── Runner ── *)
 
+let proposals_do_not_drift () =
+  let _ctx, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
+  let proposals = ref [] in
+  Table.set_on_change tbl (Some (fun next -> proposals := next :: !proposals));
+  emit_key tbl (make_key Down);
+  emit_key tbl (make_key Down);
+  equal ~msg:"rejected events derive from accepted state" (list int) [ 1; 1 ]
+    !proposals;
+  equal ~msg:"proposal does not mutate selection" int 0 (Table.selected_row tbl);
+  Table.apply_props tbl
+    (Table.Props.make ~columns:sample_columns ~rows:sample_rows ~selected_row:2
+       ());
+  emit_key tbl (make_key Down);
+  equal ~msg:"transformed accepted state drives next proposal" (list int)
+    [ 3; 1; 1 ] !proposals
+
+let absent_selection_is_preserved () =
+  let context, tbl =
+    make_table ~columns:sample_columns ~rows:sample_rows ~selected_row:(-1)
+      ~border:false ~show_header:false ~selected_background:Ansi.Color.red ()
+  in
+  ignore context;
+  let activations = ref [] in
+  Table.set_on_activate tbl (Some (fun i -> activations := i :: !activations));
+  emit_key tbl (make_key Enter);
+  equal ~msg:"Enter does not activate an absent row" (list int) [] !activations;
+  with_layout tbl ~width:30 ~height:5;
+  let grid = make_grid ~width:30 ~height:5 () in
+  Renderable.Private.render_full (Table.node tbl) ~grid ~delta:0.;
+  for i = 0 to 149 do
+    match (Matrix_grid.get_style grid i).bg with
+    | Some color ->
+        is_false ~msg:"no selected background"
+          (Ansi.Color.equal color Ansi.Color.red)
+    | None -> ()
+  done;
+  emit_key tbl (make_key ~shift:true Down);
+  equal ~msg:"first Down selects first even with a larger step" int 0
+    (Table.selected_row tbl);
+  Table.apply_props tbl
+    (Table.Props.make ~columns:sample_columns ~rows:sample_rows
+       ~selected_row:(-1) ~border:false ~show_header:false ());
+  emit_key tbl (make_key Up);
+  equal ~msg:"first Up selects last without wrapping" int 4
+    (Table.selected_row tbl);
+  Table.set_selected_row tbl (-1);
+  emit_mouse tbl (mouse_down ~x:5 ~y:1);
+  equal ~msg:"click selects a valid row from absence" int 1
+    (Table.selected_row tbl)
+
 let () =
   run "mosaic.table"
     [
+      test "proposals do not drift" proposals_do_not_drift;
+      test "absent selection is preserved" absent_selection_is_preserved;
       group "Props"
         [
           test "default values" props_defaults;
@@ -768,7 +832,7 @@ let () =
           test "is focusable" create_is_focusable;
           test "is buffered" create_is_buffered;
           test "clamps initial index" create_clamps_initial_index;
-          test "empty rows index zero" create_empty_rows_index_zero;
+          test "empty rows have no selection" create_empty_rows_has_no_selection;
         ];
       group "Selection"
         [
@@ -870,7 +934,7 @@ let () =
           test "updates all properties" apply_props_updates;
           test "same data no extra render" apply_props_same_no_extra_render;
           test "preserves uncontrolled selection"
-            apply_props_preserves_uncontrolled_selection;
+            apply_props_restores_declared_selection;
           test "controlled selection is silent"
             apply_props_controlled_selection_is_silent;
         ];

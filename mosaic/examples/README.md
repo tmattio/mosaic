@@ -50,7 +50,7 @@ and the quit pattern.
 
 ### `02-text` – Styled text
 
-Rich text rendering with styled fragments. Shows colors (foreground/background),
+Text rendering with labelled styling arguments. Shows colors (foreground/background),
 text attributes (bold, italic, underline), and different wrap modes.
 
 ### `03-spinner` – Loading indicators
@@ -139,14 +139,14 @@ fill via `Sub.on_tick`, color customization, and start/pause control.
 
 Note editor with a `textarea` widget. Shows multi-line editing with
 word/character/no wrapping modes (toggle with Ctrl+W), placeholder text,
-cursor blinking, and `on_input`/`on_submit` callbacks. Status bar displays
+cursor blinking, and model-owned `Editor.t` and `on_change`/`on_submit` callbacks. Status bar displays
 character, word, and line counts.
 
 ### `19-tree` – Hierarchical tree
 
 File-system-like tree browser with nested items and expand/collapse navigation.
 Demonstrates the `tree` widget with guide lines (rounded and single styles),
-`on_change`/`on_activate`/`on_expand` callbacks, custom icon and guide colors,
+model-owned `Tree.State.t` with `on_change`/`on_activate` callbacks, custom icon and guide colors,
 and an info panel showing selection state.
 
 ### `20-async` – Async operations

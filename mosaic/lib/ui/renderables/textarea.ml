@@ -44,32 +44,28 @@ let key_binding = Edit_surface.key_binding
 
 module Props = Edit_surface.Props
 
-let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
-    ?selection ?spans ?ghost_text ?ghost_text_color ?placeholder ?wrap
-    ?text_color ?background_color ?focused_text_color ?focused_background_color
+let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
+    ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
+    ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
-    ?key_aliases ?on_input ?on_change ?on_submit ?on_cursor () =
+    ?key_aliases ~on_change ?on_submit () =
   Edit_surface.create ~parent ?index ?id ?style ?visible ?z_index ?opacity
-    ?value ?cursor ?selection ?spans ?ghost_text ?ghost_text_color ?placeholder
-    ?wrap ?text_color ?background_color ?focused_text_color
-    ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
-    ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
-    ?key_bindings ?key_aliases ?on_input ?on_change ?on_submit ?on_cursor ()
+    ~state ?spans ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
+    ?background_color ?focused_text_color ?focused_background_color
+    ?placeholder_color ?selection_color ?selection_fg ?cursor_style
+    ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
+    ?key_aliases ~on_change ?on_submit ()
 
 let node = Edit_surface.node
-let buffer = Edit_surface.buffer
+let state = Edit_surface.state
 let surface = Edit_surface.surface
 let value = Edit_surface.value
 let cursor = Edit_surface.cursor
 let selection = Edit_surface.selection
-let set_value = Edit_surface.set_value
-let edit = Edit_surface.edit
 let apply_props = Edit_surface.apply_props
-let set_on_input = Edit_surface.set_on_input
 let set_on_change = Edit_surface.set_on_change
 let set_on_submit = Edit_surface.set_on_submit
-let set_on_cursor = Edit_surface.set_on_cursor
 let handle_paste = Edit_surface.handle_paste
 
 let pp ppf t =

@@ -388,6 +388,7 @@ let make_culled_transcript ?(rows = 40) ?(vw = 20) ?(vh = 5) t =
     Scroll_box.create ~parent:(Renderer.root t) ~style:box_style
       ~show_scrollbars:false ()
   in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let row_style =
     Toffee.Style.default
     |> Toffee.Style.set_width (Toffee.Style.Dimension.length (Float.of_int vw))
@@ -596,6 +597,7 @@ let zero_width_wrapper_keeps_its_overflowing_row () =
         |> Toffee.Style.set_height (dim 0))
       ~show_scrollbars:false ()
   in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let wrapper =
     Renderable.create ~parent:(Scroll_box.node sb)
       ~style:
@@ -635,6 +637,7 @@ let descendant_reaching_the_viewport_survives_its_offscreen_parent () =
         |> Toffee.Style.set_height (dim 3))
       ~show_scrollbars:false ()
   in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let rows =
     Array.init 8 (fun i ->
         row ~parent:(Scroll_box.node sb) ~width:20 (Printf.sprintf "row-%d" i))
@@ -660,6 +663,7 @@ let make_hint_transcript ?(rows = 20) ?(vw = 20) ?(vh = 6) t =
     Scroll_box.create ~parent:(Renderer.root t) ~style:box_style
       ~show_scrollbars:false ()
   in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let row_style =
     Toffee.Style.default
     |> Toffee.Style.set_width (Toffee.Style.Dimension.length (Float.of_int vw))
@@ -726,6 +730,7 @@ let horizontal_scroll_disqualifies () =
     Scroll_box.create ~parent:(Renderer.root t) ~style:box_style ~scroll_x:true
       ~show_scrollbars:false ()
   in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let content_style =
     Toffee.Style.default
     |> Toffee.Style.set_width (Toffee.Style.Dimension.length 60.)
@@ -1524,6 +1529,7 @@ let scroll_on_dead_space_reaches_focused_scrollable () =
     |> Toffee.Style.set_height (Toffee.Style.Dimension.length 3.)
   in
   let sb = Scroll_box.create ~parent:(Renderer.root t) ~style () in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let content_style =
     Toffee.Style.default
     |> Toffee.Style.set_width (Toffee.Style.Dimension.length 8.)
@@ -1547,6 +1553,7 @@ let selection_drag_auto_scrolls_scroll_box () =
     |> Toffee.Style.set_height (Toffee.Style.Dimension.length 8.)
   in
   let sb = Scroll_box.create ~parent:(Renderer.root t) ~style () in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let content_style =
     Toffee.Style.default
     |> Toffee.Style.set_width (Toffee.Style.Dimension.length 18.)
@@ -1582,6 +1589,7 @@ let selection_drag_auto_scrolls_scroll_box_when_pointer_leaves_it () =
     |> Toffee.Style.set_height (Toffee.Style.Dimension.length 8.)
   in
   let sb = Scroll_box.create ~parent:(Renderer.root t) ~style () in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let content_style =
     Toffee.Style.default
     |> Toffee.Style.set_width (Toffee.Style.Dimension.length 18.)
@@ -1611,6 +1619,7 @@ let selection_release_after_leaving_scroll_box_goes_to_anchor_ancestors () =
     |> Toffee.Style.set_height (Toffee.Style.Dimension.length 8.)
   in
   let sb = Scroll_box.create ~parent:(Renderer.root t) ~style () in
+  Scroll_box.set_on_scroll sb (Some (Scroll_box.set_scroll sb));
   let content_style =
     Toffee.Style.default
     |> Toffee.Style.set_width (Toffee.Style.Dimension.length 18.)
@@ -1687,9 +1696,267 @@ let click_on_non_selectable_clears_selection () =
 
 (* ── Run ── *)
 
+let geometry_changes_route_mouse_before_paint () =
+  let renderer = make_renderer () in
+  let node =
+    make_child ~parent:(Renderer.root renderer) ~x:0 ~y:0 ~w:5 ~h:3 ()
+  in
+  let presses = ref 0 in
+  Renderable.on_mouse node (fun event ->
+      match Event.Mouse.kind event with Down _ -> incr presses | _ -> ());
+  do_frame ~width:30 ~height:6 renderer;
+  let inset = Toffee.Style.Length_percentage_auto.length in
+  Renderable.set_style node
+    (Renderable.style node
+    |> Toffee.Style.set_inset
+         {
+           left = inset 10.;
+           top = inset 0.;
+           right = Toffee.Style.Length_percentage_auto.auto;
+           bottom = Toffee.Style.Length_percentage_auto.auto;
+         });
+  Renderer.prepare_layout renderer ~width:30 ~height:6;
+  dispatch_mouse renderer (mouse_press ~x:11 ~y:1 ());
+  dispatch_mouse renderer (mouse_press ~x:1 ~y:1 ());
+  equal ~msg:"fresh bounds are used without painting" int 1 !presses
+
+let layout_updates_settle_before_first_paint () =
+  let renderer = make_renderer () in
+  let child =
+    make_child ~parent:(Renderer.root renderer) ~x:0 ~y:0 ~w:1 ~h:1 ()
+  in
+  let resized = ref false and frames = ref 0 and painted_widths = ref [] in
+  Renderable.set_live child true;
+  Renderable.set_on_frame child (Some (fun _ ~delta:_ -> incr frames));
+  Renderable.set_on_update child
+    (Some
+       (fun node ~delta:_ ->
+         if not !resized then begin
+           resized := true;
+           Renderable.set_style node
+             (Renderable.style node
+             |> Toffee.Style.set_width (Toffee.Style.Dimension.length 5.))
+         end));
+  Renderable.set_render child (fun node grid ~delta:_ ->
+      painted_widths := Renderable.width node :: !painted_widths;
+      Matrix_grid.draw_text grid ~x:0 ~y:0 ~text:"ready");
+  Renderer.render_frame renderer ~width:8 ~height:3 ~delta:16.;
+  equal ~msg:"first paint uses settled geometry" (list int) [ 5 ]
+    !painted_widths;
+  equal ~msg:"layout retries do not advance live animation twice" int 1 !frames;
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
+  equal ~msg:"first frame contains final content" string "ready"
+    (String.trim (Matrix_grid.to_text grid))
+
+let layout_preparation_does_not_advance_live_widgets () =
+  let renderer = make_renderer () in
+  let child =
+    make_child ~parent:(Renderer.root renderer) ~x:0 ~y:0 ~w:1 ~h:1 ()
+  in
+  let deltas = ref [] in
+  Renderable.set_live child true;
+  Renderable.set_on_frame child
+    (Some (fun _ ~delta -> deltas := delta :: !deltas));
+  Renderer.prepare_layout renderer ~width:8 ~height:3;
+  Renderer.prepare_layout renderer ~width:10 ~height:4;
+  equal ~msg:"layout-only synchronization does not tick animation"
+    (list float_exact) [] !deltas;
+  Renderer.render_frame renderer ~width:10 ~height:4 ~delta:16.;
+  equal ~msg:"one actual frame delivers one animation delta" (list float_exact)
+    [ 16. ] !deltas
+
+let scrollbar_geometry_settles_before_next_input () =
+  let renderer = make_renderer () in
+  let style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 8.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 3.)
+  in
+  let box = Scroll_box.create ~parent:(Renderer.root renderer) ~style () in
+  let row_style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 7.)
+    |> Toffee.Style.set_height (Toffee.Style.Dimension.length 1.)
+    |> Toffee.Style.set_flex_shrink 0.
+  in
+  let add_row i =
+    ignore
+      (Text.create ~parent:(Scroll_box.node box) ~style:row_style
+         ~content:(Printf.sprintf "row %d" i)
+         ~selectable:false ()
+        : Text.t)
+  in
+  add_row 0;
+  do_frame ~width:8 ~height:3 renderer;
+  equal ~msg:"initial content fits without a scrollbar" int 8
+    (Scroll_box.viewport_width box);
+  for i = 1 to 5 do
+    add_row i
+  done;
+  let bar_moves = ref 0 in
+  Renderable.on_mouse
+    (Scroll_bar.node (Scroll_box.vertical_bar box))
+    (fun event ->
+      match Event.Mouse.kind event with Move -> incr bar_moves | _ -> ());
+  Renderer.prepare_layout renderer ~width:8 ~height:3;
+  equal ~msg:"scrollbar reveal is resolved before input" int 7
+    (Scroll_box.viewport_width box);
+  dispatch_mouse renderer (mouse_motion ~x:7 ~y:1 ());
+  equal ~msg:"next mouse event reaches the newly allocated scrollbar" int 1
+    !bar_moves
+
+let paste_focus_change_suppresses_old_default () =
+  let renderer = make_renderer () in
+  let parent = Renderer.root renderer in
+  let first = make_child ~parent ~x:0 ~y:0 ~w:5 ~h:1 ~focusable:true () in
+  let second = make_child ~parent ~x:6 ~y:0 ~w:5 ~h:1 ~focusable:true () in
+  let first_edits = ref 0 and second_edits = ref 0 in
+  Renderable.set_paste_handler first (Some (fun _ -> incr first_edits));
+  Renderable.set_paste_handler second (Some (fun _ -> incr second_edits));
+  Renderable.on_paste first (fun _ ->
+      ignore (Renderer.focus renderer second : bool));
+  ignore (Renderer.focus renderer first : bool);
+  dispatch_paste renderer "first";
+  equal ~msg:"old focused editor must not consume paste after interception" int
+    0 !first_edits;
+  equal ~msg:"an in-flight event is not retargeted" int 0 !second_edits;
+  dispatch_paste renderer "second";
+  equal ~msg:"next event uses accepted focus" int 1 !second_edits
+
+let accepted_focus_does_not_retarget_press () =
+  let renderer = make_renderer () in
+  let parent = Renderer.root renderer in
+  let underneath = make_child ~parent ~x:0 ~y:0 ~w:5 ~h:2 ~focusable:true () in
+  let target = make_child ~parent ~x:0 ~y:0 ~w:5 ~h:2 ~focusable:true () in
+  let received = record_mouse underneath in
+  Renderable.Private.set_focus_request target
+    (Some
+       (fun () ->
+         ignore (Renderer.focus renderer target : bool);
+         let inset = Toffee.Style.Length_percentage_auto.length in
+         Renderable.set_style target
+           (Renderable.style target
+           |> Toffee.Style.set_inset
+                {
+                  left = inset 10.;
+                  top = inset 0.;
+                  right = Toffee.Style.Length_percentage_auto.auto;
+                  bottom = Toffee.Style.Length_percentage_auto.auto;
+                });
+         Renderer.prepare_layout renderer ~width:20 ~height:4));
+  do_frame ~width:20 ~height:4 renderer;
+  List.iter
+    (fun mouse ->
+      let event = Renderer.dispatch_mouse ~autofocus:false renderer mouse in
+      is_true ~msg:"retargeted gesture suppressed"
+        (Event.Mouse.default_prevented event))
+    [
+      mouse_press ~x:1 ~y:1 ();
+      mouse_motion ~left:true ~x:1 ~y:1 ();
+      mouse_release ~x:1 ~y:1 ();
+    ];
+  equal ~msg:"underlying target receives no part of rejected gesture" int 0
+    (List.length !received)
+
+let selection_cleanup_revalidates_focus_target () =
+  List.iter
+    (fun change ->
+      let renderer = make_renderer () in
+      let parent = Renderer.root renderer in
+      let previous =
+        make_child ~parent ~x:0 ~y:0 ~w:5 ~h:2 ~focusable:true ()
+      in
+      let target = make_child ~parent ~x:10 ~y:0 ~w:5 ~h:2 ~focusable:true () in
+      let armed = ref false in
+      Renderable.set_selection previous
+        ~should_start:(fun ~x:_ ~y:_ -> true)
+        ~on_change:(fun selection ->
+          if !armed && Option.is_none selection then begin
+            armed := false;
+            (match change with
+            | `Hide -> Renderable.set_visible target false
+            | `Destroy -> Renderable.destroy_recursively target
+            | `Refocus | `Refocus_existing ->
+                ignore (Renderer.focus renderer previous : bool));
+            Renderer.prepare_layout renderer ~width:20 ~height:4
+          end;
+          true)
+        ~clear:(fun () -> ())
+        ~get_text:(fun () -> "");
+      Renderable.set_selection target
+        ~should_start:(fun ~x:_ ~y:_ -> true)
+        ~on_change:(fun _ -> true)
+        ~clear:(fun () -> ())
+        ~get_text:(fun () -> "");
+      Renderable.Private.set_focus_request target
+        (Some (fun () -> ignore (Renderer.focus renderer target : bool)));
+      do_frame ~width:20 ~height:4 renderer;
+      dispatch_mouse renderer (mouse_press ~x:1 ~y:1 ());
+      if change = `Refocus_existing then
+        ignore (Renderer.focus renderer target : bool);
+      armed := true;
+      let received = record_mouse target in
+      let event =
+        Renderer.dispatch_mouse ~autofocus:false renderer
+          (mouse_press ~x:11 ~y:1 ())
+      in
+      is_true ~msg:"cleanup invalidates the press"
+        (Event.Mouse.default_prevented event);
+      is_none ~msg:"no selection starts on the invalidated target"
+        (Renderer.selection renderer);
+      equal ~msg:"invalidated target receives no mouse press" int 0
+        (List.length !received))
+    [ `Hide; `Destroy; `Refocus; `Refocus_existing ]
+
+let selection_notification_revalidates_focus_target () =
+  let renderer = make_renderer () in
+  let parent = Renderer.root renderer in
+  let modal = make_child ~parent ~x:10 ~y:0 ~w:5 ~h:2 ~focusable:true () in
+  let target = make_child ~parent ~x:0 ~y:0 ~w:5 ~h:2 ~focusable:true () in
+  Renderable.set_selection target
+    ~should_start:(fun ~x:_ ~y:_ -> true)
+    ~on_change:(fun selection ->
+      if Option.is_some selection then
+        ignore (Renderer.focus renderer modal : bool);
+      true)
+    ~clear:(fun () -> ())
+    ~get_text:(fun () -> "");
+  Renderable.Private.set_focus_request target
+    (Some (fun () -> ignore (Renderer.focus renderer target : bool)));
+  let received = record_mouse target in
+  do_frame ~width:20 ~height:4 renderer;
+  List.iter
+    (fun mouse ->
+      let event = Renderer.dispatch_mouse ~autofocus:false renderer mouse in
+      is_true ~msg:"selection callback invalidates the gesture"
+        (Event.Mouse.default_prevented event))
+    [
+      mouse_press ~x:1 ~y:1 ();
+      mouse_motion ~left:true ~x:2 ~y:1 ();
+      mouse_release ~x:2 ~y:1 ();
+    ];
+  is_none ~msg:"invalidated selection is cleared" (Renderer.selection renderer);
+  equal ~msg:"target receives no mouse gesture" int 0 (List.length !received)
+
 let () =
   run "mosaic.renderer"
     [
+      test "accepted focus does not retarget press"
+        accepted_focus_does_not_retarget_press;
+      test "selection cleanup revalidates focus target"
+        selection_cleanup_revalidates_focus_target;
+      test "selection notification revalidates focus target"
+        selection_notification_revalidates_focus_target;
+      test "mouse uses changed geometry before paint"
+        geometry_changes_route_mouse_before_paint;
+      test "layout updates settle before first paint"
+        layout_updates_settle_before_first_paint;
+      test "layout preparation never advances live widgets"
+        layout_preparation_does_not_advance_live_widgets;
+      test "scrollbar geometry settles before next input"
+        scrollbar_geometry_settles_before_next_input;
+      test "paste focus change suppresses old default"
+        paste_focus_change_suppresses_old_default;
       group "Lifecycle"
         [
           test "creates with default style" creates_with_default_style;

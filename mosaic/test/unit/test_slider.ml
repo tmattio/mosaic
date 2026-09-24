@@ -12,6 +12,11 @@ let make_slider ?orientation ?value ?min ?max ?viewport_size ?track_color
     Slider.create ~parent:root ?orientation ?value ?min ?max ?viewport_size
       ?track_color ?thumb_color ?on_change ()
   in
+  Slider.set_on_change slider
+    (Some
+       (fun value ->
+         Slider.set_value slider value;
+         Option.iter (fun f -> f value) on_change));
   (t, slider)
 
 let render_slider slider ~width ~height =
@@ -161,17 +166,15 @@ let set_value_fires_on_change () =
   let changed = ref None in
   let _t, slider = make_slider ~on_change:(fun v -> changed := Some v) () in
   Slider.set_value slider 42.;
-  match !changed with
-  | Some v -> is_true ~msg:"value = 42" (float_eq v 42.)
-  | None -> fail "on_change not fired"
+  equal ~msg:"accepted setter is silent" (option float_exact) None !changed
 
 let set_value_noop_same_value () =
   let count = ref 0 in
   let _t, slider = make_slider ~on_change:(fun _ -> incr count) () in
   Slider.set_value slider 50.;
-  equal ~msg:"fired once" int 1 !count;
+  equal ~msg:"setter is silent" int 0 !count;
   Slider.set_value slider 50.;
-  equal ~msg:"still once" int 1 !count
+  equal ~msg:"setter remains silent" int 0 !count
 
 let set_min_clamps_value () =
   let _t, slider = make_slider ~value:20. () in
@@ -199,9 +202,8 @@ let set_min_fires_on_change_when_clamping () =
     make_slider ~value:20. ~on_change:(fun v -> changed := Some v) ()
   in
   Slider.set_min slider 30.;
-  match !changed with
-  | Some v -> is_true ~msg:"clamped to 30" (float_eq v 30.)
-  | None -> fail "on_change not fired"
+  equal ~msg:"accepted range update is silent" (option float_exact) None
+    !changed
 
 let set_max_fires_on_change_when_clamping () =
   let changed = ref None in
@@ -209,9 +211,8 @@ let set_max_fires_on_change_when_clamping () =
     make_slider ~value:80. ~on_change:(fun v -> changed := Some v) ()
   in
   Slider.set_max slider 60.;
-  match !changed with
-  | Some v -> is_true ~msg:"clamped to 60" (float_eq v 60.)
-  | None -> fail "on_change not fired"
+  equal ~msg:"accepted range update is silent" (option float_exact) None
+    !changed
 
 (* ── Setters ── *)
 
@@ -284,14 +285,14 @@ let set_on_change_replaces_callback () =
   let _t, slider =
     make_slider ~on_change:(fun _ -> incr first_count) ~value:0. ()
   in
-  Slider.set_value slider 10.;
+  let node = Slider.node slider in
+  layout_node node ~x:0 ~y:0 ~width:20 ~height:1;
+  Renderable.Private.emit_mouse node (mouse_down ~x:5 ~y:0);
   equal ~msg:"first fired" int 1 !first_count;
   Slider.set_on_change slider (Some (fun _ -> incr second_count));
-  Slider.set_value slider 20.;
+  Renderable.Private.emit_mouse node (mouse_drag ~x:10 ~y:0);
   equal ~msg:"first not fired again" int 1 !first_count;
   equal ~msg:"second fired" int 1 !second_count
-
-(* ── apply_props ── *)
 
 let apply_props_replaces_all () =
   let _t, slider = make_slider ~value:50. () in
@@ -323,18 +324,18 @@ let apply_props_does_not_fire_on_change () =
   is_true ~msg:"value changed" (float_eq (Slider.value slider) 50.);
   is_false ~msg:"on_change not fired" !fired
 
-let apply_props_preserves_uncontrolled_value () =
+let apply_props_restores_declared_value () =
   let _t, slider = make_slider () in
   Slider.set_value slider 42.;
   Slider.apply_props slider (Slider.Props.make ~thumb_color:Ansi.Color.red ());
-  is_true ~msg:"value survives unrelated prop change"
-    (float_eq (Slider.value slider) 42.)
+  is_true ~msg:"default accepted value replaces prior value"
+    (float_eq (Slider.value slider) 0.)
 
-let apply_props_reclamps_uncontrolled_value () =
+let apply_props_clamps_declared_value () =
   let _t, slider = make_slider () in
   Slider.set_value slider 90.;
-  Slider.apply_props slider (Slider.Props.make ~min:0. ~max:50. ());
-  is_true ~msg:"kept value reclamped to the new range"
+  Slider.apply_props slider (Slider.Props.make ~value:90. ~min:0. ~max:50. ());
+  is_true ~msg:"declared value clamps to the new range"
     (float_eq (Slider.value slider) 50.)
 
 (* ── Virtual Thumb Sizing ── *)
@@ -513,9 +514,35 @@ let pp_contains_value () =
 
 (* ── Runner ── *)
 
+let rejected_drag_proposals () =
+  let _ctx, slider = make_slider ~value:0. () in
+  let node = Slider.node slider in
+  layout_node node ~x:0 ~y:0 ~width:20 ~height:1;
+  let proposals = ref [] in
+  Slider.set_on_change slider
+    (Some (fun value -> proposals := value :: !proposals));
+  Renderable.Private.emit_mouse node (mouse_down ~x:10 ~y:0);
+  Renderable.Private.emit_mouse node (mouse_drag ~x:10 ~y:0);
+  equal ~msg:"rejected drag never moves accepted thumb" float_exact 0.
+    (Slider.value slider);
+  Renderable.Private.emit_mouse node (mouse_drag ~x:10 ~y:0);
+  (match !proposals with
+  | [ second_drag; first_drag; click ] ->
+      equal ~msg:"track click proposes midpoint" float_exact 50. click;
+      equal ~msg:"repeated rejected drags propose the same value" float_exact
+        first_drag second_drag;
+      satisfies ~claim:"drag stays near the clicked midpoint" float_exact
+        (fun value -> Float.abs (value -. click) < 2.)
+        first_drag
+  | _ -> fail "expected one click and two drag proposals");
+  Slider.apply_props slider (Slider.Props.make ~value:25. ());
+  equal ~msg:"application accepts a transformed value" float_exact 25.
+    (Slider.value slider)
+
 let () =
   run "mosaic.slider"
     [
+      test "rejected drag proposals" rejected_drag_proposals;
       group "Props"
         [
           test "default values" props_defaults;
@@ -577,9 +604,8 @@ let () =
           test "schedules render" apply_props_schedules_render;
           test "does not fire on_change" apply_props_does_not_fire_on_change;
           test "preserves uncontrolled value"
-            apply_props_preserves_uncontrolled_value;
-          test "reclamps uncontrolled value"
-            apply_props_reclamps_uncontrolled_value;
+            apply_props_restores_declared_value;
+          test "reclamps uncontrolled value" apply_props_clamps_declared_value;
         ];
       group "Virtual thumb sizing"
         [

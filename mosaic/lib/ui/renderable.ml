@@ -120,6 +120,7 @@ and node = {
   mutable focusable : bool;
   mutable focused : bool;
   mutable cursor_provider : (node -> cursor option) option;
+  mutable focus_request : (unit -> unit) option;
   mutable focus_handler : (node -> unit) option;
   mutable blur_handler : (node -> unit) option;
   (* Events *)
@@ -140,6 +141,7 @@ and node = {
   mutable on_update : (node -> delta:float -> unit) option;
   mutable on_frame : (node -> delta:float -> unit) option;
   mutable on_resize : (node -> unit) option;
+  mutable size_observer : (node -> unit) option;
   mutable on_lifecycle_pass : (node -> unit) option;
   mutable last_width : int;
   mutable last_height : int;
@@ -340,6 +342,7 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     focusable = false;
     focused = false;
     cursor_provider = None;
+    focus_request = None;
     focus_handler = None;
     blur_handler = None;
     mouse_handlers = [];
@@ -354,6 +357,7 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     on_update = None;
     on_frame = None;
     on_resize = None;
+    size_observer = None;
     on_lifecycle_pass = None;
     last_width = 0;
     last_height = 0;
@@ -683,6 +687,7 @@ let destroy t =
     t.on_update <- None;
     t.on_frame <- None;
     t.on_resize <- None;
+    t.size_observer <- None;
     t.on_lifecycle_pass <- None;
     t.cursor_provider <- None;
     let cleanup = t.cleanup in
@@ -941,8 +946,16 @@ let set_default_key_handler t handler = t.default_key_handler <- handler
 let set_paste_handler t handler = t.paste_handler <- handler
 
 let rec emit_mouse t event =
-  List.iter (fun handler -> handler event) t.mouse_handlers;
-  if not (Event.Mouse.propagation_stopped event) then
+  let rec run = function
+    | [] -> ()
+    | handler :: rest ->
+        if (not t.destroyed) && not (Event.Mouse.propagation_stopped event) then begin
+          handler event;
+          run rest
+        end
+  in
+  run t.mouse_handlers;
+  if (not t.destroyed) && not (Event.Mouse.propagation_stopped event) then
     match t.parent with Some p -> emit_mouse p event | None -> ()
 
 let emit_key t event =
@@ -950,7 +963,8 @@ let emit_key t event =
     | [] -> ()
     | handler :: rest ->
         handler event;
-        if not (Event.Key.default_prevented event) then run rest
+        if (not t.destroyed) && not (Event.Key.propagation_stopped event) then
+          run rest
   in
   run t.key_handlers
 
@@ -958,15 +972,20 @@ let emit_default_key t event =
   Option.iter (fun handler -> handler event) t.default_key_handler
 
 let emit_paste t event =
+  let was_focused = t.focused in
   let rec run = function
     | [] -> ()
     | handler :: rest ->
         handler event;
-        if not (Event.Paste.default_prevented event) then run rest
+        if (not t.destroyed) && not (Event.Paste.propagation_stopped event) then
+          run rest
   in
   run t.paste_handlers;
-  if not (Event.Paste.default_prevented event) then
-    Option.iter (fun handler -> handler event) t.paste_handler
+  if
+    (not t.destroyed)
+    && ((not was_focused) || t.focused)
+    && not (Event.Paste.default_prevented event)
+  then Option.iter (fun handler -> handler event) t.paste_handler
 
 (* ───── Selection ───── *)
 
@@ -1066,14 +1085,15 @@ let iter_children_in_viewport ~(parent : t) ~(viewport : Grid.region)
         child.cull_marked <- false;
         f child))
 
-let pre_render_update t ~delta =
+let pre_render_update ?(frame = true) t ~delta =
   Option.iter (fun f -> f t ~delta) t.on_update;
-  if t.live then Option.iter (fun f -> f t ~delta) t.on_frame;
+  if frame && t.live then Option.iter (fun f -> f t ~delta) t.on_frame;
   let lw = width t and lh = height t in
   if lw <> t.last_width || lh <> t.last_height then (
     t.last_width <- lw;
     t.last_height <- lh;
-    Option.iter (fun f -> f t) t.on_resize)
+    Option.iter (fun f -> f t) t.on_resize;
+    Option.iter (fun f -> f t) t.size_observer)
 
 let render_node t grid ~delta = t.render t grid ~delta
 
@@ -1137,6 +1157,15 @@ let pp ppf t =
 (* ───── Private ───── *)
 
 module Private = struct
+  let set_focus_request t callback = t.focus_request <- callback
+
+  let request_focus t =
+    match t.focus_request with
+    | Some callback when not t.destroyed ->
+        callback ();
+        true
+    | None | Some _ -> false
+
   type nonrec context = context = {
     tree : unit Toffee.tree;
     schedule : unit -> unit;
@@ -1200,6 +1229,7 @@ module Private = struct
   let focus_direct = focus_direct
   let blur_direct = blur_direct
   let live_count t = t.live_count
+  let set_size_observer t callback = t.size_observer <- callback
   let set_on_live_count_change t cb = t.live_count_change <- cb
   let set_lifecycle_pass = set_lifecycle_pass
   let run_lifecycle_pass = run_lifecycle_pass

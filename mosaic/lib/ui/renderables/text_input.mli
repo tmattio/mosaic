@@ -1,18 +1,10 @@
-(** Single-line text input widget.
+(** Single-line input from application-owned {!Editor.t} values.
 
-    A text input provides keyboard-driven single-line editing with horizontal
-    scrolling, selection highlighting, cursor display, and placeholder text.
-    Supports undo/redo, word-level navigation, and configurable visual styling.
-    Newlines are always stripped from content.
-
-    The widget fires four callbacks:
-    - [on_input]: after every text change (keystroke-level).
-    - [on_change]: when the committed value differs on blur or submit. See
-      {!section:callbacks}.
-    - [on_submit]: when Enter is pressed.
-    - [on_cursor]: when cursor position or selection changes.
-
-    See {!Textarea} for multi-line editing. *)
+    Default events propose complete states through [on_change]. The displayed
+    text, caret, selection and undo history change only when the owner applies
+    accepted state. Declared text must not contain CR or LF; invalid
+    declarations raise [Invalid_argument]. Paste strips ANSI escapes and
+    newlines. Undo and redo that would restore multiline text are ignored. *)
 
 type t
 (** The type for single-line text inputs. *)
@@ -80,11 +72,8 @@ val create :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?value:string ->
-  ?cursor:int ->
-  ?selection:(int * int) option ->
+  state:Editor.t ->
   ?placeholder:string ->
-  ?max_length:int ->
   ?text_color:Ansi.Color.t ->
   ?background_color:Ansi.Color.t ->
   ?focused_text_color:Ansi.Color.t ->
@@ -99,50 +88,24 @@ val create :
   ?show_cursor:bool ->
   ?key_bindings:key_binding list ->
   ?key_aliases:(string * string) list ->
-  ?on_input:(string -> unit) ->
-  ?on_change:(string -> unit) ->
+  on_change:(Editor.t -> unit) ->
   ?on_submit:(string -> unit) ->
-  ?on_cursor:(cursor:int -> selection:(int * int) option -> unit) ->
   unit ->
   t
-(** [create ~parent ()] is a text input attached to [parent] with:
-    - [value]: initial text content. Newlines are stripped. Defaults to [""].
-    - [cursor]: optional controlled cursor grapheme offset.
-    - [selection]: optional controlled selection range. When provided as
-      [Some (lo, hi)], selection is normalized/clamped.
-    - [placeholder]: text shown when empty. Defaults to [""].
-    - [max_length]: maximum grapheme cluster count. Defaults to [1000].
-    - [text_color]: unfocused text color. Defaults to {!Ansi.Color.white}.
-    - [background_color]: unfocused background. Defaults to
-      {!Ansi.Color.transparent}.
-    - [focused_text_color]: focused text color. Defaults to {!Ansi.Color.white}.
-    - [focused_background_color]: focused background. Defaults to
-      {!Ansi.Color.transparent}.
-    - [placeholder_color]: placeholder text color. Defaults to
-      {!Ansi.Color.bright_black}.
-    - [selection_color]: selection background. Defaults to {!Ansi.Color.blue}.
-    - [selection_fg]: selection foreground. When [None], uses the normal text
-      color. Defaults to [None].
-    - [cursor_style]: cursor shape when focused. Defaults to [`Block].
-    - [cursor_color]: cursor color when focused. Defaults to
-      {!Ansi.Color.white}.
-    - [cursor_blinking]: whether the cursor blinks. Defaults to [true].
-    - [selectable]: whether mouse selection is enabled. Defaults to [true].
-    - [show_cursor]: whether the focused cursor is shown. Defaults to [true].
-    - [key_bindings]: custom bindings that override default bindings.
-    - [key_aliases]: custom key aliases merged with default keypad aliases.
-    - [on_input]: called after every text change.
-    - [on_change]: called when committed value changes (blur or submit).
-    - [on_submit]: called when Enter is pressed.
-    - [on_cursor]: called when cursor position or selection changes. *)
+(** [create ~parent ~state ~on_change ()] renders the accepted [state]. Default
+    editing events propose a complete next state through [on_change]; they do
+    not mutate the accepted editor. Apply new properties to accept a proposal.
+    [on_submit] reports accepted text. Focus and blur do not commit edits.
+    Raises [Invalid_argument] if [Editor.text state] contains CR or LF, before
+    attaching a renderable to [parent]. *)
 
 (** {1:accessors Accessors} *)
 
+val state : t -> Editor.t
+(** [state t] is the accepted editor. *)
+
 val node : t -> Renderable.t
 (** [node t] is the underlying renderable. *)
-
-val buffer : t -> Edit_buffer.t
-(** [buffer t] is the underlying edit buffer. *)
 
 (** {1:props Props} *)
 
@@ -152,11 +115,8 @@ module Props : sig
       diffing. *)
 
   val make :
-    ?value:string ->
-    ?cursor:int ->
-    ?selection:(int * int) option ->
+    state:Editor.t ->
     ?placeholder:string ->
-    ?max_length:int ->
     ?text_color:Ansi.Color.t ->
     ?background_color:Ansi.Color.t ->
     ?focused_text_color:Ansi.Color.t ->
@@ -173,23 +133,23 @@ module Props : sig
     ?key_aliases:(string * string) list ->
     unit ->
     t
-  (** [make ()] is a property set with the same defaults as {!val-create}. *)
+  (** [make ~state ()] describes [state] with the widget's visual defaults.
+      Raises [Invalid_argument] if [Editor.text state] contains CR or LF.
+      Validation uses the editor's cached logical-line index; caret-only changes
+      do not rescan the text. *)
 
   val default : t
-  (** [default] is [make ()]. *)
+  (** [default] is [make ~state:Editor.empty ()]. *)
 
   val equal : t -> t -> bool
-  (** [equal a b] is [true] iff [a] and [b] describe identical visual
-      properties. *)
+  (** [equal a b] is [true] iff [a] and [b] refer to the same editor value and
+      have equal visual properties. *)
 end
 
 val apply_props : t -> Props.t -> unit
-(** [apply_props t props] updates [t] to match [props]. [value] is authoritative
-    over the live edit buffer on every call, even when [props] equals the last
-    applied bundle. When the normalized value already matches, value
-    synchronization leaves cursor, selection, and undo state untouched;
-    separately controlled [cursor] and [selection] still apply. Requests a
-    render. *)
+(** [apply_props t props] installs the complete accepted editor and visual
+    properties. It does not emit proposals. Source indexes and geometry are
+    reused when only the caret or selection changes. *)
 
 (** {1:value Value} *)
 
@@ -203,37 +163,19 @@ val selection : t -> (int * int) option
 (** [selection t] is the active selection as normalized grapheme offsets, if
     any. *)
 
-val set_value : t -> string -> unit
-(** [set_value t s] replaces the text content with [s] (newlines stripped).
-    Ensures the cursor remains visible. *)
-
 (** {1:callbacks Callbacks} *)
 
-val set_on_input : t -> (string -> unit) option -> unit
-(** [set_on_input t f] sets the keystroke-level input callback. [None] clears
-    it. *)
-
-val set_on_change : t -> (string -> unit) option -> unit
-(** [set_on_change t f] sets the committed-value change callback. [None] clears
-    it.
-
-    The callback fires on blur or submit, only when the value has changed since
-    focus was gained (or since the last [on_change] firing). *)
+val set_on_change : t -> (Editor.t -> unit) -> unit
+(** [set_on_change t f] sets the complete-state proposal callback. *)
 
 val set_on_submit : t -> (string -> unit) option -> unit
-(** [set_on_submit t f] sets the Enter-key submit callback. [None] clears it.
-    Fires [on_change] before the submit callback. *)
-
-val set_on_cursor :
-  t -> (cursor:int -> selection:(int * int) option -> unit) option -> unit
-(** [set_on_cursor t f] sets the cursor/selection change callback. [None] clears
-    it. *)
+(** [set_on_submit t f] sets the submit notification. [None] clears it. *)
 
 (** {1:paste Paste} *)
 
 val handle_paste : t -> string -> unit
-(** [handle_paste t text] inserts [text] as if pasted, stripping ANSI escape
-    sequences and newlines. Fires [on_input] if the buffer changed. *)
+(** [handle_paste t text] proposes insertion of pasted text after stripping ANSI
+    escapes and newlines. *)
 
 (** {1:fmt Formatting} *)
 

@@ -83,24 +83,26 @@ let view model =
               box ~flex_direction:Column ~gap:(gap 1)
                 [
                   text (Printf.sprintf "Horizontal: %.0f%%" model.h_value);
-                  slider ~orientation:`Horizontal ~min:0. ~max:100.
-                    ~value:model.h_value ~viewport_size:10.
+                  slider
+                    ~size:{ width = px 30; height = px 1 }
+                    ~orientation:`Horizontal ~min:0. ~max:100.
+                    ~state:model.h_value ~viewport_size:10.
                     ~track_color:(Ansi.Color.grayscale ~level:5)
                     ~thumb_color:accent
-                    ~on_value_change:(fun v -> Some (Set_h v))
-                    ~size:{ width = px 30; height = px 1 }
+                    ~on_change:(fun v -> Set_h v)
                     ();
                 ];
               (* Vertical slider *)
               box ~flex_direction:Row ~gap:(gap 2) ~align_items:Center
                 [
                   text (Printf.sprintf "Vertical: %.0f%%" model.v_value);
-                  slider ~orientation:`Vertical ~min:0. ~max:100.
-                    ~value:model.v_value ~viewport_size:10.
+                  slider
+                    ~size:{ width = px 1; height = px 8 }
+                    ~orientation:`Vertical ~min:0. ~max:100.
+                    ~state:model.v_value ~viewport_size:10.
                     ~track_color:(Ansi.Color.grayscale ~level:5)
                     ~thumb_color:Ansi.Color.green
-                    ~on_value_change:(fun v -> Some (Set_v v))
-                    ~size:{ width = px 1; height = px 8 }
+                    ~on_change:(fun v -> Set_v v)
                     ();
                 ];
               (* Color sliders *)
@@ -113,12 +115,13 @@ let view model =
                       box ~flex_direction:Column ~align_items:Center
                         ~gap:(gap 1)
                         [
-                          slider ~orientation:`Vertical ~min:0. ~max:255.
-                            ~value:model.r
+                          slider
+                            ~size:{ width = px 1; height = px 5 }
+                            ~orientation:`Vertical ~min:0. ~max:255.
+                            ~state:model.r
                             ~track_color:(Ansi.Color.grayscale ~level:3)
                             ~thumb_color:Ansi.Color.red
-                            ~on_value_change:(fun v -> Some (Set_r v))
-                            ~size:{ width = px 1; height = px 5 }
+                            ~on_change:(fun v -> Set_r v)
                             ();
                           text "R";
                         ];
@@ -126,12 +129,13 @@ let view model =
                       box ~flex_direction:Column ~align_items:Center
                         ~gap:(gap 1)
                         [
-                          slider ~orientation:`Vertical ~min:0. ~max:255.
-                            ~value:model.g
+                          slider
+                            ~size:{ width = px 1; height = px 5 }
+                            ~orientation:`Vertical ~min:0. ~max:255.
+                            ~state:model.g
                             ~track_color:(Ansi.Color.grayscale ~level:3)
                             ~thumb_color:Ansi.Color.green
-                            ~on_value_change:(fun v -> Some (Set_g v))
-                            ~size:{ width = px 1; height = px 5 }
+                            ~on_change:(fun v -> Set_g v)
                             ();
                           text "G";
                         ];
@@ -139,12 +143,13 @@ let view model =
                       box ~flex_direction:Column ~align_items:Center
                         ~gap:(gap 1)
                         [
-                          slider ~orientation:`Vertical ~min:0. ~max:255.
-                            ~value:model.b
+                          slider
+                            ~size:{ width = px 1; height = px 5 }
+                            ~orientation:`Vertical ~min:0. ~max:255.
+                            ~state:model.b
                             ~track_color:(Ansi.Color.grayscale ~level:3)
                             ~thumb_color:Ansi.Color.blue
-                            ~on_value_change:(fun v -> Some (Set_b v))
-                            ~size:{ width = px 1; height = px 5 }
+                            ~on_change:(fun v -> Set_b v)
                             ();
                           text "B";
                         ];

@@ -14,7 +14,7 @@ let box_not_focusable_by_default () =
   | _ -> fail "expected Element"
 
 let input_focusable_by_default () =
-  match Vnode.input () with
+  match Vnode.input ~state:Editor.empty ~on_change:(Fun.const ()) () with
   | Vnode.Element { attrs; _ } -> is_true ~msg:"focusable" attrs.focusable
   | _ -> fail "expected Element"
 
@@ -73,14 +73,23 @@ let map_preserves_kind_identity () =
    messages to unit. Verify the transformed handler actually calls f. *)
 
 let map_transforms_on_key () =
-  let v : int Vnode.t = Vnode.box ~on_key:(fun _ -> 42) [] in
+  let v : int Vnode.t =
+    Vnode.box
+      ~on_key:(fun event ->
+        if
+          (Event.Key.data event).key = Matrix_input.Key.Char (Uchar.of_char 'a')
+        then Some 42
+        else None)
+      []
+  in
   let log = ref [] in
   let mapped : unit Vnode.t = Vnode.map (fun n -> log := n :: !log) v in
   match mapped with
   | Vnode.Element { handlers = { on_key = Some handler; _ }; _ } ->
       let fake_ev = Event.Key.of_input (Matrix_input.Key.of_char 'a') in
-      handler fake_ev;
-      equal ~msg:"handler ran" (list int) [ 42 ] !log
+      equal (option unit) (Some ()) (handler fake_ev);
+      is_none (handler (Event.Key.of_input (Matrix_input.Key.of_char 'b')));
+      equal ~msg:"only present messages reach the mapper" (list int) [ 42 ] !log
   | _ -> fail "expected on_key handler"
 
 let map_transforms_widget_callbacks () =
@@ -96,36 +105,39 @@ let map_transforms_widget_callbacks () =
       equal ~msg:"callback ran" (list int) [ 3 ] !log
   | _ -> fail "expected Slider_callbacks with on_value_change"
 
-let map_transforms_input_on_cursor_callback () =
+let map_transforms_input_on_change_callback () =
   let v : int Vnode.t =
-    Vnode.input ~on_cursor:(fun ~cursor ~selection:_ -> cursor) ()
+    Vnode.input ~state:Editor.empty ~on_change:Editor.cursor ()
   in
   let log = ref [] in
   let mapped : unit Vnode.t = Vnode.map (fun n -> log := n :: !log) v in
   match mapped with
   | Vnode.Element
-      { callbacks = Vnode.Input_callbacks { on_cursor = Some cb; _ }; _ } ->
-      cb ~cursor:7 ~selection:None;
-      equal ~msg:"on_cursor mapped" (list int) [ 7 ] !log
-  | _ -> fail "expected Input_callbacks with on_cursor"
+      { callbacks = Vnode.Input_callbacks { on_change = Some cb; _ }; _ } ->
+      cb (Editor.of_string "1234567");
+      equal ~msg:"complete editor mapped" (list int) [ 7 ] !log
+  | _ -> fail "expected Input_callbacks with on_change"
 
 let map_transforms_code_on_selection_callback () =
   let v : int Vnode.t =
-    Vnode.code ~on_selection:(function Some (a, b) -> a + b | None -> 0) "x"
+    Vnode.code
+      ~on_selection:(function Some (a, b) -> Some (a + b) | None -> Some 0)
+      "x"
   in
   let log = ref [] in
   let mapped : unit Vnode.t = Vnode.map (fun n -> log := n :: !log) v in
   match mapped with
   | Vnode.Element
       { callbacks = Vnode.Code_callbacks { on_selection = Some cb }; _ } ->
-      cb (Some (2, 3));
+      equal (option unit) (Some ()) (cb (Some (2, 3)));
       equal ~msg:"on_selection mapped" (list int) [ 5 ] !log
   | _ -> fail "expected Code_callbacks with on_selection"
 
 let map_transforms_markdown_on_selection_callback () =
   let v : int Vnode.t =
     Vnode.markdown
-      ~on_selection:(function Some text -> String.length text | None -> 0)
+      ~on_selection:(function
+        | Some text -> Some (String.length text) | None -> Some 0)
       "x"
   in
   let log = ref [] in
@@ -133,7 +145,7 @@ let map_transforms_markdown_on_selection_callback () =
   match mapped with
   | Vnode.Element
       { callbacks = Vnode.Markdown_callbacks { on_selection = Some cb }; _ } ->
-      cb (Some "hello");
+      equal (option unit) (Some ()) (cb (Some "hello"));
       equal ~msg:"on_selection mapped" (list int) [ 5 ] !log
   | _ -> fail "expected Markdown_callbacks with on_selection"
 
@@ -151,8 +163,8 @@ let map_embed_identity () =
 let viewport_switch_maps_both_branches () =
   let view : int Vnode.t =
     Vnode.viewport_switch ~at_least_width:80
-      ~wide:(Vnode.box ~on_key:(fun _ -> 1) [])
-      ~narrow:(Vnode.box ~on_key:(fun _ -> 2) [])
+      ~wide:(Vnode.box ~on_key:(fun _ -> Some 1) [])
+      ~narrow:(Vnode.box ~on_key:(fun _ -> Some 2) [])
   in
   let received = ref [] in
   let mapped =
@@ -160,7 +172,8 @@ let viewport_switch_maps_both_branches () =
   in
   let run_handler = function
     | Vnode.Element { handlers = { on_key = Some handler; _ }; _ } ->
-        handler (Event.Key.of_input (Matrix_input.Key.of_char 'a'))
+        equal (option unit) (Some ())
+          (handler (Event.Key.of_input (Matrix_input.Key.of_char 'a')))
     | _ -> fail "expected branch key handler"
   in
   match mapped with
@@ -247,8 +260,8 @@ let () =
         [
           test "transforms on_key" map_transforms_on_key;
           test "transforms widget callbacks" map_transforms_widget_callbacks;
-          test "transforms input on_cursor callback"
-            map_transforms_input_on_cursor_callback;
+          test "transforms complete input callback"
+            map_transforms_input_on_change_callback;
           test "transforms code on_selection callback"
             map_transforms_code_on_selection_callback;
           test "transforms markdown on_selection callback"

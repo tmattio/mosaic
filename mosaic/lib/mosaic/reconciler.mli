@@ -50,3 +50,7 @@ val unmount : t -> unit
 (** [unmount r] destroys all fibers and detaches all embedded nodes, leaving
     [container r] empty. Requests a render on [container r] after cleanup. [r]
     may be reused after unmounting. *)
+
+val focused : t -> Renderable.t option
+(** [focused t] is the visible element declared focused. Raises
+    [Invalid_argument] if several visible elements declare focus. *)

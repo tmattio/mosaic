@@ -17,6 +17,7 @@ type render_command =
 type pointer_state = {
   mutable position : (int * int) option;
   mutable modifiers : Input.Modifier.t;
+  mutable rejected_press : bool;
 }
 
 type selection_state = {
@@ -65,6 +66,9 @@ type t = {
   (* Render command buffer — reused across frames. *)
   mutable commands : render_command array;
   mutable cmd_len : int;
+  input_hits : Screen.Hit_grid.t;
+  mutable input_geometry : (int * int) option;
+  mutable input_hits_dirty : bool;
   (* Hover tracking *)
   mutable hover_node : Renderable.t option;
   mutable hover_num : int;
@@ -203,16 +207,19 @@ let clear_active_selection t =
   match t.selection_state.current with
   | None -> ()
   | Some _ ->
-      List.iter
-        (fun node ->
-          if not (Renderable.destroyed node) then (
-            ignore (Renderable.Private.emit_selection_changed node None : bool);
-            Renderable.Private.clear_selection node))
-        t.selection_state.touched_selectables;
+      let touched = t.selection_state.touched_selectables in
       t.selection_state.current <- None;
       t.selection_state.anchor_node <- None;
       t.selection_state.containers <- [];
-      t.selection_state.touched_selectables <- []
+      t.selection_state.touched_selectables <- [];
+      List.iter
+        (fun node ->
+          if not (Renderable.destroyed node) then begin
+            ignore (Renderable.Private.emit_selection_changed node None : bool);
+            if not (Renderable.destroyed node) then
+              Renderable.Private.clear_selection node
+          end)
+        touched
 
 let update_selection_state state ~x ~y ~target_node =
   match state.current with
@@ -329,6 +336,14 @@ let recheck_hover t =
               Renderable.Private.emit_mouse node ev
           | None -> ())
 
+let rec alive_visible node =
+  (not (Renderable.destroyed node))
+  && Renderable.visible node
+  &&
+  match Renderable.parent node with
+  | None -> true
+  | Some parent -> alive_visible parent
+
 (* ───── Auto-Focus ───── *)
 
 (* Auto-focus on ordinary left click, walking up to the nearest focusable
@@ -337,18 +352,65 @@ let recheck_hover t =
 let auto_focus_on_click t ~(modifiers : Input.Modifier.t) ~target_node ev =
   if (not modifiers.shift) && not (Event.Mouse.default_prevented ev) then
     match target_node with
-    | Some node -> (
+    | Some node when alive_visible node -> (
         match find_focusable node with
         | Some focusable -> ignore (focus_node t focusable : bool)
         | None -> ())
-    | None -> ()
+    | Some _ | None -> ()
+
+let query_input_hit t ~x ~y =
+  match t.input_geometry with
+  | None -> Screen.query_hit t.screen ~x ~y
+  | Some (width, height) ->
+      if t.input_hits_dirty then begin
+        Screen.Hit_grid.resize t.input_hits ~width ~height;
+        Screen.Hit_grid.clear_clip t.input_hits;
+        for i = 0 to t.cmd_len - 1 do
+          match t.commands.(i) with
+          | Render node ->
+              let bounds = Renderable.bounds node in
+              Screen.Hit_grid.add t.input_hits ~x:bounds.x ~y:bounds.y
+                ~width:bounds.width ~height:bounds.height
+                ~id:(Renderable.Private.num node)
+          | Push_scissor clip -> Screen.Hit_grid.push_clip t.input_hits clip
+          | Pop_scissor -> Screen.Hit_grid.pop_clip t.input_hits
+          | Push_opacity _ | Pop_opacity -> ()
+        done;
+        t.input_hits_dirty <- false
+      end;
+      Screen.Hit_grid.get t.input_hits ~x ~y
+
+let focus_request_accepted requested target =
+  match requested with
+  | None -> true
+  | Some focus -> (
+      alive_visible focus && Renderable.focused focus
+      &&
+      match target with
+      | None -> false
+      | Some node -> (
+          match find_focusable node with
+          | Some ancestor -> ancestor == focus
+          | None -> false))
+
+let valid_selection_target t ~autofocus ~requested ~x ~y node =
+  alive_visible node && Renderable.selectable node
+  && (autofocus
+     || query_input_hit t ~x ~y = Renderable.Private.num node
+        && focus_request_accepted requested (Some node))
+
+let reject_press t ~x ~y ~modifiers kind =
+  t.pointer.rejected_press <- true;
+  let event = Event.Mouse.make ~x ~y ~modifiers kind in
+  Event.Mouse.prevent_default event;
+  event
 
 (* ───── Selection Event Handling ───── *)
 
 (* When the selection state machine consumes the event, returns [Some ev]
    where [ev] is the event the tree saw; [None] means not consumed. *)
-let handle_selection t ~x ~y ~(modifiers : Input.Modifier.t) ~target_node
-    ~target_id kind =
+let handle_selection t ~autofocus ~requested ~x ~y
+    ~(modifiers : Input.Modifier.t) ~target_node ~target_id kind =
   match kind with
   | Event.Mouse.Down { button = Left } when not modifiers.ctrl -> (
       match target_node with
@@ -356,35 +418,49 @@ let handle_selection t ~x ~y ~(modifiers : Input.Modifier.t) ~target_node
         when Renderable.selectable node
              && Renderable.Private.should_start_selection node ~x ~y ->
           clear_active_selection t;
-          let p = Selection.{ x; y } in
-          let local_x = x - Renderable.x node in
-          let local_y = y - Renderable.y node in
-          let anchor_position () =
-            Selection.
-              {
-                x = Renderable.x node + local_x;
-                y = Renderable.y node + local_y;
-              }
-          in
-          let sel = Selection.create ~anchor_position ~anchor:p ~focus:p () in
-          t.selection_state.current <- Some sel;
-          t.selection_state.anchor_node <- Some node;
-          t.selection_state.containers <-
-            [
-              (match Renderable.parent node with Some p -> p | None -> t.root);
-            ];
-          t.selection_state.touched_selectables <- [];
-          notify_selectables t.selection_state (Some sel);
-          let ev =
-            Event.Mouse.make ~x ~y ~modifiers ?target:target_id
-              (Event.Mouse.Down { button = Left })
-          in
-          Renderable.Private.emit_mouse node ev;
-          (* Starting a selection must not swallow click-to-focus: mirror
+          if not (valid_selection_target t ~autofocus ~requested ~x ~y node)
+          then Some (reject_press t ~x ~y ~modifiers kind)
+          else
+            let p = Selection.{ x; y } in
+            let local_x = x - Renderable.x node in
+            let local_y = y - Renderable.y node in
+            let anchor_position () =
+              Selection.
+                {
+                  x = Renderable.x node + local_x;
+                  y = Renderable.y node + local_y;
+                }
+            in
+            let sel = Selection.create ~anchor_position ~anchor:p ~focus:p () in
+            t.selection_state.current <- Some sel;
+            t.selection_state.anchor_node <- Some node;
+            t.selection_state.containers <-
+              [
+                (match Renderable.parent node with
+                | Some p -> p
+                | None -> t.root);
+              ];
+            t.selection_state.touched_selectables <- [];
+            notify_selectables t.selection_state (Some sel);
+            if not (valid_selection_target t ~autofocus ~requested ~x ~y node)
+            then begin
+              (match t.selection_state.current with
+              | Some current when current == sel -> clear_active_selection t
+              | Some _ | None -> ());
+              Some (reject_press t ~x ~y ~modifiers kind)
+            end
+            else
+              let ev =
+                Event.Mouse.make ~x ~y ~modifiers ?target:target_id
+                  (Event.Mouse.Down { button = Left })
+              in
+              Renderable.Private.emit_mouse node ev;
+              (* Starting a selection must not swallow click-to-focus: mirror
              OpenTUI's dispatchMouseEvent, which pairs event emission with
              auto-focus. *)
-          auto_focus_on_click t ~modifiers ~target_node:(Some node) ev;
-          Some ev
+              if autofocus then
+                auto_focus_on_click t ~modifiers ~target_node:(Some node) ev;
+              Some ev
       | _ -> None)
   | Event.Mouse.Drag { button = Left; _ } -> (
       match t.selection_state.current with
@@ -465,61 +541,109 @@ let map_button = function
    Returns the event the tree saw (mirroring [dispatch_key]), so a host can
    inspect [Event.Mouse.default_prevented] to tell whether a widget consumed
    the input. *)
-let dispatch_mouse_internal t ~x ~y ~modifiers kind =
+let dispatch_mouse_internal ?(autofocus = true) t ~x ~y ~modifiers kind =
   t.pointer.position <- Some (x, y);
   t.pointer.modifiers <- modifiers;
-  let hit_num = Screen.query_hit t.screen ~x ~y in
-  let target_node = if hit_num > 0 then find_node t hit_num else None in
-  (* A scroll over dead space still means "scroll": fall back to the focused
+  let suppress =
+    match kind with
+    | Event.Mouse.Down { button = Left } ->
+        t.pointer.rejected_press <- false;
+        false
+    | Event.Mouse.Up { button = Left | Button 0; _ } ->
+        let rejected = t.pointer.rejected_press in
+        t.pointer.rejected_press <- false;
+        rejected
+    | Event.Mouse.Drag { button = Left; _ } -> t.pointer.rejected_press
+    | _ -> false
+  in
+  if suppress then begin
+    let event = Event.Mouse.make ~x ~y ~modifiers kind in
+    Event.Mouse.prevent_default event;
+    event
+  end
+  else
+    let hit_num = query_input_hit t ~x ~y in
+    let target_node = if hit_num > 0 then find_node t hit_num else None in
+    (* Accept declarative focus before computing a caret. The request may change
+     layout, so query again and require the same focus target afterwards. *)
+    let requested =
+      match (kind, target_node) with
+      | Event.Mouse.Down { button = Left }, Some node
+        when (not autofocus) && not modifiers.shift -> (
+          match find_focusable node with
+          | Some target when not (Renderable.focused target) ->
+              if Renderable.Private.request_focus target then Some target
+              else None
+          | Some target -> Some target
+          | None -> None)
+      | _ -> None
+    in
+    let target_node =
+      match requested with
+      | None -> target_node
+      | Some _ ->
+          let hit = query_input_hit t ~x ~y in
+          if hit > 0 then find_node t hit else None
+    in
+    if not (focus_request_accepted requested target_node) then
+      reject_press t ~x ~y ~modifiers kind
+    else
+      (* A scroll over dead space still means "scroll": fall back to the focused
      renderable, whose ancestor chain reaches the nearest scrollable. *)
-  let target_node =
-    match (kind, target_node) with
-    | Event.Mouse.Scroll _, None -> (
-        match !(t.focused) with
-        | Some node when Renderable.focused node -> Some node
-        | _ -> None)
-    | _ -> target_node
-  in
-  let target_num =
-    Option.fold ~none:0 ~some:Renderable.Private.num target_node
-  in
-  let target_id = if target_num > 0 then Some target_num else None in
-  (* Selection state machine *)
-  match handle_selection t ~x ~y ~modifiers ~target_node ~target_id kind with
-  | Some ev -> ev
-  | None -> (
-      (* Hover tracking *)
-      update_hover t ~x ~y ~modifiers ~target_node ~target_num kind;
-      (* Drag capture *)
+      let target_node =
+        match (kind, target_node) with
+        | Event.Mouse.Scroll _, None -> (
+            match !(t.focused) with
+            | Some node when Renderable.focused node -> Some node
+            | _ -> None)
+        | _ -> target_node
+      in
+      let target_num =
+        Option.fold ~none:0 ~some:Renderable.Private.num target_node
+      in
+      let target_id = if target_num > 0 then Some target_num else None in
+      (* Selection state machine *)
       match
-        handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind
+        handle_selection t ~autofocus ~requested ~x ~y ~modifiers ~target_node
+          ~target_id kind
       with
       | Some ev -> ev
-      | None ->
-          (* Set up new capture on left drag *)
-          (match kind with
-          | Event.Mouse.Drag { button = Left; _ } -> (
-              match target_node with
-              | Some node -> t.captured <- Some node
-              | None -> ())
-          | _ -> ());
-          (* Normal dispatch *)
-          let ev = Event.Mouse.make ~x ~y ~modifiers ?target:target_id kind in
-          (match target_node with
-          | Some node -> Renderable.Private.emit_mouse node ev
-          | None -> ());
-          (match kind with
-          | Event.Mouse.Down { button = Left } ->
-              auto_focus_on_click t ~modifiers ~target_node ev
-          | _ -> ());
-          (* Clear selection on left click if not prevented *)
-          (match kind with
-          | Event.Mouse.Down { button = Left }
-            when Option.is_some t.selection_state.current ->
-              if not (Event.Mouse.default_prevented ev) then
-                clear_active_selection t
-          | _ -> ());
-          ev)
+      | None -> (
+          (* Hover tracking *)
+          update_hover t ~x ~y ~modifiers ~target_node ~target_num kind;
+          (* Drag capture *)
+          match
+            handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind
+          with
+          | Some ev -> ev
+          | None ->
+              (* Set up new capture on left drag *)
+              (match kind with
+              | Event.Mouse.Drag { button = Left; _ } -> (
+                  match target_node with
+                  | Some node -> t.captured <- Some node
+                  | None -> ())
+              | _ -> ());
+              (* Normal dispatch *)
+              let ev =
+                Event.Mouse.make ~x ~y ~modifiers ?target:target_id kind
+              in
+              (match target_node with
+              | Some node -> Renderable.Private.emit_mouse node ev
+              | None -> ());
+              (match kind with
+              | Event.Mouse.Down { button = Left } ->
+                  if autofocus then
+                    auto_focus_on_click t ~modifiers ~target_node ev
+              | _ -> ());
+              (* Clear selection on left click if not prevented *)
+              (match kind with
+              | Event.Mouse.Down { button = Left }
+                when Option.is_some t.selection_state.current ->
+                  if not (Event.Mouse.default_prevented ev) then
+                    clear_active_selection t
+              | _ -> ());
+              ev)
 
 (* ───── Creation ───── *)
 
@@ -541,7 +665,9 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
   let next_num = ref 0 in
   let dirty = Atomic.make true in
   let focused = ref None in
-  let pointer = { position = None; modifiers = Input.Modifier.none } in
+  let pointer =
+    { position = None; modifiers = Input.Modifier.none; rejected_press = false }
+  in
   let selection_state =
     {
       current = None;
@@ -648,6 +774,9 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
     lifecycle_set;
     commands = Array.make 64 Pop_scissor;
     cmd_len = 0;
+    input_hits = Screen.Hit_grid.create ~width:0 ~height:0;
+    input_geometry = None;
+    input_hits_dirty = false;
     hover_node = None;
     hover_num = 0;
     pointer;
@@ -722,7 +851,7 @@ let measure_fn (t : t) (known_dimensions : float option Toffee.Geometry.Size.t)
    render commands. [parent_x] and [parent_y] are the absolute position of the
    parent's content box origin. *)
 let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
-    ~(clip : Grid.region) ~(delta : float) : unit =
+    ~(clip : Grid.region) ~frame ~(delta : float) : unit =
   if not (Renderable.visible node) then ()
   else
     let toffee_node = Renderable.Private.toffee_node node in
@@ -735,7 +864,7 @@ let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
     let abs_h = layout.size.height in
     Renderable.Private.update_layout node ~x:abs_x ~y:abs_y ~width:abs_w
       ~height:abs_h;
-    Renderable.Private.pre_render_update node ~delta;
+    Renderable.Private.pre_render_update ~frame node ~delta;
     (* Opacity *)
     let opacity = Renderable.opacity node in
     let has_opacity = opacity < 1.0 in
@@ -762,7 +891,7 @@ let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
          rendering, and hit registration entirely. *)
       let recurse child =
         build_commands t child ~parent_x:abs_x ~parent_y:abs_y ~clip:child_clip
-          ~delta
+          ~frame ~delta
       in
       if Renderable.Private.viewport_cull node then
         Renderable.Private.iter_children_in_viewport ~parent:node
@@ -804,7 +933,58 @@ let execute_commands (t : t) ~(grid : Grid.t) ~(hits : Screen.Hit_grid.t)
 
 (* ───── Render Frame ───── *)
 
+let layout_dirty t =
+  toffee_exn (Toffee.dirty t.tree (Renderable.Private.toffee_node t.root))
+
+let compute_layout t ~width ~layout_height =
+  let root_toffee = Renderable.Private.toffee_node t.root in
+  let needs_layout =
+    (match t.last_layout with
+      | Some (w, h) -> w <> width || h <> layout_height
+      | None -> true)
+    ||
+    match Toffee.dirty t.tree root_toffee with
+    | Ok dirty -> dirty
+    | Error _ -> true
+  in
+  if needs_layout then begin
+    let available_space =
+      Toffee.Geometry.Size.
+        {
+          width = Toffee.Available_space.Definite (Float.of_int width);
+          height = Toffee.Available_space.Definite (Float.of_int layout_height);
+        }
+    in
+    toffee_exn
+      (Toffee.compute_layout_with_measure t.tree root_toffee available_space
+         (measure_fn t));
+    t.last_layout <- Some (width, layout_height)
+  end
+
+(* A layout callback may resize a sibling (for example, reveal a scrollbar).
+   Resolve those dependencies before hit testing or painting. Animations run
+   only on the first pass of a frame, never while preparing input geometry. *)
+let prepare_commands t ~width ~height ~layout_height ~frame ~delta =
+  let clip : Grid.region = { x = 0; y = 0; width; height } in
+  let rec settle remaining frame delta =
+    compute_layout t ~width ~layout_height;
+    t.cmd_len <- 0;
+    build_commands t t.root ~parent_x:0. ~parent_y:0. ~clip ~frame ~delta;
+    if layout_dirty t then begin
+      if remaining = 0 then
+        invalid_arg "Mosaic.Renderer: layout callbacks did not converge";
+      settle (remaining - 1) false 0.
+    end
+  in
+  settle 16 frame delta
+
+let prepare_layout t ~width ~height =
+  prepare_commands t ~width ~height ~layout_height:height ~frame:false ~delta:0.;
+  t.input_geometry <- Some (width, height);
+  t.input_hits_dirty <- true
+
 let render_frame ?layout_height (t : t) ~width ~height ~delta =
+  t.input_geometry <- None;
   let layout_height = Option.value layout_height ~default:height in
   (* Consume the request that led to this pass before running any code that can
      schedule its successor. In particular, widgets may discover geometry in
@@ -822,44 +1002,18 @@ let render_frame ?layout_height (t : t) ~width ~height ~delta =
     t.lifecycle_set;
   (* Frame callbacks *)
   List.iter (fun f -> f delta) t.frame_callbacks;
-  let frame_clip : Grid.region = { x = 0; y = 0; width; height } in
-  (* Build the frame via Screen.build *)
-  Screen.build t.screen ~width ~height (fun grid hits ->
-      (* Pass 1: Layout computation — skipped when the tree is layout-clean
-         and the available space is unchanged (OpenTUI gates calculateLayout
-         on yogaNode.isDirty the same way). Every layout mutation marks the
-         Toffee root dirty, so the root check covers style, measure, content,
-         and tree-shape changes. *)
-      let root_toffee = Renderable.Private.toffee_node t.root in
-      let needs_layout =
-        (match t.last_layout with
-          | Some (w, h) -> w <> width || h <> layout_height
-          | None -> true)
-        ||
-        match Toffee.dirty t.tree root_toffee with
-        | Ok dirty -> dirty
-        | Error _ -> true
-      in
-      if needs_layout then begin
-        let available_space =
-          Toffee.Geometry.Size.
-            {
-              width = Toffee.Available_space.Definite (Float.of_int width);
-              height =
-                Toffee.Available_space.Definite (Float.of_int layout_height);
-            }
-        in
-        toffee_exn
-          (Toffee.compute_layout_with_measure t.tree root_toffee available_space
-             (measure_fn t));
-        t.last_layout <- Some (width, layout_height)
-      end;
-      (* Pass 2: Build render command list *)
-      t.cmd_len <- 0;
-      Screen.Hit_grid.clear_clip hits;
-      build_commands t t.root ~parent_x:0. ~parent_y:0. ~clip:frame_clip ~delta;
-      (* Pass 3: Execute render commands *)
-      execute_commands t ~grid ~hits ~delta);
+  let rec paint remaining frame delta =
+    Screen.build t.screen ~width ~height (fun grid hits ->
+        prepare_commands t ~width ~height ~layout_height ~frame ~delta;
+        Screen.Hit_grid.clear_clip hits;
+        execute_commands t ~grid ~hits ~delta);
+    if layout_dirty t then begin
+      if remaining = 0 then
+        invalid_arg "Mosaic.Renderer: rendering repeatedly invalidated layout";
+      paint (remaining - 1) false 0.
+    end
+  in
+  paint 16 true delta;
   (* Update cursor from focused node. Visibility is derived from renderable
      intent — a cursor is visible iff a focused renderable exposes one — so
      the state is authoritative regardless of the screen's previous policy
@@ -928,44 +1082,52 @@ let render_frame_until_settled ?(max_passes = 4) t ~width ~height ~delta =
 
 (* ───── Event Dispatch ───── *)
 
-let dispatch_key t (key : Input.Key.event) =
+let dispatch_key ?(capture = Fun.const ()) t (key : Input.Key.event) =
   let ev = Event.Key.of_input key in
+  capture ev;
   (match !(t.focused) with
   | None -> ()
-  | Some node ->
+  | Some node when not (Event.Key.propagation_stopped ev) ->
       Renderable.Private.emit_key node ev;
-      if not (Event.Key.default_prevented ev) then
-        Renderable.Private.emit_default_key node ev);
+      if
+        (not (Renderable.destroyed node))
+        && Renderable.focused node
+        && not (Event.Key.default_prevented ev)
+      then Renderable.Private.emit_default_key node ev
+  | Some _ -> ());
   ev
 
-let dispatch_mouse t (mouse : Input.Mouse.event) =
+let dispatch_mouse ?(autofocus = true) t (mouse : Input.Mouse.event) =
   let x = mouse.x in
   let y = mouse.y in
   let modifiers = mouse.modifiers in
   match mouse.kind with
   | Input.Mouse.Down { button } ->
-      dispatch_mouse_internal t ~x ~y ~modifiers
+      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers
         (Event.Mouse.Down { button = map_button button })
   | Input.Mouse.Up { button } ->
       let button =
         match button with Some button -> map_button button | None -> Button 0
       in
-      dispatch_mouse_internal t ~x ~y ~modifiers
+      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers
         (Event.Mouse.Up { button; is_dragging = false })
   | Input.Mouse.Move ->
-      dispatch_mouse_internal t ~x ~y ~modifiers Event.Mouse.Move
+      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers Event.Mouse.Move
   | Input.Mouse.Drag { button } ->
-      dispatch_mouse_internal t ~x ~y ~modifiers
+      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers
         (Event.Mouse.Drag { button = map_button button; is_dragging = true })
   | Input.Mouse.Scroll { direction; delta } ->
-      dispatch_mouse_internal t ~x ~y ~modifiers
+      dispatch_mouse_internal ~autofocus t ~x ~y ~modifiers
         (Event.Mouse.Scroll { direction; delta })
 
-let dispatch_paste t text =
+let dispatch_paste ?(capture = Fun.const ()) t text =
   let ev = Event.Paste.of_text text in
+  capture ev;
   (match !(t.focused) with
   | None -> ()
-  | Some node -> Renderable.Private.emit_paste node ev);
+  | Some node when not (Event.Paste.propagation_stopped ev) ->
+      Renderable.Private.emit_paste node ev
+  | Some _ -> ());
   ev
 
 (* ───── Selection ───── *)

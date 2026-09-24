@@ -8,6 +8,43 @@ module Ansi = Matrix.Ansi
 module Border = Matrix.Grid.Border
 module Event = Mosaic_ui.Event
 module Canvas = Mosaic_ui.Canvas
+module Scroll = Mosaic_ui.Scroll
+module Editor = Mosaic_ui.Editor
+
+module Focus = struct
+  let next ~equal order current =
+    match order with
+    | [] -> None
+    | first :: _ -> (
+        match current with
+        | None -> Some first
+        | Some current ->
+            let rec scan = function
+              | [] | [ _ ] -> Some first
+              | item :: (following :: _ as rest) ->
+                  if equal item current then Some following else scan rest
+            in
+            scan order)
+
+  let prev ~equal order current =
+    match order with
+    | [] -> None
+    | first :: rest -> (
+        let rec last item = function
+          | [] -> Some item
+          | item :: rest -> last item rest
+        in
+        match current with
+        | None -> last first rest
+        | Some current when equal first current -> last first rest
+        | Some current ->
+            let rec scan previous = function
+              | [] -> Some previous
+              | item :: rest ->
+                  if equal item current then Some previous else scan item rest
+            in
+            scan first rest)
+end
 
 module Shortcut = struct
   module Key = Matrix.Input.Key
@@ -153,13 +190,31 @@ end
 
 (* Narrowed widget modules *)
 
-module Select = Mosaic_ui.Select
-module Tab_select = Mosaic_ui.Tab_select
-module Table = Mosaic_ui.Table
+module Select = struct
+  type 'a item = { value : 'a; presentation : Mosaic_ui.Select.item }
+
+  let item value ?description label =
+    { value; presentation = { Mosaic_ui.Select.label; description } }
+end
+
+module Tab_select = struct
+  type 'a item = { value : 'a; presentation : Mosaic_ui.Tab_select.item }
+
+  let item value ?(description = "") label =
+    { value; presentation = { Mosaic_ui.Tab_select.label; description } }
+end
+
+module Table = struct
+  include Mosaic_ui.Table
+
+  type 'a row = { value : 'a; cells : cell array }
+
+  let row value cells = { value; cells }
+end
+
 module Tree = Mosaic_ui.Tree
 module Spinner = Mosaic_ui.Spinner
 module Slider = Mosaic_ui.Slider
-module Scroll_box = Mosaic_ui.Scroll_box
 module Scroll_bar = Mosaic_ui.Scroll_bar
 module Text_surface = Mosaic_ui.Text_surface
 module Line_number = Mosaic_ui.Line_number
@@ -173,13 +228,13 @@ module Syntax_style = Mosaic_ui.Syntax_style
 
 module Reconciler = Reconciler
 
-(* TEA view: handlers return ['msg option]. *)
-type 'msg t = 'msg option Vnode.t
+(* Semantic callbacks produce messages; raw event handlers may ignore events. *)
+type 'msg t = 'msg Vnode.t
 
-let map (f : 'a -> 'b) (view : 'a t) : 'b t = Vnode.map (Option.map f) view
+let map (f : 'a -> 'b) (view : 'a t) : 'b t = Vnode.map f view
 
 let compile ~(dispatch : 'msg -> unit) (view : 'msg t) : unit Vnode.t =
-  Vnode.map (function Some msg -> dispatch msg | None -> ()) view
+  Vnode.map dispatch view
 
 module Cmd = struct
   type 'msg t =
@@ -194,8 +249,7 @@ module Cmd = struct
     | Bell
     | Notify of { title : string; body : string }
     | Clear_selection
-    | Focus of string
-    | Static_commit of 'msg option Vnode.t
+    | Static_commit of 'msg Vnode.t
     | Static_clear
 
   let none = None
@@ -209,7 +263,6 @@ module Cmd = struct
   let bell = Bell
   let notify ~title ~body = Notify { title; body }
   let clear_selection = Clear_selection
-  let focus id = Focus id
   let static_commit view = Static_commit view
   let static_clear = Static_clear
 
@@ -226,8 +279,7 @@ module Cmd = struct
     | Bell -> Bell
     | Notify { title; body } -> Notify { title; body }
     | Clear_selection -> Clear_selection
-    | Focus id -> Focus id
-    | Static_commit view -> Static_commit (Vnode.map (Option.map f) view)
+    | Static_commit view -> Static_commit (Vnode.map f view)
     | Static_clear -> Static_clear
 end
 
@@ -235,8 +287,8 @@ module Sub = struct
   type 'msg t =
     | None
     | Batch of 'msg t list
-    | Every of float * (unit -> 'msg)
-    | On_tick of (dt:float -> 'msg)
+    | Every of string * float * (unit -> 'msg)
+    | On_tick of string * (dt:float -> 'msg)
     | On_key of (Event.key -> 'msg option)
     | On_key_all of (Event.key -> 'msg option)
     | On_mouse of (Event.mouse -> 'msg option)
@@ -250,8 +302,17 @@ module Sub = struct
 
   let none = None
   let batch subs = Batch subs
-  let every interval f = Every (interval, f)
-  let on_tick f = On_tick f
+
+  let every ~id interval f =
+    if id = "" || (not (Float.is_finite interval)) || interval <= 0. then
+      invalid_arg
+        "Mosaic.Sub.every: nonempty id and positive finite interval required";
+    Every (id, interval, f)
+
+  let on_tick ~id f =
+    if id = "" then invalid_arg "Mosaic.Sub.on_tick: empty id";
+    On_tick (id, f)
+
   let on_key f = On_key f
 
   let on_keys bindings =
@@ -260,7 +321,10 @@ module Sub = struct
         let rec loop : (Shortcut.t * 'msg) list -> 'msg option = function
           | [] -> None
           | (shortcut, msg) :: rest ->
-              if Shortcut.matches shortcut ev then Some msg else loop rest
+              if Shortcut.matches shortcut ev then (
+                Event.Key.prevent_default ev;
+                Some msg)
+              else loop rest
         in
         loop bindings)
 
@@ -278,8 +342,8 @@ module Sub = struct
     match sub with
     | None -> None
     | Batch subs -> Batch (List.map (map f) subs)
-    | Every (interval, g) -> Every (interval, fun () -> f (g ()))
-    | On_tick g -> On_tick (fun ~dt -> f (g ~dt))
+    | Every (id, interval, g) -> Every (id, interval, fun () -> f (g ()))
+    | On_tick (id, g) -> On_tick (id, fun ~dt -> f (g ~dt))
     | On_key g -> On_key (fun ev -> Option.map f (g ev))
     | On_key_all g -> On_key_all (fun ev -> Option.map f (g ev))
     | On_mouse g -> On_mouse (fun ev -> Option.map f (g ev))
@@ -308,6 +372,7 @@ type ('model, 'msg) app = {
    adding 0.1 lands on 0.0999999046 every time, a fast drift of a microsecond
    per second. *)
 type 'msg every_timer = {
+  id : string;
   interval : float;
   origin : float;
   fired : int;
@@ -338,7 +403,10 @@ type ('model, 'msg) runtime = {
      loop thread drains with a single [Atomic.exchange]. A plain mutable list
      would lose messages pushed between the drain's read and its clear. *)
   pending_msgs : 'msg list Atomic.t;
-  mutable pending_focus : string list;
+  mutable view_dirty : bool;
+  mutable synchronizing : bool;
+  mutable delivering : bool;
+  mutable map_message : 'msg -> unit;
   app : ('model, 'msg) app;
   matrix_app : Matrix.app;
   process_perform : (unit -> unit) -> unit;
@@ -347,12 +415,12 @@ type ('model, 'msg) runtime = {
   mutable key_subs : (bool * (Event.key -> 'msg option)) list;
   mutable mouse_subs : (bool * (Event.mouse -> 'msg option)) list;
   mutable paste_subs : (bool * (Event.paste -> 'msg option)) list;
-  mutable resize_sub : (width:int -> height:int -> 'msg) option;
-  mutable tick_sub : (dt:float -> 'msg) option;
+  mutable resize_sub : (width:int -> height:int -> 'msg) list;
+  mutable tick_sub : (string * (dt:float -> 'msg)) list;
   mutable every_subs : 'msg every_timer list;
-  mutable focus_sub : 'msg option;
-  mutable blur_sub : 'msg option;
-  mutable color_scheme_sub : ([ `Dark | `Light ] -> 'msg option) option;
+  mutable focus_sub : 'msg list;
+  mutable blur_sub : 'msg list;
+  mutable color_scheme_sub : ([ `Dark | `Light ] -> 'msg option) list;
   mutable sub_live_active : bool;
 }
 
@@ -367,49 +435,6 @@ let push_msg runtime msg =
   in
   push ();
   Matrix.request_redraw runtime.matrix_app
-
-let rec find_by_id_in (node : Renderable.t) (id : string) : Renderable.t option
-    =
-  if String.equal (Renderable.id node) id then Some node
-  else
-    List.find_map
-      (fun child -> find_by_id_in child id)
-      (Renderable.children node)
-
-let find_by_id runtime id = find_by_id_in (Renderer.root runtime.renderer) id
-
-let try_focus runtime id =
-  match find_by_id runtime id with
-  | Some node -> Renderer.focus runtime.renderer node
-  | None -> false
-
-let enqueue_focus runtime id =
-  if
-    not
-      (List.exists
-         (fun existing -> String.equal existing id)
-         runtime.pending_focus)
-  then runtime.pending_focus <- runtime.pending_focus @ [ id ]
-
-(* Each Cmd.focus gets one immediate attempt (process_cmd) and, when that
-   misses, one deferred attempt after the next completed render — covering an
-   element the update's own view is about to create. Requests that still miss
-   are dropped: retrying forever would scan the whole tree every frame and
-   retain the id, for a target that may never exist. *)
-let process_pending_focus runtime =
-  match runtime.pending_focus with
-  | [] -> ()
-  | pending ->
-      runtime.pending_focus <- [];
-      let focused = ref false in
-      List.iter
-        (fun id ->
-          match find_by_id runtime id with
-          | Some node ->
-              if Renderer.focus runtime.renderer node then focused := true
-          | None -> ())
-        pending;
-      if !focused then Matrix.request_redraw runtime.matrix_app
 
 (* Static output renders offscreen with an auto-height root, mirroring the
    primary-screen path: one pass at the terminal height measures the content's
@@ -467,10 +492,6 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
   | Cmd.Notify { title; body } ->
       Matrix.Terminal.notify (Matrix.terminal runtime.matrix_app) ~title ~body
   | Cmd.Clear_selection -> Renderer.clear_selection runtime.renderer
-  | Cmd.Focus id ->
-      if not (try_focus runtime id) then (
-        enqueue_focus runtime id;
-        Matrix.request_redraw runtime.matrix_app)
   | Cmd.Static_commit view ->
       let grid, rows = render_static_view runtime view in
       Matrix.static_write ~rows runtime.matrix_app grid
@@ -480,23 +501,24 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   match sub with
   | Sub.None -> ()
   | Sub.Batch subs -> List.iter (collect_subs runtime) subs
-  | Sub.Every (interval, callback) ->
+  | Sub.Every (id, interval, callback) ->
       (* The schedule is assigned in [update_subscriptions], where the current
          time and the previous timer generation are both at hand. *)
       runtime.every_subs <-
-        { interval; origin = Float.nan; fired = 0; callback }
+        { id; interval; origin = Float.nan; fired = 0; callback }
         :: runtime.every_subs
-  | Sub.On_tick f -> runtime.tick_sub <- Some f
+  | Sub.On_tick (id, f) -> runtime.tick_sub <- (id, f) :: runtime.tick_sub
   | Sub.On_key f -> runtime.key_subs <- (false, f) :: runtime.key_subs
   | Sub.On_key_all f -> runtime.key_subs <- (true, f) :: runtime.key_subs
   | Sub.On_mouse f -> runtime.mouse_subs <- (false, f) :: runtime.mouse_subs
   | Sub.On_mouse_all f -> runtime.mouse_subs <- (true, f) :: runtime.mouse_subs
   | Sub.On_paste f -> runtime.paste_subs <- (false, f) :: runtime.paste_subs
   | Sub.On_paste_all f -> runtime.paste_subs <- (true, f) :: runtime.paste_subs
-  | Sub.On_resize f -> runtime.resize_sub <- Some f
-  | Sub.On_focus msg -> runtime.focus_sub <- Some msg
-  | Sub.On_blur msg -> runtime.blur_sub <- Some msg
-  | Sub.On_color_scheme f -> runtime.color_scheme_sub <- Some f
+  | Sub.On_resize f -> runtime.resize_sub <- f :: runtime.resize_sub
+  | Sub.On_focus msg -> runtime.focus_sub <- msg :: runtime.focus_sub
+  | Sub.On_blur msg -> runtime.blur_sub <- msg :: runtime.blur_sub
+  | Sub.On_color_scheme f ->
+      runtime.color_scheme_sub <- f :: runtime.color_scheme_sub
 
 (* Arm the loop's one-shot wakeup at the earliest every-sub deadline, or clear
    it when no timer is pending. Runs after every subscription recollection and
@@ -516,45 +538,56 @@ let update_subscriptions runtime =
   runtime.key_subs <- [];
   runtime.mouse_subs <- [];
   runtime.paste_subs <- [];
-  runtime.resize_sub <- None;
-  runtime.tick_sub <- None;
+  runtime.resize_sub <- [];
+  runtime.tick_sub <- [];
   runtime.every_subs <- [];
-  runtime.focus_sub <- None;
-  runtime.blur_sub <- None;
-  runtime.color_scheme_sub <- None;
+  runtime.focus_sub <- [];
+  runtime.blur_sub <- [];
+  runtime.color_scheme_sub <- [];
   collect_subs runtime (runtime.app.subscriptions runtime.model);
-  (* Assign each recollected timer its schedule: a timer matching a previous
-     entry's interval keeps that entry's origin and fire count — re-evaluating
-     subscriptions must not reset time in flight — and a new timer starts its
-     schedule now, due one interval later. Each previous entry is consumed at
-     most once and the pairing walks declaration order on both sides
-     (collection prepends, hence the reverse; the stored list stays in
-     declaration order), so two timers with the same interval keep
-     independent phases and a timer added later cannot steal an earlier
-     timer's deadline. *)
+  runtime.key_subs <- List.rev runtime.key_subs;
+  runtime.mouse_subs <- List.rev runtime.mouse_subs;
+  runtime.paste_subs <- List.rev runtime.paste_subs;
+  runtime.resize_sub <- List.rev runtime.resize_sub;
+  runtime.tick_sub <- List.rev runtime.tick_sub;
+  runtime.focus_sub <- List.rev runtime.focus_sub;
+  runtime.blur_sub <- List.rev runtime.blur_sub;
+  runtime.color_scheme_sub <- List.rev runtime.color_scheme_sub;
+  let ids = Hashtbl.create 8 in
+  let check_id id =
+    if id = "" || Hashtbl.mem ids id then
+      invalid_arg ("Mosaic.Sub: empty or duplicate timer id: " ^ id);
+    Hashtbl.add ids id ()
+  in
+  List.iter
+    (fun (id, callback) ->
+      check_id id;
+      ignore callback)
+    runtime.tick_sub;
   let now = Matrix.now runtime.matrix_app in
-  let remaining_prev = ref prev_every in
   runtime.every_subs <-
-    List.map
+    List.rev_map
       (fun timer ->
-        let rec take acc = function
-          | [] -> ({ timer with origin = now }, List.rev acc)
-          | prev :: rest when Float.equal prev.interval timer.interval ->
-              ( { timer with origin = prev.origin; fired = prev.fired },
-                List.rev_append acc rest )
-          | entry :: rest -> take (entry :: acc) rest
-        in
-        let timer, rest = take [] !remaining_prev in
-        remaining_prev := rest;
-        timer)
-      (List.rev runtime.every_subs);
+        check_id timer.id;
+        if (not (Float.is_finite timer.interval)) || timer.interval <= 0. then
+          invalid_arg "Mosaic.Sub.every: positive finite interval required";
+        match
+          List.find_opt
+            (fun prev ->
+              String.equal prev.id timer.id
+              && Float.equal prev.interval timer.interval)
+            prev_every
+        with
+        | Some prev -> { timer with origin = prev.origin; fired = prev.fired }
+        | None -> { timer with origin = now })
+      runtime.every_subs;
   (* Track subscription-driven liveness: only tick subscriptions require the
      render cadence — a tick's [dt] is frame time by definition. Every-subs
      are timers, not animations: they wake the loop at their deadline
      ([arm_every_wakeup]) and the messages they dispatch request their own
      redraws, so a pending timer costs one wakeup, not a full render pipeline
      per frame over the whole mounted tree. *)
-  let has_live_subs = runtime.tick_sub <> None in
+  let has_live_subs = runtime.tick_sub <> [] in
   if has_live_subs && not runtime.sub_live_active then (
     runtime.sub_live_active <- true;
     Matrix.request_live runtime.matrix_app)
@@ -565,6 +598,7 @@ let update_subscriptions runtime =
 
 let dispatch runtime msg =
   let model', cmd = runtime.app.update msg runtime.model in
+  runtime.view_dirty <- runtime.view_dirty || not (model' == runtime.model);
   runtime.model <- model';
   process_cmd runtime cmd;
   update_subscriptions runtime
@@ -579,42 +613,77 @@ let process_pending_msgs runtime =
   in
   drain ()
 
-let handle_key runtime (event : Event.key) =
-  let consumed = Event.Key.default_prevented event in
-  List.iter
-    (fun (all_events, f) ->
-      if all_events || not consumed then
-        match f event with Some msg -> dispatch runtime msg | None -> ())
-    runtime.key_subs
+(* Only the loop thread runs the application and reconciler. Widget callbacks
+   complete their updates before default processing continues. During a view or
+   geometry refresh, callbacks enqueue instead of re-entering reconciliation. *)
+let synchronize runtime =
+  if not runtime.synchronizing then begin
+    runtime.synchronizing <- true;
+    Fun.protect
+      ~finally:(fun () -> runtime.synchronizing <- false)
+      (fun () ->
+        let rec settle () =
+          process_pending_msgs runtime;
+          if runtime.view_dirty then begin
+            runtime.view_dirty <- false;
+            let width, height = Matrix.effective_size runtime.matrix_app in
+            let vnode =
+              Vnode.map runtime.map_message (runtime.app.view runtime.model)
+            in
+            Reconciler.render runtime.reconciler ~viewport_width:(max 1 width)
+              vnode;
+            (match Reconciler.focused runtime.reconciler with
+            | Some node -> ignore (Renderer.focus runtime.renderer node : bool)
+            | None -> Renderer.blur runtime.renderer);
+            Renderer.prepare_layout runtime.renderer ~width ~height;
+            settle ()
+          end
+        in
+        settle ())
+  end
 
-let handle_mouse runtime (event : Event.mouse) =
-  let consumed = Event.Mouse.default_prevented event in
-  List.iter
-    (fun (all_events, f) ->
-      if all_events || not consumed then
-        match f event with Some msg -> dispatch runtime msg | None -> ())
-    runtime.mouse_subs
+let deliver runtime msg =
+  push_msg runtime msg;
+  if not runtime.delivering then synchronize runtime
 
-let handle_paste runtime (event : Event.paste) =
-  let consumed = Event.Paste.default_prevented event in
-  List.iter
-    (fun (all_events, f) ->
-      if all_events || not consumed then
-        match f event with Some msg -> dispatch runtime msg | None -> ())
-    runtime.paste_subs
+let handle_key runtime event =
+  let rec loop = function
+    | [] -> ()
+    | (all_events, f) :: rest ->
+        if all_events || not (Event.Key.default_prevented event) then
+          Option.iter (deliver runtime) (f event);
+        if not (Event.Key.propagation_stopped event) then loop rest
+  in
+  loop runtime.key_subs
+
+let handle_mouse runtime event =
+  let rec loop = function
+    | [] -> ()
+    | (all_events, f) :: rest ->
+        if all_events || not (Event.Mouse.default_prevented event) then
+          Option.iter (deliver runtime) (f event);
+        if not (Event.Mouse.propagation_stopped event) then loop rest
+  in
+  loop runtime.mouse_subs
+
+let handle_paste runtime event =
+  let rec loop = function
+    | [] -> ()
+    | (all_events, f) :: rest ->
+        if all_events || not (Event.Paste.default_prevented event) then
+          Option.iter (deliver runtime) (f event);
+        if not (Event.Paste.propagation_stopped event) then loop rest
+  in
+  loop runtime.paste_subs
 
 let handle_resize runtime ~width ~height =
-  match runtime.resize_sub with
-  | Some f -> dispatch runtime (f ~width ~height)
-  | None -> ()
+  runtime.view_dirty <- true;
+  List.iter (fun f -> push_msg runtime (f ~width ~height)) runtime.resize_sub;
+  synchronize runtime
 
 let handle_tick runtime ~dt =
-  match runtime.tick_sub with Some f -> push_msg runtime (f ~dt) | None -> ()
+  List.iter (fun pair -> push_msg runtime ((snd pair) ~dt)) runtime.tick_sub
 
-(* Counting the fire keeps the cadence fixed-rate on the origin's schedule: a
-   late frame fires once and leaves the next deadline in the past, catching up
-   one fire per frame. A fire within the slack cannot double up — the next
-   deadline is a whole interval away. *)
 let handle_every_subs runtime =
   let now = Matrix.now runtime.matrix_app in
   runtime.every_subs <-
@@ -627,39 +696,34 @@ let handle_every_subs runtime =
         else timer)
       runtime.every_subs
 
-let handle_input runtime (input : Matrix.Input.t) =
-  match input with
-  | Matrix.Input.Focus -> (
-      match runtime.focus_sub with
-      | Some msg -> dispatch runtime msg
-      | None -> ())
-  | Matrix.Input.Blur -> (
-      match runtime.blur_sub with
-      | Some msg -> dispatch runtime msg
-      | None -> ())
-  | Matrix.Input.Color_scheme scheme -> (
-      match runtime.color_scheme_sub with
-      | Some f -> (
-          match f scheme with Some msg -> dispatch runtime msg | None -> ())
-      | None -> ())
+let handle_input runtime input =
+  synchronize runtime;
+  (match input with
+  | Matrix.Input.Focus -> List.iter (deliver runtime) runtime.focus_sub
+  | Matrix.Input.Blur -> List.iter (deliver runtime) runtime.blur_sub
+  | Matrix.Input.Color_scheme scheme ->
+      List.iter
+        (fun f -> Option.iter (deliver runtime) (f scheme))
+        runtime.color_scheme_sub
   | Matrix.Input.Key key_event ->
-      let ev = Renderer.dispatch_key runtime.renderer key_event in
-      handle_key runtime ev
+      ignore
+        (Renderer.dispatch_key ~capture:(handle_key runtime) runtime.renderer
+           key_event
+          : Event.key)
   | Matrix.Input.Mouse mouse_event ->
-      let ev = Renderer.dispatch_mouse runtime.renderer mouse_event in
-      handle_mouse runtime ev
+      let event =
+        Renderer.dispatch_mouse ~autofocus:false runtime.renderer mouse_event
+      in
+      handle_mouse runtime event
   | Matrix.Input.Paste text ->
-      let ev = Renderer.dispatch_paste runtime.renderer text in
-      handle_paste runtime ev
-  | _ -> ()
+      ignore
+        (Renderer.dispatch_paste ~capture:(handle_paste runtime)
+           runtime.renderer text
+          : Event.paste)
+  | _ -> ());
+  synchronize runtime
 
-let render runtime =
-  process_pending_msgs runtime;
-  let viewport_width, _ = Matrix.effective_size runtime.matrix_app in
-  let viewport_width = max 1 viewport_width in
-  let view = runtime.app.view runtime.model in
-  let vnode = compile ~dispatch:(push_msg runtime) view in
-  Reconciler.render runtime.reconciler ~viewport_width vnode
+let render runtime = synchronize runtime
 
 module Probe = struct
   type check = { name : string; is_pending : unit -> bool }
@@ -723,7 +787,10 @@ let run ?matrix
     {
       model;
       pending_msgs = Atomic.make [];
-      pending_focus = [];
+      view_dirty = true;
+      synchronizing = false;
+      delivering = false;
+      map_message = Fun.const ();
       app;
       matrix_app;
       process_perform;
@@ -732,15 +799,16 @@ let run ?matrix
       key_subs = [];
       mouse_subs = [];
       paste_subs = [];
-      resize_sub = None;
-      tick_sub = None;
+      resize_sub = [];
+      tick_sub = [];
       every_subs = [];
-      focus_sub = None;
-      blur_sub = None;
-      color_scheme_sub = None;
+      focus_sub = [];
+      blur_sub = [];
+      color_scheme_sub = [];
       sub_live_active = false;
     }
   in
+  runtime.map_message <- deliver runtime;
   (match probe with
   | None -> ()
   | Some receive ->
@@ -791,27 +859,30 @@ let run ?matrix
   let render_frame () =
     render runtime;
     let width, height = Matrix.effective_size runtime.matrix_app in
-    Renderer.render_frame runtime.renderer ~width ~height ~delta:!frame_delta;
-    (match Matrix.mode runtime.matrix_app with
-    | `Alt -> ()
-    | `Primary ->
-        let required =
-          max 1 (Renderable.height (Renderer.root runtime.renderer))
-        in
-        if required > height then
-          Renderer.render_frame runtime.renderer ~layout_height:required ~width
-            ~height ~delta:!frame_delta);
+    let layout_height =
+      match Matrix.mode runtime.matrix_app with
+      | `Alt -> height
+      | `Primary ->
+          max height (Renderable.height (Renderer.root runtime.renderer))
+    in
+    Renderer.render_frame runtime.renderer ~layout_height ~width ~height
+      ~delta:!frame_delta;
     (* The renderer built directly into the runtime's screen; Matrix.submit
        presents it with a single diff. Forward the frame's hardware scroll
        hint so a scrolled viewport diffs only its revealed rows. *)
     (match Renderer.take_scroll_hint runtime.renderer with
     | Some hint -> Matrix.set_scroll_hint runtime.matrix_app hint
     | None -> ());
-    process_pending_focus runtime
+    ()
   in
   let on_render _app =
     Atomic.set rendering true;
-    Fun.protect ~finally:finish_render render_frame
+    runtime.delivering <- true;
+    Fun.protect
+      ~finally:(fun () ->
+        runtime.delivering <- false;
+        finish_render ())
+      render_frame
   in
 
   Fun.protect
@@ -821,7 +892,7 @@ let run ?matrix
         ~on_frame:(fun _app ~dt ->
           handle_tick runtime ~dt;
           handle_every_subs runtime;
-          process_pending_msgs runtime;
+          synchronize runtime;
           (* A fired timer moved its deadline even when no message re-collected
          subscriptions, so the wakeup re-arms here. *)
           arm_every_wakeup runtime;
@@ -837,6 +908,7 @@ let empty = Vnode.empty
 let fragment = Vnode.fragment
 let embed = Vnode.embed
 let viewport_switch = Vnode.viewport_switch
+let memo = Vnode.memo
 
 let layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin ?padding
@@ -855,16 +927,16 @@ let layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
     ?grid_row ?grid_column ()
 
-let box ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?border ?border_style ?border_sides
-    ?border_color ?focused_border_color ?background ?fill ?title
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?border ?border_style
+    ?border_sides ?border_color ?focused_border_color ?background ?fill ?title
     ?title_alignment children =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
@@ -876,21 +948,21 @@ let box ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.box ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?border ?border_style
-    ?border_sides ?border_color ?focused_border_color ?background ?fill ?title
-    ?title_alignment children
+  Vnode.box ?key ~style ?visible ?z_index ?opacity ?buffered ?live ?on_mouse
+    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused ?border
+    ?border_style ?border_sides ?border_color ?focused_border_color ?background
+    ?fill ?title ?title_alignment children
 
-let text ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let text ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?style ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?text_style ?wrap ?selectable ?selection_bg
-    ?selection_fg ?tab_width ?truncate content =
+    ?style ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key
+    ?on_paste ?on_click ?on_focus_request ?on_size ?focused ?text_style ?wrap
+    ?selectable ?selection_bg ?selection_fg ?tab_width ?truncate content =
   let layout_style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -904,20 +976,21 @@ let text ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
   let text_style =
     match text_style with Some _ -> text_style | None -> style
   in
-  Vnode.text ?key ?id ~style:layout_style ?visible ?z_index ?opacity ?focusable
-    ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?text_style
-    ?wrap ?selectable ?selection_bg ?selection_fg ?tab_width ?truncate content
+  Vnode.text ?key ~style:layout_style ?visible ?z_index ?opacity ?buffered ?live
+    ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ?text_style ?wrap ?selectable ?selection_bg ?selection_fg ?tab_width
+    ?truncate content
 
-let slider ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let slider ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?orientation ?value ?min ?max ?viewport_size
-    ?track_color ?thumb_color ?on_value_change () =
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?orientation ?min ?max
+    ?viewport_size ?track_color ?thumb_color ~state ~on_change () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -928,23 +1001,24 @@ let slider ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.slider ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?orientation ?value ?min
-    ?max ?viewport_size ?track_color ?thumb_color ?on_value_change ()
+  Vnode.slider ~value:state ~on_value_change:on_change ?key ~style ?visible
+    ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?focused ?orientation ?min ?max ?viewport_size
+    ?track_color ?thumb_color ()
 
-let input ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let input ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?value ?cursor ?selection ?placeholder
-    ?max_length ?text_color ?background_color ?focused_text_color
-    ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
-    ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
-    ?key_bindings ?key_aliases ?on_input ?on_change ?on_submit ?on_cursor () =
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?placeholder ?text_color
+    ?background_color ?focused_text_color ?focused_background_color
+    ?placeholder_color ?selection_color ?selection_fg ?cursor_style
+    ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
+    ?key_aliases ~on_change ?on_submit ~state () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -955,26 +1029,37 @@ let input ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.input ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?value ?cursor ?selection
-    ?placeholder ?max_length ?text_color ?background_color ?focused_text_color
+  Vnode.input ~state ?key ~style ?visible ?z_index ?opacity ?buffered ?live
+    ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ?placeholder ?text_color ?background_color ?focused_text_color
     ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
     ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
-    ?key_bindings ?key_aliases ?on_input ?on_change ?on_submit ?on_cursor ()
+    ?key_bindings ?key_aliases ~on_change ?on_submit ()
 
-let select ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let selection_index ~equal ~value selected items =
+  match selected with
+  | None -> -1
+  | Some selected ->
+      let rec find index =
+        if index = Array.length items then -1
+        else if equal (value items.(index)) selected then index
+        else find (index + 1)
+      in
+      find 0
+
+let select ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?selected_index ?background ?text_color
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?background ?text_color
     ?focused_background ?focused_text_color ?selected_background
     ?selected_text_color ?description_color ?selected_description_color
     ?show_description ?show_scroll_indicator ?wrap_selection ?item_spacing
-    ?fast_scroll_step ?on_change ?on_activate options =
+    ?fast_scroll_step ~on_change ?on_activate ~equal ~selected options =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -985,26 +1070,35 @@ let select ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.select ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ~options ?selected_index
-    ?background ?text_color ?focused_background ?focused_text_color
-    ?selected_background ?selected_text_color ?description_color
-    ?selected_description_color ?show_description ?show_scroll_indicator
-    ?wrap_selection ?item_spacing ?fast_scroll_step ?on_change ?on_activate ()
+  let items = Array.of_list options in
+  let selected_index =
+    selection_index ~equal ~value:(fun item -> item.Select.value) selected items
+  in
+  let options = List.map (fun item -> item.Select.presentation) options in
+  let value index = items.(index).Select.value in
+  let on_change index = on_change (value index) in
+  let on_activate = Option.map (fun f index -> f (value index)) on_activate in
+  Vnode.select ~selected_index ?key ~style ?visible ?z_index ?opacity ?buffered
+    ?live ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size
+    ?focused ~options ?background ?text_color ?focused_background
+    ?focused_text_color ?selected_background ?selected_text_color
+    ?description_color ?selected_description_color ?show_description
+    ?show_scroll_indicator ?wrap_selection ?item_spacing ?fast_scroll_step
+    ~on_change ?on_activate ()
 
-let tab_select ?key ?id ?display ?box_sizing ?position ?overflow
-    ?scrollbar_width ?text_align ?inset ?flex_direction ?flex_wrap
-    ?justify_content ?align_items ?size ?min_size ?max_size ?aspect_ratio ?gap
-    ?padding ?margin ?border_width ?align_self ?align_content ?justify_items
-    ?justify_self ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-    ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-    ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-    ?grid_row ?grid_column ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?selected ?tab_width
-    ?background ?text_color ?focused_background ?focused_text_color
-    ?selected_background ?selected_text_color ?description_color
-    ?selected_description_color ?show_underline ?show_description
-    ?show_scroll_arrows ?wrap_selection ?on_change ?on_activate options =
+let tab_select ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?tab_width ?background
+    ?text_color ?focused_background ?focused_text_color ?selected_background
+    ?selected_text_color ?description_color ?selected_description_color
+    ?show_underline ?show_description ?show_scroll_arrows ?wrap_selection
+    ~on_change ?on_activate ~equal ~selected options =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1015,23 +1109,33 @@ let tab_select ?key ?id ?display ?box_sizing ?position ?overflow
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.tab_select ?key ?id ~style ?visible ?z_index ?opacity ?focusable
-    ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ~options
-    ?selected ?tab_width ?background ?text_color ?focused_background
+  let items = Array.of_list options in
+  let selected =
+    selection_index ~equal
+      ~value:(fun item -> item.Tab_select.value)
+      selected items
+  in
+  let options = List.map (fun item -> item.Tab_select.presentation) options in
+  let value index = items.(index).Tab_select.value in
+  let on_change index = on_change (value index) in
+  let on_activate = Option.map (fun f index -> f (value index)) on_activate in
+  Vnode.tab_select ~selected ?key ~style ?visible ?z_index ?opacity ?buffered
+    ?live ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size
+    ?focused ~options ?tab_width ?background ?text_color ?focused_background
     ?focused_text_color ?selected_background ?selected_text_color
     ?description_color ?selected_description_color ?show_underline
-    ?show_description ?show_scroll_arrows ?wrap_selection ?on_change
+    ?show_description ?show_scroll_arrows ?wrap_selection ~on_change
     ?on_activate ()
 
-let canvas ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let canvas ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste draw =
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused draw =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1042,18 +1146,19 @@ let canvas ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.canvas ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ~on_draw:draw ()
+  Vnode.canvas ?key ~style ?visible ?z_index ?opacity ?buffered ?live ?on_mouse
+    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ~on_draw:draw ()
 
-let spinner ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let spinner ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?frame_set ?color () =
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?frame_set ?color () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1064,99 +1169,99 @@ let spinner ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.spinner ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?frame_set ?color ()
+  Vnode.spinner ?key ~style ?visible ?z_index ?opacity ?buffered ?live ?on_mouse
+    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused ?frame_set
+    ?color ()
 
-let progress_bar ?key ?id ?display ?box_sizing ?position ?overflow
-    ?scrollbar_width ?text_align ?inset ?flex_direction ?flex_wrap
-    ?justify_content ?align_items ?size ?min_size ?max_size ?aspect_ratio ?gap
-    ?padding ?margin ?border_width ?align_self ?align_content ?justify_items
-    ?justify_self ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-    ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-    ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-    ?grid_row ?grid_column ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?value ?min ?max
-    ?orientation ?filled_color ?empty_color () =
-  let style =
-    layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
-      ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
-      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
-      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
-      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-      ?grid_row ?grid_column ()
-  in
-  Vnode.progress_bar ?key ?id ~style ?visible ?z_index ?opacity ?focusable
-    ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?value ?min ?max
-    ?orientation ?filled_color ?empty_color ()
-
-let scroll_bar ?key ?id ?display ?box_sizing ?position ?overflow
-    ?scrollbar_width ?text_align ?inset ?flex_direction ?flex_wrap
-    ?justify_content ?align_items ?size ?min_size ?max_size ?aspect_ratio ?gap
-    ?padding ?margin ?border_width ?align_self ?align_content ?justify_items
-    ?justify_self ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-    ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-    ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-    ?grid_row ?grid_column ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?orientation ?show_arrows
-    ?track_color ?thumb_color ?arrow_fg ?arrow_bg ?on_change () =
-  let style =
-    layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
-      ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
-      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
-      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
-      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-      ?grid_row ?grid_column ()
-  in
-  Vnode.scroll_bar ?key ?id ~style ?visible ?z_index ?opacity ?focusable
-    ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?orientation
-    ?show_arrows ?track_color ?thumb_color ?arrow_fg ?arrow_bg ?on_change ()
-
-let scroll_box ?key ?id ?display ?box_sizing ?position ?overflow
-    ?scrollbar_width ?text_align ?inset ?flex_direction ?flex_wrap
-    ?justify_content ?align_items ?size ?min_size ?max_size ?aspect_ratio ?gap
-    ?padding ?margin ?border_width ?align_self ?align_content ?justify_items
-    ?justify_self ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-    ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-    ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-    ?grid_row ?grid_column ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?scroll_x ?scroll_y
-    ?sticky_scroll ?sticky_start ?background ?show_scrollbars ?reveal ?scroll_by
-    ?reset_sticky ?on_scroll ?on_scroll_by_applied ?on_reset_sticky_applied
-    children =
-  let style =
-    layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
-      ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
-      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
-      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
-      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-      ?grid_row ?grid_column ()
-  in
-  Vnode.scroll_box ?key ?id ~style ?visible ?z_index ?opacity ?focusable
-    ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?scroll_x
-    ?scroll_y ?sticky_scroll ?sticky_start ?background ?show_scrollbars ?reveal
-    ?scroll_by ?reset_sticky ?on_scroll ?on_scroll_by_applied
-    ?on_reset_sticky_applied children
-
-let textarea ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let progress_bar ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?value ?cursor ?selection ?spans ?ghost_text
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?value ?min ?max ?orientation
+    ?filled_color ?empty_color () =
+  let style =
+    layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
+      ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
+      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
+      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
+      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
+      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
+      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
+      ?grid_row ?grid_column ()
+  in
+  Vnode.progress_bar ?key ~style ?visible ?z_index ?opacity ?buffered ?live
+    ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ?value ?min ?max ?orientation ?filled_color ?empty_color ()
+
+let scroll_bar ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?orientation ?show_arrows
+    ?track_color ?thumb_color ?arrow_fg ?arrow_bg ~on_change ~state ~scroll_size
+    ~viewport_size () =
+  let style =
+    layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
+      ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
+      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
+      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
+      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
+      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
+      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
+      ?grid_row ?grid_column ()
+  in
+  Vnode.scroll_bar ~position:state ~scroll_size ~viewport_size ?key ~style
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?orientation ?show_arrows
+    ?track_color ?thumb_color ?arrow_fg ?arrow_bg ~on_change ()
+
+let scroll_box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?scroll_x ?scroll_y
+    ?background ?show_scrollbars ~on_scroll ~scroll children =
+  let style =
+    layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
+      ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
+      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
+      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
+      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
+      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
+      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
+      ?grid_row ?grid_column ()
+  in
+  Vnode.scroll_box ~scroll ?key ~style ?visible ?z_index ?opacity ?buffered
+    ?live ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size
+    ?focused ?scroll_x ?scroll_y ?background ?show_scrollbars ~on_scroll
+    children
+
+let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?spans ?ghost_text
     ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
     ?focused_text_color ?focused_background_color ?placeholder_color
     ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ?key_aliases ?on_input ?on_change
-    ?on_submit ?on_cursor () =
+    ?selectable ?show_cursor ?key_bindings ?key_aliases ~on_change ?on_submit
+    ~state () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1167,24 +1272,24 @@ let textarea ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.textarea ?key ?id ~style ?visible ?z_index ?opacity ?focusable
-    ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?value ?cursor
-    ?selection ?spans ?ghost_text ?ghost_text_color ?placeholder ?wrap
-    ?text_color ?background_color ?focused_text_color ?focused_background_color
+  Vnode.textarea ~state ?key ~style ?visible ?z_index ?opacity ?buffered ?live
+    ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ?spans ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
+    ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
-    ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?on_input ?on_change
-    ?key_bindings ?key_aliases ?on_submit ?on_cursor ()
+    ?cursor_color ?cursor_blinking ?selectable ?show_cursor ~on_change
+    ?key_bindings ?key_aliases ?on_submit ()
 
-let code ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let code ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?syntax ?text_style ?wrap ?tab_width ?selectable
-    ?selection_bg ?selection_fg ?on_selection content =
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?syntax ?text_style ?wrap
+    ?tab_width ?selectable ?selection_bg ?selection_fg ?on_selection content =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1195,19 +1300,20 @@ let code ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.code ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?syntax ?text_style ?wrap
-    ?tab_width ?selectable ?selection_bg ?selection_fg ?on_selection content
+  Vnode.code ?key ~style ?visible ?z_index ?opacity ?buffered ?live ?on_mouse
+    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused ?syntax
+    ?text_style ?wrap ?tab_width ?selectable ?selection_bg ?selection_fg
+    ?on_selection content
 
-let line_number ?key ?id ?display ?box_sizing ?position ?overflow
-    ?scrollbar_width ?text_align ?inset ?flex_direction ?flex_wrap
-    ?justify_content ?align_items ?size ?min_size ?max_size ?aspect_ratio ?gap
-    ?padding ?margin ?border_width ?align_self ?align_content ?justify_items
-    ?justify_self ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-    ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-    ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-    ?grid_row ?grid_column ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?fg ?bg ?min_width
+let line_number ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?fg ?bg ?min_width
     ?padding_right ?show_line_numbers ?line_number_offset ?line_colors
     ?line_signs ?hidden_line_numbers child =
   let style =
@@ -1220,47 +1326,22 @@ let line_number ?key ?id ?display ?box_sizing ?position ?overflow
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.line_number ?key ?id ~style ?visible ?z_index ?opacity ?focusable
-    ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?fg ?bg
-    ?min_width ?padding_right ?show_line_numbers ?line_number_offset
+  Vnode.line_number ?key ~style ?visible ?z_index ?opacity ?buffered ?live
+    ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ?fg ?bg ?min_width ?padding_right ?show_line_numbers ?line_number_offset
     ?line_colors ?line_signs ?hidden_line_numbers child
 
-let diff ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let diff ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?layout ?theme ?highlight ?line_highlights
-    ?line_spans ?line_signs ?show_line_numbers ?wrap ?selectable ?text_style
-    ?on_line_click patch =
-  let style =
-    layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
-      ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
-      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
-      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
-      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-      ?grid_row ?grid_column ()
-  in
-  Vnode.diff ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?layout ?theme ?highlight
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?layout ?theme ?highlight
     ?line_highlights ?line_spans ?line_signs ?show_line_numbers ?wrap
-    ?selectable ?text_style ?on_line_click patch
-
-let markdown ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
-    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
-    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
-    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
-    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
-    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
-    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?md_style ?conceal ?streaming ?selectable
-    ?selection_bg ?selection_fg ?code_syntax ?on_selection content =
+    ?selectable ?text_style ?on_line_click patch =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1271,26 +1352,51 @@ let markdown ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.markdown ?key ?id ~style ?visible ?z_index ?opacity ?focusable
-    ?autofocus ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?md_style
-    ?conceal ?streaming ?selectable ?selection_bg ?selection_fg ?code_syntax
-    ?on_selection content
+  Vnode.diff ?key ~style ?visible ?z_index ?opacity ?buffered ?live ?on_mouse
+    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused ?layout
+    ?theme ?highlight ?line_highlights ?line_spans ?line_signs
+    ?show_line_numbers ?wrap ?selectable ?text_style ?on_line_click patch
 
-let table ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let markdown ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?columns ?rows ?selected_row ?border
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?md_style ?conceal ?streaming
+    ?selectable ?selection_bg ?selection_fg ?code_syntax ?on_selection content =
+  let style =
+    layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
+      ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
+      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
+      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
+      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
+      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
+      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
+      ?grid_row ?grid_column ()
+  in
+  Vnode.markdown ?key ~style ?visible ?z_index ?opacity ?buffered ?live
+    ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ?md_style ?conceal ?streaming ?selectable ?selection_bg ?selection_fg
+    ?code_syntax ?on_selection content
+
+let table ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?columns ?(rows = []) ?border
     ?border_style ?show_header ?show_column_separator ?show_row_separator
     ?cell_padding ?header_color ?header_background ?text_color ?background
     ?selected_text_color ?selected_background ?focused_selected_text_color
     ?focused_selected_background ?selection_visible ?show_scroll_indicator
     ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
-    ?fast_scroll_step ?on_change ?on_activate ?on_hover () =
+    ?fast_scroll_step ~on_change ?on_activate ?on_hover ~equal ~selected () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1301,29 +1407,41 @@ let table ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.table ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?columns ?rows
-    ?selected_row ?border ?border_style ?show_header ?show_column_separator
-    ?show_row_separator ?cell_padding ?header_color ?header_background
-    ?text_color ?background ?selected_text_color ?selected_background
-    ?focused_selected_text_color ?focused_selected_background ?selection_visible
-    ?show_scroll_indicator ?activate_on_click ?wheel_navigation ?row_styles
-    ?wrap_selection ?fast_scroll_step ?on_change ?on_activate ?on_hover ()
+  let items = Array.of_list rows in
+  let selected_row =
+    selection_index ~equal ~value:(fun item -> item.Table.value) selected items
+  in
+  let rows = List.map (fun item -> item.Table.cells) rows in
+  let value index = items.(index).Table.value in
+  let on_change index = on_change (value index) in
+  let on_activate = Option.map (fun f index -> f (value index)) on_activate in
+  let on_hover =
+    Option.map (fun f index -> f (Option.map value index)) on_hover
+  in
+  Vnode.table ~selected_row ?key ~style ?visible ?z_index ?opacity ?buffered
+    ?live ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size
+    ?focused ?columns ~rows ?border ?border_style ?show_header
+    ?show_column_separator ?show_row_separator ?cell_padding ?header_color
+    ?header_background ?text_color ?background ?selected_text_color
+    ?selected_background ?focused_selected_text_color
+    ?focused_selected_background ?selection_visible ?show_scroll_indicator
+    ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
+    ?fast_scroll_step ~on_change ?on_activate ?on_hover ()
 
-let tree ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
+let tree ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
     ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
     ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
-    ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?items ?selected_index ?expand_depth
-    ?indent_size ?show_guides ?guide_style ?expand_icon ?collapse_icon
-    ?leaf_icon ?background ?text_color ?selected_background ?selected_text_color
+    ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?focused ?items ?indent_size
+    ?show_guides ?guide_style ?expand_icon ?collapse_icon ?leaf_icon ?background
+    ?text_color ?selected_background ?selected_text_color
     ?focused_selected_background ?focused_selected_text_color ?guide_color
-    ?icon_color ?wrap_selection ?fast_scroll_step ?on_change ?on_activate
-    ?on_expand () =
+    ?icon_color ?wrap_selection ?fast_scroll_step ~on_change ?on_activate ~state
+    () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1334,13 +1452,12 @@ let tree ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
       ?grid_row ?grid_column ()
   in
-  Vnode.tree ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?items ?selected_index
-    ?expand_depth ?indent_size ?show_guides ?guide_style ?expand_icon
-    ?collapse_icon ?leaf_icon ?background ?text_color ?selected_background
-    ?selected_text_color ?focused_selected_background
-    ?focused_selected_text_color ?guide_color ?icon_color ?wrap_selection
-    ?fast_scroll_step ?on_change ?on_activate ?on_expand ()
+  Vnode.tree ~state ?key ~style ?visible ?z_index ?opacity ?buffered ?live
+    ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ?items ?indent_size ?show_guides ?guide_style ?expand_icon ?collapse_icon
+    ?leaf_icon ?background ?text_color ?selected_background ?selected_text_color
+    ?focused_selected_background ?focused_selected_text_color ?guide_color
+    ?icon_color ?wrap_selection ?fast_scroll_step ~on_change ?on_activate ()
 
 let px = Vnode.px
 let pct = Vnode.pct

@@ -3,13 +3,14 @@
 open Mosaic
 
 type cursor_style = Block | Line | Underline
-type model = { value : string; cursor_style : cursor_style }
-type msg = Cycle_cursor | Quit
+type model = { value : Editor.t; cursor_style : cursor_style }
+type msg = Cycle_cursor | Set_value of Editor.t | Quit
 
-let init () = ({ value = ""; cursor_style = Block }, Cmd.none)
+let init () = ({ value = Editor.empty; cursor_style = Block }, Cmd.none)
 
 let update msg model =
   match msg with
+  | Set_value value -> ({ model with value }, Cmd.none)
   | Cycle_cursor ->
       let cursor_style =
         match model.cursor_style with
@@ -62,11 +63,13 @@ let view model =
               box ~flex_direction:Row ~align_items:Center ~gap:(gap 1)
                 [
                   text "Name:";
-                  input ~autofocus:true ~placeholder:"Type your name..."
-                    ~cursor_style:(cursor_style_to_prop model.cursor_style)
-                    ~cursor_blinking:true
+                  input
                     ~size:{ width = px 30; height = px 1 }
-                    ~value:model.value ();
+                    ~focused:true ~placeholder:"Type your name..."
+                    ~cursor_style:(cursor_style_to_prop model.cursor_style)
+                    ~cursor_blinking:true ~state:model.value
+                    ~on_change:(fun value -> Set_value value)
+                    ();
                 ];
               (* Cursor style display *)
               text ~style:hint
@@ -80,9 +83,8 @@ let view model =
     ]
 
 let subscriptions _model =
-  (* Using on_key means these shortcuts only fire when not consumed by the
-     focused text_input. Tab and Escape are not consumed by text_input, so they
-     work even when the input is focused. *)
+  (* Application shortcuts run before the focused editor; on_keys consumes
+     matching shortcuts so Tab changes the cursor style without editing text. *)
   Sub.on_keys [ (Shortcut.tab, Cycle_cursor); (Shortcut.escape, Quit) ]
 
 let () = run { init; update; view; subscriptions }

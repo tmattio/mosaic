@@ -447,7 +447,7 @@ let%expect_test "diff line click callback reports hit" =
   let clicked = ref None in
   reconcile app
     (Vnode.diff ~layout:Diff.Unified
-       ~on_line_click:(fun hit -> clicked := Some hit)
+       ~on_line_click:(fun hit -> Some (clicked := Some hit))
        (parse simple_diff));
   set_viewport app.renderer ~width:60 ~height:5;
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
@@ -463,7 +463,7 @@ let%expect_test "diff line click callback ignores drags" =
   let clicked = ref false in
   reconcile app
     (Vnode.diff ~layout:Diff.Unified
-       ~on_line_click:(fun _ -> clicked := true)
+       ~on_line_click:(fun _ -> Some (clicked := true))
        (parse simple_diff));
   set_viewport app.renderer ~width:60 ~height:5;
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
@@ -481,11 +481,12 @@ let%expect_test "diff without line click callback lets mouse up bubble" =
   reconcile app
     (Vnode.box
        ~on_mouse:(fun event ->
-         match Event.Mouse.kind event with
-         | Up { button = Left; _ } -> incr parent_ups
-         | Down _ | Up _ | Move | Drag _ | Drag_end _ | Drop _ | Over _ | Out
-         | Scroll _ ->
-             ())
+         Some
+           (match Event.Mouse.kind event with
+           | Up { button = Left; _ } -> incr parent_ups
+           | Down _ | Up _ | Move | Drag _ | Drag_end _ | Drop _ | Over _ | Out
+           | Scroll _ ->
+               ()))
        [ Vnode.diff ~style:full_style ~layout:Diff.Unified (parse simple_diff) ]);
   set_viewport app.renderer ~width:60 ~height:5;
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
@@ -503,17 +504,18 @@ let%expect_test "diff line click callback can be removed" =
   let parent child =
     Vnode.box
       ~on_mouse:(fun event ->
-        match Event.Mouse.kind event with
-        | Up { button = Left; _ } -> incr parent_ups
-        | Down _ | Up _ | Move | Drag _ | Drag_end _ | Drop _ | Over _ | Out
-        | Scroll _ ->
-            ())
+        Some
+          (match Event.Mouse.kind event with
+          | Up { button = Left; _ } -> incr parent_ups
+          | Down _ | Up _ | Move | Drag _ | Drag_end _ | Drop _ | Over _ | Out
+          | Scroll _ ->
+              ()))
       [ child ]
   in
   reconcile app
     (parent
        (Vnode.diff ~style:full_style ~layout:Diff.Unified
-          ~on_line_click:(fun _ -> incr clicked)
+          ~on_line_click:(fun _ -> Some (incr clicked))
           (parse simple_diff)));
   set_viewport app.renderer ~width:60 ~height:5;
   Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;

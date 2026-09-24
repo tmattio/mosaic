@@ -30,8 +30,29 @@ module Border = Matrix.Grid.Border
     {!Border.rounded}, {!Border.heavy}, {!Border.double}, and {!Border.ascii}.
 *)
 
+module Editor = Mosaic_ui.Editor
+(** Persistent text, caret, selection and undo state. *)
+
+module Scroll = Mosaic_ui.Scroll
+(** Persistent viewport position and following intent. *)
+
 module Event = Mosaic_ui.Event
 (** Input event types for keyboard, mouse, and paste events. *)
+
+module Focus : sig
+  (** Pure traversal of application-owned focus identifiers. *)
+
+  val next : equal:('a -> 'a -> bool) -> 'a list -> 'a option -> 'a option
+  (** [next ~equal order current] is the identifier after [current] in [order],
+      wrapping to the first identifier. An absent or unknown [current] selects
+      the first identifier; an empty [order] returns [None]. Identifiers should
+      be distinct under [equal]. No widget focus is changed. *)
+
+  val prev : equal:('a -> 'a -> bool) -> 'a list -> 'a option -> 'a option
+  (** [prev ~equal order current] traverses in reverse, wrapping to the last
+      identifier. An absent or unknown [current] selects the last identifier; an
+      empty [order] returns [None]. *)
+end
 
 module Shortcut : sig
   (** Keyboard shortcuts for subscriptions and event handlers.
@@ -478,21 +499,24 @@ end
 
 (** Companion types for the {!val-select} widget. *)
 module Select : sig
-  type item = Mosaic_ui.Select.item = {
-    label : string;  (** Display text for the item. *)
-    description : string option;
-        (** Optional secondary text shown below the label. *)
-  }
-  (** The type for select list entries. *)
+  type 'a item
+  (** A display label and optional description paired with an application value.
+      Values must be distinct under the selection widget's [equal] function. *)
+
+  val item : 'a -> ?description:string -> string -> 'a item
+  (** [item value ?description label] displays [label] and reports [value] when
+      selected or activated. [description] is absent by default. *)
 end
 
 (** Companion types for the {!val-tab_select} widget. *)
 module Tab_select : sig
-  type item = Mosaic_ui.Tab_select.item = {
-    label : string;  (** Display text for the tab. *)
-    description : string;  (** Secondary text shown below the tab. *)
-  }
-  (** The type for tab entries. *)
+  type 'a item
+  (** A tab label and description paired with an application value. Values must
+      be distinct under the selection widget's [equal] function. *)
+
+  val item : 'a -> ?description:string -> string -> 'a item
+  (** [item value ?description label] displays [label] and reports [value] when
+      selected or activated. [description] defaults to the empty string. *)
 end
 
 (** Companion types for the {!val-table} widget. *)
@@ -535,6 +559,10 @@ module Table : sig
   type cell = Mosaic_ui.Table.cell
   (** The type for table cell content. *)
 
+  type 'a row
+  (** Table cells paired with an application value. Values must be distinct
+      under the table's [equal] function. *)
+
   val cell : ?style:Ansi.Style.t -> string -> cell
   (** [cell s] is a plain-text cell containing [s].
 
@@ -543,18 +571,25 @@ module Table : sig
   val rich : Mosaic_ui.Text.fragment list -> cell
   (** [rich fragments] is a styled cell built from a list of styled text
       fragments. *)
+
+  val row : 'a -> cell array -> 'a row
+  (** [row value cells] displays [cells] and reports [value] when selected or
+      activated. [cells] must not be mutated while the row is mounted. *)
 end
 
 (** Companion types for the {!val-tree} widget. *)
 module Tree : sig
   type item = Mosaic_ui.Tree.item = {
-    label : string;  (** Display text for the node. *)
-    children : item list;  (** Child nodes (empty for leaves). *)
+    id : string;
+    label : string;
+    children : item list;
   }
-  (** The type for tree nodes. *)
+  (** A node with a stable ID unique in the tree. *)
 
-  val item : ?children:item list -> string -> item
-  (** [item label] is a tree node with [label]. [children] defaults to [[]]. *)
+  val item : id:string -> ?children:item list -> string -> item
+  (** [item ~id label] is a node whose children default to [[]]. *)
+
+  module State = Mosaic_ui.Tree.State
 end
 
 (** Companion types for the {!val-spinner} widget. *)
@@ -597,41 +632,6 @@ end
 module Scroll_bar : sig
   type orientation = Mosaic_ui.Scroll_bar.orientation
   (** The type for scroll bar orientation: [`Vertical] or [`Horizontal]. *)
-end
-
-(** Companion types for the {!val-scroll_box} widget. *)
-module Scroll_box : sig
-  type reveal_align = Mosaic_ui.Scroll_box.reveal_align
-  (** The type for reveal alignment along one axis: [`Start], [`Center], [`End],
-      or [`Nearest]. *)
-
-  type reveal = Mosaic_ui.Scroll_box.reveal = {
-    key : string;
-    x : int option;
-    y : int option;
-    align_x : reveal_align;
-    align_y : reveal_align;
-    margin : int;
-  }
-  (** The type for one-shot content reveal requests.
-
-      [key] identifies the request. Reusing a key after it has been applied does
-      not scroll again. [x] and [y] are content coordinates. [align_x] and
-      [align_y] select the placement when the target is outside the viewport.
-      [margin] keeps that many cells around the target when possible. *)
-
-  type scroll_by = Mosaic_ui.Scroll_box.scroll_by = {
-    key : string;
-    x : float option;
-    y : float option;
-    unit : Mosaic_ui.Scroll_bar.scroll_unit;
-  }
-  (** The type for one-shot relative scroll requests.
-
-      Reusing the currently applied [key] does not scroll again; change it to
-      request another scroll. [x] and [y] are signed deltas expressed in [unit].
-      At least one delta must be present, and every present delta must be
-      finite. *)
 end
 
 (** Companion types for the {!val-text} and {!val-code} widgets. *)
@@ -804,10 +804,10 @@ end
 
 (** {1:views Views} *)
 
-type 'msg t = 'msg option Vnode.t
-(** The type for view nodes parameterized by message type ['msg]. Event handlers
-    embedded in a node return ['msg option]: [Some msg] dispatches the message
-    into the update loop; [None] ignores the event.
+type 'msg t = 'msg Vnode.t
+(** The type for view nodes parameterized by message type ['msg]. Semantic
+    callbacks produce messages directly. Raw event handlers return
+    ['msg option]: [Some msg] dispatches the message; [None] ignores the event.
 
     Build values of this type with the element constructors ({!val-box},
     {!val-text}, {!val-input}, etc.) and compose them with {!val-fragment}. *)
@@ -853,10 +853,7 @@ module Cmd : sig
             (urxvt and others); a terminal ignores the sequence it does not
             understand. Wrapped for tmux passthrough when inside tmux. *)
     | Clear_selection  (** Clear the active text selection, if any. *)
-    | Focus of string
-        (** Move keyboard focus to the element identified by the given [id],
-            retrying once after the next completed render. See {!val-focus}. *)
-    | Static_commit of 'msg option Vnode.t
+    | Static_commit of 'msg Vnode.t
         (** Render a vnode snapshot and write it to the static area with ANSI
             styling preserved. The row count is computed automatically from the
             rendered grid. *)
@@ -908,14 +905,7 @@ module Cmd : sig
   val clear_selection : 'msg t
   (** [clear_selection] clears the active text selection, if any. *)
 
-  val focus : string -> 'msg t
-  (** [focus id] moves keyboard focus to the element whose [id] attribute equals
-      [id]. When no focusable element matches yet, one more attempt is made
-      after the next completed render — so focusing an element the current
-      update's view is about to create works. A request that still has no match
-      is then dropped. *)
-
-  val static_commit : 'msg option Vnode.t -> 'msg t
+  val static_commit : 'msg Vnode.t -> 'msg t
   (** [static_commit view] renders [view] offscreen at the current terminal
       width and appends the styled result to static output. *)
 
@@ -940,16 +930,14 @@ module Sub : sig
   type 'msg t =
     | None  (** No subscription. Equivalent to [batch []]. *)
     | Batch of 'msg t list  (** Activate all subscriptions in the list. *)
-    | Every of float * (unit -> 'msg)
-        (** [Every (interval, f)] fires [f ()] repeatedly at approximately
+    | Every of string * float * (unit -> 'msg)
+        (** [Every (id, interval, f)] fires [f ()] repeatedly at approximately
             [interval]-second intervals. *)
-    | On_tick of (dt:float -> 'msg)
-        (** [On_tick f] fires [f ~dt] on every render frame, where [dt] is the
-            elapsed time in seconds since the previous frame. *)
+    | On_tick of string * (dt:float -> 'msg)
+        (** [On_tick (id, f)] fires [f ~dt] on every render frame, where [dt] is
+            the elapsed time in seconds since the previous frame. *)
     | On_key of (Event.key -> 'msg option)
-        (** [On_key f] delivers key events the UI tree did not consume (no
-            handler called prevent-default). [f] returns [None] to ignore an
-            event. *)
+        (** [On_key f] captures keys before focused widget processing. *)
     | On_key_all of (Event.key -> 'msg option)
         (** [On_key_all f] delivers all key events, consumed or not. [f] returns
             [None] to ignore an event. *)
@@ -958,8 +946,7 @@ module Sub : sig
     | On_mouse_all of (Event.mouse -> 'msg option)
         (** [On_mouse_all f] delivers all mouse events, consumed or not. *)
     | On_paste of (Event.paste -> 'msg option)
-        (** [On_paste f] delivers paste events the UI tree did not consume (e.g.
-            a focused editor inserting the paste counts as consuming it). *)
+        (** [On_paste f] captures paste before focused widget processing. *)
     | On_paste_all of (Event.paste -> 'msg option)
         (** [On_paste_all f] delivers all paste events, consumed or not. *)
     | On_resize of (width:int -> height:int -> 'msg)
@@ -984,20 +971,24 @@ module Sub : sig
   (** [batch subs] is a subscription that activates every subscription in
       [subs]. *)
 
-  val every : float -> (unit -> 'msg) -> 'msg t
-  (** [every interval f] fires [f ()] at approximately [interval]-second
-      intervals for as long as the subscription is active. *)
+  val every : id:string -> float -> (unit -> 'msg) -> 'msg t
+  (** [every ~id interval f] fires on a fixed-rate schedule while subscribed.
+      [id] keeps the schedule stable across reordering. Changing the interval
+      restarts it. Timer and tick IDs must be nonempty and unique within the
+      application's subscriptions. Raises [Invalid_argument] for an empty ID or
+      an interval that is nonpositive or nonfinite. *)
 
-  val on_tick : (dt:float -> 'msg) -> 'msg t
-  (** [on_tick f] fires [f ~dt] on every rendered frame. [dt] is the elapsed
+  val on_tick : id:string -> (dt:float -> 'msg) -> 'msg t
+  (** [on_tick ~id f] fires [f ~dt] on every rendered frame. [dt] is the elapsed
       time in seconds since the previous frame. Use this for animations that
       must advance at the display frame rate. *)
 
   val on_key : (Event.key -> 'msg option) -> 'msg t
-  (** [on_key f] delivers key events the UI tree did not consume: an event a
-      focused widget handled (its handler called prevent-default) is not
-      delivered. [f] returns [None] to ignore an event without dispatching. See
-      also {!val-on_key_all}. *)
+  (** [on_key f] runs before the focused element's key handler. Returning a
+      message dispatches it synchronously; call {!Event.Key.prevent_default} to
+      suppress the default widget action. Subscriptions run in declaration
+      order. A prior prevent-default skips this subscription; stop-propagation
+      stops subsequent handlers. *)
 
   val on_keys : (Shortcut.t * 'msg) list -> 'msg t
   (** [on_keys bindings] delivers key events to the first matching shortcut in
@@ -1018,8 +1009,8 @@ module Sub : sig
       consumed or not. *)
 
   val on_paste : (Event.paste -> 'msg option) -> 'msg t
-  (** [on_paste f] delivers paste events the UI tree did not consume: a paste a
-      focused editor inserted is not delivered. See also {!val-on_paste_all}. *)
+  (** [on_paste f] runs before the focused editor's paste handler. Call
+      {!Event.Paste.prevent_default} to suppress insertion. *)
 
   val on_paste_all : (Event.paste -> 'msg option) -> 'msg t
   (** [on_paste_all f] is like {!val-on_paste} but delivers all paste events,
@@ -1055,8 +1046,9 @@ type ('model, 'msg) app = {
       (** [update msg model] is the new model and any side-effects produced in
           response to [msg]. Called once per dispatched message. *)
   view : 'model -> 'msg t;
-      (** [view model] is the UI description for [model]. Called on every render
-          cycle when the model has changed. *)
+      (** [view model] is the UI description for [model]. Refreshed after
+          accepted model changes before subsequent input processing. Several
+          views may be evaluated before one paint. *)
   subscriptions : 'model -> 'msg Sub.t;
       (** [subscriptions model] is the set of events the application wants to
           receive given [model]. Re-evaluated after every update. *)
@@ -1208,70 +1200,55 @@ val inset_lrtb : int -> int -> int -> int -> length_percentage_auto rect
 
 (** {1:elements UI elements}
 
-    Every element constructor accepts a large set of optional layout and styling
-    arguments that mirror CSS flexbox and grid properties. Arguments shared
-    across all elements are listed once here; only element-specific arguments
-    are documented on each constructor.
+    Elements describe the current model. Layout and paint use labelled
+    arguments. Layout follows {!Toffee.Style.default}; [box] uses its default
+    row direction, and minimum dimensions remain automatic unless explicitly
+    supplied.
 
-    {2:layout_args Common layout arguments}
+    Common layout arguments include [display], [position], [size], [min_size],
+    [max_size], [padding], [margin], [gap], the [flex_*] properties, alignment,
+    and the [grid_*] properties. They map directly to Toffee layout
+    declarations. [visible] defaults to [true], [opacity] to [1.], [z_index] to
+    [0], and [buffered] and [live] to [false] unless the widget supplies a
+    different default.
 
-    - [key] -- reconciler identity hint for list items.
-    - [id] -- unique identifier used by {!Cmd.val-focus}.
-    - [display] -- layout mode ({!Display.Flex}, {!Display.Grid},
-      {!Display.Block}, ...).
-    - [box_sizing] -- whether [size] includes padding and border.
-    - [position] -- positioning scheme ({!Position.Relative},
-      {!Position.Absolute}).
-    - [overflow] -- how overflowing content is handled per axis.
-    - [scrollbar_width] -- width reserved for overflow scrollbars.
-    - [text_align] -- text alignment within the element.
-    - [inset] -- position offsets for absolutely-positioned elements.
-    - [flex_direction], [flex_wrap], [justify_content], [align_items],
-      [align_content], [align_self], [flex_grow], [flex_shrink], [flex_basis] --
-      flexbox properties.
-    - [justify_items], [justify_self] -- grid alignment properties.
-    - [size], [min_size], [max_size] -- element dimensions.
-    - [aspect_ratio] -- width-to-height ratio constraint.
-    - [gap] -- spacing between flex or grid children.
-    - [padding] -- inner spacing between border and content.
-    - [margin] -- outer spacing outside the border.
-    - [border_width] -- widths of each border side in cells.
-    - [grid_template_rows], [grid_template_columns], [grid_auto_rows],
-      [grid_auto_columns], [grid_auto_flow], [grid_template_areas],
-      [grid_template_column_names], [grid_template_row_names], [grid_row],
-      [grid_column] -- CSS grid properties.
-    - [visible] -- when [false] the element takes no space and is not rendered.
-      Defaults to [true].
-    - [z_index] -- stacking order for overlapping elements.
-    - [opacity] -- alpha in \[[0.];[1.]\]; [1.] is fully opaque.
-    - [focusable] -- when [true] the element can receive keyboard focus.
-      Defaults to [false].
-    - [autofocus] -- when [true] the element receives focus on mount. Defaults
-      to [false].
-    - [buffered] -- when [true] renders to an off-screen buffer. Defaults to
-      [false].
-    - [live] -- when [true] the element re-renders every frame even when the
-      model has not changed. Defaults to [false].
-    - [ref] -- callback invoked once with the element's
-      {!Mosaic_ui.Renderable.t} when it is created (not on reuse, and never on
-      unmount). A stored handle can outlive its element; check
-      {!Mosaic_ui.Renderable.destroyed} before using one kept across renders.
-    - [on_mouse] -- mouse event handler for this element.
-    - [on_key] -- key event handler for this element.
-    - [on_paste] -- paste event handler for this element. *)
+    [key] is an optional reconciliation hint. [focused] declares keyboard focus.
+    With no focused element, keys reach subscriptions only. Declaring more than
+    one visible focused element raises [Invalid_argument]. Hidden subtrees do
+    not participate in focus. Traversal is application-owned; {!Focus} provides
+    pure next/previous selection over application identifiers.
+
+    [on_focus_request] supplies the message for an ordinary left-button press on
+    an unfocused element. The request runs before caret and selection handling.
+    The application accepts it by declaring the element [focused]. Rejecting the
+    request, hiding or removing the element cancels that press's default
+    interaction. Shift-click does not request focus.
+
+    Generic event callbacks return a message or [None]. [on_click] runs on
+    primary-button release without dragging; [on_size] reports changed allocated
+    dimensions in cells. Neither callback changes application state by itself.
+    Interactive [state] values belong to the model. Semantic callbacks such as
+    [on_change], [on_scroll], [on_submit] and [on_activate] return messages
+    directly; acceptance or rejection belongs in [update]. Storing an
+    [on_change] proposal accepts it. Subsequent events derive from the accepted
+    model. *)
 
 val empty : 'msg t
-(** [empty] is the empty view that renders nothing and occupies no space. Useful
-    as a placeholder. *)
+(** [empty] occupies no space. *)
 
 val fragment : 'msg t list -> 'msg t
-(** [fragment views] groups [views] into a single view node without introducing
-    a wrapping container element. Layout is applied to each child independently
-    within the parent. *)
+(** [fragment children] groups children without a layout wrapper. *)
 
 val embed : Mosaic_ui.Renderable.t -> 'msg t
-(** [embed r] wraps a pre-rendered {!Mosaic_ui.Renderable.t} as a view node. Use
-    this to integrate non-TEA rendering into the view tree. *)
+(** [embed node] integrates an existing renderable into the view tree. Mosaic
+    attaches the node but does not manage its properties or interaction state;
+    the integration is responsible for their ownership. *)
+
+val memo : key:'key -> ('key -> 'msg t) -> 'msg t
+(** [memo ~key view] defers [view key] and reuses the mounted subtree while the
+    key remains structurally equal. The immutable, function-free key must
+    include all captured dependencies that affect content or callbacks. Changing
+    a message mapper invalidates the cached subtree. *)
 
 val viewport_switch :
   at_least_width:int -> wide:'msg t -> narrow:'msg t -> 'msg t
@@ -1283,7 +1260,7 @@ val viewport_switch :
     selected branch is mounted, so the other branch cannot take space, receive
     focus, install handlers, or keep live rendering active. Crossing the
     threshold reconciles the new branch normally against the old one; compatible
-    keyed elements retain their widget state and unmatched elements are
+    keyed elements reuse their renderables and caches; unmatched elements are
     unmounted.
 
     This is a viewport query, not a query on the containing element's allocated
@@ -1291,7 +1268,6 @@ val viewport_switch :
 
 val box :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1331,14 +1307,15 @@ val box :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?border:bool ->
   ?border_style:Border.t ->
   ?border_sides:Border.side list ->
@@ -1350,28 +1327,12 @@ val box :
   ?title_alignment:[ `Left | `Center | `Right ] ->
   'msg t list ->
   'msg t
-(** [box children] is a generic container element that lays out [children]
-    according to the common layout arguments (see {!elements}).
-
-    Box-specific optional arguments:
-    - [border] -- when [true] draws a border using [border_style]. Defaults to
-      [false].
-    - [border_style] -- the border character set. Defaults to {!Border.single}.
-    - [border_sides] -- which sides to draw. Defaults to all four.
-    - [border_color] -- color of the border when unfocused. Defaults to white.
-    - [focused_border_color] -- color of the border when the element has focus.
-      Defaults to bright cyan.
-    - [background] -- background fill color. Defaults to transparent.
-    - [fill] -- when [true] fills the background over the entire allocated area.
-      Defaults to [true].
-    - [title] -- text drawn in the top border. Has no effect when [border] is
-      [false].
-    - [title_alignment] -- alignment of [title] within the top border. Defaults
-      to [`Left]. *)
+(** [box children] is a container for [children]. Widget-specific visual options
+    follow {!Mosaic_ui.Box}; layout and paint use the labelled arguments above.
+*)
 
 val text :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1412,14 +1373,15 @@ val text :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
   ?selectable:bool ->
@@ -1429,29 +1391,11 @@ val text :
   ?truncate:bool ->
   string ->
   'msg t
-(** [text s] is a text element that renders the string [s].
-
-    Text-specific optional arguments:
-    - [style] -- shorthand for [text_style]; both set the single ANSI style
-      applied to the text content. When both are given, [text_style] wins and
-      [style] is ignored — they do not compose.
-    - [text_style] -- ANSI style applied to the text content. Defaults to
-      {!Ansi.Style.default}.
-    - [wrap] -- line-wrapping mode. Defaults to [`None].
-    - [selectable] -- when [true] the user can select text with the mouse.
-      Defaults to [true].
-    - [selection_bg] -- background color of selected text. Defaults to the
-      terminal default.
-    - [selection_fg] -- foreground color of selected text. Defaults to the
-      terminal default.
-    - [tab_width] -- number of cells a tab character expands to. Defaults to
-      [2].
-    - [truncate] -- when [true] clips content that overflows the allocated area
-      instead of wrapping. Defaults to [false]. *)
+(** [text content] is a text element. Widget-specific visual options follow
+    {!Mosaic_ui.Text}; layout and paint use the labelled arguments above. *)
 
 val slider :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1491,41 +1435,30 @@ val slider :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?orientation:Slider.orientation ->
-  ?value:float ->
   ?min:float ->
   ?max:float ->
   ?viewport_size:float ->
   ?track_color:Ansi.Color.t ->
   ?thumb_color:Ansi.Color.t ->
-  ?on_value_change:(float -> 'msg option) ->
+  state:float ->
+  on_change:(float -> 'msg) ->
   unit ->
   'msg t
-(** [slider ()] is an interactive range slider.
-
-    Slider-specific optional arguments:
-    - [orientation] -- [`Horizontal] or [`Vertical]. Defaults to [`Horizontal].
-    - [value] -- current thumb position. Defaults to [0.].
-    - [min] -- minimum value of the range. Defaults to [0.].
-    - [max] -- maximum value of the range. Defaults to [1.].
-    - [viewport_size] -- size of the visible viewport relative to the total
-      range; used to size the thumb proportionally.
-    - [track_color] -- color of the slider track.
-    - [thumb_color] -- color of the slider thumb.
-    - [on_value_change] -- callback fired when the value changes; receives the
-      new value and returns an optional message. *)
+(** [slider ()] is a slider. Widget-specific visual options follow
+    {!Mosaic_ui.Slider}; layout and paint use the labelled arguments above. *)
 
 val input :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1565,19 +1498,16 @@ val input :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
-  ?value:string ->
-  ?cursor:int ->
-  ?selection:(int * int) option ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?placeholder:string ->
-  ?max_length:int ->
   ?text_color:Ansi.Color.t ->
   ?background_color:Ansi.Color.t ->
   ?focused_text_color:Ansi.Color.t ->
@@ -1592,54 +1522,23 @@ val input :
   ?show_cursor:bool ->
   ?key_bindings:Mosaic_ui.Text_input.key_binding list ->
   ?key_aliases:(string * string) list ->
-  ?on_input:(string -> 'msg option) ->
-  ?on_change:(string -> 'msg option) ->
-  ?on_submit:(string -> 'msg option) ->
-  ?on_cursor:(cursor:int -> selection:(int * int) option -> 'msg option) ->
+  on_change:(Editor.t -> 'msg) ->
+  ?on_submit:(string -> 'msg) ->
+  state:Editor.t ->
   unit ->
   'msg t
-(** [input ()] is a single-line text input field.
+(** [input ~state ~on_change ()] is a single-line editor. [on_change] proposes
+    editing state, including caret and selection changes. Accept the state on
+    every edit, and compare {!Editor.text} before running text-dependent work.
+    [on_submit] receives the accepted text on Enter.
 
-    See {!val-textarea} for the multi-line variant.
-
-    Input-specific optional arguments:
-    - [value] -- controlled content of the field. Every reconciliation restores
-      it if the live edit buffer has diverged. Defaults to [""].
-    - [cursor] -- optional controlled cursor grapheme offset.
-    - [selection] -- optional controlled selection range.
-    - [placeholder] -- hint text shown when the field is empty. Defaults to
-      [""].
-    - [max_length] -- maximum number of characters accepted. Defaults to [1000].
-    - [text_color] -- foreground color of the text. Defaults to white.
-    - [background_color] -- background color of the field. Defaults to the
-      terminal default.
-    - [focused_text_color] -- foreground color when focused. Defaults to white.
-    - [focused_background_color] -- background color when focused. Defaults to
-      the terminal default.
-    - [placeholder_color] -- color of the placeholder text. Defaults to bright
-      black (dark gray).
-    - [selection_color] -- background color of selected text. Defaults to blue.
-    - [selection_fg] -- foreground color of selected text. Defaults to the
-      terminal default.
-    - [cursor_style] -- cursor shape: [`Block], [`Line], or [`Underline].
-      Defaults to [`Block].
-    - [cursor_color] -- color of the cursor. Defaults to white.
-    - [cursor_blinking] -- when [true] the cursor blinks. Defaults to [true].
-    - [selectable] -- when [true] mouse selection is enabled. Defaults to
-      [true].
-    - [show_cursor] -- when [true] the focused cursor is shown. Defaults to
-      [true].
-    - [on_input] -- fired on every keystroke; receives the full current value
-      after the change.
-    - [on_change] -- fired when the value changes after editing; semantics may
-      differ from [on_input] depending on the component.
-    - [on_submit] -- fired when the user presses Enter; receives the current
-      value.
-    - [on_cursor] -- fired when cursor position or selection changes. *)
+    Raises [Invalid_argument] if [state] contains CR or LF. Typed and pasted
+    newlines are stripped. Undo and redo that would restore multiline text are
+    ignored. Widget-specific visual options follow {!Mosaic_ui.Text_input};
+    layout and paint use the labelled arguments above. *)
 
 val select :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1679,15 +1578,15 @@ val select :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
-  ?selected_index:int ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?background:Ansi.Color.t ->
   ?text_color:Ansi.Color.t ->
   ?focused_background:Ansi.Color.t ->
@@ -1701,42 +1600,24 @@ val select :
   ?wrap_selection:bool ->
   ?item_spacing:int ->
   ?fast_scroll_step:int ->
-  ?on_change:(int -> 'msg option) ->
-  ?on_activate:(int -> 'msg option) ->
-  Select.item list ->
+  on_change:('a -> 'msg) ->
+  ?on_activate:('a -> 'msg) ->
+  equal:('a -> 'a -> bool) ->
+  selected:'a option ->
+  'a Select.item list ->
   'msg t
-(** [select items] is a vertical list from which the user can choose one item.
+(** [select ~equal ~selected ~on_change options] displays [options], keeping
+    selection attached to the application value under [equal] when options move.
+    [None] or a value absent from [options] displays no selection; it does not
+    select another item or call [on_change]. Navigation then proposes an item
+    value; activation without a selection does nothing. Values must be distinct
+    under [equal]. Callbacks receive the value from the current options.
 
-    See {!val-tab_select} for a horizontal tab-bar variant.
-
-    Select-specific optional arguments:
-    - [selected_index] -- zero-based index of the highlighted item. Defaults to
-      [0].
-    - [background] -- background color of unselected items.
-    - [text_color] -- foreground color of unselected items.
-    - [focused_background] -- background when the widget has focus.
-    - [focused_text_color] -- foreground when the widget has focus.
-    - [selected_background] -- background of the selected item.
-    - [selected_text_color] -- foreground of the selected item.
-    - [description_color] -- color of item description text.
-    - [selected_description_color] -- description color for the selected item.
-    - [show_description] -- when [true] shows item descriptions. Defaults to
-      [true].
-    - [show_scroll_indicator] -- when [true] shows a scroll indicator when the
-      list overflows. Defaults to [false].
-    - [wrap_selection] -- when [true] wraps the selection from the last item
-      back to the first and vice versa. Defaults to [false].
-    - [item_spacing] -- number of blank lines between items. Defaults to [0].
-    - [fast_scroll_step] -- number of items skipped per fast-scroll action (e.g.
-      Page Down). Defaults to [5].
-    - [on_change] -- fired when the highlighted index changes; receives the new
-      index.
-    - [on_activate] -- fired when the user confirms the selection (e.g. by
-      pressing Enter); receives the confirmed index. *)
+    Each declaration performs a linear selection lookup and presentation
+    conversion. Event-to-value lookup is constant-time. *)
 
 val tab_select :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1776,15 +1657,15 @@ val tab_select :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
-  ?selected:int ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?tab_width:int ->
   ?background:Ansi.Color.t ->
   ?text_color:Ansi.Color.t ->
@@ -1798,39 +1679,19 @@ val tab_select :
   ?show_description:bool ->
   ?show_scroll_arrows:bool ->
   ?wrap_selection:bool ->
-  ?on_change:(int -> 'msg option) ->
-  ?on_activate:(int -> 'msg option) ->
-  Tab_select.item list ->
+  on_change:('a -> 'msg) ->
+  ?on_activate:('a -> 'msg) ->
+  equal:('a -> 'a -> bool) ->
+  selected:'a option ->
+  'a Tab_select.item list ->
   'msg t
-(** [tab_select items] is a horizontal tab-bar selector.
-
-    See {!val-select} for the vertical list variant.
-
-    Tab-select-specific optional arguments:
-    - [selected] -- zero-based index of the active tab. Defaults to [0].
-    - [tab_width] -- fixed width for each tab in cells. Defaults to [12].
-    - [background] -- background color of inactive tabs.
-    - [text_color] -- foreground color of inactive tabs.
-    - [focused_background] -- background when the widget has focus.
-    - [focused_text_color] -- foreground when the widget has focus.
-    - [selected_background] -- background of the active tab.
-    - [selected_text_color] -- foreground of the active tab.
-    - [description_color] -- color of tab description text.
-    - [selected_description_color] -- description color for the active tab.
-    - [show_underline] -- when [true] draws an underline below tabs. Defaults to
-      [true].
-    - [show_description] -- when [true] shows tab descriptions. Defaults to
-      [false].
-    - [show_scroll_arrows] -- when [true] shows arrows when tabs overflow the
-      available width. Defaults to [true].
-    - [wrap_selection] -- when [true] wraps from the last tab to the first and
-      vice versa. Defaults to [false].
-    - [on_change] -- fired when the active tab index changes.
-    - [on_activate] -- fired when the user confirms the tab selection. *)
+(** [tab_select ~equal ~selected ~on_change options] displays horizontal tabs
+    with the value-selection and callback semantics of {!select}. [None] or a
+    value absent from [options] displays no selection. Values must be distinct
+    under [equal]. *)
 
 val canvas :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1870,24 +1731,23 @@ val canvas :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   (Canvas.t -> delta:float -> unit) ->
   'msg t
-(** [canvas draw] is a free-form drawing surface. [draw c ~delta] is called on
-    every frame with a fresh {!Canvas.t} [c] and the elapsed time [delta] in
-    milliseconds since the previous frame. The canvas fills its allocated layout
-    area. *)
+(** [canvas draw] is a custom drawing surface. Widget-specific visual options
+    follow {!Mosaic_ui.Canvas}; layout and paint use the labelled arguments
+    above. *)
 
 val spinner :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1927,28 +1787,25 @@ val spinner :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?frame_set:Spinner.frame_set ->
   ?color:Ansi.Color.t ->
   unit ->
   'msg t
-(** [spinner ()] is an animated activity indicator.
-
-    Spinner-specific optional arguments:
-    - [frame_set] -- the animation frame sequence. Defaults to {!Spinner.dots}.
-    - [color] -- foreground color of the spinner character. Defaults to white.
-*)
+(** [spinner ()] is an animated activity indicator. Widget-specific visual
+    options follow {!Mosaic_ui.Spinner}; layout and paint use the labelled
+    arguments above. *)
 
 val progress_bar :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -1988,14 +1845,15 @@ val progress_bar :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?value:float ->
   ?min:float ->
   ?max:float ->
@@ -2004,21 +1862,12 @@ val progress_bar :
   ?empty_color:Ansi.Color.t ->
   unit ->
   'msg t
-(** [progress_bar ()] is a read-only progress indicator.
-
-    Progress-bar-specific optional arguments:
-    - [value] -- current progress value. Defaults to [0.].
-    - [min] -- value representing 0% progress. Defaults to [0.].
-    - [max] -- value representing 100% progress. Defaults to [1.].
-    - [orientation] -- [`Horizontal] or [`Vertical]. Defaults to [`Horizontal].
-    - [filled_color] -- color of the filled portion of the bar. Defaults to
-      medium gray.
-    - [empty_color] -- color of the unfilled portion of the bar. Defaults to
-      dark gray. *)
+(** [progress_bar ()] is a progress indicator. Widget-specific visual options
+    follow {!Mosaic_ui.Progress_bar}; layout and paint use the labelled
+    arguments above. *)
 
 val scroll_bar :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2058,42 +1907,33 @@ val scroll_bar :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?orientation:Scroll_bar.orientation ->
   ?show_arrows:bool ->
   ?track_color:Ansi.Color.t ->
   ?thumb_color:Ansi.Color.t ->
   ?arrow_fg:Ansi.Color.t ->
   ?arrow_bg:Ansi.Color.t ->
-  ?on_change:(int -> 'msg option) ->
+  on_change:(int -> 'msg) ->
+  state:int ->
+  scroll_size:int ->
+  viewport_size:int ->
   unit ->
   'msg t
-(** [scroll_bar ()] is a standalone scroll-bar widget. Use this when you manage
-    scroll state externally; for automatic scrolling consider {!val-scroll_box}
-    instead.
-
-    Scroll-bar-specific optional arguments:
-    - [orientation] -- [`Horizontal] or [`Vertical]. Defaults to [`Vertical].
-    - [show_arrows] -- when [true] renders arrow buttons at each end. Defaults
-      to [false].
-    - [track_color] -- color of the scroll track. Defaults to dark gray.
-    - [thumb_color] -- color of the scroll thumb. Defaults to medium gray.
-    - [arrow_fg] -- foreground color of the arrow buttons. Defaults to white.
-    - [arrow_bg] -- background color of the arrow buttons. Defaults to the
-      terminal default.
-    - [on_change] -- fired when the scroll position changes; receives the new
-      position in scroll units. *)
+(** [scroll_bar ()] is a scroll indicator. Widget-specific visual options follow
+    {!Mosaic_ui.Scroll_bar}; layout and paint use the labelled arguments above.
+*)
 
 val scroll_box :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2133,67 +1973,29 @@ val scroll_box :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?scroll_x:bool ->
   ?scroll_y:bool ->
-  ?sticky_scroll:bool ->
-  ?sticky_start:[ `Top | `Bottom | `Left | `Right ] ->
   ?background:Ansi.Color.t ->
   ?show_scrollbars:bool ->
-  ?reveal:Scroll_box.reveal ->
-  ?scroll_by:Scroll_box.scroll_by ->
-  ?reset_sticky:string ->
-  ?on_scroll:(x:int -> y:int -> 'msg option) ->
-  ?on_scroll_by_applied:(key:string -> 'msg option) ->
-  ?on_reset_sticky_applied:(key:string -> 'msg option) ->
+  on_scroll:(Scroll.t -> 'msg) ->
+  scroll:Scroll.t ->
   'msg t list ->
   'msg t
-(** [scroll_box children] is a scrollable container. It clips its [children] to
-    the allocated area and manages scroll state internally. A wheel event is
-    consumed only when it changes the scroll position on an enabled axis;
-    otherwise it bubbles to enclosing scroll boxes.
-
-    Scroll-box-specific optional arguments:
-    - [scroll_x] -- when [true] enables horizontal scrolling. Defaults to
-      [false].
-    - [scroll_y] -- when [true] enables vertical scrolling. Defaults to [true].
-    - [sticky_scroll] -- when [true] the viewport follows new content appended
-      at the sticky edge. Defaults to [false].
-    - [sticky_start] -- the edge to which sticky scrolling anchors. Defaults to
-      [`Bottom].
-    - [background] -- background fill color of the scroll area.
-    - [show_scrollbars] -- when [false] the scroll bars never render (scrolling
-      still works). Defaults to [true], showing them on overflow.
-    - [reveal] -- one-shot scroll request to a content coordinate.
-    - [scroll_by] -- keyed one-shot relative scroll request applied after
-      layout. [`Viewport] deltas use this scroll box's measured allocation, and
-      keeping the currently applied key cannot replay it during unrelated
-      reconciles.
-    - [reset_sticky] -- keyed one-shot request that clears manual scrolling,
-      reapplies [sticky_start], and resumes following appended content. Keeping
-      the currently applied key cannot reset later manual scrolling.
-    - [on_scroll] -- fired after a scroll event; receives the new scroll
-      position [~x] and [~y] in cells.
-    - [on_scroll_by_applied] -- fired with [~key] after a [scroll_by] request is
-      consumed, even when clamping leaves the position unchanged. Use it to
-      retire the request from declarative state.
-    - [on_reset_sticky_applied] -- fired with [~key] after a [reset_sticky]
-      request is consumed, even when the viewport does not move. Use it to
-      retire the request from declarative state.
-
-    Raises [Invalid_argument] if [scroll_by] has no axis or contains a
-    non-finite delta. *)
+(** [scroll_box children] is a scrollable container. Widget-specific visual
+    options follow {!Mosaic_ui.Scroll_box}; layout and paint use the labelled
+    arguments above. *)
 
 val textarea :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2233,17 +2035,15 @@ val textarea :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
-  ?value:string ->
-  ?cursor:int ->
-  ?selection:(int * int) option ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?spans:span list ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
@@ -2263,32 +2063,16 @@ val textarea :
   ?show_cursor:bool ->
   ?key_bindings:Mosaic_ui.Textarea.key_binding list ->
   ?key_aliases:(string * string) list ->
-  ?on_input:(string -> 'msg option) ->
-  ?on_change:(string -> 'msg option) ->
-  ?on_submit:(string -> 'msg option) ->
-  ?on_cursor:(cursor:int -> selection:(int * int) option -> 'msg option) ->
+  on_change:(Editor.t -> 'msg) ->
+  ?on_submit:(string -> 'msg) ->
+  state:Editor.t ->
   unit ->
   'msg t
-(** [textarea ()] is a multi-line text editing area. It shares its optional
-    argument set with {!val-input}; see that entry for argument descriptions.
-
-    Its inherited [value] argument is controlled: every reconciliation restores
-    it if the live edit buffer has diverged.
-
-    Textarea-specific optional arguments not present on {!val-input}:
-    - [cursor] -- optional controlled cursor grapheme offset.
-    - [selection] -- optional controlled selection range.
-    - [spans] -- optional styled spans used for syntax highlighting. When
-      provided, the span text must match [value].
-    - [ghost_text] -- optional inline ghost completion rendered at the cursor.
-    - [ghost_text_color] -- color used for [ghost_text].
-    - [wrap] -- line-wrapping mode within the editing area. Defaults to the
-      surface default.
-    - [on_cursor] -- fired when cursor position or selection changes. *)
+(** [textarea ()] is a multiline editor. Widget-specific visual options follow
+    {!Mosaic_ui.Textarea}; layout and paint use the labelled arguments above. *)
 
 val code :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2328,14 +2112,15 @@ val code :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?syntax:Code.syntax ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
@@ -2346,26 +2131,12 @@ val code :
   ?on_selection:((int * int) option -> 'msg option) ->
   string ->
   'msg t
-(** [code s] is a read-only code display element that renders [s] with optional
-    syntax highlighting.
-
-    Wrap with {!val-line_number} to add a gutter with line numbers.
-
-    Code-specific optional arguments:
-    - [syntax] -- source-code syntax configuration.
-    - [text_style] -- base ANSI style applied to unstyled text.
-    - [wrap] -- line-wrapping mode. Defaults to no wrap.
-    - [tab_width] -- number of cells a tab character expands to. Defaults to
-      [4].
-    - [selectable] -- when [true] the user can select text with the mouse.
-      Defaults to [true].
-    - [selection_bg] -- background color of selected text.
-    - [selection_fg] -- foreground color of selected text.
-    - [on_selection] -- fired when the current selection changes. *)
+(** [code content] is syntax-highlighted source. Widget-specific visual options
+    follow {!Mosaic_ui.Code}; layout and paint use the labelled arguments above.
+*)
 
 val line_number :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2405,14 +2176,15 @@ val line_number :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?fg:Ansi.Color.t ->
   ?bg:Ansi.Color.t ->
   ?min_width:int ->
@@ -2424,31 +2196,12 @@ val line_number :
   ?hidden_line_numbers:int list ->
   'msg t ->
   'msg t
-(** [line_number child] wraps [child] with a gutter that displays line numbers
-    alongside each line of [child]'s content. Commonly used with {!val-code} or
-    {!val-textarea} as the child.
-
-    Line-number-specific optional arguments:
-    - [fg] -- foreground color of the line-number gutter.
-    - [bg] -- background color of the line-number gutter.
-    - [min_width] -- minimum width of the gutter in cells. Widens automatically
-      as the line count grows. Defaults to [3].
-    - [padding_right] -- cells of padding between the gutter and the content.
-      Defaults to [1].
-    - [show_line_numbers] -- when [false] hides the numeric labels but keeps the
-      gutter structure. Defaults to [true].
-    - [line_number_offset] -- added to each displayed line number. Useful when
-      the content is a slice of a larger document. Defaults to [0].
-    - [line_colors] -- per-line foreground color overrides, given as
-      [(line_index, color)] pairs.
-    - [line_signs] -- per-line sign icons shown in the gutter, given as
-      [(line_index, sign)] pairs.
-    - [hidden_line_numbers] -- line indices whose number labels are suppressed.
-*)
+(** [line_number child] is a line-number gutter for [child]. Widget-specific
+    visual options follow {!Mosaic_ui.Line_number}; layout and paint use the
+    labelled arguments above. *)
 
 val diff :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2488,14 +2241,15 @@ val diff :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?layout:Diff.layout ->
   ?theme:Diff.theme ->
   ?highlight:Diff.highlight ->
@@ -2509,31 +2263,11 @@ val diff :
   ?on_line_click:(Diff.line_hit -> 'msg option) ->
   Diff.Patch.t ->
   'msg t
-(** [diff patch] renders [patch] as a unified or split diff.
-
-    Diff-specific optional arguments:
-    - [layout] -- [Diff.Unified] or [Diff.Split]. Defaults to [Diff.Unified].
-    - [theme] -- colors for changed lines, gutters, and signs. Defaults to
-      {!Diff.default_theme}.
-    - [highlight] -- optional highlighter-backed syntax.
-    - [line_highlights] -- source-line background highlights, using inclusive
-      1-based old/new source line numbers. Earlier entries win when ranges
-      overlap.
-    - [line_spans] -- source-line sub-range highlights: a byte range within one
-      1-based old/new source line, drawn as a background over the covered cells.
-    - [line_signs] -- source-line gutter signs, using inclusive 1-based old/new
-      source line numbers. Earlier entries win when ranges overlap.
-    - [show_line_numbers] -- controls whether line-number gutters are shown.
-      Defaults to [true].
-    - [wrap] -- line-wrapping mode for embedded code content.
-    - [selectable] -- when [true], embedded code content can be selected.
-    - [text_style] -- base ANSI style applied to code content.
-    - [on_line_click] -- fired with a semantic diff hit when the user clicks a
-      rendered diff line without dragging. *)
+(** [diff patch] is a rendered patch. Widget-specific visual options follow
+    {!Mosaic_ui.Diff}; layout and paint use the labelled arguments above. *)
 
 val markdown :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2573,14 +2307,15 @@ val markdown :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?md_style:Markdown.style ->
   ?conceal:bool ->
   ?streaming:bool ->
@@ -2591,30 +2326,12 @@ val markdown :
   ?on_selection:(string option -> 'msg option) ->
   string ->
   'msg t
-(** [markdown s] is a rendered Markdown view of the string [s].
-
-    Markdown-specific optional arguments:
-    - [md_style] -- theme controlling heading, code, and emphasis colors.
-      Defaults to the built-in style.
-    - [conceal] -- when [true] hides Markdown syntax characters (asterisks,
-      backticks, etc.) from the rendered output. Defaults to [false].
-    - [streaming] -- when [true] the renderer tolerates incomplete Markdown
-      (e.g. an unclosed code fence) as it arrives from a streaming source.
-      Defaults to [false].
-    - [selectable] -- when [true], rendered Markdown text can be selected.
-      Defaults to [true].
-    - [selection_bg] and [selection_fg] -- selection colours.
-    - [code_syntax] -- a syntax-highlighting hook for fenced code blocks, called
-      with the optional language tag and the code content. It returns the
-      {!Code.syntax} configuration to highlight the block with, or [None] for no
-      highlighting; the block is rendered as a borderless {!Code} view. Use it
-      to integrate syntax highlighting, e.g. via a Tree-sitter highlighter.
-    - [on_selection] -- fired with selected rendered text, or [None] when no
-      text is selected. *)
+(** [markdown content] is rendered Markdown. Widget-specific visual options
+    follow {!Mosaic_ui.Markdown}; layout and paint use the labelled arguments
+    above. *)
 
 val table :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2654,17 +2371,17 @@ val table :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?columns:Table.column list ->
-  ?rows:Table.cell array list ->
-  ?selected_row:int ->
+  ?rows:'a Table.row list ->
   ?border:bool ->
   ?border_style:Border.t ->
   ?show_header:bool ->
@@ -2686,68 +2403,28 @@ val table :
   ?row_styles:Ansi.Style.t list ->
   ?wrap_selection:bool ->
   ?fast_scroll_step:int ->
-  ?on_change:(int -> 'msg option) ->
-  ?on_activate:(int -> 'msg option) ->
-  ?on_hover:(int option -> 'msg option) ->
+  on_change:('a -> 'msg) ->
+  ?on_activate:('a -> 'msg) ->
+  ?on_hover:('a option -> 'msg option) ->
+  equal:('a -> 'a -> bool) ->
+  selected:'a option ->
   unit ->
   'msg t
-(** [table ()] is a scrollable data table.
+(** [table ~equal ~selected ~on_change ?rows ()] displays rows whose selection
+    follows their application values under [equal]. [rows] defaults to [[]].
+    [None] or a value absent from [rows] displays no selection; activation
+    without selection does nothing. Values must be distinct under [equal].
+    Change and activation callbacks receive the row value. A left press captures
+    that value before its hover callback: filtering or reordering rows during
+    the press preserves the clicked value for selection and activation. Removing
+    the table cancels the remaining callbacks. [on_hover] receives [None] when
+    the pointer leaves all rows.
 
-    Table-specific optional arguments:
-    - [columns] -- column definitions ({!Table.column}), including headers and
-      sizing. Defaults to [[]].
-    - [rows] -- table data as a list of cell arrays. Each array must have the
-      same length as [columns]. Defaults to [[]].
-    - [selected_row] -- zero-based index of the highlighted row. Defaults to
-      [0].
-    - [border] -- when [true] draws an outer border. Defaults to [true].
-    - [border_style] -- character set for the outer border. Defaults to
-      {!Border.single}.
-    - [show_header] -- when [true] renders a header row. Defaults to [true].
-    - [show_column_separator] -- when [true] draws vertical lines between
-      columns. Defaults to [false].
-    - [show_row_separator] -- when [true] draws horizontal lines between rows.
-      Defaults to [false].
-    - [cell_padding] -- horizontal padding in cells within each cell. Defaults
-      to [0].
-    - [header_color] -- foreground color of the header row.
-    - [header_background] -- background color of the header row.
-    - [text_color] -- foreground color of body cells.
-    - [background] -- background color of body cells.
-    - [selected_text_color] -- foreground of the selected row.
-    - [selected_background] -- background of the selected row.
-    - [focused_selected_text_color] -- foreground of the selected row when the
-      table has focus.
-    - [focused_selected_background] -- background of the selected row when the
-      table has focus.
-    - [selection_visible] -- when [false], keeps the current row for navigation
-      and automatic scrolling but does not draw selected-row colors. Defaults to
-      [true].
-    - [show_scroll_indicator] -- when [true], reserves one trailing column and
-      shows directional marks while data rows do not fit. Defaults to [false].
-    - [activate_on_click] -- when [true], a left click activates the exact row
-      after selecting it. Defaults to [false].
-    - [wheel_navigation] -- when [true], wheel events move selection and are
-      consumed. Disable it to let enclosing scroll surfaces handle the wheel.
-      Defaults to [true].
-    - [row_styles] -- repeating list of styles applied to body rows, useful for
-      alternating row colors.
-    - [wrap_selection] -- when [true] wraps selection past the last or first
-      row. Defaults to [false].
-    - [fast_scroll_step] -- rows skipped per fast-scroll action. Defaults to
-      [5].
-    - [on_change] -- fired when the selected row index changes.
-    - [on_activate] -- fired when the user confirms the selected row (e.g. by
-      pressing Enter).
-    - [on_hover] -- fired with the complete-data index under the pointer, or
-      [None] when no data row is under it.
-
-    PageUp/PageDown move by the measured number of visible data rows and clamp
-    at the table boundaries even when [wrap_selection] is [true]. *)
+    Each declaration performs a linear selection lookup and row conversion.
+    Event-to-value lookup is constant-time. *)
 
 val tree :
   ?key:string ->
-  ?id:string ->
   ?display:Display.t ->
   ?box_sizing:Box_sizing.t ->
   ?position:Position.t ->
@@ -2787,17 +2464,16 @@ val tree :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?focusable:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Mosaic_ui.Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
   ?items:Tree.item list ->
-  ?selected_index:int ->
-  ?expand_depth:int ->
   ?indent_size:int ->
   ?show_guides:bool ->
   ?guide_style:Border.t ->
@@ -2814,51 +2490,12 @@ val tree :
   ?icon_color:Ansi.Color.t ->
   ?wrap_selection:bool ->
   ?fast_scroll_step:int ->
-  ?on_change:(int -> 'msg option) ->
-  ?on_activate:(int -> 'msg option) ->
-  ?on_expand:(int -> bool -> 'msg option) ->
+  on_change:(Tree.State.t -> 'msg) ->
+  ?on_activate:(Tree.item -> 'msg) ->
+  state:Tree.State.t ->
   unit ->
   'msg t
-(** [tree ()] is an interactive collapsible tree view.
-
-    Tree-specific optional arguments:
-    - [items] -- the root-level {!Tree.item} nodes. Defaults to [[]].
-    - [selected_index] -- zero-based flat index of the highlighted item.
-      Defaults to [0].
-    - [expand_depth] -- number of levels expanded on first render. [0] collapses
-      all; use [max_int] to expand everything. Defaults to [0].
-    - [indent_size] -- cells of indentation per nesting level. Defaults to [2].
-    - [show_guides] -- when [true] draws vertical guide lines. Defaults to
-      [false].
-    - [guide_style] -- border character set used for guide lines.
-    - [expand_icon] -- string shown next to collapsible nodes when collapsed.
-      Defaults to ["▶"].
-    - [collapse_icon] -- string shown next to collapsible nodes when expanded.
-      Defaults to ["▼"].
-    - [leaf_icon] -- string shown next to leaf nodes. Defaults to [" "].
-    - [background] -- background color of unselected items.
-    - [text_color] -- foreground color of unselected items.
-    - [selected_background] -- background of the selected item.
-    - [selected_text_color] -- foreground of the selected item.
-    - [focused_selected_background] -- background of the selected item when the
-      widget has focus.
-    - [focused_selected_text_color] -- foreground of the selected item when the
-      widget has focus.
-    - [guide_color] -- color of the vertical guide lines.
-    - [icon_color] -- color of the expand/collapse/leaf icons.
-    - [wrap_selection] -- when [true] wraps selection past the last or first
-      visible item. Defaults to [false].
-    - [fast_scroll_step] -- items skipped per fast-scroll action. Defaults to
-      [5].
-    - [on_change] -- fired when the selected index changes.
-    - [on_activate] -- fired when the user confirms the selection.
-    - [on_expand] -- fired when a node is expanded or collapsed; receives the
-      flat index and [true] if expanded, [false] if collapsed. *)
-
-(** {1:internal Internal modules} *)
+(** [tree ()] is a tree view. Widget-specific visual options follow
+    {!Mosaic_ui.Tree}; layout and paint use the labelled arguments above. *)
 
 module Reconciler = Reconciler
-(** The virtual-DOM reconciler used by {!val-run}.
-
-    {b Note.} This module is part of the internal implementation and its
-    interface may change between versions. *)

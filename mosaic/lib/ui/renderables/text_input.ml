@@ -56,11 +56,8 @@ let key_binding = Textarea.key_binding
 
 module Props = struct
   type t = {
-    value : string;
-    cursor : int option;
-    selection : (int * int) option option;
+    state : Editor.t;
     placeholder : string;
-    max_length : int;
     text_color : Ansi.Color.t;
     background_color : Ansi.Color.t;
     focused_text_color : Ansi.Color.t;
@@ -77,8 +74,7 @@ module Props = struct
     key_aliases : (string * string) list;
   }
 
-  let make ?(value = "") ?cursor ?selection ?(placeholder = "")
-      ?(max_length = 1000) ?(text_color = default_text_color)
+  let make ~state ?(placeholder = "") ?(text_color = default_text_color)
       ?(background_color = default_background_color)
       ?(focused_text_color = default_focused_text_color)
       ?(focused_background_color = default_focused_background_color)
@@ -88,12 +84,11 @@ module Props = struct
       ?(cursor_color = default_cursor_color)
       ?(cursor_blinking = default_cursor_blinking) ?(selectable = true)
       ?(show_cursor = true) ?(key_bindings = []) ?(key_aliases = []) () =
+    if Matrix.Text.Layout.Source.line_count (Editor.source state) <> 1 then
+      invalid_arg "Mosaic_ui.Text_input: state must not contain CR or LF";
     {
-      value;
-      cursor;
-      selection;
+      state;
       placeholder;
-      max_length;
       text_color;
       background_color;
       focused_text_color;
@@ -110,16 +105,11 @@ module Props = struct
       key_aliases;
     }
 
-  let default = make ()
+  let default = make ~state:Editor.empty ()
 
   let equal a b =
-    String.equal a.value b.value
-    && Option.equal Int.equal a.cursor b.cursor
-    && Option.equal
-         (Option.equal (fun (a1, a2) (b1, b2) -> a1 = b1 && a2 = b2))
-         a.selection b.selection
+    a.state == b.state
     && String.equal a.placeholder b.placeholder
-    && a.max_length = b.max_length
     && Ansi.Color.equal a.text_color b.text_color
     && Ansi.Color.equal a.background_color b.background_color
     && Ansi.Color.equal a.focused_text_color b.focused_text_color
@@ -141,10 +131,8 @@ end
 type t = { surface : Edit_surface.t; mutable props : Props.t }
 
 let surface_props (props : Props.t) =
-  Edit_surface.Props.make
-    ~value:(Edit_buffer.strip_newlines props.value)
-    ?cursor:props.cursor ?selection:props.selection
-    ~placeholder:props.placeholder ~wrap:`None ~text_color:props.text_color
+  Edit_surface.Props.make ~state:props.state ~placeholder:props.placeholder
+    ~wrap:`None ~text_color:props.text_color
     ~background_color:props.background_color
     ~focused_text_color:props.focused_text_color
     ~focused_background_color:props.focused_background_color
@@ -156,35 +144,29 @@ let surface_props (props : Props.t) =
     ~key_aliases:props.key_aliases ()
 
 let node t = Edit_surface.node t.surface
-let buffer t = Edit_surface.buffer t.surface
+let state t = Edit_surface.state t.surface
 let value t = Edit_surface.value t.surface
 let cursor t = Edit_surface.cursor t.surface
 let selection t = Edit_surface.selection t.surface
-let set_on_input t h = Edit_surface.set_on_input t.surface h
 let set_on_change t h = Edit_surface.set_on_change t.surface h
 let set_on_submit t h = Edit_surface.set_on_submit t.surface h
-let set_on_cursor t h = Edit_surface.set_on_cursor t.surface h
 let handle_paste t text = Edit_surface.handle_paste t.surface text
 
-let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
-    ?selection ?placeholder ?max_length ?text_color ?background_color
-    ?focused_text_color ?focused_background_color ?placeholder_color
-    ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ?key_aliases ?on_input ?on_change
-    ?on_submit ?on_cursor () =
+let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
+    ?placeholder ?text_color ?background_color ?focused_text_color
+    ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
+    ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
+    ?key_bindings ?key_aliases ~on_change ?on_submit () =
   let props =
-    Props.make ?value ?cursor ?selection ?placeholder ?max_length ?text_color
-      ?background_color ?focused_text_color ?focused_background_color
-      ?placeholder_color ?selection_color ?selection_fg ?cursor_style
-      ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
-      ?key_aliases ()
+    Props.make ~state ?placeholder ?text_color ?background_color
+      ?focused_text_color ?focused_background_color ?placeholder_color
+      ?selection_color ?selection_fg ?cursor_style ?cursor_color
+      ?cursor_blinking ?selectable ?show_cursor ?key_bindings ?key_aliases ()
   in
   let surface =
     Edit_surface.create ~parent ?index ?id ?style ?visible ?z_index ?opacity
-      ~value:(Edit_buffer.strip_newlines props.value)
-      ?cursor:props.cursor ?selection:props.selection
-      ~placeholder:props.placeholder ~wrap:`None ~text_color:props.text_color
-      ~background_color:props.background_color
+      ~state:props.state ~placeholder:props.placeholder ~wrap:`None
+      ~text_color:props.text_color ~background_color:props.background_color
       ~focused_text_color:props.focused_text_color
       ~focused_background_color:props.focused_background_color
       ~placeholder_color:props.placeholder_color
@@ -192,16 +174,12 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?value ?cursor
       ~cursor_style:props.cursor_style ~cursor_color:props.cursor_color
       ~cursor_blinking:props.cursor_blinking ~selectable:props.selectable
       ~show_cursor:props.show_cursor ~mode:`Single_line
-      ~key_bindings:props.key_bindings ~key_aliases:props.key_aliases
-      ~max_length:props.max_length ?on_input ?on_change ?on_submit ?on_cursor ()
+      ~key_bindings:props.key_bindings ~key_aliases:props.key_aliases ~on_change
+      ?on_submit ()
   in
   { surface; props }
 
-let set_value t s = Edit_surface.set_value t.surface s
-
 let apply_props t (props : Props.t) =
-  if t.props.max_length <> props.max_length then
-    Edit_surface.set_max_length t.surface props.max_length;
   Edit_surface.apply_props t.surface (surface_props props);
   t.props <- props
 

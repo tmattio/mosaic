@@ -3,8 +3,8 @@
 open Mosaic
 
 type wrap_mode = None | Char | Word
-type model = { value : string; wrap : wrap_mode; submitted : bool }
-type msg = Set_value of string | Toggle_wrap | Submitted | Quit
+type model = { value : Editor.t; wrap : wrap_mode; submitted : bool }
+type msg = Set_value of Editor.t | Toggle_wrap | Submitted | Quit
 
 let initial_text =
   "Welcome to the Mosaic textarea widget!\n\n\
@@ -14,11 +14,17 @@ let initial_text =
    or Ctrl+Enter to submit."
 
 let init () =
-  ({ value = initial_text; wrap = Word; submitted = false }, Cmd.none)
+  ( { value = Editor.of_string initial_text; wrap = Word; submitted = false },
+    Cmd.none )
 
 let update msg model =
   match msg with
-  | Set_value value -> ({ model with value; submitted = false }, Cmd.none)
+  | Set_value value ->
+      let submitted =
+        model.submitted
+        && String.equal (Editor.text value) (Editor.text model.value)
+      in
+      ({ model with value; submitted }, Cmd.none)
   | Toggle_wrap ->
       let wrap =
         match model.wrap with None -> Word | Word -> Char | Char -> None
@@ -62,9 +68,9 @@ let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
 let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 
 let view model =
-  let chars = String.length model.value in
-  let words = word_count model.value in
-  let lines = line_count model.value in
+  let chars = String.length (Editor.text model.value) in
+  let words = word_count (Editor.text model.value) in
+  let lines = line_count (Editor.text model.value) in
   let status =
     Printf.sprintf "%d chars  •  %d words  •  %d lines  •  wrap: %s" chars words
       lines
@@ -89,13 +95,14 @@ let view model =
         [
           box ~flex_grow:1. ~border:true ~border_color ~flex_direction:Column
             [
-              textarea ~autofocus:true ~value:initial_text
+              textarea
+                ~size:{ width = pct 100; height = pct 100 }
+                ~focused:true ~state:model.value
                 ~placeholder:"Start typing your notes..."
                 ~wrap:(wrap_mode_to_prop model.wrap)
                 ~cursor_blinking:true
-                ~size:{ width = pct 100; height = pct 100 }
-                ~on_input:(fun v -> Some (Set_value v))
-                ~on_submit:(fun _v -> Some Submitted)
+                ~on_change:(fun v -> Set_value v)
+                ~on_submit:(fun _v -> Submitted)
                 ();
             ];
           (* Status bar *)

@@ -2,34 +2,43 @@
 
 open Mosaic
 
-type model = { tab : int }
-type msg = Quit | Tab_changed of int
+type tab = Home | Files | Settings | Network | Logs | Help
+type model = { tab : tab option }
+type msg = Quit | Tab_changed of tab
 
-let tabs : Tab_select.item list =
+let tabs =
   [
-    { label = "Home"; description = "Main dashboard" };
-    { label = "Files"; description = "Browse files" };
-    { label = "Settings"; description = "Configure options" };
-    { label = "Network"; description = "Connection status" };
-    { label = "Logs"; description = "System logs" };
-    { label = "Help"; description = "Documentation" };
+    Tab_select.item Home ~description:"Main dashboard" "Home";
+    Tab_select.item Files ~description:"Browse files" "Files";
+    Tab_select.item Settings ~description:"Configure options" "Settings";
+    Tab_select.item Network ~description:"Connection status" "Network";
+    Tab_select.item Logs ~description:"System logs" "Logs";
+    Tab_select.item Help ~description:"Documentation" "Help";
   ]
 
-let init () = ({ tab = 0 }, Cmd.none)
+let init () = ({ tab = Some Home }, Cmd.none)
 
 let update msg model =
   match msg with
   | Quit -> (model, Cmd.quit)
-  | Tab_changed i -> ({ tab = i }, Cmd.none)
+  | Tab_changed tab -> ({ tab = Some tab }, Cmd.none)
 
 let content_for_tab = function
-  | 0 -> "Welcome to the Home tab. This is the main dashboard."
-  | 1 -> "File browser content would appear here."
-  | 2 -> "Application settings and preferences."
-  | 3 -> "Network connection status and diagnostics."
-  | 4 -> "System logs and event history."
-  | 5 -> "Help documentation and user guide."
-  | _ -> "Unknown tab"
+  | Some Home -> "Welcome to the Home tab. This is the main dashboard."
+  | Some Files -> "File browser content would appear here."
+  | Some Settings -> "Application settings and preferences."
+  | Some Network -> "Network connection status and diagnostics."
+  | Some Logs -> "System logs and event history."
+  | Some Help -> "Help documentation and user guide."
+  | None -> "Choose a tab."
+
+let tab_label = function
+  | Home -> "Home"
+  | Files -> "Files"
+  | Settings -> "Settings"
+  | Network -> "Network"
+  | Logs -> "Logs"
+  | Help -> "Help"
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100
@@ -57,10 +66,11 @@ let view model =
       (* Tab bar *)
       box ~padding:(padding 1)
         [
-          tab_select ~autofocus:true ~show_description:true ~show_underline:true
-            ~show_scroll_arrows:true ~wrap_selection:true ~tab_width:12
-            ~selected_background:accent ~selected_text_color:Ansi.Color.black
-            ~on_change:(fun i -> Some (Tab_changed i))
+          tab_select ~equal:( = ) ~selected:model.tab ~focused:true
+            ~show_description:true ~show_underline:true ~show_scroll_arrows:true
+            ~wrap_selection:true ~tab_width:12 ~selected_background:accent
+            ~selected_text_color:Ansi.Color.black
+            ~on_change:(fun tab -> Tab_changed tab)
             tabs;
         ];
       (* Content area *)
@@ -71,7 +81,7 @@ let view model =
             [
               text
                 ~style:(Ansi.Style.make ~bold:true ())
-                (List.nth tabs model.tab).label;
+                (Option.fold ~none:"Tabs" ~some:tab_label model.tab);
               text (content_for_tab model.tab);
             ];
         ];

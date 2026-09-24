@@ -61,95 +61,37 @@ end
 
 (* ───── Props ───── *)
 
-type reveal_align = [ `Start | `Center | `End | `Nearest ]
-
-type reveal = {
-  key : string;
-  x : int option;
-  y : int option;
-  align_x : reveal_align;
-  align_y : reveal_align;
-  margin : int;
-}
-
-type scroll_by = {
-  key : string;
-  x : float option;
-  y : float option;
-  unit : Scroll_bar.scroll_unit;
-}
-
-let validate_scroll_by (request : scroll_by option) =
-  match request with
-  | None -> ()
-  | Some { x = None; y = None; _ } ->
-      invalid_arg "Scroll_box: scroll_by requires an x or y delta"
-  | Some request ->
-      let finite = function None -> true | Some v -> Float.is_finite v in
-      if not (finite request.x && finite request.y) then
-        invalid_arg "Scroll_box: scroll_by deltas must be finite"
-
-let equal_reveal_align a b =
-  match (a, b) with
-  | `Start, `Start | `Center, `Center | `End, `End | `Nearest, `Nearest -> true
-  | _ -> false
-
-let equal_reveal (a : reveal) (b : reveal) =
-  String.equal a.key b.key
-  && Option.equal Int.equal a.x b.x
-  && Option.equal Int.equal a.y b.y
-  && equal_reveal_align a.align_x b.align_x
-  && equal_reveal_align a.align_y b.align_y
-  && Int.equal a.margin b.margin
-
-let equal_scroll_by (a : scroll_by) (b : scroll_by) =
-  String.equal a.key b.key
-  && Option.equal Float.equal a.x b.x
-  && Option.equal Float.equal a.y b.y
-  && a.unit = b.unit
-
 module Props = struct
   type t = {
     scroll_x : bool;
     scroll_y : bool;
-    sticky_scroll : bool;
-    sticky_start : [ `Top | `Bottom | `Left | `Right ] option;
+    scroll : Scroll.t;
     background : Ansi.Color.t option;
     show_scrollbars : bool;
     scrollbar_props : Scroll_bar.Props.t option;
     vertical_bar_props : Scroll_bar.Props.t option;
     horizontal_bar_props : Scroll_bar.Props.t option;
-    reveal : reveal option;
-    scroll_by : scroll_by option;
-    reset_sticky : string option;
   }
 
-  let make ?(scroll_x = false) ?(scroll_y = true) ?(sticky_scroll = false)
-      ?sticky_start ?background ?(show_scrollbars = true) ?scrollbar_props
-      ?vertical_bar_props ?horizontal_bar_props ?reveal ?scroll_by ?reset_sticky
-      () =
-    validate_scroll_by scroll_by;
+  let make ?(scroll_x = false) ?(scroll_y = true) ?(scroll = Scroll.at 0)
+      ?background ?(show_scrollbars = true) ?scrollbar_props ?vertical_bar_props
+      ?horizontal_bar_props () =
     {
       scroll_x;
       scroll_y;
-      sticky_scroll;
-      sticky_start;
+      scroll;
       background;
       show_scrollbars;
       scrollbar_props;
       vertical_bar_props;
       horizontal_bar_props;
-      reveal;
-      scroll_by;
-      reset_sticky;
     }
 
   let default = make ()
 
   let equal a b =
     a.scroll_x = b.scroll_x && a.scroll_y = b.scroll_y
-    && a.sticky_scroll = b.sticky_scroll
-    && a.sticky_start = b.sticky_start
+    && Scroll.equal a.scroll b.scroll
     && Option.equal Ansi.Color.equal a.background b.background
     && a.show_scrollbars = b.show_scrollbars
     && Option.equal Scroll_bar.Props.equal a.scrollbar_props b.scrollbar_props
@@ -157,9 +99,6 @@ module Props = struct
          b.vertical_bar_props
     && Option.equal Scroll_bar.Props.equal a.horizontal_bar_props
          b.horizontal_bar_props
-    && Option.equal equal_reveal a.reveal b.reveal
-    && Option.equal equal_scroll_by a.scroll_by b.scroll_by
-    && Option.equal String.equal a.reset_sticky b.reset_sticky
 end
 
 (* ───── Scroll Box ───── *)
@@ -177,17 +116,10 @@ type t = {
   mutable max_scroll_y : int;
   mutable content_w : int;
   mutable content_h : int;
-  mutable on_scroll : (x:int -> y:int -> unit) option;
-  mutable on_scroll_by_applied : (key:string -> unit) option;
-  mutable on_reset_sticky_applied : (key:string -> unit) option;
+  mutable on_scroll : (Scroll.t -> unit) option;
   mutable scroll_accel : Scroll_accel.t;
   (* Milliseconds accumulated from frame deltas; feeds Scroll_accel.tick. *)
   mutable frame_clock : float;
-  mutable has_manual_scroll : bool;
-  mutable sticky_top : bool;
-  mutable sticky_bottom : bool;
-  mutable sticky_left : bool;
-  mutable sticky_right : bool;
   mutable wheel_acc_x : float;
   mutable wheel_acc_y : float;
   mutable auto_scroll_mouse_x : int;
@@ -196,13 +128,6 @@ type t = {
   mutable auto_scroll_acc_x : float;
   mutable auto_scroll_acc_y : float;
   mutable auto_scrolling : bool;
-  mutable is_applying_sticky : bool;
-  mutable pending_reveal : reveal option;
-  mutable applied_reveal_key : string option;
-  mutable pending_scroll_by : scroll_by option;
-  mutable applied_scroll_by_key : string option;
-  mutable pending_reset_sticky : string option;
-  mutable applied_reset_sticky_key : string option;
 }
 
 let node t = t.node
@@ -225,86 +150,8 @@ let auto_scroll_speed_slow = 6.
 let auto_scroll_speed_medium = 36.
 let auto_scroll_speed_fast = 72.
 
-let reveal_axis ~align ~margin ~viewport ~current coordinate =
-  let margin = max 0 margin in
-  match align with
-  | `Start -> coordinate - margin
-  | `Center -> coordinate - (viewport / 2)
-  | `End -> coordinate - viewport + 1 + margin
-  | `Nearest ->
-      if coordinate - margin < current then coordinate - margin
-      else if coordinate + margin >= current + viewport then
-        coordinate + margin - viewport + 1
-      else current
-
-(* ───── Content Translation ───── *)
-
 let set_child_offsets t =
   Renderable.set_translate t.content ~x:(-t.scroll_x) ~y:(-t.scroll_y)
-
-(* ───── Sticky Scroll ───── *)
-
-type axis = Horizontal | Vertical
-
-let axis_has_range t = function
-  | Horizontal -> t.max_scroll_x > 1
-  | Vertical -> t.max_scroll_y > 1
-
-let is_at_sticky_position t =
-  match t.props.sticky_start with
-  | Some `Top -> t.scroll_y <= 0
-  | Some `Bottom -> t.scroll_y >= t.max_scroll_y
-  | Some `Left -> t.scroll_x <= 0
-  | Some `Right -> t.scroll_x >= t.max_scroll_x
-  | None -> false
-
-let mark_manual_scroll t axis =
-  if
-    t.props.sticky_scroll && axis_has_range t axis
-    && not (is_at_sticky_position t)
-  then t.has_manual_scroll <- true
-
-let update_sticky_state t =
-  if t.props.sticky_scroll then (
-    let max_y = t.max_scroll_y in
-    let max_x = t.max_scroll_x in
-    if t.scroll_y <= 0 then (
-      t.sticky_top <- true;
-      t.sticky_bottom <- false;
-      match t.props.sticky_start with
-      | Some `Top -> t.has_manual_scroll <- false
-      | Some `Bottom when max_y = 0 -> t.has_manual_scroll <- false
-      | _ -> ())
-    else if t.scroll_y >= max_y then (
-      t.sticky_top <- false;
-      t.sticky_bottom <- true;
-      match t.props.sticky_start with
-      | Some `Bottom -> t.has_manual_scroll <- false
-      | _ -> ())
-    else (
-      t.sticky_top <- false;
-      t.sticky_bottom <- false);
-    if t.scroll_x <= 0 then (
-      t.sticky_left <- true;
-      t.sticky_right <- false;
-      match t.props.sticky_start with
-      | Some `Left -> t.has_manual_scroll <- false
-      | Some `Right when max_x = 0 -> t.has_manual_scroll <- false
-      | _ -> ())
-    else if t.scroll_x >= max_x then (
-      t.sticky_left <- false;
-      t.sticky_right <- true;
-      match t.props.sticky_start with
-      | Some `Right -> t.has_manual_scroll <- false
-      | _ -> ())
-    else (
-      t.sticky_left <- false;
-      t.sticky_right <- false))
-
-(* ───── Notification ───── *)
-
-let notify t =
-  match t.on_scroll with Some f -> f ~x:t.scroll_x ~y:t.scroll_y | None -> ()
 
 (* ───── Scroll Position ───── *)
 
@@ -327,26 +174,38 @@ let report_scroll t ~dx ~dy =
         }
       ~dx ~dy
 
-let scroll_to_internal t ?(manual = true) ?x ?y () =
-  let prev_x = t.scroll_x and prev_y = t.scroll_y in
-  let tx = Option.value ~default:t.scroll_x x in
-  let ty = Option.value ~default:t.scroll_y y in
-  let nx = clamp tx ~lo:0 ~hi:t.max_scroll_x in
-  let ny = clamp ty ~lo:0 ~hi:t.max_scroll_y in
-  if nx <> t.scroll_x || ny <> t.scroll_y then (
-    let dx = nx - t.scroll_x and dy = ny - t.scroll_y in
-    t.scroll_x <- nx;
-    t.scroll_y <- ny;
-    update_sticky_state t;
-    set_child_offsets t;
-    Scroll_bar.set_scroll_position t.vertical_bar ny;
-    Scroll_bar.set_scroll_position t.horizontal_bar nx;
+let scroll_to_internal t ?x ?y () =
+  let nx =
+    clamp (Option.value ~default:t.scroll_x x) ~lo:0 ~hi:t.max_scroll_x
+  in
+  let ny =
+    clamp (Option.value ~default:t.scroll_y y) ~lo:0 ~hi:t.max_scroll_y
+  in
+  if nx <> t.scroll_x || ny <> t.scroll_y then
+    let x = Option.map (fun _ -> nx) x in
+    let y = Option.map (fun _ -> ny) y in
+    Option.iter
+      (fun f -> f (Scroll.with_position ?x ?y t.props.scroll))
+      t.on_scroll
+
+let resolve_scroll t =
+  let x, y =
+    Scroll.resolve t.props.scroll ~width:(viewport_width t)
+      ~height:(viewport_height t)
+      ~content_width:
+        (if t.props.scroll_x then t.content_w else viewport_width t)
+      ~content_height:
+        (if t.props.scroll_y then t.content_h else viewport_height t)
+  in
+  let dx = x - t.scroll_x and dy = y - t.scroll_y in
+  t.scroll_x <- x;
+  t.scroll_y <- y;
+  Scroll_bar.set_scroll_position t.horizontal_bar x;
+  Scroll_bar.set_scroll_position t.vertical_bar y;
+  set_child_offsets t;
+  if dx <> 0 || dy <> 0 then (
     report_scroll t ~dx ~dy;
-    notify t;
-    Renderable.request_render t.node);
-  if manual && not t.is_applying_sticky then (
-    if nx <> prev_x then mark_manual_scroll t Horizontal;
-    if ny <> prev_y then mark_manual_scroll t Vertical)
+    Renderable.Private.request_selection_update t.node)
 
 let set_scroll_top t v = scroll_to_internal t ~y:v ()
 let set_scroll_left t v = scroll_to_internal t ~x:v ()
@@ -358,84 +217,17 @@ let scroll_by t ?x ?y () =
   scroll_to_internal t ?x:nx ?y:ny ()
 
 let scroll_by_unit t ?x ?y ~(unit : Scroll_bar.scroll_unit) () =
-  Option.iter (fun dx -> Scroll_bar.scroll_by t.horizontal_bar dx ~unit) x;
-  Option.iter (fun dy -> Scroll_bar.scroll_by t.vertical_bar dy ~unit) y
-
-let apply_reveal t (reveal : reveal) =
-  let prev_x = t.scroll_x in
-  let prev_y = t.scroll_y in
   let x =
     Option.map
-      (reveal_axis ~align:reveal.align_x ~margin:reveal.margin
-         ~viewport:(viewport_width t) ~current:t.scroll_x)
-      reveal.x
+      (fun delta -> Scroll_bar.scroll_target t.horizontal_bar delta ~unit)
+      x
   in
   let y =
     Option.map
-      (reveal_axis ~align:reveal.align_y ~margin:reveal.margin
-         ~viewport:(viewport_height t) ~current:t.scroll_y)
-      reveal.y
+      (fun delta -> Scroll_bar.scroll_target t.vertical_bar delta ~unit)
+      y
   in
-  scroll_to_internal t ~manual:false ?x ?y ();
-  if
-    (t.scroll_x <> prev_x || t.scroll_y <> prev_y)
-    && t.props.sticky_scroll
-    && not (is_at_sticky_position t)
-  then t.has_manual_scroll <- true;
-  t.applied_reveal_key <- Some reveal.key
-
-let apply_pending_reveal t =
-  match t.pending_reveal with
-  | None -> ()
-  | Some reveal ->
-      t.pending_reveal <- None;
-      if not (Option.equal String.equal t.applied_reveal_key (Some reveal.key))
-      then apply_reveal t reveal
-
-let apply_scroll_by t (request : scroll_by) =
-  scroll_by_unit t ?x:request.x ?y:request.y ~unit:request.unit ();
-  t.applied_scroll_by_key <- Some request.key
-
-let apply_pending_scroll_by t =
-  match t.pending_scroll_by with
-  | None -> ()
-  | Some request ->
-      t.pending_scroll_by <- None;
-      if
-        not
-          (Option.equal String.equal t.applied_scroll_by_key (Some request.key))
-      then apply_scroll_by t request;
-      Option.iter
-        (fun callback -> callback ~key:request.key)
-        t.on_scroll_by_applied
-
-let reset_sticky t =
-  t.has_manual_scroll <- false;
-  let prev = t.is_applying_sticky in
-  t.is_applying_sticky <- true;
-  (match t.props.sticky_start with
-  | Some `Top when t.props.sticky_scroll ->
-      scroll_to_internal t ~manual:false ~y:0 ()
-  | Some `Bottom when t.props.sticky_scroll ->
-      scroll_to_internal t ~manual:false ~y:t.max_scroll_y ()
-  | Some `Left when t.props.sticky_scroll ->
-      scroll_to_internal t ~manual:false ~x:0 ()
-  | Some `Right when t.props.sticky_scroll ->
-      scroll_to_internal t ~manual:false ~x:t.max_scroll_x ()
-  | None | Some _ -> ());
-  t.is_applying_sticky <- prev;
-  Renderable.request_render t.node
-
-let apply_pending_reset_sticky t =
-  match t.pending_reset_sticky with
-  | None -> ()
-  | Some key ->
-      t.pending_reset_sticky <- None;
-      if not (Option.equal String.equal t.applied_reset_sticky_key (Some key))
-      then (
-        reset_sticky t;
-        t.applied_reset_sticky_key <- Some key);
-      Option.iter (fun callback -> callback ~key) t.on_reset_sticky_applied
+  scroll_to_internal t ?x ?y ()
 
 (* ───── Selection Auto-scroll ───── *)
 
@@ -497,15 +289,10 @@ let update_auto_scroll t mouse_x mouse_y =
   if scroll_x = 0 && scroll_y = 0 then stop_auto_scroll t
   else if not t.auto_scrolling then start_auto_scroll t mouse_x mouse_y
 
-let apply_auto_scroll_axis ~acc ~direction ~amount ~scroll =
-  if direction = 0 then (acc, false)
-  else
-    let acc = acc +. (float_of_int direction *. amount) in
-    let cells = int_of_float acc in
-    if cells = 0 then (acc, false)
-    else (
-      scroll cells;
-      (acc -. float_of_int cells, true))
+let auto_scroll_step acc direction amount =
+  let total = acc +. (float_of_int direction *. amount) in
+  let cells = int_of_float total in
+  (total -. float_of_int cells, cells)
 
 let handle_auto_scroll t delta =
   if t.auto_scrolling then
@@ -517,20 +304,19 @@ let handle_auto_scroll t delta =
         let scroll_amount =
           t.cached_auto_scroll_speed *. (Float.max 0. delta /. 1000.)
         in
-        let acc_x, scrolled_x =
-          apply_auto_scroll_axis ~acc:t.auto_scroll_acc_x ~direction:scroll_x
-            ~amount:scroll_amount ~scroll:(fun cells ->
-              scroll_to_internal t ~x:(t.scroll_x + cells) ())
+        let acc_x, dx =
+          auto_scroll_step t.auto_scroll_acc_x scroll_x scroll_amount
         in
-        let acc_y, scrolled_y =
-          apply_auto_scroll_axis ~acc:t.auto_scroll_acc_y ~direction:scroll_y
-            ~amount:scroll_amount ~scroll:(fun cells ->
-              scroll_to_internal t ~y:(t.scroll_y + cells) ())
+        let acc_y, dy =
+          auto_scroll_step t.auto_scroll_acc_y scroll_y scroll_amount
         in
         t.auto_scroll_acc_x <- acc_x;
         t.auto_scroll_acc_y <- acc_y;
-        if scrolled_x || scrolled_y then
-          Renderable.Private.request_selection_update t.node;
+        if dx <> 0 || dy <> 0 then
+          scroll_to_internal t
+            ?x:(if dx = 0 then None else Some (t.scroll_x + dx))
+            ?y:(if dy = 0 then None else Some (t.scroll_y + dy))
+            ();
         if scroll_x = 0 && scroll_y = 0 then stop_auto_scroll t
     | _ -> stop_auto_scroll t
 
@@ -543,89 +329,18 @@ let recalc_metrics t =
   let vh = Renderable.height t.viewport in
   t.max_scroll_x <- (if t.props.scroll_x then max 0 (t.content_w - vw) else 0);
   t.max_scroll_y <- (if t.props.scroll_y then max 0 (t.content_h - vh) else 0);
-  t.scroll_x <- clamp t.scroll_x ~lo:0 ~hi:t.max_scroll_x;
-  t.scroll_y <- clamp t.scroll_y ~lo:0 ~hi:t.max_scroll_y;
   Scroll_bar.set_scroll_size t.vertical_bar t.content_h;
   Scroll_bar.set_viewport_size t.vertical_bar vh;
   Scroll_bar.set_scroll_size t.horizontal_bar t.content_w;
   Scroll_bar.set_viewport_size t.horizontal_bar vw
 
-(* Reflow reengage (opentui ScrollBox.recalculateBarProps): when a reflow
-   moves an edge, a latched box sitting within one row/column of that edge is
-   following in every way that matters — clear the latch so [apply_sticky]
-   re-pins it to the live edge. The one-row tolerance absorbs reflow rounding
-   without capturing a reader parked further up, and the changed-max gate
-   keeps steady-state manual scrolls parked: a one-row wheel-up with no
-   reflow stays where the user put it. *)
-let reengage_on_reflow t ~old_max_x ~old_max_y =
-  if t.props.sticky_scroll && t.has_manual_scroll then
-    match t.props.sticky_start with
-    | Some `Bottom
-      when t.max_scroll_y <> old_max_y
-           && t.max_scroll_y > 0
-           && t.scroll_y >= t.max_scroll_y - 1 ->
-        t.has_manual_scroll <- false
-    | Some `Top when t.max_scroll_y <> old_max_y && t.scroll_y <= 1 ->
-        t.has_manual_scroll <- false
-    | Some `Right
-      when t.max_scroll_x <> old_max_x
-           && t.max_scroll_x > 0
-           && t.scroll_x >= t.max_scroll_x - 1 ->
-        t.has_manual_scroll <- false
-    | Some `Left when t.max_scroll_x <> old_max_x && t.scroll_x <= 1 ->
-        t.has_manual_scroll <- false
-    | _ -> ()
-
-let apply_sticky t =
-  if (not t.props.sticky_scroll) || t.has_manual_scroll then ()
-  else
-    let prev = t.is_applying_sticky in
-    t.is_applying_sticky <- true;
-    (match t.props.sticky_start with
-    | Some `Bottom -> scroll_to_internal t ~manual:false ~y:t.max_scroll_y ()
-    | Some `Top -> scroll_to_internal t ~manual:false ~y:0 ()
-    | Some `Right -> scroll_to_internal t ~manual:false ~x:t.max_scroll_x ()
-    | Some `Left -> scroll_to_internal t ~manual:false ~x:0 ()
-    | None ->
-        let y =
-          if t.sticky_bottom then Some t.max_scroll_y
-          else if t.sticky_top then Some 0
-          else None
-        in
-        let x =
-          if t.sticky_right then Some t.max_scroll_x
-          else if t.sticky_left then Some 0
-          else None
-        in
-        scroll_to_internal t ~manual:false ?x ?y ());
-    t.is_applying_sticky <- prev
-
-(* ───── Update ───── *)
-
-(* Scroll maintenance runs in the frame traversal (opentui ScrollBox's
-   onUpdate/recalculateBarProps phase), before the content's children are
-   culled and rendered: sticky, reveal, and scroll_by must settle the content
-   offset first so viewport culling selects the children the final offset
-   makes visible. The hook lives on the content node — the traversal reaches
-   it after refreshing the node/wrapper/viewport/content layouts, so metrics
-   read current extents, and immediately before culling its children. *)
+(* Resolve accepted symbolic state before viewport culling. *)
 let update_scroll_box t ~delta =
   let d = if Float.is_nan delta then 0. else Float.max 0. delta in
   t.frame_clock <- t.frame_clock +. d;
-  let lw = Renderable.width t.node in
-  let lh = Renderable.height t.node in
-  if lw > 0 && lh > 0 then (
-    let was_applying = t.is_applying_sticky in
-    t.is_applying_sticky <- true;
-    let old_max_x = t.max_scroll_x and old_max_y = t.max_scroll_y in
+  if Renderable.width t.node > 0 && Renderable.height t.node > 0 then (
     recalc_metrics t;
-    reengage_on_reflow t ~old_max_x ~old_max_y;
-    apply_sticky t;
-    apply_pending_reveal t;
-    apply_pending_reset_sticky t;
-    t.is_applying_sticky <- was_applying;
-    apply_pending_scroll_by t;
-    set_child_offsets t)
+    resolve_scroll t)
 
 (* ───── Render ───── *)
 
@@ -677,11 +392,14 @@ let on_mouse t (event : Event.mouse) =
         if stepx <> 0 then t.wheel_acc_x <- t.wheel_acc_x -. float_of_int stepx;
         if stepy <> 0 then t.wheel_acc_y <- t.wheel_acc_y -. float_of_int stepy;
         if stepx <> 0 || stepy <> 0 then begin
-          let previous_x = t.scroll_x and previous_y = t.scroll_y in
-          scroll_to_internal t ~x:(t.scroll_x + stepx) ~y:(t.scroll_y + stepy)
-            ();
-          if t.scroll_x <> previous_x || t.scroll_y <> previous_y then
-            Event.Mouse.stop_propagation event
+          let x = clamp (t.scroll_x + stepx) ~lo:0 ~hi:t.max_scroll_x in
+          let y = clamp (t.scroll_y + stepy) ~lo:0 ~hi:t.max_scroll_y in
+          if x <> t.scroll_x || y <> t.scroll_y then (
+            scroll_to_internal t
+              ?x:(if stepx = 0 then None else Some x)
+              ?y:(if stepy = 0 then None else Some y)
+              ();
+            Event.Mouse.stop_propagation event)
         end
       end
   | Drag { button = Left; is_dragging = true } ->
@@ -695,7 +413,6 @@ let handle_key t (event : Event.key) =
   let consumed = Scroll_bar.handle_key t.vertical_bar event in
   let consumed = consumed || Scroll_bar.handle_key t.horizontal_bar event in
   if consumed then (
-    t.has_manual_scroll <- true;
     Scroll_accel.reset t.scroll_accel;
     t.wheel_acc_x <- 0.;
     t.wheel_acc_y <- 0.;
@@ -704,16 +421,10 @@ let handle_key t (event : Event.key) =
 
 (* ───── Setters ───── *)
 
-let set_sticky_scroll t v =
-  if t.props.sticky_scroll <> v then (
-    t.props <- { t.props with sticky_scroll = v };
-    update_sticky_state t;
-    Renderable.request_render t.node)
-
-let set_sticky_start t edge =
-  if t.props.sticky_start <> edge then (
-    t.props <- { t.props with sticky_start = edge };
-    update_sticky_state t;
+let set_scroll t scroll =
+  if not (Scroll.equal t.props.scroll scroll) then (
+    t.props <- { t.props with scroll };
+    resolve_scroll t;
     Renderable.request_render t.node)
 
 let set_background t color =
@@ -721,29 +432,7 @@ let set_background t color =
     t.props <- { t.props with background = color };
     Renderable.request_render t.node)
 
-let set_reveal t reveal =
-  if not (Option.equal equal_reveal t.props.reveal reveal) then (
-    t.props <- { t.props with reveal };
-    t.pending_reveal <- reveal;
-    if Option.is_none reveal then t.applied_reveal_key <- None;
-    Renderable.request_render t.node)
-
-let set_scroll_by t scroll_by =
-  validate_scroll_by scroll_by;
-  if not (Option.equal equal_scroll_by t.props.scroll_by scroll_by) then (
-    t.props <- { t.props with scroll_by };
-    t.pending_scroll_by <- scroll_by;
-    Renderable.request_render t.node)
-
-let set_reset_sticky t reset_sticky =
-  if not (Option.equal String.equal t.props.reset_sticky reset_sticky) then (
-    t.props <- { t.props with reset_sticky };
-    t.pending_reset_sticky <- reset_sticky;
-    Renderable.request_render t.node)
-
 let set_on_scroll t cb = t.on_scroll <- cb
-let set_on_scroll_by_applied t cb = t.on_scroll_by_applied <- cb
-let set_on_reset_sticky_applied t cb = t.on_reset_sticky_applied <- cb
 let set_scroll_accel t accel = t.scroll_accel <- accel
 
 (* ───── Apply Props ───── *)
@@ -772,11 +461,9 @@ let set_show_scrollbars t v =
 
 let apply_props t (props : Props.t) =
   set_background t props.background;
-  set_sticky_scroll t props.sticky_scroll;
-  set_sticky_start t props.sticky_start;
-  set_reveal t props.reveal;
-  set_scroll_by t props.scroll_by;
-  set_reset_sticky t props.reset_sticky;
+  t.props <-
+    { t.props with scroll_x = props.scroll_x; scroll_y = props.scroll_y };
+  set_scroll t props.scroll;
   set_show_scrollbars t props.show_scrollbars;
   (match resolve_bar_props props.scrollbar_props props.vertical_bar_props with
   | Some p -> Scroll_bar.apply_props t.vertical_bar p
@@ -810,12 +497,9 @@ let set_style t style = Renderable.set_style t.node (root_style style)
 (* ───── Construction ───── *)
 
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
-    ?(scroll_x = false) ?(scroll_y = true) ?(sticky_scroll = false)
-    ?sticky_start ?background ?(scroll_accel = Scroll_accel.linear ())
-    ?(show_scrollbars = true) ?scrollbar_props ?vertical_bar_props
-    ?horizontal_bar_props ?reveal ?scroll_by ?reset_sticky ?on_scroll
-    ?on_scroll_by_applied ?on_reset_sticky_applied () =
-  validate_scroll_by scroll_by;
+    ?(scroll_x = false) ?(scroll_y = true) ?(scroll = Scroll.at 0) ?background
+    ?(scroll_accel = Scroll_accel.linear ()) ?(show_scrollbars = true)
+    ?scrollbar_props ?vertical_bar_props ?horizontal_bar_props ?on_scroll () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -897,16 +581,12 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     {
       Props.scroll_x;
       scroll_y;
-      sticky_scroll;
-      sticky_start;
+      scroll;
       background;
       show_scrollbars;
       scrollbar_props;
       vertical_bar_props;
       horizontal_bar_props;
-      reveal;
-      scroll_by;
-      reset_sticky;
     }
   in
   let t =
@@ -924,15 +604,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       content_w = 0;
       content_h = 0;
       on_scroll;
-      on_scroll_by_applied;
-      on_reset_sticky_applied;
       scroll_accel;
       frame_clock = 0.;
-      has_manual_scroll = false;
-      sticky_top = false;
-      sticky_bottom = false;
-      sticky_left = false;
-      sticky_right = false;
       wheel_acc_x = 0.;
       wheel_acc_y = 0.;
       auto_scroll_mouse_x = 0;
@@ -941,24 +614,13 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       auto_scroll_acc_x = 0.;
       auto_scroll_acc_y = 0.;
       auto_scrolling = false;
-      is_applying_sticky = false;
-      pending_reveal = reveal;
-      applied_reveal_key = None;
-      pending_scroll_by = scroll_by;
-      applied_scroll_by_key = None;
-      pending_reset_sticky = reset_sticky;
-      applied_reset_sticky_key = None;
     }
   in
   (* Wire scroll bar change → scroll position *)
   Scroll_bar.set_on_change t.vertical_bar
-    (Some
-       (fun pos ->
-         scroll_to_internal t ~manual:(not t.is_applying_sticky) ~y:pos ()));
+    (Some (fun pos -> scroll_to_internal t ~y:pos ()));
   Scroll_bar.set_on_change t.horizontal_bar
-    (Some
-       (fun pos ->
-         scroll_to_internal t ~manual:(not t.is_applying_sticky) ~x:pos ()));
+    (Some (fun pos -> scroll_to_internal t ~x:pos ()));
   (* Wire mouse handler *)
   Renderable.on_mouse node (on_mouse t);
   (* Wire keyboard handler *)
@@ -977,13 +639,6 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     (Some (fun _ -> Renderable.request_render node));
   Renderable.set_on_resize content_node
     (Some (fun _ -> Renderable.request_render node));
-  (* Initial sticky state *)
-  (match (sticky_scroll, sticky_start) with
-  | true, Some `Top -> t.sticky_top <- true
-  | true, Some `Bottom -> t.sticky_bottom <- true
-  | true, Some `Left -> t.sticky_left <- true
-  | true, Some `Right -> t.sticky_right <- true
-  | _ -> ());
   set_child_offsets t;
   Renderable.request_render node;
   t

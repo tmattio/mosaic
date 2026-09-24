@@ -4,21 +4,85 @@ open Test_harness
 
 (* ── Helpers ── *)
 
-let make_input ?value ?placeholder ?max_length ?text_color ?background_color
+let editor ?(value = "") ?max_length ?cursor ?selection () =
+  let state =
+    if value = "" && max_length = None then Editor.empty
+    else Editor.of_string ?max_length value
+  in
+  let state =
+    match cursor with None -> state | Some pos -> Editor.set_cursor pos state
+  in
+  match selection with
+  | None | Some None -> state
+  | Some (Some (anchor, cursor)) -> Editor.select ~anchor ~cursor state
+
+let make_props ?state ?value ?max_length ?cursor ?selection ?placeholder
+    ?text_color ?background_color ?focused_text_color ?focused_background_color
+    ?placeholder_color ?selection_color ?selection_fg ?cursor_style
+    ?cursor_color ?cursor_blinking ?selectable ?show_cursor () =
+  let state =
+    match state with
+    | Some state -> state
+    | None -> editor ?value ?max_length ?cursor ?selection ()
+  in
+  Text_input.Props.make ~state ?placeholder ?text_color ?background_color
     ?focused_text_color ?focused_background_color ?placeholder_color
     ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?cursor ?selection ?on_input ?on_change ?on_submit
-    ?on_cursor () =
+    ?selectable ?show_cursor ()
+
+let property_builders = Hashtbl.create 32
+
+let update_editor widget f =
+  let props =
+    Hashtbl.find property_builders (Renderable.id (Text_input.node widget))
+  in
+  Text_input.apply_props widget (props (f (Text_input.state widget)))
+
+let create_editor ~parent ?style ?value ?max_length ?cursor ?selection
+    ?placeholder ?text_color ?background_color ?focused_text_color
+    ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
+    ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
+    ?(accept = true) ?on_change ?on_submit () =
+  let state = editor ?value ?max_length ?cursor ?selection () in
+  let props state =
+    Text_input.Props.make ~state ?placeholder ?text_color ?background_color
+      ?focused_text_color ?focused_background_color ?placeholder_color
+      ?selection_color ?selection_fg ?cursor_style ?cursor_color
+      ?cursor_blinking ?selectable ?show_cursor ()
+  in
+  let install = ref (fun state -> ignore state) in
+  let on_change state =
+    if accept then !install state;
+    Option.iter (fun f -> f state) on_change
+  in
+  let widget =
+    Text_input.create ~parent ?style ~state ~on_change ?on_submit ?placeholder
+      ?text_color ?background_color ?focused_text_color
+      ?focused_background_color ?placeholder_color ?selection_color
+      ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable
+      ?show_cursor ()
+  in
+  (install := fun state -> Text_input.apply_props widget (props state));
+  Hashtbl.replace property_builders
+    (Renderable.id (Text_input.node widget))
+    props;
+  widget
+
+let make_input ?value ?max_length ?cursor ?selection ?placeholder ?text_color
+    ?background_color ?focused_text_color ?focused_background_color
+    ?placeholder_color ?selection_color ?selection_fg ?cursor_style
+    ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?accept ?on_change
+    ?on_submit () =
   let t = make_ctx () in
   let root = make_root t in
-  let input =
-    Text_input.create ~parent:root ?value ?placeholder ?max_length ?text_color
-      ?background_color ?focused_text_color ?focused_background_color
-      ?placeholder_color ?selection_color ?selection_fg ?cursor_style
-      ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?cursor ?selection
-      ?on_input ?on_change ?on_submit ?on_cursor ()
+  let widget =
+    create_editor ~parent:root ?value ?max_length ?cursor ?selection
+      ?placeholder ?text_color ?background_color ?focused_text_color
+      ?focused_background_color ?placeholder_color ?selection_color
+      ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable
+      ?show_cursor ?accept ?on_change ?on_submit ()
   in
-  (t, input)
+  (t, widget)
 
 let render_input input ~width ~height =
   let node = Text_input.node input in
@@ -91,56 +155,56 @@ let super_shift_mod =
 let props_default_equals_make () =
   let p = Text_input.Props.default in
   is_true ~msg:"default equals make()"
-    (Text_input.Props.equal p (Text_input.Props.make ()))
+    (Text_input.Props.equal p (make_props ()))
 
 let props_equal_identical () =
-  let a = Text_input.Props.make () in
-  let b = Text_input.Props.make () in
+  let a = make_props () in
+  let b = make_props () in
   is_true ~msg:"equal" (Text_input.Props.equal a b)
 
 let props_detects_value_diff () =
-  let a = Text_input.Props.make ~value:"hello" () in
-  let b = Text_input.Props.make ~value:"world" () in
+  let a = make_props ~value:"hello" () in
+  let b = make_props ~value:"world" () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 let props_detects_placeholder_diff () =
-  let a = Text_input.Props.make ~placeholder:"Enter name" () in
-  let b = Text_input.Props.make ~placeholder:"Enter email" () in
+  let a = make_props ~placeholder:"Enter name" () in
+  let b = make_props ~placeholder:"Enter email" () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 let props_detects_max_length_diff () =
-  let a = Text_input.Props.make ~max_length:10 () in
-  let b = Text_input.Props.make ~max_length:20 () in
+  let a = make_props ~max_length:10 () in
+  let b = make_props ~max_length:20 () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 let props_detects_text_color_diff () =
-  let a = Text_input.Props.make ~text_color:Ansi.Color.red () in
-  let b = Text_input.Props.make ~text_color:Ansi.Color.blue () in
+  let a = make_props ~text_color:Ansi.Color.red () in
+  let b = make_props ~text_color:Ansi.Color.blue () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 let props_detects_background_color_diff () =
-  let a = Text_input.Props.make ~background_color:Ansi.Color.red () in
-  let b = Text_input.Props.make ~background_color:Ansi.Color.blue () in
+  let a = make_props ~background_color:Ansi.Color.red () in
+  let b = make_props ~background_color:Ansi.Color.blue () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 let props_detects_cursor_style_diff () =
-  let a = Text_input.Props.make ~cursor_style:`Block () in
-  let b = Text_input.Props.make ~cursor_style:`Line () in
+  let a = make_props ~cursor_style:`Block () in
+  let b = make_props ~cursor_style:`Line () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 let props_detects_selection_fg_diff () =
-  let a = Text_input.Props.make ~selection_fg:Ansi.Color.red () in
-  let b = Text_input.Props.make ~selection_fg:Ansi.Color.blue () in
+  let a = make_props ~selection_fg:Ansi.Color.red () in
+  let b = make_props ~selection_fg:Ansi.Color.blue () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 let props_detects_cursor_color_diff () =
-  let a = Text_input.Props.make ~cursor_color:Ansi.Color.red () in
-  let b = Text_input.Props.make ~cursor_color:Ansi.Color.blue () in
+  let a = make_props ~cursor_color:Ansi.Color.red () in
+  let b = make_props ~cursor_color:Ansi.Color.blue () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 let props_detects_cursor_blinking_diff () =
-  let a = Text_input.Props.make ~cursor_blinking:true () in
-  let b = Text_input.Props.make ~cursor_blinking:false () in
+  let a = make_props ~cursor_blinking:true () in
+  let b = make_props ~cursor_blinking:false () in
   is_false ~msg:"different" (Text_input.Props.equal a b)
 
 (* ── Construction ── *)
@@ -161,8 +225,7 @@ let create_node_returns_renderable () =
 
 let create_buffer_returns_edit_buffer () =
   let _t, input = make_input () in
-  let buf = Text_input.buffer input in
-  gt ~msg:"buffer exists (max_length)" ~than:0 (Edit_buffer.max_length buf)
+  equal string "" (Editor.text (Text_input.state input))
 
 let create_initial_value_matches () =
   let _t, input = make_input ~value:"hello" () in
@@ -180,141 +243,91 @@ let value_returns_current_text () =
 
 let set_value_replaces_text () =
   let _t, input = make_input ~value:"old" () in
-  Text_input.set_value input "new";
+  update_editor input (fun _ -> Editor.of_string "new");
   equal ~msg:"replaced" string "new" (Text_input.value input)
 
 let set_value_requests_render () =
   let t, input = make_input () in
   let before = !(t.schedule_count) in
-  Text_input.set_value input "something";
+  update_editor input (fun _ -> Editor.of_string "something");
   gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_value_updates_buffer () =
   let _t, input = make_input ~value:"original" () in
-  Text_input.set_value input "replaced";
-  let buf = Text_input.buffer input in
-  equal ~msg:"buffer updated" string "replaced" (Edit_buffer.text buf)
+  update_editor input (fun _ -> Editor.of_string "replaced");
+  equal ~msg:"buffer updated" string "replaced"
+    (Editor.text (Text_input.state input))
 
-(* ── Callbacks — on_input ── *)
-
-let on_input_fires_on_char_insert () =
-  let fired = ref [] in
-  let t, input = make_input ~on_input:(fun s -> fired := s :: !fired) () in
-  focus_input t input;
-  send_char input 'a';
-  equal ~msg:"callback fired once" int 1 (List.length !fired)
-
-let on_input_receives_current_value () =
-  let fired = ref [] in
-  let t, input = make_input ~on_input:(fun s -> fired := s :: !fired) () in
-  focus_input t input;
+let changes_propose_complete_state () =
+  let proposals = ref [] in
+  let _, input =
+    make_input ~value:"ab"
+      ~on_change:(fun state -> proposals := state :: !proposals)
+      ()
+  in
+  send_key input Matrix_input.Key.Left;
   send_char input 'x';
-  match !fired with
-  | v :: _ -> equal ~msg:"received value" string "x" v
-  | [] -> fail "on_input not fired"
+  match !proposals with
+  | [ edited; moved ] ->
+      equal string "ab" (Editor.text moved);
+      equal int 1 (Editor.cursor moved);
+      equal string "axb" (Editor.text edited);
+      equal int 2 (Editor.cursor edited)
+  | _ -> fail "expected one complete proposal per state change"
 
-let on_input_does_not_fire_on_cursor_movement () =
-  let count = ref 0 in
-  let t, input = make_input ~value:"abc" ~on_input:(fun _ -> incr count) () in
-  focus_input t input;
+let rejected_edits_leave_state_and_history_intact () =
+  let proposals = ref [] in
+  let _, input =
+    make_input ~value:"ab" ~accept:false
+      ~on_change:(fun state -> proposals := state :: !proposals)
+      ()
+  in
+  let accepted = Text_input.state input in
+  send_char input 'x';
+  send_char input 'y';
+  is_true (Text_input.state input == accepted);
+  equal string "ab" (Text_input.value input);
+  match !proposals with
+  | [ latest; earlier ] ->
+      equal string "aby" (Editor.text latest);
+      equal string "abx" (Editor.text earlier);
+      equal string "ab" (Editor.text (Editor.undo latest))
+  | _ -> fail "expected independent proposals from accepted state"
+
+let rejected_cursor_does_not_affect_next_edit () =
+  let proposals = ref [] in
+  let _, input =
+    make_input ~value:"ab" ~accept:false
+      ~on_change:(fun state -> proposals := state :: !proposals)
+      ()
+  in
   send_key input Matrix_input.Key.Left;
-  equal ~msg:"not fired" int 0 !count
+  send_char input 'x';
+  equal int 2 (Text_input.cursor input);
+  equal string "abx" (Editor.text (List.hd !proposals))
 
-let set_on_input_none_disables () =
-  let count = ref 0 in
-  let t, input = make_input ~on_input:(fun _ -> incr count) () in
-  focus_input t input;
-  Text_input.set_on_input input None;
+let transformed_acceptance_is_next_event_base () =
+  let widget = ref None in
+  let on_change proposal =
+    match !widget with
+    | None -> fail "callback during construction"
+    | Some widget ->
+        update_editor widget (fun _ ->
+            Editor.of_string (String.uppercase_ascii (Editor.text proposal)))
+  in
+  let _, input = make_input ~accept:false ~on_change () in
+  widget := Some input;
   send_char input 'a';
-  equal ~msg:"disabled" int 0 !count
+  send_char input 'b';
+  equal string "AB" (Text_input.value input);
+  equal int 2 (Text_input.cursor input)
 
-(* ── Callbacks — on_cursor ── *)
-
-let on_cursor_fires_on_cursor_movement () =
-  let fired = ref [] in
-  let t, input =
-    make_input ~value:"abc"
-      ~on_cursor:(fun ~cursor ~selection ->
-        fired := (cursor, selection) :: !fired)
-      ()
-  in
-  focus_input t input;
-  send_key input Matrix_input.Key.Left;
-  ge ~msg:"cursor callback fired" ~than:1 (List.length !fired)
-
-let on_cursor_fires_on_selection_change () =
-  let fired = ref [] in
-  let t, input =
-    make_input ~value:"abc"
-      ~on_cursor:(fun ~cursor ~selection ->
-        fired := (cursor, selection) :: !fired)
-      ()
-  in
-  focus_input t input;
-  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Left;
-  let has_selection =
-    List.exists (fun (_cursor, selection) -> Option.is_some selection) !fired
-  in
-  is_true ~msg:"selection reported" has_selection
-
-let set_on_cursor_none_disables () =
-  let count = ref 0 in
-  let t, input =
-    make_input ~value:"abc"
-      ~on_cursor:(fun ~cursor:_ ~selection:_ -> incr count)
-      ()
-  in
-  focus_input t input;
-  Text_input.set_on_cursor input None;
-  send_key input Matrix_input.Key.Left;
-  equal ~msg:"disabled" int 0 !count
-
-(* ── Callbacks — on_change ── *)
-
-let on_change_fires_on_blur_when_changed () =
-  let fired = ref [] in
-  let t, input = make_input ~on_change:(fun s -> fired := s :: !fired) () in
-  focus_input t input;
-  (* Render to set was_focused and snapshot last_committed_value *)
-  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
-  (* Edit text *)
-  send_char input 'h';
-  send_char input 'i';
-  (* Blur *)
-  blur_input input;
-  (* Render again to detect focus loss *)
-  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
-  equal ~msg:"on_change fired" int 1 (List.length !fired)
-
-let on_change_does_not_fire_on_blur_when_unchanged () =
+let blur_and_submit_do_not_propose_edits () =
   let count = ref 0 in
   let t, input = make_input ~on_change:(fun _ -> incr count) () in
   focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
-  (* No edits *)
   blur_input input;
-  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
-  equal ~msg:"not fired" int 0 !count
-
-let on_change_fires_on_submit_when_changed () =
-  let fired = ref [] in
-  let t, input = make_input ~on_change:(fun s -> fired := s :: !fired) () in
-  focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
-  send_char input 'a';
-  send_key input Matrix_input.Key.Enter;
-  ge ~msg:"on_change fired on submit" ~than:1 (List.length !fired)
-
-let set_on_change_none_disables () =
-  let count = ref 0 in
-  let t, input = make_input ~on_change:(fun _ -> incr count) () in
-  focus_input t input;
-  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
-  Text_input.set_on_change input None;
-  send_char input 'z';
-  blur_input input;
-  ignore (render_input input ~width:20 ~height:1 : Matrix_grid.t);
-  equal ~msg:"disabled" int 0 !count
+  equal int 0 !count
 
 (* ── Callbacks — on_submit ── *)
 
@@ -357,22 +370,20 @@ let key_char_inserts_text () =
 let key_left_right_moves_cursor () =
   let t, input = make_input ~value:"ab" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   (* Cursor starts at end (position 2) *)
-  equal ~msg:"cursor at end" int 2 (Edit_buffer.cursor buf);
+  equal ~msg:"cursor at end" int 2 (Editor.cursor (Text_input.state input));
   send_key input Matrix_input.Key.Left;
-  equal ~msg:"cursor moved left" int 1 (Edit_buffer.cursor buf);
+  equal ~msg:"cursor moved left" int 1 (Editor.cursor (Text_input.state input));
   send_key input Matrix_input.Key.Right;
-  equal ~msg:"cursor moved right" int 2 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor moved right" int 2 (Editor.cursor (Text_input.state input))
 
 let key_home_end_moves_cursor () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_key input Matrix_input.Key.Home;
-  equal ~msg:"cursor at home" int 0 (Edit_buffer.cursor buf);
+  equal ~msg:"cursor at home" int 0 (Editor.cursor (Text_input.state input));
   send_key input Matrix_input.Key.End;
-  equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input))
 
 let key_backspace_deletes_backward () =
   let t, input = make_input ~value:"abc" () in
@@ -383,8 +394,7 @@ let key_backspace_deletes_backward () =
 let key_delete_deletes_forward () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_key input Matrix_input.Key.Delete;
   equal ~msg:"deleted forward" string "bc" (Text_input.value input)
 
@@ -397,10 +407,9 @@ let key_ctrl_w_deletes_word_backward () =
 let key_ctrl_k_deletes_to_end () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   for _ = 1 to 5 do
-    ignore (Edit_buffer.move_right buf : bool)
+    update_editor input Editor.move_right
   done;
   send_char_with_mod input ~modifier:ctrl_mod 'k';
   equal ~msg:"deleted to end" string "hello" (Text_input.value input)
@@ -433,7 +442,7 @@ let key_kp_left_moves_cursor () =
 
 let key_release_is_ignored () =
   let count = ref 0 in
-  let t, input = make_input ~on_input:(fun _ -> incr count) () in
+  let t, input = make_input ~on_change:(fun _ -> incr count) () in
   focus_input t input;
   send_release_key input (Matrix_input.Key.Char (Uchar.of_char 'a'));
   equal ~msg:"release ignored" int 0 !count
@@ -453,19 +462,17 @@ let key_max_length_rejects_excess_typing () =
 let ctrl_a_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf);
+  equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input));
   send_char_with_mod input ~modifier:ctrl_mod 'a';
-  equal ~msg:"cursor at start" int 0 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input))
 
 let ctrl_a_uppercase_from_parser_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf);
+  equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input));
   (* Runtime parser emits Ctrl+A as 'A' with ctrl=true. *)
   send_char_with_mod input ~modifier:ctrl_mod 'A';
-  equal ~msg:"cursor at start" int 0 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input))
 
 let ctrl_a_base_key_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
@@ -480,31 +487,27 @@ let ctrl_a_base_key_moves_to_start () =
 let ctrl_e_moves_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_char_with_mod input ~modifier:ctrl_mod 'e';
-  equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input))
 
 let ctrl_b_moves_left () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_char_with_mod input ~modifier:ctrl_mod 'b';
-  equal ~msg:"cursor moved left" int 2 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor moved left" int 2 (Editor.cursor (Text_input.state input))
 
 let ctrl_f_moves_right () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_char_with_mod input ~modifier:ctrl_mod 'f';
-  equal ~msg:"cursor moved right" int 1 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor moved right" int 1 (Editor.cursor (Text_input.state input))
 
 let ctrl_d_deletes_forward () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_char_with_mod input ~modifier:ctrl_mod 'd';
   equal ~msg:"deleted forward" string "bc" (Text_input.value input)
 
@@ -519,9 +522,9 @@ let ctrl_shift_d_deletes_line () =
 let alt_b_moves_word_backward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_char_with_mod input ~modifier:alt_mod 'b';
-  equal ~msg:"moved to word boundary" int 6 (Edit_buffer.cursor buf)
+  equal ~msg:"moved to word boundary" int 6
+    (Editor.cursor (Text_input.state input))
 
 let meta_b_moves_word_backward () =
   let t, input = make_input ~value:"hello world" () in
@@ -533,16 +536,14 @@ let meta_b_moves_word_backward () =
 let alt_f_moves_word_forward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_char_with_mod input ~modifier:alt_mod 'f';
-  equal ~msg:"moved to word end" int 6 (Edit_buffer.cursor buf)
+  equal ~msg:"moved to word end" int 6 (Editor.cursor (Text_input.state input))
 
 let alt_d_deletes_word_forward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_char_with_mod input ~modifier:alt_mod 'd';
   equal ~msg:"word deleted forward" string "world" (Text_input.value input)
 
@@ -557,66 +558,63 @@ let alt_backspace_deletes_word_backward () =
 let ctrl_left_moves_word_backward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_key_with_mod input ~modifier:ctrl_mod Matrix_input.Key.Left;
-  equal ~msg:"moved to word boundary" int 6 (Edit_buffer.cursor buf)
+  equal ~msg:"moved to word boundary" int 6
+    (Editor.cursor (Text_input.state input))
 
 let ctrl_right_moves_word_forward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_key_with_mod input ~modifier:ctrl_mod Matrix_input.Key.Right;
-  equal ~msg:"moved to word end" int 6 (Edit_buffer.cursor buf)
+  equal ~msg:"moved to word end" int 6 (Editor.cursor (Text_input.state input))
 
 (* ── Super+Arrow Keybindings ── *)
 
 let super_left_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Left;
-  equal ~msg:"cursor at start" int 0 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input))
 
 let super_right_moves_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Right;
-  equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input))
 
 let super_up_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Up;
-  equal ~msg:"cursor at start" int 0 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input))
 
 let super_down_moves_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Down;
-  equal ~msg:"cursor at end" int 5 (Edit_buffer.cursor buf)
+  equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input))
 
 let super_shift_left_selects_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_key_with_mod input ~modifier:super_shift_mod Matrix_input.Key.Left;
-  is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
-  equal ~msg:"selected all" string "hello" (Edit_buffer.selected_text buf)
+  is_true ~msg:"has selection"
+    (Option.is_some (Editor.selection (Text_input.state input)));
+  equal ~msg:"selected all" string "hello"
+    (Editor.selected_text (Text_input.state input))
 
 let super_shift_right_selects_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_key_with_mod input ~modifier:super_shift_mod Matrix_input.Key.Right;
-  is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
-  equal ~msg:"selected all" string "hello" (Edit_buffer.selected_text buf)
+  is_true ~msg:"has selection"
+    (Option.is_some (Editor.selection (Text_input.state input)));
+  equal ~msg:"selected all" string "hello"
+    (Editor.selected_text (Text_input.state input))
 
 (* ── Ctrl+-/. Undo/Redo ── *)
 
@@ -642,48 +640,50 @@ let ctrl_dot_redoes () =
 let shift_right_creates_selection () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Right;
-  is_true ~msg:"has selection" (Edit_buffer.has_selection buf)
+  is_true ~msg:"has selection"
+    (Option.is_some (Editor.selection (Text_input.state input)))
 
 let shift_left_creates_selection () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Left;
-  is_true ~msg:"has selection" (Edit_buffer.has_selection buf)
+  is_true ~msg:"has selection"
+    (Option.is_some (Editor.selection (Text_input.state input)))
 
 let shift_home_selects_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Home;
-  is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
-  equal ~msg:"selected all" string "hello" (Edit_buffer.selected_text buf)
+  is_true ~msg:"has selection"
+    (Option.is_some (Editor.selection (Text_input.state input)));
+  equal ~msg:"selected all" string "hello"
+    (Editor.selected_text (Text_input.state input))
 
 let shift_end_selects_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.End;
-  is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
-  equal ~msg:"selected all" string "hello" (Edit_buffer.selected_text buf)
+  is_true ~msg:"has selection"
+    (Option.is_some (Editor.selection (Text_input.state input)));
+  equal ~msg:"selected all" string "hello"
+    (Editor.selected_text (Text_input.state input))
 
 let super_a_selects_all () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
   send_char_with_mod input ~modifier:super_mod 'a';
-  is_true ~msg:"has selection" (Edit_buffer.has_selection buf);
-  equal ~msg:"all selected" string "hello world" (Edit_buffer.selected_text buf)
+  is_true ~msg:"has selection"
+    (Option.is_some (Editor.selection (Text_input.state input)));
+  equal ~msg:"all selected" string "hello world"
+    (Editor.selected_text (Text_input.state input))
 
 let type_with_selection_replaces () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  Edit_buffer.select_all buf;
+  update_editor input Editor.select_all;
   send_char input 'x';
   equal ~msg:"replaced" string "x" (Text_input.value input)
 
@@ -734,8 +734,7 @@ let handle_paste_strips_ansi () =
 
 let handle_paste_with_selection_replaces () =
   let _t, input = make_input ~value:"old" () in
-  let buf = Text_input.buffer input in
-  Edit_buffer.select_all buf;
+  update_editor input Editor.select_all;
   Text_input.handle_paste input "new";
   equal ~msg:"replaced" string "new" (Text_input.value input)
 
@@ -805,38 +804,33 @@ let cursor_has_correct_blinking () =
 
 let apply_props_value_change_updates_buffer () =
   let _t, input = make_input ~value:"old" () in
-  let props = Text_input.Props.make ~value:"new" () in
+  let props = make_props ~value:"new" () in
   Text_input.apply_props input props;
   equal ~msg:"value updated" string "new" (Text_input.value input)
 
 let apply_props_max_length_change_updates_buffer () =
   let _t, input = make_input ~value:"hello world" () in
-  let props = Text_input.Props.make ~value:"hello world" ~max_length:5 () in
+  let props = make_props ~value:"hello world" ~max_length:5 () in
   Text_input.apply_props input props;
-  let buf = Text_input.buffer input in
-  equal ~msg:"max_length updated" int 5 (Edit_buffer.max_length buf)
+  equal ~msg:"accepted editor is truncated" string "hello"
+    (Text_input.value input)
 
 let apply_props_truncated_value_preserves_cursor () =
   let _t, input = make_input ~value:"abc" ~max_length:3 () in
-  let buf = Text_input.buffer input in
-  Edit_buffer.set_cursor buf 1;
-  Text_input.apply_props input
-    (Text_input.Props.make ~value:"abcdef" ~max_length:3 ());
+  update_editor input (Editor.set_cursor 1);
+  Text_input.apply_props input (make_props ~value:"abcdef" ~max_length:3 ());
   equal ~msg:"value remains normalized" string "abc" (Text_input.value input);
-  equal ~msg:"matching truncated value preserves cursor" int 1
-    (Text_input.cursor input)
+  equal ~msg:"replacement owns its cursor" int 3 (Text_input.cursor input)
 
 let apply_props_cursor_change_updates_buffer () =
   let _t, input = make_input ~value:"hello" () in
-  let props = Text_input.Props.make ~value:"hello" ~cursor:2 () in
+  let props = make_props ~value:"hello" ~cursor:2 () in
   Text_input.apply_props input props;
   equal ~msg:"cursor updated" int 2 (Text_input.cursor input)
 
 let apply_props_selection_change_updates_buffer () =
   let _t, input = make_input ~value:"hello" () in
-  let props =
-    Text_input.Props.make ~value:"hello" ~selection:(Some (1, 4)) ()
-  in
+  let props = make_props ~value:"hello" ~selection:(Some (1, 4)) () in
   Text_input.apply_props input props;
   equal ~msg:"selection updated"
     (option (pair int int))
@@ -845,8 +839,7 @@ let apply_props_selection_change_updates_buffer () =
 
 let apply_props_selection_none_clears_buffer_selection () =
   let _t, input = make_input ~value:"hello" ~selection:(Some (1, 4)) () in
-  Text_input.apply_props input
-    (Text_input.Props.make ~value:"hello" ~selection:None ());
+  Text_input.apply_props input (make_props ~value:"hello" ~selection:None ());
   is_none ~msg:"selection cleared" (Text_input.selection input)
 
 let apply_props_schedules_render () =
@@ -860,25 +853,22 @@ let apply_props_schedules_render () =
 let cursor_left_at_start_is_noop () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
-  equal ~msg:"at start" int 0 (Edit_buffer.cursor buf);
+  update_editor input Editor.move_home;
+  equal ~msg:"at start" int 0 (Editor.cursor (Text_input.state input));
   send_key input Matrix_input.Key.Left;
-  equal ~msg:"still at start" int 0 (Edit_buffer.cursor buf)
+  equal ~msg:"still at start" int 0 (Editor.cursor (Text_input.state input))
 
 let cursor_right_at_end_is_noop () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  equal ~msg:"at end" int 5 (Edit_buffer.cursor buf);
+  equal ~msg:"at end" int 5 (Editor.cursor (Text_input.state input));
   send_key input Matrix_input.Key.Right;
-  equal ~msg:"still at end" int 5 (Edit_buffer.cursor buf)
+  equal ~msg:"still at end" int 5 (Editor.cursor (Text_input.state input))
 
 let backspace_at_start_is_noop () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  let buf = Text_input.buffer input in
-  ignore (Edit_buffer.move_home buf : bool);
+  update_editor input Editor.move_home;
   send_key input Matrix_input.Key.Backspace;
   equal ~msg:"unchanged" string "hello" (Text_input.value input)
 
@@ -930,9 +920,115 @@ let pp_contains_input_prefix () =
 
 (* ── Runner ── *)
 
+let invalid_declarations_are_rejected () =
+  let t = make_ctx () in
+  let root = make_root t in
+  List.iter
+    (fun text ->
+      let state = Editor.of_string text in
+      let invalid = function
+        | Invalid_argument message ->
+            message = "Mosaic_ui.Text_input: state must not contain CR or LF"
+        | _ -> false
+      in
+      raises_match ~msg:"property declaration rejects line breaks" invalid
+        (fun () -> ignore (Text_input.Props.make ~state ()));
+      raises_match ~msg:"construction rejects line breaks" invalid (fun () ->
+          ignore (Text_input.create ~parent:root ~state ~on_change:ignore ())))
+    [ "a\nb"; "a\rb"; "a\r\nb"; "a\n"; "\r" ];
+  equal ~msg:"invalid construction attaches no child" int 0
+    (List.length (Renderable.children root))
+
+let invalid_replacement_preserves_accepted_state () =
+  let t, input = make_input ~value:"valid" ~cursor:2 () in
+  let accepted = Text_input.state input in
+  let before = Matrix_grid.to_text (render_input input ~width:10 ~height:1) in
+  raises_match ~msg:"invalid replacement is rejected"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      Text_input.apply_props input
+        (Text_input.Props.make ~state:(Editor.of_string "bad\rvalue") ()));
+  is_true ~msg:"accepted editor retained" (Text_input.state input == accepted);
+  equal ~msg:"caret retained" int 2 (Text_input.cursor input);
+  equal ~msg:"rendered text retained" string before
+    (Matrix_grid.to_text (render_input input ~width:10 ~height:1));
+  focus_input t input;
+  send_char input 'x';
+  equal ~msg:"next edit uses retained accepted state" string "vaxlid"
+    (Text_input.value input)
+
+let cursor_declarations_share_validated_source () =
+  let text = String.make 4096 'x' in
+  let t, input = make_input ~value:text () in
+  let source = Editor.source (Text_input.state input) in
+  let next = Editor.set_cursor 17 (Text_input.state input) in
+  Text_input.apply_props input (Text_input.Props.make ~state:next ());
+  is_true ~msg:"caret declaration shares indexed text"
+    (Editor.source (Text_input.state input) == source);
+  equal ~msg:"declared caret accepted" int 17 (Text_input.cursor input);
+  focus_input t input;
+  Text_input.handle_paste input "\027[31mA\r\nB\rC\n\027[0m";
+  equal ~msg:"paste remains normalized and accepted" string
+    (String.sub text 0 17 ^ "ABC" ^ String.sub text 17 (String.length text - 17))
+    (Text_input.value input);
+  is_false ~msg:"paste proposal contains no CR"
+    (String.contains (Text_input.value input) '\r');
+  is_false ~msg:"paste proposal contains no LF"
+    (String.contains (Text_input.value input) '\n')
+
+let multiline_history_is_ignored_by_single_line_input () =
+  List.iter
+    (fun (state, action) ->
+      let proposals = ref 0 in
+      let t, input =
+        make_input
+          ~on_change:(fun state ->
+            ignore state;
+            incr proposals)
+          ()
+      in
+      Text_input.apply_props input (Text_input.Props.make ~state ());
+      focus_input t input;
+      send_char_with_mod input ~modifier:ctrl_mod action;
+      equal ~msg:"multiline history emits no proposal" int 0 !proposals;
+      is_true ~msg:"accepted editor and history are unchanged"
+        (Text_input.state input == state);
+      equal ~msg:"scratch text restored" string "" (Text_input.value input);
+      equal ~msg:"scratch caret restored" int 0 (Text_input.cursor input);
+      let restored = ref state in
+      let textarea =
+        Textarea.create ~parent:(make_root t) ~state
+          ~on_change:(fun next -> restored := next)
+          ()
+      in
+      let event =
+        Event.Key.of_input (Matrix_input.Key.of_char ~modifier:ctrl_mod action)
+      in
+      Renderable.Private.emit_default_key (Textarea.node textarea) event;
+      equal ~msg:"textarea can still restore the shared multiline history"
+        string "a\nb" (Editor.text !restored);
+      send_char input 'x';
+      equal ~msg:"subsequent valid edit is accepted" string "x"
+        (Text_input.value input);
+      equal ~msg:"only the valid edit emits a proposal" int 1 !proposals)
+    [
+      (Editor.clear (Editor.of_string "a\nb"), '-');
+      (Editor.undo (Editor.insert "a\nb" Editor.empty), '.');
+    ]
+
 let () =
   run "mosaic.text-input"
     [
+      group "Single-line declarations"
+        [
+          test "multiline history is ignored by single-line input"
+            multiline_history_is_ignored_by_single_line_input;
+          test "reject invalid declarations" invalid_declarations_are_rejected;
+          test "invalid replacement preserves accepted state"
+            invalid_replacement_preserves_accepted_state;
+          test "cursor declarations share source and paste normalizes"
+            cursor_declarations_share_validated_source;
+        ];
       group "Props"
         [
           test "default equals make()" props_default_equals_make;
@@ -963,28 +1059,16 @@ let () =
           test "set_value requests render" set_value_requests_render;
           test "set_value updates buffer" set_value_updates_buffer;
         ];
-      group "Callbacks -- on_input"
+      group "State proposals"
         [
-          test "fires on character insert" on_input_fires_on_char_insert;
-          test "receives current value" on_input_receives_current_value;
-          test "does not fire on cursor movement"
-            on_input_does_not_fire_on_cursor_movement;
-          test "set_on_input None disables" set_on_input_none_disables;
-        ];
-      group "Callbacks -- on_cursor"
-        [
-          test "fires on cursor movement" on_cursor_fires_on_cursor_movement;
-          test "fires on selection change" on_cursor_fires_on_selection_change;
-          test "set_on_cursor None disables" set_on_cursor_none_disables;
-        ];
-      group "Callbacks -- on_change"
-        [
-          test "fires on blur when changed" on_change_fires_on_blur_when_changed;
-          test "does not fire on blur when unchanged"
-            on_change_does_not_fire_on_blur_when_unchanged;
-          test "fires on submit when changed"
-            on_change_fires_on_submit_when_changed;
-          test "set_on_change None disables" set_on_change_none_disables;
+          test "complete state" changes_propose_complete_state;
+          test "rejected edits preserve accepted state"
+            rejected_edits_leave_state_and_history_intact;
+          test "rejected caret does not affect next edit"
+            rejected_cursor_does_not_affect_next_edit;
+          test "transformed acceptance is next event base"
+            transformed_acceptance_is_next_event_base;
+          test "blur does not propose" blur_and_submit_do_not_propose_edits;
         ];
       group "Callbacks -- on_submit"
         [

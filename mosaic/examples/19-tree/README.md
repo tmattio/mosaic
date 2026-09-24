@@ -21,12 +21,12 @@ dune exec ./mosaic/examples/19-tree/main.exe
 - Nested file-system-like tree with two root projects.
 - Expand/collapse via keyboard with guide line indicators.
 - Switchable guide styles (rounded and single box-drawing).
-- Info panel showing selected index, guide state, and activated item.
+- Info panel showing selected item ID, guide state, and activated item.
 - Wrap selection at list boundaries.
 
 ## Highlights
 
-- Demonstrates the `tree` widget with `on_change`, `on_activate`, and
-  `on_expand` callbacks.
-- Shows `Tree.item` construction for hierarchical data.
+- Stores selection and expansion together in `Tree.State.t`.
+- Accepts complete `on_change` proposals; `on_activate` supplies the item.
+- Gives every `Tree.item` a stable, unique ID.
 - Uses `Border.rounded` and `Border.single` for guide style switching.

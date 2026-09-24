@@ -27,19 +27,6 @@ let string_contains ~needle hay =
     in
     loop 0
 
-let remove_last_char s =
-  let len = String.length s in
-  if len = 0 then s else String.sub s 0 (len - 1)
-
-let uchar_to_char_opt (u : Uchar.t) : char option =
-  let i = Uchar.to_int u in
-  if i >= 0 && i < 128 then Some (Char.chr i) else None
-
-let uchar_is_backspace (u : Uchar.t) =
-  (* Terminal backspace often arrives as DEL (127) or BS (8). *)
-  let i = Uchar.to_int u in
-  i = 127 || i = 8
-
 (* Deterministic "noise" (0..1) from seed + step. *)
 let frac x = x -. Float.floor x
 
@@ -265,7 +252,12 @@ let mk_run ~id ~name ~seed ~status ~n0 : run =
     hparams;
   }
 
-type focus = No_focus | Focus_run_filter | Focus_log_filter
+type focus =
+  | No_focus
+  | Focus_run_filter
+  | Focus_log_filter
+  | Focus_scalar_view
+  | Focus_config
 
 type sys = {
   cpu : float;
@@ -280,14 +272,16 @@ type sys = {
   s_net : Charts.Sparkline.t;
 }
 
+type scalar_view = All_scalars | Training | Validation | Custom
+
 type model = {
   time : float;
   sample_acc : float;
   streaming : bool;
   tab : tab;
   focus : focus;
-  run_filter : string;
-  log_filter : string;
+  run_filter : Editor.t;
+  log_filter : Editor.t;
   show_grid : bool;
   show_axes : bool;
   smoothing : int;
@@ -295,6 +289,9 @@ type model = {
   selected_run : string;
   runs : run list;
   sys : sys;
+  scrolls : (string * Scroll.t) list;
+  scalar_view : scalar_view option;
+  config_row : string option;
 }
 
 type msg =
@@ -309,7 +306,12 @@ type msg =
   | Select_run of string
   | Focus of focus
   | Blur_focus
-  | Input_char of Uchar.t
+  | Run_filter of Editor.t
+  | Log_filter of Editor.t
+  | Scrolled of string * Scroll.t
+  | Scalar_view of scalar_view
+  | Config_row of string
+  | Smoothing of float
   | Toggle_grid
   | Toggle_axes
   | Smoothing_up
@@ -358,8 +360,8 @@ let init () =
       streaming = true;
       tab = Scalars;
       focus = No_focus;
-      run_filter = "";
-      log_filter = "";
+      run_filter = Editor.empty;
+      log_filter = Editor.empty;
       show_grid = true;
       show_axes = true;
       smoothing = 8;
@@ -367,13 +369,19 @@ let init () =
       selected_run;
       runs;
       sys = make_sys ();
+      scrolls = [];
+      scalar_view = Some All_scalars;
+      config_row =
+        (match (List.hd runs).hparams with
+        | (key, _) :: _ -> Some key
+        | [] -> None);
     },
     Cmd.none )
 
 (* ---------- Update helpers ---------- *)
 
 let visible_runs (m : model) =
-  let needle = m.run_filter in
+  let needle = Editor.text m.run_filter in
   List.filter
     (fun r -> string_contains ~needle r.id || string_contains ~needle r.name)
     m.runs
@@ -458,27 +466,15 @@ let reset_selected_run (m : model) : model =
       let runs = List.map (fun x -> if x.id = r.id then fresh else x) m.runs in
       { m with runs }
 
-let edit_focused_input (m : model) (u : Uchar.t) : model =
-  match m.focus with
-  | No_focus -> m
-  | Focus_run_filter -> (
-      if uchar_is_backspace u then
-        { m with run_filter = remove_last_char m.run_filter }
-      else
-        match uchar_to_char_opt u with
-        | Some c ->
-            if Char.code c < 32 then m
-            else { m with run_filter = m.run_filter ^ String.make 1 c }
-        | None -> m)
-  | Focus_log_filter -> (
-      if uchar_is_backspace u then
-        { m with log_filter = remove_last_char m.log_filter }
-      else
-        match uchar_to_char_opt u with
-        | Some c ->
-            if Char.code c < 32 then m
-            else { m with log_filter = m.log_filter ^ String.make 1 c }
-        | None -> m)
+let set_tab m tab =
+  if tab = m.tab then m
+  else
+    let focus =
+      match m.focus with
+      | Focus_scalar_view | Focus_config -> No_focus
+      | focus -> focus
+    in
+    { m with tab; focus }
 
 (* ---------- Update ---------- *)
 
@@ -497,15 +493,23 @@ let update msg m =
         in
         (m, Cmd.none)
   | Toggle_stream -> ({ m with streaming = not m.streaming }, Cmd.none)
-  | Next_tab -> ({ m with tab = next_in_cycle all_tabs m.tab }, Cmd.none)
-  | Prev_tab -> ({ m with tab = prev_in_cycle all_tabs m.tab }, Cmd.none)
-  | Set_tab tab -> ({ m with tab }, Cmd.none)
+  | Next_tab -> (set_tab m (next_in_cycle all_tabs m.tab), Cmd.none)
+  | Prev_tab -> (set_tab m (prev_in_cycle all_tabs m.tab), Cmd.none)
+  | Set_tab tab -> (set_tab m tab, Cmd.none)
   | Next_run -> (select_adjacent_run m ~dir:1, Cmd.none)
   | Prev_run -> (select_adjacent_run m ~dir:(-1), Cmd.none)
   | Select_run id -> ({ m with selected_run = id }, Cmd.none)
   | Focus f -> ({ m with focus = f }, Cmd.none)
   | Blur_focus -> ({ m with focus = No_focus }, Cmd.none)
-  | Input_char u -> (edit_focused_input m u, Cmd.none)
+  | Run_filter run_filter -> ({ m with run_filter }, Cmd.none)
+  | Log_filter log_filter -> ({ m with log_filter }, Cmd.none)
+  | Scrolled (id, scroll) ->
+      ( { m with scrolls = (id, scroll) :: List.remove_assoc id m.scrolls },
+        Cmd.none )
+  | Scalar_view scalar_view ->
+      ({ m with scalar_view = Some scalar_view }, Cmd.none)
+  | Config_row config_row -> ({ m with config_row = Some config_row }, Cmd.none)
+  | Smoothing value -> ({ m with smoothing = int_of_float value }, Cmd.none)
   | Toggle_grid -> ({ m with show_grid = not m.show_grid }, Cmd.none)
   | Toggle_axes -> ({ m with show_axes = not m.show_axes }, Cmd.none)
   | Smoothing_up -> ({ m with smoothing = min 50 (m.smoothing + 2) }, Cmd.none)
@@ -516,6 +520,11 @@ let update msg m =
       in
       ({ m with window }, Cmd.none)
   | Reset_selected -> (reset_selected_run m, Cmd.none)
+
+let scroller m id =
+  scroll_box
+    ~scroll:(Option.value (List.assoc_opt id m.scrolls) ~default:(Scroll.at 0))
+    ~on_scroll:(fun value -> Scrolled (id, value))
 
 (* ---------- Charts ---------- *)
 
@@ -746,7 +755,7 @@ let run_row (m : model) (r : run) =
   let selected = r.id = m.selected_run in
   let bg = if selected then Ansi.Color.blue else Ansi.Color.transparent in
   let fg = if selected then Ansi.Color.white else Ansi.Color.bright_white in
-  box ~key:r.id ~padding:(padding 1) ~background:bg
+  box ~padding:(padding 1) ~background:bg ~key:r.id
     ~on_mouse:(fun ev ->
       match Event.Mouse.kind ev with
       | Down _ -> Some (Select_run r.id)
@@ -773,8 +782,9 @@ let run_row (m : model) (r : run) =
 let run_panel (m : model) =
   let focused = m.focus = Focus_run_filter in
   let runs = visible_runs m in
-  box ~border:true ~title:"Runs" ~padding:(padding 1)
+  box ~border:true ~padding:(padding 1)
     ~size:{ width = px 32; height = pct 100 }
+    ~title:"Runs"
     [
       box ~flex_direction:Column ~gap:(gap 1)
         ~size:{ width = pct 100; height = pct 100 }
@@ -786,18 +796,21 @@ let run_panel (m : model) =
               box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
                 [
                   text ~style:dim_style "Filter:";
-                  input ~placeholder:"run id or model..."
-                    ~cursor_blinking:focused
+                  input
                     ~size:{ width = pct 100; height = px 1 }
-                    ~value:m.run_filter ();
+                    ~placeholder:"run id or model..." ~cursor_blinking:focused
+                    ~state:m.run_filter ~focused
+                    ~on_change:(fun state -> Run_filter state)
+                    ~on_focus_request:(Focus Focus_run_filter) ();
                 ];
             ];
           (* run list *)
           box ~flex_grow:1. ~border:true
             ~title:(Printf.sprintf "Visible: %d" (List.length runs))
             [
-              scroll_box ~scroll_y:true ~scroll_x:false
+              scroller m "runs"
                 ~size:{ width = pct 100; height = pct 100 }
+                ~scroll_y:true ~scroll_x:false
                 (List.map (run_row m) runs);
             ];
           (* quick actions *)
@@ -845,8 +858,9 @@ let sys_metric_card ~title ~value ~unit_ ~color ~spark =
     ]
 
 let sys_panel (m : model) =
-  box ~border:true ~title:"System" ~padding:(padding 1)
+  box ~border:true ~padding:(padding 1)
     ~size:{ width = px 34; height = pct 100 }
+    ~title:"System"
     [
       box ~flex_direction:Column ~gap:(gap 1)
         ~size:{ width = pct 100; height = pct 100 }
@@ -856,8 +870,8 @@ let sys_panel (m : model) =
               text ~style:dim_style "Collector";
               box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
                 [
-                  spinner ~frame_set:Spinner.dots ~live:m.streaming
-                    ~color:Ansi.Color.bright_white ();
+                  spinner ~live:m.streaming ~color:Ansi.Color.bright_white
+                    ~frame_set:Spinner.dots ();
                   text
                     ~style:
                       (Ansi.Style.make ~bold:true
@@ -882,18 +896,19 @@ let sys_panel (m : model) =
               sys_metric_card ~title:"NET" ~value:m.sys.net ~unit_:"%"
                 ~color:Ansi.Color.yellow ~spark:m.sys.s_net;
             ];
-          box ~border:true
+          box ~border:true ~flex_grow:1.
             ~title:(Printf.sprintf "Temp: %.1f°C" m.sys.temp)
-            ~flex_grow:1.
             [
-              scroll_box ~scroll_y:true ~scroll_x:false
+              scroller m "system"
                 ~size:{ width = pct 100; height = pct 100 }
+                ~scroll_y:true ~scroll_x:false
                 (List.mapi
                    (fun i (name, cpu) ->
-                     box ~key:(string_of_int i) ~padding:(padding 1)
+                     box ~padding:(padding 1)
                        ~background:
                          (if i mod 2 = 0 then Ansi.Color.transparent
                           else muted_bg)
+                       ~key:(string_of_int i)
                        [
                          box ~flex_direction:Row ~justify_content:Space_between
                            [
@@ -946,8 +961,8 @@ let scalars_tab (m : model) (r : run) =
           box ~flex_direction:Column ~gap:(gap 1) ~flex_grow:1.
             ~min_size:{ width = px 0; height = px 0 }
             [
-              box ~border:true ~title:"Loss (cyan) + Val Loss (magenta)"
-                ~padding:(padding 1) ~flex_grow:1.
+              box ~border:true ~padding:(padding 1) ~flex_grow:1.
+                ~title:"Loss (cyan) + Val Loss (magenta)"
                 [
                   canvas
                     ~size:{ width = pct 100; height = pct 100 }
@@ -956,9 +971,9 @@ let scalars_tab (m : model) (r : run) =
                       draw_loss_plot m r (Canvas.grid c) ~width:(Canvas.width c)
                         ~height:(Canvas.height c));
                 ];
-              box ~border:true ~title:"Accuracy (green) + LR x1000 (yellow)"
-                ~padding:(padding 1)
+              box ~border:true ~padding:(padding 1)
                 ~size:{ width = pct 100; height = px 10 }
+                ~title:"Accuracy (green) + LR x1000 (yellow)"
                 [
                   canvas
                     ~size:{ width = pct 100; height = pct 100 }
@@ -969,13 +984,14 @@ let scalars_tab (m : model) (r : run) =
                 ];
             ];
           (* controls *)
-          box ~border:true ~title:"Controls" ~padding:(padding 1)
+          box ~border:true ~padding:(padding 1)
             ~size:{ width = px 32; height = pct 100 }
             ~min_size:{ width = px 0; height = px 0 }
-            ~overflow:hidden_overflow
+            ~overflow:hidden_overflow ~title:"Controls"
             [
-              scroll_box ~scroll_y:true ~scroll_x:false
+              scroller m "scalars"
                 ~size:{ width = pct 100; height = pct 100 }
+                ~scroll_y:true ~scroll_x:false
                 [
                   box ~flex_direction:Column ~gap:(gap 1)
                     ~size:{ width = pct 100; height = auto }
@@ -1018,12 +1034,14 @@ let scalars_tab (m : model) (r : run) =
                                 ];
                             ];
                         ];
-                      slider ~orientation:`Horizontal ~min:1. ~max:50.
-                        ~value:(Float.of_int m.smoothing) ~viewport_size:10.
-                        ~track_color:(Ansi.Color.grayscale ~level:5)
-                        ~thumb_color:Ansi.Color.cyan
+                      slider
                         ~size:{ width = pct 100; height = px 1 }
-                        ();
+                        ~orientation:`Horizontal ~min:1. ~max:50.
+                        ~state:(Float.of_int m.smoothing)
+                        ~on_change:(fun value -> Smoothing value)
+                        ~viewport_size:10.
+                        ~track_color:(Ansi.Color.grayscale ~level:5)
+                        ~thumb_color:Ansi.Color.cyan ();
                       box ~flex_direction:Row ~gap:(gap 1)
                         [
                           box ~border:true ~padding:(padding 1)
@@ -1050,32 +1068,27 @@ let scalars_tab (m : model) (r : run) =
                       box ~border:true ~padding:(padding 1)
                         ~title:"(Bonus) Select widget"
                         [
-                          (let opts : Select.item list =
+                          (let opts =
                              [
-                               {
-                                 label = "All scalars";
-                                 description = Some "loss/acc/lr";
-                               };
-                               {
-                                 label = "Training only";
-                                 description = Some "hide val";
-                               };
-                               {
-                                 label = "Validation only";
-                                 description = Some "val/loss";
-                               };
-                               {
-                                 label = "Custom view";
-                                 description = Some "demo";
-                               };
+                               Select.item All_scalars
+                                 ~description:"loss/acc/lr" "All scalars";
+                               Select.item Training ~description:"hide val"
+                                 "Training only";
+                               Select.item Validation ~description:"val/loss"
+                                 "Validation only";
+                               Select.item Custom ~description:"demo"
+                                 "Custom view";
                              ]
                            in
-                           select ~show_description:true
-                             ~show_scroll_indicator:true ~wrap_selection:true
-                             ~selected_background:Ansi.Color.blue
-                             ~selected_text_color:Ansi.Color.white
+                           select ~equal:( = ) ~selected:m.scalar_view
+                             ~focused:(m.focus = Focus_scalar_view)
+                             ~on_focus_request:(Focus Focus_scalar_view)
+                             ~on_change:(fun value -> Scalar_view value)
                              ~size:{ width = pct 100; height = px 6 }
-                             opts);
+                             ~show_description:true ~show_scroll_indicator:true
+                             ~wrap_selection:true
+                             ~selected_background:Ansi.Color.blue
+                             ~selected_text_color:Ansi.Color.white opts);
                         ];
                       text ~style:dim_style ~wrap:`Word
                         "Tip: / focuses run filter. ]/[ changes tab.";
@@ -1091,8 +1104,8 @@ let heatmap_tab (m : model) (r : run) =
     [
       box ~flex_direction:Row ~gap:(gap 1) ~flex_grow:1.
         [
-          box ~border:true ~title:"Confusion Matrix (heatmap)"
-            ~padding:(padding 1) ~flex_grow:1.
+          box ~border:true ~padding:(padding 1) ~flex_grow:1.
+            ~title:"Confusion Matrix (heatmap)"
             [
               canvas
                 ~size:{ width = pct 100; height = pct 100 }
@@ -1101,8 +1114,9 @@ let heatmap_tab (m : model) (r : run) =
                   draw_confusion_heatmap m r (Canvas.grid c)
                     ~width:(Canvas.width c) ~height:(Canvas.height c));
             ];
-          box ~border:true ~title:"Notes" ~padding:(padding 1)
+          box ~border:true ~padding:(padding 1)
             ~size:{ width = px 32; height = pct 100 }
+            ~title:"Notes"
             [
               box ~flex_direction:Column ~gap:(gap 1)
                 [
@@ -1123,8 +1137,8 @@ let embeddings_tab (_m : model) (r : run) =
   box ~flex_direction:Column ~gap:(gap 1)
     ~size:{ width = pct 100; height = pct 100 }
     [
-      box ~border:true ~title:"Embeddings (braille scatter)"
-        ~padding:(padding 1) ~flex_grow:1.
+      box ~border:true ~padding:(padding 1) ~flex_grow:1.
+        ~title:"Embeddings (braille scatter)"
         [
           canvas
             ~size:{ width = pct 100; height = pct 100 }
@@ -1145,7 +1159,8 @@ let logs_tab (m : model) (r : run) =
   let focused = m.focus = Focus_log_filter in
   let logs =
     r.logs |> List.rev (* oldest-first *)
-    |> List.filter (fun line -> string_contains ~needle:m.log_filter line)
+    |> List.filter (fun line ->
+        string_contains ~needle:(Editor.text m.log_filter) line)
   in
   box ~flex_direction:Column ~gap:(gap 1)
     ~size:{ width = pct 100; height = pct 100 }
@@ -1155,9 +1170,12 @@ let logs_tab (m : model) (r : run) =
           box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
             [
               text ~style:dim_style "Log filter:";
-              input ~placeholder:"substring..." ~cursor_blinking:focused
+              input
                 ~size:{ width = pct 100; height = px 1 }
-                ~value:m.log_filter ();
+                ~placeholder:"substring..." ~cursor_blinking:focused
+                ~state:m.log_filter ~focused
+                ~on_change:(fun state -> Log_filter state)
+                ~on_focus_request:(Focus Focus_log_filter) ();
               box ~border:true ~padding:(padding 1)
                 ~on_mouse:(fun ev ->
                   match Event.Mouse.kind ev with
@@ -1168,17 +1186,18 @@ let logs_tab (m : model) (r : run) =
                 ];
             ];
         ];
-      box ~border:true
+      box ~border:true ~flex_grow:1.
         ~title:(Printf.sprintf "Logs (%d)" (List.length logs))
-        ~flex_grow:1.
         [
-          scroll_box ~scroll_y:true ~scroll_x:false
+          scroller m "logs"
             ~size:{ width = pct 100; height = pct 100 }
+            ~scroll_y:true ~scroll_x:false
             (List.mapi
                (fun i line ->
-                 box ~key:(string_of_int i) ~padding:(padding 1)
+                 box ~padding:(padding 1)
                    ~background:
                      (if i mod 2 = 0 then Ansi.Color.transparent else muted_bg)
+                   ~key:(string_of_int i)
                    [ text ~wrap:`Char line ])
                logs);
         ];
@@ -1202,7 +1221,7 @@ let config_json (r : run) =
      }\n"
     r.id r.name (status_label r.status) r.step hp
 
-let config_tab (r : run) =
+let config_tab (m : model) (r : run) =
   let hidden_overflow : Overflow.t Mosaic.point =
     { x = Overflow.Hidden; y = Overflow.Hidden }
   in
@@ -1218,25 +1237,32 @@ let config_tab (r : run) =
     ]
   in
   let rows =
-    List.map (fun (k, v) -> [| Table.cell k; Table.cell v |]) r.hparams
+    List.map
+      (fun (k, v) -> Table.row k [| Table.cell k; Table.cell v |])
+      r.hparams
   in
   box ~flex_direction:Row ~gap:(gap 1)
     ~size:{ width = pct 100; height = pct 100 }
     [
-      box ~border:true ~title:"Hyperparameters" ~padding:(padding 1)
-        ~overflow:hidden_overflow
+      box ~border:true ~padding:(padding 1) ~overflow:hidden_overflow
         ~size:{ width = px 40; height = pct 100 }
+        ~title:"Hyperparameters"
         [
-          table ~columns ~rows ~border_style:Border.rounded ~show_header:true
-            ~border:true ~show_row_separator:true ~cell_padding:1
+          table ~equal:String.equal ~selected:m.config_row
+            ~focused:(m.focus = Focus_config)
+            ~on_focus_request:(Focus Focus_config)
+            ~on_change:(fun value -> Config_row value)
+            ~border:true ~border_style:Border.rounded
             ~min_size:{ width = px 0; height = px 0 }
             ~size:{ width = pct 100; height = pct 100 }
+            ~columns ~rows ~show_header:true ~show_row_separator:true
+            ~cell_padding:1
             ~row_styles:[ Ansi.Style.default; Ansi.Style.make ~bg:muted_bg () ]
             ();
         ];
-      box ~border:true ~title:"config.json (syntax highlighted)"
-        ~padding:(padding 1) ~flex_grow:1.
-        [ code ~syntax ~size:{ width = pct 100; height = pct 100 } json ];
+      box ~border:true ~padding:(padding 1) ~flex_grow:1.
+        ~title:"config.json (syntax highlighted)"
+        [ code ~size:{ width = pct 100; height = pct 100 } ~syntax json ];
     ]
 
 let help_markdown =
@@ -1274,14 +1300,15 @@ Next steps for a real product:
 - multi-run overlays + comparisons
 |}
 
-let help_tab () =
+let help_tab m =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
-      box ~flex_grow:1. ~border:true ~title:"Help" ~padding:(padding 1)
+      box ~flex_grow:1. ~border:true ~padding:(padding 1) ~title:"Help"
         [
-          scroll_box ~scroll_y:true ~scroll_x:false
+          scroller m "help"
             ~size:{ width = pct 100; height = pct 100 }
+            ~scroll_y:true ~scroll_x:false
             [ markdown help_markdown ];
         ];
     ]
@@ -1295,13 +1322,12 @@ let main_panel (m : model) =
     | Heatmap -> heatmap_tab m r
     | Embeddings -> embeddings_tab m r
     | Logs -> logs_tab m r
-    | Config -> config_tab r
-    | Help -> help_tab ()
+    | Config -> config_tab m r
+    | Help -> help_tab m
   in
-  box ~border:true
-    ~title:(Printf.sprintf "%s — %s" (tab_label m.tab) r.id)
-    ~padding:(padding 1)
+  box ~border:true ~padding:(padding 1)
     ~size:{ width = pct 100; height = pct 100 }
+    ~title:(Printf.sprintf "%s — %s" (tab_label m.tab) r.id)
     [ content ]
 
 let header (m : model) =
@@ -1341,6 +1367,8 @@ let footer (m : model) =
     | No_focus -> "focus: none"
     | Focus_run_filter -> "focus: run filter"
     | Focus_log_filter -> "focus: log filter"
+    | Focus_scalar_view -> "focus: scalar view (Esc to leave)"
+    | Focus_config -> "focus: config (Esc to leave)"
   in
   box ~padding:(padding 1)
     ~background:(Ansi.Color.grayscale ~level:3)
@@ -1380,28 +1408,33 @@ let view (m : model) =
 let subscriptions (m : model) =
   Sub.batch
     [
-      Sub.on_tick (fun ~dt -> Tick dt);
+      Sub.on_tick ~id:"animation" (fun ~dt -> Tick dt);
       Sub.on_key (fun ev ->
           let key = (Event.Key.data ev).key in
           match m.focus with
           | Focus_run_filter | Focus_log_filter -> (
               match key with
-              | Escape -> Some Blur_focus
-              | Enter -> Some Blur_focus
-              | Char u ->
-                  (* Let ctrl-h (8) or del (127) act as backspace. *)
-                  Some (Input_char u)
+              | Escape | Enter ->
+                  Event.Key.prevent_default ev;
+                  Some Blur_focus
               | _ -> None)
-          | No_focus -> (
+          | No_focus | Focus_scalar_view | Focus_config -> (
               match key with
+              | Escape when m.focus <> No_focus ->
+                  Event.Key.prevent_default ev;
+                  Some Blur_focus
               | Char c when Uchar.equal c (Uchar.of_char 'q') -> Some Quit
               | Escape -> Some Quit
               | Char c when Uchar.equal c (Uchar.of_char ' ') ->
                   Some Toggle_stream
               | Char c when Uchar.equal c (Uchar.of_char ']') -> Some Next_tab
               | Char c when Uchar.equal c (Uchar.of_char '[') -> Some Prev_tab
-              | Char c when Uchar.equal c (Uchar.of_char 'j') -> Some Next_run
-              | Char c when Uchar.equal c (Uchar.of_char 'k') -> Some Prev_run
+              | Char c
+                when m.focus = No_focus && Uchar.equal c (Uchar.of_char 'j') ->
+                  Some Next_run
+              | Char c
+                when m.focus = No_focus && Uchar.equal c (Uchar.of_char 'k') ->
+                  Some Prev_run
               | Char c when Uchar.equal c (Uchar.of_char '/') ->
                   Some (Focus Focus_run_filter)
               | Char c when Uchar.equal c (Uchar.of_char 'g') ->

@@ -81,9 +81,7 @@ module Props = struct
   type t = {
     columns : column list;
     rows : cell array list;
-    selected_row : int option;
-        (* [Some i] makes the selection controlled by props; [None] leaves the
-           widget's own selection untouched across prop updates. *)
+    selected_row : int;
     border : bool;
     border_style : Matrix_grid.Border.t;
     show_header : bool;
@@ -107,7 +105,7 @@ module Props = struct
     fast_scroll_step : int;
   }
 
-  let make ?(columns = []) ?(rows = []) ?selected_row ?(border = true)
+  let make ?(columns = []) ?(rows = []) ?(selected_row = 0) ?(border = true)
       ?(border_style = Matrix_grid.Border.single) ?(show_header = true)
       ?(show_column_separator = false) ?(show_row_separator = false)
       ?(cell_padding = 0) ?(header_color = Ansi.Color.of_rgb 255 255 255)
@@ -133,7 +131,7 @@ module Props = struct
     {
       columns;
       rows;
-      selected_row = Option.map (max 0) selected_row;
+      selected_row = max (-1) selected_row;
       border;
       border_style;
       show_header;
@@ -168,7 +166,7 @@ module Props = struct
   let equal a b =
     columns_equal a.columns b.columns
     && rows_equal a.rows b.rows
-    && Option.equal Int.equal a.selected_row b.selected_row
+    && Int.equal a.selected_row b.selected_row
     && Bool.equal a.border b.border
     && a.border_style = b.border_style
     && Bool.equal a.show_header b.show_header
@@ -226,7 +224,7 @@ let scroll_indicator_visible t =
 
 let clamp_index t idx =
   let len = row_count t in
-  if len = 0 then 0 else max 0 (min (len - 1) idx)
+  if len = 0 then -1 else max (-1) (min (len - 1) idx)
 
 (* ───── Column Width Computation ───── *)
 
@@ -356,11 +354,8 @@ let set_selected_row_internal t idx =
   if len = 0 then ()
   else
     let idx = clamp_index t idx in
-    if idx <> t.selected_row then (
-      t.selected_row <- idx;
-      update_scroll_offset t;
-      (match t.on_change with None -> () | Some f -> f t.selected_row);
-      request t)
+    if idx <> t.selected_row then
+      match t.on_change with None -> () | Some f -> f idx
 
 let data_row_at t ~x ~y =
   let width = Renderable.width t.node in
@@ -408,13 +403,19 @@ let set_rows t data =
   Renderable.mark_dirty t.node;
   request t
 
-let set_selected_row t idx = set_selected_row_internal t idx
+let set_selected_row t idx =
+  let idx = clamp_index t idx in
+  if idx <> t.selected_row then (
+    t.selected_row <- idx;
+    update_scroll_offset t;
+    request t)
 
 (* ───── Navigation ───── *)
 
 let move_up ?(steps = 1) t =
   let len = row_count t in
   if len = 0 then ()
+  else if t.selected_row < 0 then set_selected_row_internal t (len - 1)
   else
     let new_index = t.selected_row - steps in
     if new_index >= 0 then set_selected_row_internal t new_index
@@ -424,6 +425,7 @@ let move_up ?(steps = 1) t =
 let move_down ?(steps = 1) t =
   let len = row_count t in
   if len = 0 then ()
+  else if t.selected_row < 0 then set_selected_row_internal t 0
   else
     let new_index = t.selected_row + steps in
     if new_index < len then set_selected_row_internal t new_index
@@ -431,12 +433,15 @@ let move_down ?(steps = 1) t =
     else set_selected_row_internal t (len - 1)
 
 let page_up t =
-  set_selected_row_internal t (max 0 (t.selected_row - t.max_visible_rows))
+  set_selected_row_internal t
+    (if t.selected_row < 0 then row_count t - 1
+     else max 0 (t.selected_row - t.max_visible_rows))
 
 let page_down t =
   let last_row = row_count t - 1 in
   set_selected_row_internal t
-    (min last_row (t.selected_row + t.max_visible_rows))
+    (if t.selected_row < 0 then 0
+     else min last_row (t.selected_row + t.max_visible_rows))
 
 (* ───── Display Setters ───── *)
 
@@ -590,7 +595,7 @@ let handle_key t (event : Event.key) =
         move_down t;
         true
     | Enter | KP_enter ->
-        (if row_count t > 0 then
+        (if t.selected_row >= 0 then
            match t.on_activate with None -> () | Some f -> f t.selected_row);
         true
     | _ -> false
@@ -605,13 +610,23 @@ let handle_mouse t (event : Event.mouse) =
   match Event.Mouse.kind event with
   | Down { button = Left } -> (
       let row = data_row_at t ~x ~y in
+      let selected_row = t.selected_row in
+      let on_change = t.on_change in
+      let on_activate =
+        if t.props.activate_on_click then t.on_activate else None
+      in
+      (* Callbacks may replace rows and callbacks synchronously. Keep the
+         original row and its mapping for the whole press. *)
       set_hovered_row_internal t row;
       match row with
       | None -> ()
       | Some index ->
-          set_selected_row_internal t index;
-          (if t.props.activate_on_click then
-             match t.on_activate with None -> () | Some f -> f index);
+          if not (Renderable.destroyed t.node) then begin
+            if index <> selected_row then
+              Option.iter (fun f -> f index) on_change;
+            if not (Renderable.destroyed t.node) then
+              Option.iter (fun f -> f index) on_activate
+          end;
           Event.Mouse.stop_propagation event)
   | Move | Over _ -> set_hovered_row_internal t (data_row_at t ~x ~y)
   | Out -> set_hovered_row_internal t None
@@ -1036,8 +1051,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
   let data_rows = Array.of_list props.rows in
   let initial_selected =
     let len = Array.length data_rows in
-    if len = 0 then 0
-    else max 0 (min (len - 1) (Option.value props.selected_row ~default:0))
+    if len = 0 then -1 else max (-1) (min (len - 1) props.selected_row)
   in
   let t =
     {
@@ -1073,24 +1087,12 @@ let set_style t style = Renderable.set_style t.node style
 
 (* Controlled application: move the selection without echoing [on_change] —
    the value came from the app, not from a user gesture. *)
-let apply_selected_row t idx =
-  let len = row_count t in
-  if len > 0 then
-    let idx = clamp_index t idx in
-    if idx <> t.selected_row then begin
-      t.selected_row <- idx;
-      update_scroll_offset t;
-      request t
-    end
-
 let apply_props t (props : Props.t) =
   if not (columns_equal (Array.to_list t.col_specs) props.columns) then
     set_columns t props.columns;
   if not (rows_equal (Array.to_list t.data_rows) props.rows) then
     set_rows t props.rows;
-  (match props.selected_row with
-  | Some idx -> apply_selected_row t idx
-  | None -> ());
+  set_selected_row t props.selected_row;
   set_border t props.border;
   set_border_style t props.border_style;
   set_show_header t props.show_header;

@@ -2,7 +2,7 @@
 
 open Mosaic
 
-type msg = Quit
+type msg = Quit | Scrolled of Scroll.t
 
 let markdown_content =
   {|# Markdown Demo
@@ -133,8 +133,12 @@ end
 > state transitions.
 |}
 
-let init () = ((), Cmd.none)
-let update msg () = match msg with Quit -> ((), Cmd.quit)
+let init () = (Scroll.at 0, Cmd.none)
+
+let update msg scroll =
+  match msg with
+  | Quit -> (scroll, Cmd.quit)
+  | Scrolled scroll -> (scroll, Cmd.none)
 
 (* Syntax-highlight OCaml fenced code blocks with a small lexical highlighter. Markdown renders
    the block as a borderless [Code] view using the returned syntax config. *)
@@ -152,7 +156,7 @@ let footer_bg = Ansi.Color.grayscale ~level:3
 let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
 let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 
-let view () =
+let view scroll =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
@@ -170,8 +174,10 @@ let view () =
       (* Scrollable markdown content *)
       box ~flex_grow:1. ~padding:(padding 1)
         [
-          scroll_box ~scroll_y:true ~scroll_x:false
+          scroll_box ~scroll
+            ~on_scroll:(fun value -> Scrolled value)
             ~size:{ width = pct 100; height = pct 100 }
+            ~scroll_y:true ~scroll_x:false
             [ markdown ~code_syntax markdown_content ];
         ];
       (* Footer *)
@@ -179,7 +185,7 @@ let view () =
         [ text ~style:hint "scroll with mouse wheel  •  q quit" ];
     ]
 
-let subscriptions () =
+let subscriptions _scroll =
   Sub.on_keys [ (Shortcut.char 'q', Quit); (Shortcut.escape, Quit) ]
 
 let () = run { init; update; view; subscriptions }

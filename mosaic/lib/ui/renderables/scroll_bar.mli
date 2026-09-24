@@ -1,3 +1,7 @@
+(** Scrollbar input emits position proposals. Accept positions with
+    [set_scroll_position]; proposals never move the accepted thumb themselves.
+*)
+
 (** Scroll bar widget with optional arrow buttons and a proportional slider
     thumb.
 
@@ -36,6 +40,9 @@ module Props : sig
   *)
 
   val make :
+    ?position:int ->
+    ?scroll_size:int ->
+    ?viewport_size:int ->
     ?orientation:orientation ->
     ?show_arrows:bool ->
     ?track_color:Ansi.Color.t ->
@@ -75,6 +82,9 @@ val create :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
+  ?position:int ->
+  ?scroll_size:int ->
+  ?viewport_size:int ->
   ?orientation:orientation ->
   ?show_arrows:bool ->
   ?track_color:Ansi.Color.t ->
@@ -103,11 +113,8 @@ val scroll_position : t -> int
     See also {!set_scroll_position}. *)
 
 val set_scroll_position : t -> int -> unit
-(** [set_scroll_position t v] sets the scroll position of [t] to [v], clamped to
-    the valid range. Fires the [on_change] callback if the clamped value differs
-    from the current position.
-
-    See also {!scroll_position} and {!scroll_by}. *)
+(** [set_scroll_position t value] accepts and clamps [value] without firing
+    [on_change]. *)
 
 val scroll_size : t -> int
 (** [scroll_size t] is the total content size of [t] in cells.
@@ -131,6 +138,10 @@ val set_viewport_size : t -> int -> unit
     Affects thumb sizing and the scroll range.
 
     See also {!viewport_size}. *)
+
+val scroll_target : t -> float -> unit:scroll_unit -> int
+(** [scroll_target t delta ~unit] computes a target from the accepted position
+    without emitting a proposal. *)
 
 val scroll_by : t -> float -> unit:scroll_unit -> unit
 (** [scroll_by t delta ~unit] adjusts the scroll position of [t] by [delta]

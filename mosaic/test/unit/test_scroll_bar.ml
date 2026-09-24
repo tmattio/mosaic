@@ -12,6 +12,11 @@ let make_scroll_bar ?orientation ?show_arrows ?track_color ?thumb_color
     Scroll_bar.create ~parent:root ?orientation ?show_arrows ?track_color
       ?thumb_color ?arrow_fg ?arrow_bg ?on_change ()
   in
+  Scroll_bar.set_on_change bar
+    (Some
+       (fun value ->
+         Scroll_bar.set_scroll_position bar value;
+         Option.iter (fun f -> f value) on_change));
   (t, bar)
 
 (* ── Props ── *)
@@ -81,11 +86,8 @@ let set_position_fires_on_change () =
   let changed = ref None in
   let _t, bar = make_scroll_bar ~on_change:(fun v -> changed := Some v) () in
   Scroll_bar.set_scroll_size bar 100;
-  Scroll_bar.set_viewport_size bar 20;
   Scroll_bar.set_scroll_position bar 42;
-  match !changed with
-  | Some v -> equal ~msg:"value = 42" int 42 v
-  | None -> fail "on_change not fired"
+  equal ~msg:"accepted setter is silent" (option int) None !changed
 
 let set_position_noop_same_value () =
   let count = ref 0 in
@@ -93,9 +95,9 @@ let set_position_noop_same_value () =
   Scroll_bar.set_scroll_size bar 100;
   Scroll_bar.set_viewport_size bar 20;
   Scroll_bar.set_scroll_position bar 10;
-  equal ~msg:"fired once" int 1 !count;
+  equal ~msg:"setter is silent" int 0 !count;
   Scroll_bar.set_scroll_position bar 10;
-  equal ~msg:"still once" int 1 !count
+  equal ~msg:"setter remains silent" int 0 !count
 
 (* ── Scroll Size / Viewport Size ── *)
 
@@ -274,10 +276,10 @@ let set_on_change_replaces_callback () =
   let _t, bar = make_scroll_bar ~on_change:(fun _ -> incr first_count) () in
   Scroll_bar.set_scroll_size bar 100;
   Scroll_bar.set_viewport_size bar 20;
-  Scroll_bar.set_scroll_position bar 10;
+  Scroll_bar.scroll_by bar 10. ~unit:`Absolute;
   equal ~msg:"first fired" int 1 !first_count;
   Scroll_bar.set_on_change bar (Some (fun _ -> incr second_count));
-  Scroll_bar.set_scroll_position bar 20;
+  Scroll_bar.scroll_by bar 10. ~unit:`Absolute;
   equal ~msg:"first not again" int 1 !first_count;
   equal ~msg:"second fired" int 1 !second_count
 
@@ -298,9 +300,39 @@ let pp_contains_scroll_bar () =
 
 (* ── Runner ── *)
 
+let declared_state_and_rejected_proposals () =
+  let t = make_ctx () in
+  let proposals = ref [] in
+  let bar =
+    Scroll_bar.create ~parent:(make_root t) ~position:10 ~scroll_size:100
+      ~viewport_size:20
+      ~on_change:(fun next -> proposals := next :: !proposals)
+      ()
+  in
+  equal ~msg:"constructor accepts position" int 10
+    (Scroll_bar.scroll_position bar);
+  Scroll_bar.scroll_by bar 1. ~unit:`Viewport;
+  Scroll_bar.scroll_by bar 1. ~unit:`Viewport;
+  equal ~msg:"rejected proposals use accepted position" (list int) [ 30; 30 ]
+    !proposals;
+  equal ~msg:"rejection preserves position" int 10
+    (Scroll_bar.scroll_position bar);
+  Scroll_bar.apply_props bar
+    (Scroll_bar.Props.make ~position:30 ~scroll_size:50 ~viewport_size:20 ());
+  equal ~msg:"declaration accepts position and range" int 30
+    (Scroll_bar.scroll_position bar);
+  Scroll_bar.apply_props bar
+    (Scroll_bar.Props.make ~position:30 ~scroll_size:25 ~viewport_size:20 ());
+  equal ~msg:"new range clamps declared position" int 5
+    (Scroll_bar.scroll_position bar);
+  equal ~msg:"accepting declaration emits no proposal" (list int) [ 30; 30 ]
+    !proposals
+
 let () =
   run "mosaic.scroll_bar"
     [
+      test "declared state and rejected proposals"
+        declared_state_and_rejected_proposals;
       group "Props"
         [
           test "default values" props_defaults;

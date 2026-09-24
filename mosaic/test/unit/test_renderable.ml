@@ -502,7 +502,7 @@ let on_key_order () =
   (* newest first, so "second" runs before "first" *)
   equal ~msg:"order" (list string) [ "first"; "second" ] !order
 
-let emit_key_stops_on_prevent_default () =
+let emit_key_prevent_default_preserves_handlers () =
   let t = make_ctx () in
   let root = make_root t in
   let child = Renderable.create ~parent:root () in
@@ -510,7 +510,17 @@ let emit_key_stops_on_prevent_default () =
   Renderable.on_key child (fun _ -> old_fired := true);
   Renderable.on_key child (fun ev -> Event.Key.prevent_default ev);
   Renderable.Private.emit_key child (Event.Key.of_input key_ev_a);
-  is_false ~msg:"old not fired" !old_fired
+  is_true ~msg:"prevent_default only suppresses widget defaults" !old_fired
+
+let emit_key_stops_on_stop_propagation () =
+  let t = make_ctx () in
+  let root = make_root t in
+  let child = Renderable.create ~parent:root () in
+  let old_fired = ref false in
+  Renderable.on_key child (fun _ -> old_fired := true);
+  Renderable.on_key child Event.Key.stop_propagation;
+  Renderable.Private.emit_key child (Event.Key.of_input key_ev_a);
+  is_false ~msg:"propagation stops remaining handlers" !old_fired
 
 let emit_default_key_runs () =
   let t = make_ctx () in
@@ -1031,9 +1041,26 @@ let buffered_render_full_uses_local_coordinates () =
 
 (* ── Runner ── *)
 
+let mouse_unmount_stops_remaining_handlers () =
+  let context = make_ctx () in
+  let root = make_root context in
+  let child = Renderable.create ~parent:root () in
+  let default_ran = ref false and parent_ran = ref false in
+  Renderable.on_mouse root (fun _ -> parent_ran := true);
+  Renderable.on_mouse child (fun _ -> default_ran := true);
+  Renderable.on_mouse child (fun _ -> Renderable.destroy child);
+  Renderable.Private.emit_mouse child
+    (Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier
+       (Down { button = Left }));
+  is_false ~msg:"remaining handlers cannot mutate an unmounted widget"
+    !default_ran;
+  is_false ~msg:"destroyed target does not bubble" !parent_ran
+
 let () =
   run "mosaic.renderable"
     [
+      test "mouse unmount stops remaining handlers"
+        mouse_unmount_stops_remaining_handlers;
       group "Construction"
         [
           test "default values" create_default_values;
@@ -1110,8 +1137,10 @@ let () =
       group "Key events"
         [
           test "on_key accumulates newest first" on_key_order;
-          test "emit_key stops on prevent_default"
-            emit_key_stops_on_prevent_default;
+          test "prevent_default preserves regular key handlers"
+            emit_key_prevent_default_preserves_handlers;
+          test "stop_propagation stops key handlers"
+            emit_key_stops_on_stop_propagation;
           test "emit_default_key runs fallback" emit_default_key_runs;
           test "emit_key does not run default handler"
             emit_key_does_not_run_default;

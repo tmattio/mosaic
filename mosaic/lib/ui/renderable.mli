@@ -421,6 +421,14 @@ val pp : Format.formatter -> t -> unit
     event dispatch. Widget authors must not call these directly. *)
 
 module Private : sig
+  val set_focus_request : t -> (unit -> unit) option -> unit
+  (** [set_focus_request t callback] sets the application-owned focus request.
+      It is separate from the focus lifecycle hook. *)
+
+  val request_focus : t -> bool
+  (** [request_focus t] invokes its request callback, if alive, and reports
+      whether one was invoked. The callback may reconcile or destroy [t]. *)
+
   (** {2:context Context} *)
 
   type context = {
@@ -505,8 +513,10 @@ module Private : sig
 
   (** {2:render_pipeline Render pipeline} *)
 
-  val pre_render_update : t -> delta:float -> unit
-  (** [pre_render_update t ~delta] runs [t]'s on-frame and resize hooks. *)
+  val pre_render_update : ?frame:bool -> t -> delta:float -> unit
+  (** [pre_render_update t ~delta] runs update and resize hooks. [frame]
+      defaults to [true]; [false] skips animation hooks during layout
+      settlement. *)
 
   val render : t -> Matrix_grid.t -> delta:float -> unit
   (** [render t grid ~delta] invokes [t]'s render callback. *)
@@ -585,6 +595,10 @@ module Private : sig
   val live_count : t -> int
   (** [live_count t] is the total number of live-rendering nodes in [t]'s
       subtree, including [t] itself. *)
+
+  val set_size_observer : t -> (t -> unit) option -> unit
+  (** [set_size_observer t callback] observes size changes without replacing the
+      widget's internal resize hook. *)
 
   val set_on_live_count_change : t -> (t -> unit) option -> unit
   (** [set_on_live_count_change t cb] registers an observer called when

@@ -2,22 +2,26 @@
 
 open Mosaic
 
-type msg = Quit
+type msg = Quit | Selected of string
 
-let languages : Select.item list =
+let languages =
   [
-    { label = "OCaml"; description = Some "Functional, type-safe" };
-    { label = "Rust"; description = Some "Safe systems programming" };
-    { label = "Haskell"; description = Some "Pure functional" };
-    { label = "TypeScript"; description = Some "Typed JavaScript" };
-    { label = "Python"; description = Some "Easy to learn" };
-    { label = "Go"; description = Some "Fast compilation" };
-    { label = "Zig"; description = Some "Low-level control" };
-    { label = "Elixir"; description = Some "Concurrent, fault-tolerant" };
+    Select.item "OCaml" ~description:"Functional, type-safe" "OCaml";
+    Select.item "Rust" ~description:"Safe systems programming" "Rust";
+    Select.item "Haskell" ~description:"Pure functional" "Haskell";
+    Select.item "TypeScript" ~description:"Typed JavaScript" "TypeScript";
+    Select.item "Python" ~description:"Easy to learn" "Python";
+    Select.item "Go" ~description:"Fast compilation" "Go";
+    Select.item "Zig" ~description:"Low-level control" "Zig";
+    Select.item "Elixir" ~description:"Concurrent, fault-tolerant" "Elixir";
   ]
 
-let init () = ((), Cmd.none)
-let update msg () = match msg with Quit -> ((), Cmd.quit)
+let init () = (Some "OCaml", Cmd.none)
+
+let update msg selected =
+  match msg with
+  | Quit -> (selected, Cmd.quit)
+  | Selected value -> (Some value, Cmd.none)
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100
@@ -27,7 +31,7 @@ let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
 let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 let accent = Ansi.Color.cyan
 
-let view () =
+let view selected =
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
     [
@@ -50,14 +54,15 @@ let view () =
             [
               text ~style:(Ansi.Style.make ~bold:true ()) "Choose a language:";
               (* Select component *)
-              select ~autofocus:true ~show_description:true
-                ~show_scroll_indicator:true ~wrap_selection:true
-                ~selected_background:accent
+              select ~equal:String.equal ~selected
+                ~on_change:(fun value -> Selected value)
+                ~size:{ width = px 40; height = px 10 }
+                ~focused:true ~show_description:true ~show_scroll_indicator:true
+                ~wrap_selection:true ~selected_background:accent
                 ~selected_text_color:Ansi.Color.black
                 ~selected_description_color:(Ansi.Color.of_rgb 0 50 70)
                 ~description_color:(Ansi.Color.grayscale ~level:14)
                 ~focused_background:(Ansi.Color.of_rgb 20 30 40)
-                ~size:{ width = px 40; height = px 10 }
                 languages;
             ];
         ];
@@ -66,7 +71,7 @@ let view () =
         [ text ~style:hint "↑/↓ navigate  •  j/k vim  •  q quit" ];
     ]
 
-let subscriptions () =
+let subscriptions _selected =
   Sub.on_keys [ (Shortcut.char 'q', Quit); (Shortcut.escape, Quit) ]
 
 let () = run { init; update; view; subscriptions }

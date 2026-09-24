@@ -1,3 +1,7 @@
+(** Input/navigation proposes selection through [on_change]. A proposal does not
+    change the accepted selection. [apply_props] and explicit setters accept
+    values without emitting another proposal. *)
+
 (** Focusable data table with column headers and row selection.
 
     A table widget that displays rows of {!cell} values in typed {!column}s. The
@@ -19,6 +23,11 @@
     - Left click selects a row.
     - Pointer movement reports row transitions through {!set_on_hover}.
     - Scroll wheel navigates rows.
+
+    A left press captures its row index and selection/activation callbacks
+    before invoking the hover callback. Changes to rows or callbacks during the
+    press do not change that captured index or those callbacks. Destroying the
+    table cancels the remaining callbacks.
 
     Selection presentation can be hidden independently of the current row. This
     supports an unfocused glance that acquires a visible selection only after
@@ -192,11 +201,10 @@ module Props : sig
   (** [make ()] is a property set with:
       - [columns] the column specification list. Defaults to [[]].
       - [rows] the data rows, each a [cell array]. Defaults to [[]].
-      - [selected_row] the app-controlled selection index, clamped to the valid
-        range. When provided, {!apply_props} moves the selection to it without
-        firing the change callback; when omitted, the widget's own selection
-        survives prop updates. {!val-create} uses it as the initial selection,
-        defaulting to [0].
+      - [selected_row] the accepted index, defaulting to [0] for a nonempty
+        table. Negative values mean no selection ([-1]); positive overflow
+        clamps to the last row. Empty tables have no selection. {!apply_props}
+        accepts it without firing the change callback.
       - [border] enables the outer border and header separator. Defaults to
         [true].
       - [border_style] the border character set. Defaults to
@@ -269,13 +277,14 @@ val set_rows : t -> cell array list -> unit
 (** {1:selection Selection} *)
 
 val selected_row : t -> int
-(** [selected_row t] is the 0-based index of the currently selected row of [t].
-*)
+(** [selected_row t] is the 0-based selected index, or [-1] when no row is
+    selected. *)
 
 val set_selected_row : t -> int -> unit
-(** [set_selected_row t i] selects row [i] in [t], clamping [i] to the valid
-    range [\[0]; [row_count t - 1]\]. Fires the {!set_on_change} callback when
-    the index actually changes. *)
+(** [set_selected_row t value] accepts [value] without firing [on_change].
+    Negative values clear selection; positive overflow clamps to the last row.
+    The result is [-1] for an empty table. From no selection, Down proposes the
+    first row and Up the last. *)
 
 val row_count : t -> int
 (** [row_count t] is the number of data rows in [t]. *)

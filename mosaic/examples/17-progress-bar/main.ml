@@ -115,9 +115,8 @@ let view model =
                (* Horizontal task bars *)
                (List.mapi
                   (fun i task ->
-                    box
+                    box ~flex_direction:Column ~gap:(gap 0)
                       ~key:(Printf.sprintf "task-%d" i)
-                      ~flex_direction:Column ~gap:(gap 0)
                       [
                         box ~flex_direction:Row ~justify_content:Space_between
                           ~size:{ width = pct 100; height = auto }
@@ -164,10 +163,9 @@ let view model =
                    ~align_items:Flex_end
                    (List.mapi
                       (fun i task ->
-                        box
-                          ~key:(Printf.sprintf "vbar-%d" i)
-                          ~flex_direction:Column ~align_items:Center
+                        box ~flex_direction:Column ~align_items:Center
                           ~gap:(gap 0)
+                          ~key:(Printf.sprintf "vbar-%d" i)
                           [
                             text
                               ~style:(Ansi.Style.make ~dim:true ())
@@ -190,7 +188,7 @@ let view model =
 let subscriptions _model =
   Sub.batch
     [
-      Sub.on_tick (fun ~dt -> Tick dt);
+      Sub.on_tick ~id:"animation" (fun ~dt -> Tick dt);
       Sub.on_keys
         [
           (Shortcut.space, Toggle);

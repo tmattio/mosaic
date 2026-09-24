@@ -146,13 +146,19 @@ let%expect_test "empty columns empty rows" =
 let%expect_test "keyboard navigation changes selection" =
   let app = make_app () in
   let node = ref None in
-  reconcile app
-    (Vnode.table
-       ~ref:(fun n -> node := Some n)
-       ~columns:cols ~rows ~border:false ());
+  let selected = ref 0 in
+  let view () =
+    Vnode.table
+      ~ref:(fun n -> node := Some n)
+      ~columns:cols ~rows ~border:false ~selected_row:!selected
+      ~on_change:(fun index -> selected := index)
+      ()
+  in
+  reconcile app (view ());
   focus app (Option.get !node);
   frame app ~width:25 ~height:4;
   send_key app Matrix_input.Key.Down;
+  reconcile app (view ());
   frame app ~width:25 ~height:4;
   [%expect_exact
     {|
@@ -169,17 +175,23 @@ let%expect_test "page down uses the measured bordered table body" =
   let app = make_app () in
   let node = ref None in
   let changes = ref [] in
-  reconcile app
-    (Vnode.table
-       ~ref:(fun renderable -> node := Some renderable)
-       ~columns:[ Table.column ~width:(`Flex 1.) "Name" ]
-       ~rows:(paging_rows 12) ~selected_row:1 ~border:true ~show_header:true
-       ~show_scroll_indicator:true
-       ~on_change:(fun index -> changes := index :: !changes)
-       ());
+  let selected = ref 1 in
+  let view () =
+    Vnode.table
+      ~ref:(fun renderable -> node := Some renderable)
+      ~columns:[ Table.column ~width:(`Flex 1.) "Name" ]
+      ~rows:(paging_rows 12) ~selected_row:!selected ~border:true
+      ~show_header:true ~show_scroll_indicator:true
+      ~on_change:(fun index ->
+        selected := index;
+        changes := index :: !changes)
+      ()
+  in
+  reconcile app (view ());
   focus app (Option.get !node);
   frame app ~width:14 ~height:8;
   send_key app Matrix_input.Key.Page_down;
+  reconcile app (view ());
   frame app ~width:14 ~height:8;
   Format.printf "\nchanges=%s\n"
     (String.concat "," (List.rev_map string_of_int !changes));
@@ -208,17 +220,23 @@ let%expect_test "page up accounts for measured row separators" =
   let app = make_app () in
   let node = ref None in
   let changes = ref [] in
-  reconcile app
-    (Vnode.table
-       ~ref:(fun renderable -> node := Some renderable)
-       ~columns:[ Table.column ~width:(`Flex 1.) "" ]
-       ~rows:(paging_rows 12) ~selected_row:8 ~border:false ~show_header:false
-       ~show_row_separator:true ~show_scroll_indicator:true
-       ~on_change:(fun index -> changes := index :: !changes)
-       ());
+  let selected = ref 8 in
+  let view () =
+    Vnode.table
+      ~ref:(fun renderable -> node := Some renderable)
+      ~columns:[ Table.column ~width:(`Flex 1.) "" ]
+      ~rows:(paging_rows 12) ~selected_row:!selected ~border:false
+      ~show_header:false ~show_row_separator:true ~show_scroll_indicator:true
+      ~on_change:(fun index ->
+        selected := index;
+        changes := index :: !changes)
+      ()
+  in
+  reconcile app (view ());
   focus app (Option.get !node);
   frame app ~width:12 ~height:5;
   send_key app Matrix_input.Key.Page_up;
+  reconcile app (view ());
   frame app ~width:12 ~height:5;
   Format.printf "\nchanges=%s\n"
     (String.concat "," (List.rev_map string_of_int !changes));
@@ -244,7 +262,7 @@ let%expect_test "declarative hover and click callbacks report exact rows" =
   reconcile app
     (Vnode.table ~columns:cols ~rows ~border:false ~show_header:false
        ~activate_on_click:true
-       ~on_hover:(fun row -> hovered := row :: !hovered)
+       ~on_hover:(fun row -> Some (hovered := row :: !hovered))
        ~on_activate:(fun row -> activated := row :: !activated)
        ());
   frame app ~width:25 ~height:3;

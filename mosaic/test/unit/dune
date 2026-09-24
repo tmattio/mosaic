@@ -266,3 +266,36 @@
  (modules test_editor)
  (package mosaic)
  (libraries windtrap mosaic.ui matrix matrix.text))
+
+(test
+ (name test_mlx)
+ (modules test_mlx)
+ (package mosaic)
+ (libraries
+  windtrap
+  mosaic
+  mosaic.mlx
+  mosaic.ui
+  matrix.input
+  matrix.grid
+  matrix.screen
+  toffee))
+
+(test
+ (name test_focus)
+ (modules test_focus)
+ (package mosaic)
+ (libraries windtrap mosaic))
+
+(test
+ (name test_value_selection)
+ (modules test_value_selection)
+ (package mosaic)
+ (libraries
+  windtrap
+  mosaic
+  mosaic.mlx
+  mosaic.ui
+  matrix.input
+  matrix.grid
+  matrix.screen))

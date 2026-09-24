@@ -36,7 +36,7 @@ type waiting = {
 }
 
 type model = {
-  input : string;
+  input : Editor.t;
   pending_text : string;
   tools : tool_call list;
   last_user : string option;
@@ -47,7 +47,7 @@ type model = {
 }
 
 type msg =
-  | Set_input of string
+  | Set_input of Editor.t
   | Submit of string
   | Tick
   | Confirm of bool
@@ -55,7 +55,7 @@ type msg =
 
 let initial_model =
   {
-    input = "";
+    input = Editor.empty;
     pending_text = "";
     tools = [];
     last_user = None;
@@ -250,7 +250,7 @@ let assistant_text_view ?(streaming = false) content =
       ~size:{ width = pct 100; height = auto }
       [
         text ~style:(Ansi.Style.make ~fg:Ansi.Color.white ()) (s_circle ^ " ");
-        markdown ~streaming ~size:{ width = pct 100; height = auto } content;
+        markdown ~size:{ width = pct 100; height = auto } ~streaming content;
       ]
 
 let confirmation_view prompt =
@@ -288,15 +288,16 @@ let input_view model =
         ~size:{ width = pct 100; height = px 1 }
         [
           text ~style:(Ansi.Style.make ~bold:true ~fg:green ()) (s_prompt ^ " ");
-          input ~autofocus:true ~value:model.input
+          input
+            ~size:{ width = pct 100; height = px 1 }
+            ~focused:true ~state:model.input
             ~placeholder:
               (match model.state with
               | Idle -> ""
               | Streaming -> ""
               | Waiting_confirmation _ -> "")
-            ~size:{ width = pct 100; height = px 1 }
-            ~on_input:(fun v -> Some (Set_input v))
-            ~on_submit:(fun v -> Some (Submit v))
+            ~on_change:(fun v -> Set_input v)
+            ~on_submit:(fun v -> Submit v)
             ();
         ];
     ]
@@ -357,7 +358,7 @@ let update msg model =
       else
         ( {
             model with
-            input = "";
+            input = Editor.empty;
             pending_text = "";
             tools = [];
             last_user = Some prompt;
@@ -433,7 +434,7 @@ let view model =
 let subscriptions model =
   let tick =
     match model.state with
-    | Streaming -> Sub.every 0.05 (fun () -> Tick)
+    | Streaming -> Sub.every ~id:"stream" 0.05 (fun () -> Tick)
     | _ -> Sub.none
   in
   Sub.batch

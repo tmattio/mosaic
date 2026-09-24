@@ -84,6 +84,9 @@ let default_thumb_color = Ansi.Color.of_rgb 154 158 163
 
 module Props = struct
   type t = {
+    position : int;
+    scroll_size : int;
+    viewport_size : int;
     orientation : orientation;
     show_arrows : bool;
     track_color : Ansi.Color.t;
@@ -92,15 +95,29 @@ module Props = struct
     arrow_bg : Ansi.Color.t;
   }
 
-  let make ?(orientation = `Vertical) ?(show_arrows = false)
+  let make ?(position = 0) ?(scroll_size = 0) ?(viewport_size = 0)
+      ?(orientation = `Vertical) ?(show_arrows = false)
       ?(track_color = default_track_color) ?(thumb_color = default_thumb_color)
       ?(arrow_fg = Ansi.Color.white) ?(arrow_bg = Ansi.Color.transparent) () =
-    { orientation; show_arrows; track_color; thumb_color; arrow_fg; arrow_bg }
+    {
+      position = max 0 position;
+      scroll_size = max 0 scroll_size;
+      viewport_size = max 0 viewport_size;
+      orientation;
+      show_arrows;
+      track_color;
+      thumb_color;
+      arrow_fg;
+      arrow_bg;
+    }
 
   let default = make ()
 
   let equal a b =
-    a.orientation = b.orientation
+    a.position = b.position
+    && a.scroll_size = b.scroll_size
+    && a.viewport_size = b.viewport_size
+    && a.orientation = b.orientation
     && a.show_arrows = b.show_arrows
     && Ansi.Color.equal a.track_color b.track_color
     && Ansi.Color.equal a.thumb_color b.thumb_color
@@ -161,18 +178,17 @@ let recalc_visibility t =
 
 let set_scroll_position_internal t ?(emit = true) value =
   let clamped = clamp value ~lo:0 ~hi:(range t) in
-  if clamped <> t.scroll_position then (
-    t.scroll_position <- clamped;
-    if not t.syncing_from_slider then (
-      t.syncing_from_slider <- true;
+  if clamped <> t.scroll_position then
+    if emit then Option.iter (fun f -> f clamped) t.on_change
+    else (
+      t.scroll_position <- clamped;
       Slider.set_value t.slider (float_of_int clamped);
-      t.syncing_from_slider <- false);
-    (if emit then match t.on_change with Some f -> f clamped | None -> ());
-    Renderable.request_render t.node)
+      Renderable.request_render t.node)
 
-let set_scroll_position t value = set_scroll_position_internal t value
+let set_scroll_position t value =
+  set_scroll_position_internal t ~emit:false value
 
-let scroll_by t delta ~unit =
+let scroll_target t delta ~unit =
   let multiplier =
     match unit with
     | `Absolute -> 1.
@@ -182,11 +198,11 @@ let scroll_by t delta ~unit =
         float_of_int
           (match t.scroll_step with Some s when s > 0 -> s | _ -> 1)
   in
-  let target =
-    int_of_float
-      (Float.round (float_of_int t.scroll_position +. (delta *. multiplier)))
-  in
-  set_scroll_position t target
+  int_of_float
+    (Float.round (float_of_int t.scroll_position +. (delta *. multiplier)))
+
+let scroll_by t delta ~unit =
+  set_scroll_position_internal t (scroll_target t delta ~unit)
 
 (* ───── Arrow Repeat ───── *)
 
@@ -287,11 +303,11 @@ let orientation_style style orientation ~auto_width ~auto_height =
   in
   Toffee.Style.set_size size style
 
-let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
-    ?(orientation = `Vertical) ?(show_arrows = false)
-    ?(track_color = default_track_color) ?(thumb_color = default_thumb_color)
-    ?(arrow_fg = Ansi.Color.white) ?(arrow_bg = Ansi.Color.transparent)
-    ?on_change () =
+let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?(position = 0)
+    ?(scroll_size = 0) ?(viewport_size = 0) ?(orientation = `Vertical)
+    ?(show_arrows = false) ?(track_color = default_track_color)
+    ?(thumb_color = default_thumb_color) ?(arrow_fg = Ansi.Color.white)
+    ?(arrow_bg = Ansi.Color.transparent) ?on_change () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
@@ -358,7 +374,10 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
   Renderable.set_visible (Arrow.node end_arrow) show_arrows;
   let props =
     {
-      Props.orientation;
+      Props.position = max 0 position;
+      scroll_size = max 0 scroll_size;
+      viewport_size = max 0 viewport_size;
+      orientation;
       show_arrows;
       track_color;
       thumb_color;
@@ -375,9 +394,10 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       auto_width;
       auto_height;
       props;
-      scroll_position = 0;
-      scroll_size = 0;
-      viewport_size = 0;
+      scroll_position =
+        max 0 (min position (max 0 (scroll_size - viewport_size)));
+      scroll_size = max 0 scroll_size;
+      viewport_size = max 0 viewport_size;
       scroll_step = None;
       manual_visibility = false;
       on_change;
@@ -395,7 +415,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
        (fun v ->
          if not t.syncing_from_slider then (
            t.syncing_from_slider <- true;
-           set_scroll_position t (int_of_float (Float.round v));
+           set_scroll_position_internal t (int_of_float (Float.round v));
            t.syncing_from_slider <- false)));
   (* Wire keyboard handler *)
   Renderable.set_default_key_handler node
@@ -505,13 +525,17 @@ let reset_visibility_control t =
 (* ───── Apply Props ───── *)
 
 let apply_props t (props : Props.t) =
+  set_scroll_size t props.scroll_size;
+  set_viewport_size t props.viewport_size;
+  set_scroll_position t props.position;
   if not (Props.equal t.props props) then (
     set_orientation t props.orientation;
     set_show_arrows t props.show_arrows;
     set_track_color t props.track_color;
     set_thumb_color t props.thumb_color;
     set_arrow_colors t ~fg:props.arrow_fg ~bg:props.arrow_bg;
-    Renderable.request_render t.node)
+    Renderable.request_render t.node);
+  t.props <- props
 
 (* ───── Pretty-printing ───── *)
 

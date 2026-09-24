@@ -12,8 +12,11 @@ independently:
 | [Toffee](toffee/README.md)   | CSS layout engine (Flexbox, Grid, Block) ported from Taffy |
 
 **Mosaic** provides a TEA runtime (model / update / view), 18 built-in
-widgets, and CSS layout via Toffee. Write your UI as a pure function of
-state.
+widgets, and CSS layout via Toffee. Editors, scrolling, selection, and focus
+are model values; semantic callbacks return messages that `update` accepts,
+transforms, or rejects. Selection follows application values across reordering.
+`~on_focus_request` lets a pointer press propose focus before caret placement;
+raw event callbacks remain optional-message filters.
 
 **Matrix** is the terminal layer: double-buffered rendering that diffs
 cell changes to emit minimal ANSI output, Kitty keyboard, SGR mouse,

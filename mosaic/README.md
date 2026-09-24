@@ -69,7 +69,7 @@ An application is four functions:
 | `subscriptions` | `model -> msg Sub.t`                | Event sources               |
 
 `Cmd.t` carries side effects: `Cmd.none`, `Cmd.quit`, `Cmd.perform`,
-`Cmd.batch`, `Cmd.set_title`, `Cmd.focus`.
+`Cmd.batch`, `Cmd.set_title`, and static-output commands.
 
 `Sub.t` declares event sources: `Sub.on_keys`, `Sub.on_key`, `Sub.on_mouse`,
 `Sub.on_paste`, `Sub.on_resize`, `Sub.on_tick`, `Sub.every`, `Sub.on_focus`,
@@ -120,17 +120,77 @@ Grid.fr 1.        (* fractional grid track *)
 Grid.minmax ~min ~max  (* range-sized grid track *)
 ```
 
-## Rich text
+## Model-owned interaction
 
-Text supports styled fragments with hierarchical style merging:
+Editors, scroll positions, selections, and focus belong to the model. Semantic
+callbacks such as `on_change`, `on_scroll`, `on_submit`, and `on_activate` return
+messages directly. `update` accepts a proposed value by storing it, transforms
+it, or rejects it by keeping the current value. Raw event callbacks such as
+`on_key`, `on_mouse`, and `on_click` return `msg option` to filter events.
 
 ```ocaml
-text ~fragments:[
-  bold "Hello ";
-  fg Ansi.Color.cyan (bold "world");
-  styled (Ansi.Style.make ~italic:true ()) "!";
-] ""
+type model = { editor : Editor.t; focused : bool; dirty : bool }
+type msg = Changed of Editor.t | Focus_editor
+
+let init () =
+  ({ editor = Editor.empty; focused = true; dirty = false }, Cmd.none)
+
+let update msg model =
+  match msg with
+  | Changed editor ->
+      let changed = not (String.equal (Editor.text editor) (Editor.text model.editor)) in
+      ({ model with editor; dirty = model.dirty || changed }, Cmd.none)
+  | Focus_editor -> ({ model with focused = true }, Cmd.none)
+
+let view model =
+  input ~state:model.editor ~focused:model.focused
+    ~on_focus_request:Focus_editor ~on_change:(fun editor -> Changed editor) ()
 ```
+
+Editor proposals include caret and selection changes. Always accept the complete
+state when appropriate, but compare `Editor.text` before marking a document
+modified, resetting submission status, or starting text-dependent work. Cursor
+movement shares the existing text and source index.
+
+`~focused` declares the model's accepted focus. On an ordinary left-button press,
+`~on_focus_request` sends its message before caret and selection defaults run.
+Those defaults proceed only if the application accepts focus on that live node.
+Rejecting the request or removing the node leaves its editor unchanged.
+`~on_click` remains a release gesture callback. `Focus.next` and `Focus.prev`
+provide model-owned keyboard traversal.
+
+Selection widgets associate display items with application values:
+
+```ocaml
+type page = Overview | Settings
+type page_msg = Page_selected of page
+
+let page_picker selected =
+  select ~equal:( = ) ~selected ~on_change:(fun page -> Page_selected page)
+    [ Select.item Overview "Overview"; Select.item Settings "Settings" ]
+```
+
+`select`, `tab_select`, and `table` take `~selected:'a option` and `~equal`.
+Construct their entries with `Select.item`, `Tab_select.item`, or
+`Table.row value cells`. Item values must be distinct under `equal`. Reordering
+keeps selection attached to its value. `None`, or a selected value absent from
+the current entries, displays no selection and emits no change. Navigation
+proposes a current item value; activation without a selection does nothing.
+
+`Scroll.t` retains positions and symbolic follow/reveal targets. Timer
+subscriptions require stable IDs. Global key subscriptions run before the
+focused widget; call `Event.Key.prevent_default` to suppress its default action.
+
+## Paint and caching
+
+```ocaml
+text ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ()) "Hello"
+```
+
+For expensive subtrees, use
+`memo ~key:(document_id, revision, theme_version) view`. Keys are immutable,
+function-free values containing every dependency of the subtree, including
+callback dependencies. The cache lives only while that position is mounted.
 
 ## Packages
 
@@ -138,7 +198,7 @@ text ~fragments:[
 | ------------ | ----------------------------------------- |
 | `mosaic`     | TEA runtime, widget DSL, layout helpers   |
 | `mosaic.ui`  | Lower-level UI: renderer, events, vnodes  |
-| `mosaic.mlx` | JSX/MLX compatibility layer               |
+| `mosaic.mlx` | JSX/MLX syntax adapter                   |
 
 ## Examples
 

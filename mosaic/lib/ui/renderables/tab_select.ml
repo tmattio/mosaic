@@ -9,9 +9,7 @@ let item ~label ?(description = "") () = { label; description }
 module Props = struct
   type t = {
     options : item list;
-    selected : int option;
-        (* [Some i] makes the selection controlled by props; [None] leaves the
-           widget's own selection untouched across prop updates. *)
+    selected : int;
     tab_width : int;
     background : Ansi.Color.t;
     text_color : Ansi.Color.t;
@@ -31,7 +29,7 @@ module Props = struct
   let default_description_color = Ansi.Color.of_rgb 203 213 225
   let default_selected_description_color = Ansi.Color.of_rgb 204 204 204
 
-  let make ~options ?selected ?(tab_width = 12) ?background ?text_color
+  let make ~options ?(selected = 0) ?(tab_width = 12) ?background ?text_color
       ?focused_background ?focused_text_color
       ?(selected_background = default_selected_background)
       ?(selected_text_color = Ansi.Color.white)
@@ -54,7 +52,7 @@ module Props = struct
     in
     {
       options;
-      selected = Option.map (max 0) selected;
+      selected = max (-1) selected;
       tab_width = max 1 tab_width;
       background = background';
       text_color;
@@ -75,7 +73,7 @@ module Props = struct
 
   let equal a b =
     List.equal equal_item a.options b.options
-    && Option.equal Int.equal a.selected b.selected
+    && Int.equal a.selected b.selected
     && a.tab_width = b.tab_width
     && Ansi.Color.equal a.background b.background
     && Ansi.Color.equal a.text_color b.text_color
@@ -111,7 +109,7 @@ let request_render t = Renderable.request_render t.node
 
 let clamp_selected props idx =
   let n = List.length props.Props.options in
-  if n = 0 then 0 else max 0 (min idx (n - 1))
+  if n = 0 then -1 else max (-1) (min idx (n - 1))
 
 let intrinsic_height props =
   1
@@ -248,7 +246,7 @@ and render_scroll_arrows grid ~props ~w ~n ~max_visible ~scroll =
         ~text:"\xe2\x80\xba")
 
 and render_description grid ~width_method ~props ~w ~h ~selected_index =
-  if props.Props.show_description then
+  if props.Props.show_description && selected_index >= 0 then
     let desc_y = 1 + if props.show_underline then 1 else 0 in
     if desc_y < h then
       match List.nth_opt props.options selected_index with
@@ -262,7 +260,11 @@ and render_description grid ~width_method ~props ~w ~h ~selected_index =
 (* ───── Query ───── *)
 
 let selected_index t = t.selected_index
-let selected_item t = List.nth_opt t.props.options t.selected_index
+
+let selected_item t =
+  if t.selected_index < 0 then None
+  else List.nth_opt t.props.options t.selected_index
+
 let options t = t.props.options
 
 (* ───── Navigation ───── *)
@@ -272,23 +274,21 @@ let move t ~next_index =
   if n > 0 then
     let idx = t.selected_index in
     let next = next_index ~n ~idx ~wrap:t.props.wrap_selection in
-    if next <> idx then (
-      t.selected_index <- next;
-      update_scroll t;
-      request_render t;
-      match t.on_change with Some f -> f next | None -> ())
+    if next <> idx then match t.on_change with Some f -> f next | None -> ()
 
 let move_left t =
   move t ~next_index:(fun ~n ~idx ~wrap ->
-      if idx > 0 then idx - 1 else if wrap then n - 1 else idx)
+      if idx < 0 then n - 1
+      else if idx > 0 then idx - 1
+      else if wrap then n - 1
+      else idx)
 
 let move_right t =
   move t ~next_index:(fun ~n ~idx ~wrap ->
       if idx < n - 1 then idx + 1 else if wrap then 0 else idx)
 
 let select_current t =
-  let n = List.length t.props.options in
-  if n > 0 then
+  if t.selected_index >= 0 then
     match t.on_activate with Some f -> f t.selected_index | None -> ()
 
 (* ───── Key Handler ───── *)
@@ -374,8 +374,7 @@ let set_selected t i =
   if idx <> t.selected_index then (
     t.selected_index <- idx;
     update_scroll t;
-    request_render t;
-    match t.on_change with Some f -> f idx | None -> ())
+    request_render t)
 
 let set_tab_width t w =
   if w >= 1 && w <> t.props.tab_width then (
@@ -451,17 +450,9 @@ let set_on_activate t f = t.on_activate <- f
 
 (* Controlled application: move the selection without echoing [on_change] —
    the value came from the app, not from a user gesture. *)
-let apply_selected t idx =
-  let idx = clamp_selected t.props idx in
-  if idx <> t.selected_index then begin
-    t.selected_index <- idx;
-    update_scroll t;
-    request_render t
-  end
-
 let apply_props t (props : Props.t) =
   set_options t props.options;
-  (match props.selected with Some idx -> apply_selected t idx | None -> ());
+  set_selected t props.selected;
   set_wrap_selection t props.wrap_selection;
   set_tab_width t props.tab_width;
   set_show_underline t props.show_underline;

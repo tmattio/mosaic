@@ -10,9 +10,7 @@ type orientation = [ `Horizontal | `Vertical ]
 module Props = struct
   type t = {
     orientation : orientation;
-    value : float option;
-        (* [Some v] makes the value controlled by props; [None] leaves the
-           widget's own value untouched across prop updates. *)
+    value : float;
     min : float;
     max : float;
     viewport_size : float;
@@ -28,13 +26,14 @@ module Props = struct
       | Some v -> v
       | None -> Float.max 1. ((max -. min) *. 0.1)
     in
+    let value = Option.value value ~default:min in
     { orientation; value; min; max; viewport_size; track_color; thumb_color }
 
   let default = make ()
 
   let equal a b =
     a.orientation = b.orientation
-    && Option.equal Float.equal a.value b.value
+    && Float.equal a.value b.value
     && Float.equal a.min b.min && Float.equal a.max b.max
     && Float.equal a.viewport_size b.viewport_size
     && Ansi.Color.equal a.track_color b.track_color
@@ -60,10 +59,8 @@ let clamp_value ~min ~max v = Float.max min (Float.min max v)
 
 let update_value t v =
   let clamped = clamp_value ~min:t.props.min ~max:t.props.max v in
-  if not (Float.equal clamped t.value) then (
-    t.value <- clamped;
-    (match t.on_change with Some f -> f clamped | None -> ());
-    Renderable.request_render t.node)
+  if not (Float.equal clamped t.value) then
+    match t.on_change with Some f -> f clamped | None -> ()
 
 (* Virtual coordinate system *)
 
@@ -92,14 +89,16 @@ let virtual_thumb_size t =
       let calc = Float.to_int (Float.of_int vtrack *. ratio) in
       Int.max 1 (Int.min calc vtrack)
 
-let virtual_thumb_start t =
+let virtual_thumb_start_for_value t value =
   let vtrack = virtual_track_size t in
   let range = t.props.max -. t.props.min in
   if Float.equal range 0. then 0
   else
-    let ratio = (t.value -. t.props.min) /. range in
+    let ratio = (value -. t.props.min) /. range in
     let vthumb = virtual_thumb_size t in
     Float.to_int (Float.round (ratio *. Float.of_int (vtrack - vthumb)))
+
+let virtual_thumb_start t = virtual_thumb_start_for_value t t.value
 
 (* Thumb rectangle *)
 
@@ -213,19 +212,6 @@ let calculate_drag_offset_virtual t ev =
   let vthumb_size = virtual_thumb_size t in
   Int.max 0 (Int.min vthumb_size (virtual_mouse - vthumb_start))
 
-let update_value_from_mouse_direct t ev =
-  let origin = track_start t in
-  let track_size = track_dimension t in
-  let mouse_pos = mouse_pos_along_axis t ev in
-  let relative = mouse_pos - origin in
-  let clamped = Int.max 0 (Int.min track_size relative) in
-  let ratio =
-    if track_size = 0 then 0.
-    else Float.of_int clamped /. Float.of_int track_size
-  in
-  let range = t.props.max -. t.props.min in
-  update_value t (t.props.min +. (ratio *. range))
-
 (* Preserves the grab point within the thumb so dragging feels anchored to where
    the user initially clicked, rather than snapping to center. *)
 let update_value_from_mouse_with_offset t ev offset_virtual =
@@ -263,9 +249,22 @@ let handle_mouse_down t ev =
   let my = Event.Mouse.y ev in
   (* Click on track: jump first, then start dragging. Click on thumb: start
      dragging directly. *)
-  if not (point_in_rect ~px:mx ~py:my thumb) then
-    update_value_from_mouse_direct t ev;
-  start_drag t ev
+  if point_in_rect ~px:mx ~py:my thumb then start_drag t ev
+  else
+    let size = track_dimension t in
+    let relative =
+      max 0 (min size (mouse_pos_along_axis t ev - track_start t))
+    in
+    let ratio =
+      if size = 0 then 0. else float_of_int relative /. float_of_int size
+    in
+    let value = t.props.min +. (ratio *. (t.props.max -. t.props.min)) in
+    t.dragging <- true;
+    t.drag_offset_virtual <-
+      max 0
+        (min (virtual_thumb_size t)
+           ((relative * 2) - virtual_thumb_start_for_value t value));
+    update_value t value
 
 let handle_mouse_drag t ev =
   if t.dragging then (
@@ -298,9 +297,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     Props.make ~orientation ?value ~min ~max ?viewport_size ~track_color
       ~thumb_color ()
   in
-  let initial_value =
-    clamp_value ~min ~max (Option.value props.Props.value ~default:min)
-  in
+  let initial_value = clamp_value ~min ~max props.Props.value in
   let t =
     {
       node;
@@ -318,13 +315,20 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
 (* Setters *)
 
 let value t = t.value
-let set_value t v = update_value t v
+
+let set_value t v =
+  let value = clamp_value ~min:t.props.min ~max:t.props.max v in
+  if not (Float.equal value t.value) then (
+    t.value <- value;
+    t.props <- { t.props with value };
+    Renderable.request_render t.node)
+
 let min t = t.props.min
 
 let set_min t v =
   if not (Float.equal t.props.min v) then (
     t.props <- { t.props with min = v };
-    if t.value < v then update_value t v;
+    if t.value < v then set_value t v;
     Renderable.request_render t.node)
 
 let max t = t.props.max
@@ -332,7 +336,7 @@ let max t = t.props.max
 let set_max t v =
   if not (Float.equal t.props.max v) then (
     t.props <- { t.props with max = v };
-    if t.value > v then update_value t v;
+    if t.value > v then set_value t v;
     Renderable.request_render t.node)
 
 let set_orientation t o =
@@ -362,13 +366,7 @@ let set_on_change t f = t.on_change <- f
 
 let apply_props t (props : Props.t) =
   t.props <- props;
-  (* Controlled when the value prop is provided; otherwise the widget's own
-     value survives unrelated prop updates, re-clamped to the new range.
-     Either way [on_change] stays silent: the value came from the app, not
-     from a user gesture. *)
-  (match props.value with
-  | Some v -> t.value <- clamp_value ~min:props.min ~max:props.max v
-  | None -> t.value <- clamp_value ~min:props.min ~max:props.max t.value);
+  t.value <- clamp_value ~min:props.min ~max:props.max props.value;
   Renderable.request_render t.node
 
 (* Pretty-printing *)
