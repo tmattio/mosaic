@@ -25,17 +25,6 @@ module Highlight = struct
   let ref_id h = h.ref_id
 end
 
-(* ───── Line Cache ───── *)
-
-(* Line metrics paired with per-line byte-range bounds, computed together to
-   avoid scanning for line breaks twice. *)
-type line_cache = {
-  line_count : int;
-  line_widths : int array;
-  max_line_width : int;
-  bounds : (int * int) array;
-}
-
 (* ───── Buffer ───── *)
 
 type t = {
@@ -46,7 +35,7 @@ type t = {
   mutable tab_width : int;
   mutable width_method : Matrix.Text.width_method;
   mutable cached_plain_text : string option;
-  mutable cached_lines : line_cache option;
+  mutable cached_max_line_width : int option;
   mutable cached_line_spans : span list array option;
   mutable source : Source.t option;
   mutable paint : (int * int * Ansi.Style.t) array option;
@@ -63,7 +52,7 @@ let create ?(default_style = Ansi.Style.default) ?(width_method = `Unicode)
     tab_width = max 1 tab_width;
     width_method;
     cached_plain_text = None;
-    cached_lines = None;
+    cached_max_line_width = None;
     cached_line_spans = None;
     source = None;
     paint = None;
@@ -74,7 +63,7 @@ let create ?(default_style = Ansi.Style.default) ?(width_method = `Unicode)
 
 let invalidate t =
   t.cached_plain_text <- None;
-  t.cached_lines <- None;
+  t.cached_max_line_width <- None;
   t.cached_line_spans <- None;
   t.source <- None;
   t.paint <- None;
@@ -170,47 +159,26 @@ let set_default_style t s =
 
 (* ───── Line Info ───── *)
 
-(* Compute logical lines by scanning for line breaks, returning both metrics and
-   byte-range bounds. The bounds are reused by line_spans to avoid rescanning
-   the full text for every line lookup. *)
-let compute_lines t =
+let line_count t = Source.line_count (source t)
+
+let line_width t line =
   let src = source t in
-  let line_count = Source.line_count src in
-  let line_widths =
-    Array.init line_count (fun line ->
-        Source.columns ~width_method:t.width_method ~tab_width:t.tab_width src
-          ~first:(Source.line_start src line)
-          ~last:(Source.line_end src line))
-  in
-  let bounds =
-    Array.init line_count (fun line ->
-        ( Source.byte_offset src (Source.line_start src line),
-          Source.byte_offset src (Source.line_end src line) ))
-  in
-  {
-    line_count;
-    line_widths;
-    max_line_width = Array.fold_left max 0 line_widths;
-    bounds;
-  }
-
-let ensure_line_cache t =
-  match t.cached_lines with
-  | Some _ -> ()
-  | None -> t.cached_lines <- Some (compute_lines t)
-
-let line_count t =
-  ensure_line_cache t;
-  (Option.get t.cached_lines).line_count
-
-let line_width t n =
-  ensure_line_cache t;
-  let cache = Option.get t.cached_lines in
-  if n < 0 || n >= cache.line_count then 0 else cache.line_widths.(n)
+  if line < 0 || line >= Source.line_count src then 0
+  else
+    Source.columns ~width_method:t.width_method ~tab_width:t.tab_width src
+      ~first:(Source.line_start src line)
+      ~last:(Source.line_end src line)
 
 let max_line_width t =
-  ensure_line_cache t;
-  (Option.get t.cached_lines).max_line_width
+  match t.cached_max_line_width with
+  | Some width -> width
+  | None ->
+      let width = ref 0 in
+      for line = 0 to line_count t - 1 do
+        width := max !width (line_width t line)
+      done;
+      t.cached_max_line_width <- Some !width;
+      !width
 
 (* ───── Line Spans ───── *)
 
@@ -222,9 +190,12 @@ let max_line_width t =
    token. *)
 let compute_line_spans t =
   ensure_span_order t;
-  ensure_line_cache t;
-  let cache = Option.get t.cached_lines in
-  let n = cache.line_count in
+  let src = source t in
+  let n = Source.line_count src in
+  let bounds line =
+    ( Source.byte_offset src (Source.line_start src line),
+      Source.byte_offset src (Source.line_end src line) )
+  in
   let result = Array.make n [] in
   (* First line a span can still intersect; only moves forward. *)
   let first = ref 0 in
@@ -236,12 +207,12 @@ let compute_line_spans t =
       let s_end = s_start + slen in
       offset := s_end;
       if slen > 0 then begin
-        while !first < n && snd cache.bounds.(!first) <= s_start do
+        while !first < n && snd (bounds !first) <= s_start do
           incr first
         done;
         let i = ref !first in
-        while !i < n && fst cache.bounds.(!i) < s_end do
-          let line_start, line_end = cache.bounds.(!i) in
+        while !i < n && fst (bounds !i) < s_end do
+          let line_start, line_end = bounds !i in
           let lo = max s_start line_start in
           let hi = min s_end line_end in
           if lo < hi then begin
@@ -258,7 +229,7 @@ let compute_line_spans t =
       | [] ->
           (* Empty logical line (or empty document): a single empty span keeps
              the line addressable for styling. *)
-          if i = 0 || fst cache.bounds.(i) >= snd cache.bounds.(i) then
+          if i = 0 || fst (bounds i) >= snd (bounds i) then
             [ { text = ""; style = t.default_style } ]
           else []
       | slices -> List.rev slices)
@@ -313,7 +284,7 @@ let set_tab_width t w =
   let w = max 1 w in
   if t.tab_width <> w then begin
     t.tab_width <- w;
-    t.cached_lines <- None;
+    t.cached_max_line_width <- None;
     t.version <- t.version + 1
   end
 
@@ -324,7 +295,7 @@ let width_method t = t.width_method
 let set_width_method t m =
   if t.width_method <> m then begin
     t.width_method <- m;
-    t.cached_lines <- None;
+    t.cached_max_line_width <- None;
     t.version <- t.version + 1
   end
 
