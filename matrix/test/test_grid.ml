@@ -125,6 +125,26 @@ let combining_mark_stays_with_ascii_base () =
   equal ~msg:"cluster occupies one column" int 1
     (Grid.cell_width grid (Grid.idx grid ~x:0 ~y:0))
 
+let thai_spacing_mark_cell_placement () =
+  List.iter
+    (fun width_method ->
+      let grid = Grid.create ~width:5 ~height:1 ~width_method () in
+      Grid.draw_text grid ~x:0 ~y:0 ~text:"น้ำXว่Y";
+      equal ~msg:"first cell retains the Thai cluster" string "น้ำ"
+        (Grid.get_text grid 0);
+      equal ~msg:"spacing mark makes the cluster two cells wide" int 2
+        (Grid.cell_width grid 0);
+      is_true ~msg:"second cell is a continuation" (Grid.is_continuation grid 1);
+      equal ~msg:"ASCII starts after both occupied cells" string "X"
+        (Grid.get_text grid 2);
+      equal ~msg:"tone mark stays with its base" string "ว่"
+        (Grid.get_text grid 3);
+      equal ~msg:"tone mark cluster stays one cell wide" int 1
+        (Grid.cell_width grid 3);
+      equal ~msg:"next character follows the tone-mark cluster" string "Y"
+        (Grid.get_text grid 4))
+    [ `Unicode; `Wcwidth ]
+
 let inherit_bg_on_unwritten_ascii () =
   let grid = Grid.create ~width:2 ~height:1 () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"A";
@@ -1527,6 +1547,7 @@ let tests =
       collected_grid_releases_shared_graphemes;
     test "combining mark stays with ascii base"
       combining_mark_stays_with_ascii_base;
+    test "Thai spacing mark cell placement" thai_spacing_mark_cell_placement;
     test "create defaults" create_defaults;
     test "create with configuration" create_with_configuration;
     test "set width method" set_width_method_updates;

@@ -111,6 +111,17 @@ let measurement_rows =
     ("skin tone sequence", "👍🏽", `Unicode, 8, 2);
     ("wcwidth strategy", "👩\u{200D}🚀", `Wcwidth, 8, 4);
     ("combining accent", "a\u{0301}", `Unicode, 8, 1);
+    ("Thai spacing mark", "น้ำ", `Unicode, 8, 2);
+    ("Thai spacing mark wcwidth", "น้ำ", `Wcwidth, 8, 2);
+    ("Thai word with spacing mark", "คำว่า", `Unicode, 8, 4);
+    ("Thai tone mark", "ว่", `Unicode, 8, 1);
+    ("Thai standalone spacing mark", "ำ", `Unicode, 8, 1);
+    ("Thai repeated spacing marks", "น้ำำ", `Unicode, 8, 2);
+    ("Thai repeated spacing marks wcwidth", "น้ำำ", `Wcwidth, 8, 3);
+    ("Thai spacing mark after wide base", "界ำ", `Unicode, 8, 2);
+    ("Lao spacing mark", "\u{0E99}\u{0EB3}", `Unicode, 8, 2);
+    ("Indic spacing mark retains base width", "क\u{093E}", `Unicode, 8, 1);
+    ("Indic spacing mark wcwidth", "क\u{093E}", `Wcwidth, 8, 2);
     ("zero width space", "\u{200B}", `Unicode, 8, 0);
     ("C1 control", uchar_to_utf8 0x008A, `Unicode, 8, 0);
   ]
@@ -737,6 +748,34 @@ let layout_whole_clusters () =
       done)
     [ `Unicode; `Wcwidth ]
 
+let thai_spacing_mark_layout () =
+  let text = "น้ำX" in
+  let source = Layout.Source.of_string text in
+  equal ~msg:"spacing mark stays in the first source cluster" int 2
+    (Layout.Source.length source);
+  List.iter
+    (fun width_method ->
+      let layout = Layout.create ~width_method source ~width:2 ~wrap:`Char in
+      equal ~msg:"following character wraps" int 2 (Layout.row_count layout);
+      equal ~msg:"first row spans two cells" int 2 (Layout.row_width layout 0);
+      equal ~msg:"first row retains the whole cluster" string "น้ำ"
+        (Layout.Source.slice source
+           ~first:(Layout.row_start layout 0)
+           ~last:(Layout.row_end layout 0));
+      equal ~msg:"second cell selects the same cluster" (pair int int) (0, 1)
+        (Layout.coverage layout ~row:0 ~column:1);
+      equal ~msg:"caret after the cluster starts the next row" (pair int int)
+        (1, 0)
+        (Layout.locate layout Layout.{ grapheme = 1; affinity = Downstream }))
+    [ `Unicode; `Wcwidth ];
+  equal ~msg:"a one-column prefix cannot split the Thai cluster" int 0
+    (find_wrap_pos ~width_method:`Unicode ~tab_width:2 text ~max_columns:1)
+      .byte_offset;
+  equal ~msg:"a two-column prefix fits the whole Thai cluster" int
+    (String.length "น้ำ")
+    (find_wrap_pos ~width_method:`Unicode ~tab_width:2 text ~max_columns:2)
+      .byte_offset
+
 let layout_zero_width_snapping () =
   let source = Layout.Source.of_string "a\226\128\139b" in
   let t = Layout.create source ~width:20 ~wrap:`None in
@@ -805,6 +844,8 @@ let () =
           test "truncation retains source coverage" layout_truncated_source;
           test "soft-wrap caret affinity" layout_affinity;
           test "whole clusters under both width methods" layout_whole_clusters;
+          test "Thai spacing mark wrapping and source coverage"
+            thai_spacing_mark_layout;
           test "zero-width snapping and visible iteration"
             layout_zero_width_snapping;
           test "bounded row and horizontal iteration" layout_bounded_iteration;

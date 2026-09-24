@@ -57,6 +57,11 @@ let[@inline] is_virama cp = cp land 0x7F = 0x4D && cp >= 0x094D && cp <= 0x0D4D
 let[@inline] is_devanagari_base cp =
   (cp >= 0x0915 && cp <= 0x0939) || (cp >= 0x0958 && cp <= 0x095F)
 
+(* OpenTUI widens spacing marks with positive scalar width. Its width table
+   zeroes Mc marks, unlike Uucp's tty hints. In Unicode 17, the remaining
+   spacing marks are Thai SARA AM and Lao AM. *)
+let[@inline] is_wide_spacing_mark cp = cp = 0x0E33 || cp = 0x0EB3
+
 (* Codepoint Width *)
 
 let[@inline] codepoint_width_wcwidth ~tab_width cp =
@@ -79,9 +84,9 @@ let uchar_width ~tab_width uchar =
 (* Unicode-width state machine.
 
    The [`Unicode] width method folds a cluster's codepoints through a small
-   state machine handling VS16 emoji promotion, regional-indicator pairs, and
-   Indic virama conjuncts. The whole state is one immediate int: the
-   accumulated cluster width in the bits above bit 2 and three flags below.
+   state machine handling VS16 emoji promotion, regional-indicator pairs,
+   spacing marks, and Indic virama conjuncts. The whole state is one immediate
+   int: the accumulated cluster width in the bits above bit 2 and three flags below.
    Invariant: the width bits are [0] while [ws_has_width] is unset.
 
    The initial state is [0]; [ws_step] handles the first codepoint of a
@@ -108,6 +113,8 @@ let[@inline] ws_step cp cp_w state =
     else
       let w = if flags land ws_has_width = 0 then cp_w else ws_width state in
       ws_make w (flags lor ws_has_width lor ws_ri_pair land lnot ws_virama)
+  else if flags land ws_has_width <> 0 && cp_w > 0 && is_wide_spacing_mark cp
+  then ws_make (max 2 (ws_width state)) (flags land lnot ws_virama)
   else if
     flags land ws_has_width <> 0
     && flags land ws_virama <> 0
