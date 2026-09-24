@@ -13,6 +13,12 @@ let make () =
 let render_view ?(viewport_width = 40) reconciler vnode =
   Reconciler.render reconciler ~viewport_width vnode
 
+let render_focused_view ?viewport_width renderer reconciler vnode =
+  render_view ?viewport_width reconciler vnode;
+  match Reconciler.focused reconciler with
+  | Some node -> ignore (Renderer.focus renderer node : bool)
+  | None -> Renderer.blur renderer
+
 let do_frame ?(width = 40) ?(height = 20) renderer =
   Renderer.render_frame renderer ~width ~height ~delta:0.
 
@@ -74,11 +80,11 @@ let viewport_switch_selects_only_matching_branch () =
     Vnode.viewport_switch ~at_least_width:80
       ~wide:(Vnode.spinner ~ref:(fun node -> wide_node := Some node) ())
       ~narrow:
-        (Vnode.input ~state:Editor.empty ~on_change:ignore ~autofocus:true
+        (Vnode.input ~state:Editor.empty ~on_change:ignore ~focused:true
            ~ref:(fun node -> narrow_node := Some node)
            ())
   in
-  render_view ~viewport_width:79 reconciler view;
+  render_focused_view ~viewport_width:79 renderer reconciler view;
   do_frame ~width:79 renderer;
   is_some ~msg:"narrow branch mounted" !narrow_node;
   is_none ~msg:"wide branch not mounted" !wide_node;
@@ -86,7 +92,7 @@ let viewport_switch_selects_only_matching_branch () =
     (Renderable.Private.live_count (Renderer.root renderer));
   match (!narrow_node, Renderer.focused renderer) with
   | Some narrow, Some focused ->
-      is_true ~msg:"selected branch receives autofocus" (narrow == focused)
+      is_true ~msg:"selected branch receives declared focus" (narrow == focused)
   | _ -> fail "expected the narrow input to be focused"
 
 let viewport_switch_reconciles_selected_branch_on_resize () =
@@ -128,11 +134,10 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
         (root
            [
              transcript ();
-             Vnode.input ~state:Editor.empty ~on_change:ignore ~autofocus:true
-               ();
+             Vnode.input ~state:Editor.empty ~on_change:ignore ~focused:true ();
            ])
   in
-  render_view ~viewport_width:79 reconciler (view ());
+  render_focused_view ~viewport_width:79 renderer reconciler (view ());
   do_frame ~width:79 renderer;
   ignore (Renderer.render ~full:true renderer : string);
   let first_root = List.hd (children_of renderer) in
@@ -149,7 +154,7 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
     | Some y when y > 0 -> y
     | _ -> fail "expected the transcript to scroll before resize"
   in
-  render_view ~viewport_width:80 reconciler (view ());
+  render_focused_view ~viewport_width:80 renderer reconciler (view ());
   do_frame ~width:80 renderer;
   ignore (Renderer.render ~full:true renderer : string);
   let wide_root = List.hd (children_of renderer) in
@@ -174,7 +179,7 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
         (fun pos -> pos > first_scroll)
         y
   | None -> fail "expected the retained transcript to keep scrolling");
-  render_view ~viewport_width:79 reconciler (view ());
+  render_focused_view ~viewport_width:79 renderer reconciler (view ());
   do_frame ~width:79 renderer;
   let second_root = List.hd (children_of renderer) in
   let second_transcript = List.hd (Renderable.children second_root) in
@@ -359,16 +364,16 @@ let rejected_input_preserves_accepted_state () =
   let inputs = ref [] in
   let submissions = ref [] in
   let view () =
-    Vnode.input ~key:"controlled-input" ~autofocus:true ~state:Editor.empty
+    Vnode.input ~key:"controlled-input" ~focused:true ~state:Editor.empty
       ~on_change:(fun state -> inputs := Editor.text state :: !inputs)
       ~on_submit:(fun value -> submissions := value :: !submissions)
       ()
   in
-  render_view reconciler (view ());
+  render_focused_view renderer reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
   equal ~msg:"input proposes the edit" (list string) [ "x" ] (List.rev !inputs);
-  render_view reconciler (view ());
+  render_focused_view renderer reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer
        (Matrix_input.Key.make Matrix_input.Key.Enter)
@@ -381,19 +386,18 @@ let rejected_textarea_preserves_accepted_state () =
   let inputs = ref [] in
   let submissions = ref [] in
   let view () =
-    Vnode.textarea ~key:"controlled-textarea" ~autofocus:true
-      ~state:Editor.empty
+    Vnode.textarea ~key:"controlled-textarea" ~focused:true ~state:Editor.empty
       ~on_change:(fun state -> inputs := Editor.text state :: !inputs)
       ~on_submit:(fun value -> submissions := value :: !submissions)
       ()
   in
-  render_view reconciler (view ());
+  render_focused_view renderer reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
   equal ~msg:"textarea proposes the edit" (list string) [ "x" ]
     (List.rev !inputs);
   do_frame renderer;
-  render_view reconciler (view ());
+  render_focused_view renderer reconciler (view ());
   let modifier = { Matrix_input.Modifier.none with ctrl = true } in
   ignore
     (Renderer.dispatch_key renderer
@@ -406,17 +410,17 @@ let accepted_editor_state_preserves_cursor () =
   let renderer, reconciler = make () in
   let state = ref (Editor.of_string "ab") in
   let view () =
-    Vnode.textarea ~autofocus:true ~state:!state
+    Vnode.textarea ~focused:true ~state:!state
       ~on_change:(fun next -> state := next)
       ()
   in
-  render_view reconciler (view ());
+  render_focused_view renderer reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer
        (Matrix_input.Key.make Matrix_input.Key.Left)
       : Event.key);
   equal ~msg:"cursor proposal accepted by model" int 1 (Editor.cursor !state);
-  render_view reconciler (view ());
+  render_focused_view renderer reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
   equal ~msg:"accepted caret guides next edit" string "axb" (Editor.text !state)

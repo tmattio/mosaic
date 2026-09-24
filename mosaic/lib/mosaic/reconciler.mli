@@ -8,8 +8,8 @@
     unmatched fibers, and commits child placement. {!Vnode.Embed} nodes are
     attached but bypass the reconciler lifecycle.
 
-    Fiber tracking and instance management are internal; this module exposes
-    only the container, render, and unmount operations. *)
+    Fiber tracking and instance management are internal; this module exposes the
+    container, reconciliation, and declared focus. *)
 
 open Mosaic_ui
 
@@ -52,5 +52,8 @@ val unmount : t -> unit
     may be reused after unmounting. *)
 
 val focused : t -> Renderable.t option
-(** [focused t] is the visible element declared focused. Raises
-    [Invalid_argument] if several visible elements declare focus. *)
+(** [focused t] is the visible element declared focused, or [None] if none is.
+    Reconciliation does not apply focus: callers synchronize this result with
+    {!Renderer.focus} or {!Renderer.blur} after {!render}.
+
+    Raises [Invalid_argument] if several visible elements declare focus. *)

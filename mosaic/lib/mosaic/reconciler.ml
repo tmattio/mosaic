@@ -192,8 +192,6 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
   in
   let node = node_of inst in
   Renderable.set_focusable node (attrs.focusable || attrs.focused);
-  (* Autofocus is deferred to after commit_placement in reconcile_flattened, so
-     the node is fully attached to the render tree when focus is applied. *)
   if attrs.buffered then Renderable.set_buffered node true;
   if attrs.live then Renderable.set_live node true;
   inst
@@ -201,10 +199,8 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
 let update_common (node : Renderable.t) ~(old_attrs : Vnode.attrs)
     ~(new_attrs : Vnode.attrs) : bool =
   let changed = ref false in
-  (* Ids address nodes (Cmd.focus resolves by Renderable.id), so a reused
-     fiber must track them: a stale id would make focus targeting miss an
-     element that visibly renders the new id. Dropping the id reverts to the
-     creation default. No render is needed — ids are not visual. *)
+  (* Reused nodes track their declared ids. Dropping the id restores the
+     creation default; ids do not affect rendering. *)
   if old_attrs.id <> new_attrs.id then
     Renderable.set_id node
       (match new_attrs.id with
@@ -879,21 +875,11 @@ let commit_placement (parent_node : Renderable.t) ~(old_children : child list)
 type t = {
   container : Renderable.t;
   mutable root_children : child list;
-  mutable pending_autofocus : Renderable.t list;
   mutable memos : memo_cache option;
 }
 
-let create ~container =
-  { container; root_children = []; pending_autofocus = []; memos = None }
-
+let create ~container = { container; root_children = []; memos = None }
 let container t = t.container
-
-let apply_pending_autofocus t =
-  match t.pending_autofocus with
-  | [] -> ()
-  | nodes ->
-      List.iter (fun node -> ignore (Renderable.focus node : bool)) nodes;
-      t.pending_autofocus <- []
 
 let combine_focus left right =
   match (left, right) with
@@ -916,9 +902,8 @@ let update_declared_focus fiber =
           else Focus_none)
          (children_focus fiber.children))
 
-let rec reconcile_element (t : t) ~(parent_node : Renderable.t)
-    (maps : fiber_maps) (pos : int) ~viewport_width (elem : unit Vnode.element)
-    : fiber =
+let rec reconcile_element ~(parent_node : Renderable.t) (maps : fiber_maps)
+    (pos : int) ~viewport_width (elem : unit Vnode.element) : fiber =
   match find_match maps pos elem with
   | Some f ->
       let focus_changed =
@@ -936,7 +921,7 @@ let rec reconcile_element (t : t) ~(parent_node : Renderable.t)
         in
         f.memos <- memos;
         f.children <-
-          reconcile_flattened t ~parent_node:(fiber_node f) ~viewport_width
+          reconcile_flattened ~parent_node:(fiber_node f) ~viewport_width
             f.children flattened;
         f.declared_children <- elem.children;
         f.viewport_width <- viewport_width
@@ -946,21 +931,19 @@ let rec reconcile_element (t : t) ~(parent_node : Renderable.t)
   | None ->
       let f = create_fiber ~parent:parent_node elem in
       Option.iter (fun callback -> callback (fiber_node f)) elem.attrs.ref;
-      if elem.attrs.autofocus && elem.attrs.focusable then
-        t.pending_autofocus <- fiber_node f :: t.pending_autofocus;
       let memos, flattened =
         flatten_children ~memos:None ~viewport_width elem.children
       in
       f.memos <- memos;
       f.children <-
-        reconcile_flattened t ~parent_node:(fiber_node f) ~viewport_width []
+        reconcile_flattened ~parent_node:(fiber_node f) ~viewport_width []
           flattened;
       f.declared_children <- elem.children;
       f.viewport_width <- viewport_width;
       update_declared_focus f;
       f
 
-and reconcile_flattened (t : t) ~(parent_node : Renderable.t) ~viewport_width
+and reconcile_flattened ~(parent_node : Renderable.t) ~viewport_width
     (old_children : child list) (flattened : flattened list) : child list =
   let old_fibers = fibers_of_children old_children in
   let maps = build_maps old_fibers in
@@ -975,8 +958,7 @@ and reconcile_flattened (t : t) ~(parent_node : Renderable.t) ~viewport_width
         | Flat_element elem ->
             let idx = !elem_idx in
             incr elem_idx;
-            Fiber
-              (reconcile_element t ~parent_node maps idx ~viewport_width elem)
+            Fiber (reconcile_element ~parent_node maps idx ~viewport_width elem)
         | Flat_embed n -> Embedded n)
       flattened
   in
@@ -985,9 +967,6 @@ and reconcile_flattened (t : t) ~(parent_node : Renderable.t) ~viewport_width
     if not maps.used.(i) then destroy_fiber maps.by_index.(i)
   done;
   commit_placement parent_node ~old_children ~new_children;
-  (* Apply deferred autofocus after placement, so the node is fully attached to
-     the render tree when focus is applied. *)
-  apply_pending_autofocus t;
   new_children
 
 (* ───── Root Reconciliation ───── *)
@@ -1000,8 +979,8 @@ let render (t : t) ~viewport_width (vnode : unit Vnode.t) : unit =
   in
   t.memos <- memos;
   let new_children =
-    reconcile_flattened t ~parent_node:t.container ~viewport_width
-      t.root_children flattened
+    reconcile_flattened ~parent_node:t.container ~viewport_width t.root_children
+      flattened
   in
   t.root_children <- new_children;
   Renderable.request_render t.container

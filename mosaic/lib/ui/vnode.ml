@@ -92,7 +92,6 @@ type attrs = {
   opacity : float;
   focusable : bool;
   focused : bool;
-  autofocus : bool;
   buffered : bool;
   live : bool;
   ref : (Renderable.t -> unit) option;
@@ -156,9 +155,9 @@ let viewport_switch ~at_least_width ~wide ~narrow =
 
 let box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?border ?border_style
-    ?border_sides ?border_color ?focused_border_color ?background ?fill ?title
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?border ?border_style ?border_sides
+    ?border_color ?focused_border_color ?background ?fill ?title
     ?title_alignment children =
   let kind =
     Box
@@ -174,7 +173,6 @@ let box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -194,9 +192,9 @@ let box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?text_style ?wrap
-    ?selectable ?selection_bg ?selection_fg ?tab_width ?truncate content =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?text_style ?wrap ?selectable
+    ?selection_bg ?selection_fg ?tab_width ?truncate content =
   let kind =
     Text
       (Text.Props.make ~content ?text_style ?wrap ?selectable ?selection_bg
@@ -211,7 +209,6 @@ let text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -232,9 +229,9 @@ let text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let slider ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?orientation ?value
-    ?min ?max ?viewport_size ?track_color ?thumb_color ?on_value_change () =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?orientation ?value ?min ?max
+    ?viewport_size ?track_color ?thumb_color ?on_value_change () =
   let kind =
     Slider
       (Slider.Props.make ?orientation ?value ?min ?max ?viewport_size
@@ -249,7 +246,6 @@ let slider ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -270,9 +266,9 @@ let slider ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let input ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?placeholder
-    ?text_color ?background_color ?focused_text_color ?focused_background_color
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?placeholder ?text_color
+    ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
     ~on_change ?on_submit ~state () =
@@ -292,7 +288,6 @@ let input ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -313,13 +308,12 @@ let input ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?options
-    ?selected_index ?background ?text_color ?focused_background
-    ?focused_text_color ?selected_background ?selected_text_color
-    ?description_color ?selected_description_color ?show_description
-    ?show_scroll_indicator ?wrap_selection ?key_bindings ?item_spacing
-    ?fast_scroll_step ?on_change ?on_activate () =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?options ?selected_index ?background
+    ?text_color ?focused_background ?focused_text_color ?selected_background
+    ?selected_text_color ?description_color ?selected_description_color
+    ?show_description ?show_scroll_indicator ?wrap_selection ?key_bindings
+    ?item_spacing ?fast_scroll_step ?on_change ?on_activate () =
   let kind =
     Select
       (Select.Props.make ?options ?selected_index ?background ?text_color
@@ -337,7 +331,6 @@ let select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -358,9 +351,9 @@ let select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ~options ?selected
-    ?tab_width ?background ?text_color ?focused_background ?focused_text_color
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ~options ?selected ?tab_width
+    ?background ?text_color ?focused_background ?focused_text_color
     ?selected_background ?selected_text_color ?description_color
     ?selected_description_color ?show_underline ?show_description
     ?show_scroll_arrows ?wrap_selection ?key_bindings ?on_change ?on_activate ()
@@ -382,7 +375,6 @@ let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -403,8 +395,8 @@ let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let canvas ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?on_draw () =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?on_draw () =
   let kind = Canvas in
   let attrs =
     {
@@ -415,7 +407,6 @@ let canvas ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -436,9 +427,8 @@ let canvas ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let spinner ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = true) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?frame_set ?color ()
-    =
+    ?(buffered = false) ?(live = true) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?frame_set ?color () =
   let kind = Spinner (Spinner.Props.make ?frame_set ?color ()) in
   let attrs =
     {
@@ -449,7 +439,6 @@ let spinner ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -470,9 +459,9 @@ let spinner ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let progress_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?value ?min ?max
-    ?orientation ?filled_color ?empty_color () =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?value ?min ?max ?orientation
+    ?filled_color ?empty_color () =
   let kind =
     Progress_bar
       (Progress_bar.Props.make ?value ?min ?max ?orientation ?filled_color
@@ -487,7 +476,6 @@ let progress_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -508,10 +496,10 @@ let progress_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let scroll_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?position
-    ?scroll_size ?viewport_size ?orientation ?show_arrows ?track_color
-    ?thumb_color ?arrow_fg ?arrow_bg ?on_change () =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?position ?scroll_size ?viewport_size
+    ?orientation ?show_arrows ?track_color ?thumb_color ?arrow_fg ?arrow_bg
+    ?on_change () =
   let kind =
     Scroll_bar
       (Scroll_bar.Props.make ?position ?scroll_size ?viewport_size ?orientation
@@ -526,7 +514,6 @@ let scroll_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -547,9 +534,9 @@ let scroll_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?scroll_x ?scroll_y
-    ?background ?show_scrollbars ~on_scroll ~scroll children =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?scroll_x ?scroll_y ?background
+    ?show_scrollbars ~on_scroll ~scroll children =
   let kind =
     Scroll_box
       (Scroll_box.Props.make ~scroll ?scroll_x ?scroll_y ?background
@@ -564,7 +551,6 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -585,12 +571,12 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?spans ?ghost_text
-    ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
-    ?focused_text_color ?focused_background_color ?placeholder_color
-    ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ~on_change ?on_submit ~state () =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?spans ?ghost_text ?ghost_text_color
+    ?placeholder ?wrap ?text_color ?background_color ?focused_text_color
+    ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
+    ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
+    ?key_bindings ~on_change ?on_submit ~state () =
   let kind =
     Textarea
       (Textarea.Props.make ~state ?spans ?ghost_text ?ghost_text_color
@@ -608,7 +594,6 @@ let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -631,15 +616,14 @@ let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?columns ?rows
-    ?selected_row ?border ?border_style ?show_header ?show_column_separator
-    ?show_row_separator ?cell_padding ?header_color ?header_background
-    ?text_color ?background ?selected_text_color ?selected_background
-    ?focused_selected_text_color ?focused_selected_background ?selection_visible
-    ?show_scroll_indicator ?activate_on_click ?wheel_navigation ?row_styles
-    ?wrap_selection ?key_bindings ?fast_scroll_step ?on_change ?on_activate
-    ?on_hover () =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?columns ?rows ?selected_row ?border
+    ?border_style ?show_header ?show_column_separator ?show_row_separator
+    ?cell_padding ?header_color ?header_background ?text_color ?background
+    ?selected_text_color ?selected_background ?focused_selected_text_color
+    ?focused_selected_background ?selection_visible ?show_scroll_indicator
+    ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
+    ?key_bindings ?fast_scroll_step ?on_change ?on_activate ?on_hover () =
   let kind =
     Table
       (Table.Props.make ?columns ?rows ?selected_row ?border ?border_style
@@ -659,7 +643,6 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -680,10 +663,9 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let code ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?syntax ?text_style
-    ?wrap ?tab_width ?truncate ?selectable ?selection_bg ?selection_fg
-    ?on_selection content =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?syntax ?text_style ?wrap ?tab_width
+    ?truncate ?selectable ?selection_bg ?selection_fg ?on_selection content =
   let kind =
     Code
       (Code.Props.make ~content ?syntax ?text_style ?wrap ?tab_width ?truncate
@@ -698,7 +680,6 @@ let code ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -719,10 +700,10 @@ let code ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let line_number ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?fg ?bg ?min_width
-    ?padding_right ?show_line_numbers ?line_number_offset ?line_colors
-    ?line_signs ?line_numbers ?hidden_line_numbers child =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?fg ?bg ?min_width ?padding_right
+    ?show_line_numbers ?line_number_offset ?line_colors ?line_signs
+    ?line_numbers ?hidden_line_numbers child =
   let kind =
     Line_number
       (Line_number.Props.make ?fg ?bg ?min_width ?padding_right
@@ -738,7 +719,6 @@ let line_number ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -766,10 +746,9 @@ let line_number ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let markdown ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?md_style ?conceal
-    ?streaming ?selectable ?selection_bg ?selection_fg ?code_syntax
-    ?on_selection content =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?md_style ?conceal ?streaming
+    ?selectable ?selection_bg ?selection_fg ?code_syntax ?on_selection content =
   let kind =
     Markdown
       (Markdown.Props.make ~content ?style:md_style ?conceal ?streaming
@@ -784,7 +763,6 @@ let markdown ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -805,9 +783,9 @@ let markdown ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let diff ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?layout ?theme
-    ?highlight ?line_highlights ?line_spans ?line_signs ?show_line_numbers ?wrap
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?layout ?theme ?highlight
+    ?line_highlights ?line_spans ?line_signs ?show_line_numbers ?wrap
     ?selectable ?text_style ?on_line_click patch =
   let kind =
     Diff
@@ -824,7 +802,6 @@ let diff ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;
@@ -845,13 +822,12 @@ let diff ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 
 let tree ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(autofocus = false) ?(buffered = false) ?(live = false) ?ref ?on_mouse
-    ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?items ?indent_size
-    ?show_guides ?guide_style ?expand_icon ?collapse_icon ?leaf_icon ?background
-    ?text_color ?selected_background ?selected_text_color
-    ?focused_selected_background ?focused_selected_text_color ?guide_color
-    ?icon_color ?wrap_selection ?key_bindings ?fast_scroll_step ~on_change
-    ?on_activate ~state () =
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?items ?indent_size ?show_guides
+    ?guide_style ?expand_icon ?collapse_icon ?leaf_icon ?background ?text_color
+    ?selected_background ?selected_text_color ?focused_selected_background
+    ?focused_selected_text_color ?guide_color ?icon_color ?wrap_selection
+    ?key_bindings ?fast_scroll_step ~on_change ?on_activate ~state () =
   let kind =
     Tree
       (Tree.Props.make ~state ?items ?indent_size ?show_guides ?guide_style
@@ -869,7 +845,6 @@ let tree ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       opacity;
       focusable = focusable || Option.is_some on_focus_request;
       focused;
-      autofocus;
       buffered;
       live;
       ref;

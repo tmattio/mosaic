@@ -107,13 +107,16 @@ type attrs = {
   opacity : float;
   focusable : bool;
   focused : bool;
-  autofocus : bool;
   buffered : bool;
   live : bool;
   ref : (Renderable.t -> unit) option;
 }
 (** The type for non-handler element attributes. Grouped for zero-copy sharing
     across {!val-map} and physical-equality fast paths in the reconciler.
+
+    [focused] declares application-owned focus and implies [focusable]. At most
+    one visible element may declare focus. The application runtime synchronizes
+    this declaration with the renderer after reconciliation.
 
     [ref] fires exactly once, when the element's renderable is created; it does
     not re-fire when the element is reused with a different closure, and there
@@ -222,7 +225,6 @@ val box :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -284,7 +286,6 @@ val text :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -327,7 +328,6 @@ val slider :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -369,7 +369,6 @@ val input :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -446,7 +445,6 @@ val select :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -515,7 +513,6 @@ val tab_select :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -584,7 +581,6 @@ val canvas :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -619,7 +615,6 @@ val spinner :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -656,7 +651,6 @@ val progress_bar :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -697,7 +691,6 @@ val scroll_bar :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -741,7 +734,6 @@ val scroll_box :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -800,7 +792,6 @@ val textarea :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -885,7 +876,6 @@ val table :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -986,7 +976,6 @@ val code :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -1033,7 +1022,6 @@ val line_number :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -1088,7 +1076,6 @@ val markdown :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -1140,7 +1127,6 @@ val diff :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
@@ -1197,7 +1183,6 @@ val tree :
   ?opacity:float ->
   ?focusable:bool ->
   ?focused:bool ->
-  ?autofocus:bool ->
   ?buffered:bool ->
   ?live:bool ->
   ?ref:(Renderable.t -> unit) ->
