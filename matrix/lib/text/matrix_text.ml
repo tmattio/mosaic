@@ -1,6 +1,6 @@
 open StdLabels
 
-type width_method = [ `Unicode | `Wcwidth ]
+type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
 type line_break_kind = [ `LF | `CR | `CRLF ]
 type position = { byte_offset : int; grapheme_count : int; columns_used : int }
 type grapheme = { byte_offset : int; byte_length : int; width : int }
@@ -101,7 +101,7 @@ let[@inline] ws_width state = state lsr 3
 
 (* [ws_step cp cp_w state] advances the state machine by the codepoint [cp]
    whose individual display width is [cp_w]. *)
-let[@inline] ws_step cp cp_w state =
+let[@inline] ws_step ~wide cp cp_w state =
   let flags = state land 7 in
   if cp = 0xFE0F then
     if flags land ws_has_width <> 0 && ws_width state = 1 then ws_make 2 flags
@@ -113,6 +113,11 @@ let[@inline] ws_step cp cp_w state =
     else
       let w = if flags land ws_has_width = 0 then cp_w else ws_width state in
       ws_make w (flags lor ws_has_width lor ws_ri_pair land lnot ws_virama)
+  else if
+    wide
+    && flags land ws_has_width <> 0
+    && not (Unicode.is_zero_in_grapheme (Uchar.unsafe_of_int cp))
+  then ws_make (max 2 (ws_width state)) (flags land lnot ws_virama)
   else if flags land ws_has_width <> 0 && cp_w > 0 && is_wide_spacing_mark cp
   then ws_make (max 2 (ws_width state)) (flags land lnot ws_virama)
   else if
@@ -126,15 +131,15 @@ let[@inline] ws_step cp cp_w state =
     ws_make cp_w (flags lor ws_has_width land lnot ws_virama)
   else state land lnot ws_virama
 
-let rec grapheme_width_unicode_loop str limit tab_width i state =
+let rec grapheme_width_unicode_loop ~wide str limit tab_width i state =
   if i >= limit then ws_width state
   else
     let d = String.get_utf_8_uchar str i in
     let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
     let cp_w = codepoint_width_unicode ~tab_width cp in
-    grapheme_width_unicode_loop str limit tab_width
+    grapheme_width_unicode_loop ~wide str limit tab_width
       (i + Uchar.utf_decode_length d)
-      (ws_step cp cp_w state)
+      (ws_step ~wide cp cp_w state)
 
 let rec grapheme_width_wcwidth_loop str limit tab_width i acc =
   if i >= limit then acc
@@ -149,7 +154,9 @@ let cluster_width ~method_ ~tab_width str off len =
   let limit = off + len in
   match method_ with
   | `Wcwidth -> grapheme_width_wcwidth_loop str limit tab_width off 0
-  | `Unicode -> grapheme_width_unicode_loop str limit tab_width off 0
+  | `Unicode | `Unicode_wide ->
+      grapheme_width_unicode_loop ~wide:(method_ = `Unicode_wide) str limit
+        tab_width off 0
 
 (* Grapheme Segmentation *)
 
@@ -422,7 +429,7 @@ let find_wrap_pos ~width_method ~tab_width str ~max_columns =
   let tab_width = normalize_tab_width tab_width in
   match width_method with
   | `Wcwidth -> find_wrap_pos_wcwidth ~tab_width str ~max_columns
-  | `Unicode ->
+  | `Unicode | `Unicode_wide ->
       find_pos_grapheme ~width_method ~tab_width ~include_start_before:false str
         ~columns:max_columns
 
@@ -431,7 +438,7 @@ let find_pos ~width_method ~tab_width ?(include_start_before = false) str
   let tab_width = normalize_tab_width tab_width in
   match width_method with
   | `Wcwidth -> find_pos_wcwidth ~tab_width ~include_start_before str ~columns
-  | `Unicode ->
+  | `Unicode | `Unicode_wide ->
       find_pos_grapheme ~width_method ~tab_width ~include_start_before str
         ~columns
 
@@ -441,14 +448,17 @@ let width_at ~width_method ~tab_width str ~byte_offset =
   if byte_offset < 0 || byte_offset >= len then 0
   else
     let b = Char.code (String.unsafe_get str byte_offset) in
-    if b < 0x80 then ascii_width ~tab_width b
+    if
+      b < 0x80
+      && (byte_offset + 1 = len || Char.code str.[byte_offset + 1] < 0x80)
+    then ascii_width ~tab_width b
     else
       match width_method with
       | `Wcwidth ->
           let decoded = Stdlib.String.get_utf_8_uchar str byte_offset in
           codepoint_width_wcwidth ~tab_width
             (Uchar.to_int (Uchar.utf_decode_uchar decoded))
-      | `Unicode ->
+      | `Unicode | `Unicode_wide ->
           let seg = Uuseg_grapheme_cluster.create () in
           let end_pos = next_boundary seg str byte_offset len in
           cluster_width ~method_:width_method ~tab_width str byte_offset
@@ -514,7 +524,7 @@ let prev_grapheme ~width_method ~tab_width str ~byte_offset =
   let tab_width = normalize_tab_width tab_width in
   match width_method with
   | `Wcwidth -> prev_grapheme_wcwidth ~tab_width str ~byte_offset
-  | `Unicode ->
+  | `Unicode | `Unicode_wide ->
       prev_grapheme_segmented ~width_method ~tab_width str ~byte_offset
 
 (* String Measurement *)
@@ -561,7 +571,7 @@ let rec measure_wcwidth str len tab_width i total =
 (* Fused segmentation + width loop for Unicode width. [state] is a
    [ws_step] state; a boundary flushes the finished cluster's width into
    [total] and restarts the machine from [0]. *)
-let rec measure_segmented seg str len tab_width i total state =
+let rec measure_segmented ~wide seg str len tab_width i total state =
   if i >= len then total + ws_width state
   else
     let d = decode_bounded str i len in
@@ -574,11 +584,12 @@ let rec measure_segmented seg str len tab_width i total state =
     in
     let cp_w = if cp = 0x09 then tab_width else (bw land 3) - 1 in
     if bw land 4 <> 0 then
-      measure_segmented seg str len tab_width next
+      measure_segmented ~wide seg str len tab_width next
         (total + ws_width state)
-        (ws_step cp cp_w 0)
+        (ws_step ~wide cp cp_w 0)
     else
-      measure_segmented seg str len tab_width next total (ws_step cp cp_w state)
+      measure_segmented ~wide seg str len tab_width next total
+        (ws_step ~wide cp cp_w state)
 
 let measure ~width_method ~tab_width str =
   let tab_width = normalize_tab_width tab_width in
@@ -588,9 +599,11 @@ let measure ~width_method ~tab_width str =
   else
     match width_method with
     | `Wcwidth -> measure_wcwidth str len tab_width 0 0
-    | `Unicode ->
+    | `Unicode | `Unicode_wide ->
         let seg = Uuseg_grapheme_cluster.create () in
-        measure_segmented seg str len tab_width 0 0 0
+        measure_segmented
+          ~wide:(width_method = `Unicode_wide)
+          seg str len tab_width 0 0 0
 
 let measure_sub ~width_method ~tab_width str ~pos ~len:sub_len =
   let tab_width = normalize_tab_width tab_width in
@@ -603,9 +616,11 @@ let measure_sub ~width_method ~tab_width str ~pos ~len:sub_len =
     else
       match width_method with
       | `Wcwidth -> measure_wcwidth str end_pos tab_width pos 0
-      | `Unicode ->
+      | `Unicode | `Unicode_wide ->
           let seg = Uuseg_grapheme_cluster.create () in
-          measure_segmented seg str end_pos tab_width pos 0 0)
+          measure_segmented
+            ~wide:(width_method = `Unicode_wide)
+            seg str end_pos tab_width pos 0 0)
 
 let grapheme_count str =
   let n = ref 0 in

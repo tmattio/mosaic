@@ -397,6 +397,40 @@ let test_startup_and_late_cpr_do_not_enable_width () =
   check_width "late reports cannot reopen completed probes";
   equal ~msg:"late input was read" int 3 state.read_calls
 
+let test_ghostty_profile_reaches_runtime () =
+  List.iter
+    (fun key -> setenv key None)
+    [
+      "TMUX";
+      "STY";
+      "ZELLIJ";
+      "SSH_CONNECTION";
+      "SSH_CLIENT";
+      "SSH_TTY";
+      "MATRIX_FORCE_WCWIDTH";
+      "MATRIX_FORCE_UNICODE";
+      "KITTY_WINDOW_ID";
+      "VHS_RECORD";
+      "TERMUX_VERSION";
+    ];
+  setenv "TERM" (Some "xterm-ghostty");
+  setenv "TERM_PROGRAM" (Some "ghostty");
+  setenv "TERM_PROGRAM_VERSION" (Some "1.3.1");
+  let app, state =
+    make_app ~terminal_tty:true
+      ~startup_input:[ "\027[?2027;2$y\027[1;1R\027[1;1R\027[?62;4c" ]
+      ()
+  in
+  is_true ~msg:"probe preserves the wide profile"
+    ((Matrix.capabilities app).unicode_width = `Unicode_wide);
+  let grid = Matrix.Screen.next_grid (Matrix.screen app) in
+  is_true ~msg:"screen uses the detected profile"
+    (Matrix.Grid.width_method grid = `Unicode_wide);
+  Matrix.Terminal.set_unicode_width (Matrix.terminal app) `Wcwidth;
+  Matrix.Terminal.set_unicode_width (Matrix.terminal app) `Unicode_wide;
+  contains ~sub:"\027[?2027h" (Buffer.contents state.output);
+  Matrix.close app
+
 let input_event = Testable.make ~pp:Matrix.Input.pp ~equal:Matrix.Input.equal
 
 let test_escape_expires_without_more_input () =
@@ -1982,6 +2016,8 @@ let () =
             test_late_capability_response_requests_redraw;
           test "stray CPR does not flip capabilities"
             test_stray_cpr_does_not_flip_capabilities;
+          test "Ghostty profile reaches runtime"
+            test_ghostty_profile_reaches_runtime;
           test "startup and late CPR do not enable width"
             test_startup_and_late_cpr_do_not_enable_width;
           test "startup capability window defers split response"

@@ -7,14 +7,17 @@
 
     {!iter_graphemes} and {!grapheme_count} always follow Unicode grapheme
     boundaries, independently of terminal width policy. Width-dependent position
-    operations instead follow the terminal's display units: clusters in
-    [`Unicode] mode and codepoints in [`Wcwidth] mode. Use Unicode boundaries
-    for editing text; use display positions for fitting and placing it. *)
+    operations instead follow the terminal's display units: clusters in the
+    Unicode modes and codepoints in [`Wcwidth] mode. Use Unicode boundaries for
+    editing text; use display positions for fitting and placing it. *)
 
-type width_method = [ `Unicode | `Wcwidth ]
+type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
 (** The type for width calculation methods.
 
     - [`Unicode] uses full grapheme segmentation with emoji ZWJ composition.
+    - [`Unicode_wide] uses grapheme segmentation and promotes clusters with
+      additional visible components to at least two cells, matching modern
+      Ghostty's width policy.
     - [`Wcwidth] sums per-codepoint wcwidth-style widths inside each string. *)
 
 type line_break_kind = [ `LF | `CR | `CRLF ]
@@ -23,8 +26,8 @@ type line_break_kind = [ `LF | `CR | `CRLF ]
 type position = { byte_offset : int; grapheme_count : int; columns_used : int }
 (** The type for a byte position found by display width.
 
-    [grapheme_count] is a cluster count for [`Unicode] and a codepoint count for
-    [`Wcwidth]. *)
+    [grapheme_count] is a cluster count for the Unicode modes and a codepoint
+    count for [`Wcwidth]. *)
 
 type grapheme = { byte_offset : int; byte_length : int; width : int }
 (** The type for a grapheme or codepoint span.

@@ -86,15 +86,16 @@ let creates_with_custom_style () =
   ()
 
 let width_method_reaches_widgets () =
-  (* Text machinery follows the screen's width method: widgets read it through
-     the renderable context when creating text buffers. *)
-  let t = Renderer.create ~width_method:`Wcwidth () in
-  is_true ~msg:"owned screen's method"
-    (Renderable.Private.width_method (Renderer.root t) = `Wcwidth);
-  let host = Matrix_screen.create ~width_method:`Wcwidth () in
-  let adopted = Renderer.create ~screen:host () in
-  is_true ~msg:"adopted screen's method"
-    (Renderable.Private.width_method (Renderer.root adopted) = `Wcwidth)
+  List.iter
+    (fun width_method ->
+      let t = Renderer.create ~width_method () in
+      is_true ~msg:"owned screen's method"
+        (Renderable.Private.width_method (Renderer.root t) = width_method);
+      let host = Matrix_screen.create ~width_method () in
+      let adopted = Renderer.create ~screen:host () in
+      is_true ~msg:"adopted screen's method"
+        (Renderable.Private.width_method (Renderer.root adopted) = width_method))
+    [ `Wcwidth; `Unicode_wide ]
 
 let adopted_screen_render_is_guarded () =
   let host = Matrix_screen.create () in

@@ -96,6 +96,17 @@ let run_grapheme_conformance () =
    character class can be selected with -f. *)
 let measurement_rows =
   [
+    ("wide Malayalam vowel", "രി", `Unicode_wide, 2, 2);
+    ("wide Malayalam conjunct", "ക്ക", `Unicode_wide, 2, 2);
+    ( "wide Malayalam report",
+      "OpenCode search configuration പരിശോധിക്കൽ",
+      `Unicode_wide,
+      2,
+      40 );
+    ("wide combining accent", "a\u{0301}", `Unicode_wide, 2, 1);
+    ("wide Hangul jamo", "\u{1100}\u{1161}\u{11A8}", `Unicode_wide, 2, 2);
+    ("wide emoji modifier", "👍🏽", `Unicode_wide, 2, 2);
+    ("wide ASCII with spacing mark", "a\u{093E}", `Unicode_wide, 2, 2);
     ("basic ASCII", "abc", `Unicode, 8, 3);
     ("ASCII controls", "a\n\r\x00b", `Unicode, 8, 2);
     ("tab default", "\t", `Unicode, 2, 2);
@@ -776,6 +787,31 @@ let thai_spacing_mark_layout () =
     (find_wrap_pos ~width_method:`Unicode ~tab_width:2 text ~max_columns:2)
       .byte_offset
 
+let wide_grapheme_positions () =
+  let text = "രിX" in
+  equal int 2
+    (width_at ~width_method:`Unicode_wide ~tab_width:2 text ~byte_offset:0);
+  equal int 2
+    (width_at ~width_method:`Unicode_wide ~tab_width:2 "a\u{093E}"
+       ~byte_offset:0);
+  equal int 0
+    (find_wrap_pos ~width_method:`Unicode_wide ~tab_width:2 text ~max_columns:1)
+      .byte_offset;
+  equal int 0
+    (find_pos ~width_method:`Unicode_wide ~tab_width:2 text ~columns:1)
+      .byte_offset;
+  let source = Layout.Source.of_string text in
+  let normal = Layout.create source ~width:2 ~wrap:`Char in
+  let wide =
+    Layout.create ~width_method:`Unicode_wide source ~width:2 ~wrap:`Char
+  in
+  equal int 1 (Layout.row_count normal);
+  equal int 2 (Layout.row_count wide);
+  equal (pair int int) (0, 1) (Layout.coverage wide ~row:0 ~column:1);
+  equal (pair int int) (1, 0)
+    (Layout.locate wide Layout.{ grapheme = 1; affinity = Downstream });
+  equal int 1 (Layout.row_count (Layout.create source ~width:2 ~wrap:`Char))
+
 let layout_zero_width_snapping () =
   let source = Layout.Source.of_string "a\226\128\139b" in
   let t = Layout.create source ~width:20 ~wrap:`None in
@@ -839,6 +875,8 @@ let () =
     [
       group "Layout"
         [
+          test "wide grapheme positions and metric switches"
+            wide_grapheme_positions;
           test "source boundaries retain invisible clusters and CRLF"
             layout_source_boundaries;
           test "truncation retains source coverage" layout_truncated_source;

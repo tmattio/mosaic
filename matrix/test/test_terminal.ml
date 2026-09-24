@@ -132,6 +132,84 @@ let test_modern_terminal_env_enables_sync () =
   is_true ~msg:"ghostty enables synchronized output" (T.capabilities term).sync;
   T.close term
 
+let ghostty_width_cases =
+  [
+    ("release", "1.3.1", [], `Unicode_wide);
+    ("release boundary", "1.3.0", [], `Unicode_wide);
+    ("old release", "1.2.3", [], `Unicode);
+    ("prerelease", "1.3.0-dev", [], `Unicode);
+    ("nightly boundary", "0.0.0-20260224.r14762.gc51f0d7", [], `Unicode_wide);
+    ("old nightly", "0.0.0-20260223.r14707.gc61f184", [], `Unicode);
+    ("malformed", "1.3", [], `Unicode);
+    ("tmux", "1.3.1", [ ("TMUX", "/tmp/tmux") ], `Wcwidth);
+    ("screen", "1.3.1", [ ("TERM", "screen-256color") ], `Wcwidth);
+    ("screen environment", "1.3.1", [ ("STY", "session") ], `Unicode);
+    ("zellij", "1.3.1", [ ("ZELLIJ", "0") ], `Unicode);
+    ("ssh", "1.3.1", [ ("SSH_CONNECTION", "remote") ], `Unicode);
+    ("forced wcwidth", "1.3.1", [ ("MATRIX_FORCE_WCWIDTH", "1") ], `Wcwidth);
+    ("forced unicode", "1.3.1", [ ("MATRIX_FORCE_UNICODE", "1") ], `Unicode);
+  ]
+
+let ghostty_env version extra =
+  List.iter
+    (fun key -> setenv key None)
+    [
+      "TMUX";
+      "STY";
+      "ZELLIJ";
+      "SSH_CONNECTION";
+      "SSH_CLIENT";
+      "SSH_TTY";
+      "MATRIX_FORCE_WCWIDTH";
+      "MATRIX_FORCE_UNICODE";
+      "KITTY_WINDOW_ID";
+      "VHS_RECORD";
+      "TERMUX_VERSION";
+    ];
+  setenv "TERM" (Some "xterm-ghostty");
+  setenv "TERM_PROGRAM" (Some "ghostty");
+  setenv "TERM_PROGRAM_VERSION" (Some version);
+  List.iter (fun (key, value) -> setenv key (Some value)) extra
+
+let width_method =
+  Testable.make ~equal:( = ) ~pp:(fun fmt -> function
+    | `Unicode -> Format.pp_print_string fmt "Unicode"
+    | `Unicode_wide -> Format.pp_print_string fmt "Unicode_wide"
+    | `Wcwidth -> Format.pp_print_string fmt "Wcwidth")
+
+let test_ghostty_width (name, version, extra, expected) =
+  ghostty_env version extra;
+  with_tty_terminal @@ fun term _buf ->
+  equal ~msg:name width_method expected (T.capabilities term).unicode_width;
+  T.close term
+
+let test_ghostty_width_locked_after_probe () =
+  ghostty_env "1.3.1" [];
+  with_tty_terminal @@ fun term output ->
+  let parser = Input.Parser.create () in
+  T.probe ~timeout:0.
+    ~now:(fun () -> 0.)
+    ~on_event:ignore
+    ~read_into:(fun _ _ _ -> 0)
+    ~wait_readable:(fun ~timeout:_ -> false)
+    ~parser term;
+  T.apply_capability_event term
+    (Input.Response.Mode_report { is_private = true; modes = [ (2027, 2) ] });
+  T.apply_capability_event term
+    (Input.Response.Xtversion "WezTerm 20240203-110809-5046fc22");
+  equal width_method `Unicode_wide (T.capabilities term).unicode_width;
+  T.set_unicode_width term (T.capabilities term).unicode_width;
+  contains ~sub:"\027[?2027h" (Buffer.contents output);
+  T.close term
+
+let test_ghostty_conflicting_identity_before_probe () =
+  ghostty_env "1.3.1" [];
+  with_tty_terminal @@ fun term _buf ->
+  T.apply_capability_event term
+    (Input.Response.Xtversion "WezTerm 20240203-110809-5046fc22");
+  equal width_method `Unicode (T.capabilities term).unicode_width;
+  T.close term
+
 (* Test: Cursor position clamping *)
 let test_cursor_position_clamping () =
   with_terminal @@ fun term _buf ->
@@ -680,6 +758,7 @@ let test_explicit_cursor_positioning_env
     equal ~msg:"width method" string "Wcwidth"
       (match caps.unicode_width with
       | `Wcwidth -> "Wcwidth"
+      | `Unicode_wide -> "Unicode_wide"
       | `Unicode -> "Unicode");
   T.close term
 
@@ -725,6 +804,7 @@ let test_set_unicode_width () =
   let caps = T.capabilities term in
   let new_width =
     match caps.unicode_width with
+    | `Unicode_wide -> "Unicode_wide"
     | `Unicode -> "Unicode"
     | `Wcwidth -> "Wcwidth"
   in
@@ -734,6 +814,7 @@ let test_set_unicode_width () =
   let caps = T.capabilities term in
   let final_width =
     match caps.unicode_width with
+    | `Unicode_wide -> "Unicode_wide"
     | `Unicode -> "Unicode"
     | `Wcwidth -> "Wcwidth"
   in
@@ -925,6 +1006,13 @@ let () =
         ];
       group "capabilities"
         [
+          cases "Ghostty width" ghostty_width_cases
+            ~name:(fun (name, _, _, _) -> name)
+            test_ghostty_width;
+          test "Ghostty width stays locked after probe"
+            test_ghostty_width_locked_after_probe;
+          test "Ghostty conflicting identity before probe"
+            test_ghostty_conflicting_identity_before_probe;
           test "normalization" test_capability_normalization;
           test "environment overrides" test_env_overrides;
           test "terminal info env" test_terminal_info_from_env;

@@ -735,6 +735,17 @@ let test_resize_hit_grid_cleared () =
   let hit_after = Screen.query_hit f2 ~x:0 ~y:0 in
   equal ~msg:"hit cleared after resize" int 0 hit_after
 
+let test_wide_grapheme_emission () =
+  let r = Screen.create ~width_method:`Unicode_wide ~explicit_width:true () in
+  let frame =
+    build_screen r ~width:4 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"രിX";
+        equal int 2 (Grid.cell_width grid 0);
+        is_true (Grid.is_continuation grid 1);
+        equal string "X" (Grid.get_text grid 2))
+  in
+  contains ~sub:"\027]66;w=2;രി\027\\" (Screen.render frame)
+
 let test_explicit_width_sequences () =
   (* Test that explicit width OSC sequences are emitted when enabled *)
   let r = Screen.create ~explicit_width:true () in
@@ -1066,6 +1077,7 @@ let () =
             test_render_large_hyperlinked_frame_succeeds;
           test "Resize triggers full redraw" test_resize_full_redraw;
           test "Resize clears hit grids" test_resize_hit_grid_cleared;
+          test "Wide grapheme emission" test_wide_grapheme_emission;
           test "Explicit width sequences" test_explicit_width_sequences;
           test "Hyperlink capability gating" test_hyperlink_capability_gating;
           test "Scroll hint clips to viewport"

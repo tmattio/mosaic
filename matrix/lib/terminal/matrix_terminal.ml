@@ -62,6 +62,7 @@ type t = {
   mutable kitty_keyboard_flags : int;
   mutable modify_other_keys_enabled : bool;
   mutable unicode_mode_enabled : bool;
+  mutable unicode_wide_locked : bool option;
   (* [*_armed] is not a duplicate of [*_enabled]: armed is set {e before} the
      enable sequence is written, enabled only after. When the output callback
      raises mid-enable the sequence may have reached the terminal even though
@@ -157,6 +158,7 @@ let make ~output ?(tty = true) ?initial_caps () =
     kitty_keyboard_flags = 0b00101;
     modify_other_keys_enabled = false;
     unicode_mode_enabled = false;
+    unicode_wide_locked = None;
     mouse_armed = false;
     bracketed_paste_armed = false;
     focus_armed = false;
@@ -189,12 +191,19 @@ let set_terminal_info t info = t.terminal_info <- info
 let pixel_resolution t = t.pixel_resolution
 let set_pixel_resolution t res = t.pixel_resolution <- res
 
+let preserve_width_policy t caps =
+  match t.unicode_wide_locked with
+  | Some true -> { caps with Caps.unicode_width = `Unicode_wide }
+  | Some false when caps.Caps.unicode_width = `Unicode_wide ->
+      { caps with unicode_width = `Unicode }
+  | _ -> caps
+
 let apply_capability_event t (event : Matrix_input.Response.capability) =
   let caps, info =
     Caps.apply_event ~apply_env_overrides:t.env_overrides ~caps:t.caps
       ~info:t.terminal_info event
   in
-  t.caps <- caps;
+  t.caps <- preserve_width_policy t caps;
   t.terminal_info <- info;
   match event with
   | Matrix_input.Response.Pixel_resolution (w, h) ->
@@ -204,12 +213,14 @@ let apply_capability_event t (event : Matrix_input.Response.capability) =
 (* Probing *)
 
 let probe ?(timeout = 0.2) ~now ~on_event ~read_into ~wait_readable ~parser t =
+  if Option.is_none t.unicode_wide_locked then
+    t.unicode_wide_locked <- Some (t.caps.unicode_width = `Unicode_wide);
   let caps, info =
     Caps.probe ~timeout ~apply_env_overrides:t.env_overrides ~now ~on_event
       ~read_into ~wait_readable ~send:(send t) ~parser ~caps:t.caps
       ~info:t.terminal_info ()
   in
-  t.caps <- caps;
+  t.caps <- preserve_width_policy t caps;
   t.terminal_info <- info
 
 (* Mouse mode *)
@@ -304,7 +315,9 @@ let modify_other_keys_enabled t = t.modify_other_keys_enabled
 (* Unicode width *)
 
 let set_unicode_width t width =
-  let enable = match width with `Unicode -> true | `Wcwidth -> false in
+  let enable =
+    match width with `Unicode | `Unicode_wide -> true | `Wcwidth -> false
+  in
   toggle t
     ~current:(fun () -> t.unicode_mode_enabled)
     ~set:(fun v -> t.unicode_mode_enabled <- v)

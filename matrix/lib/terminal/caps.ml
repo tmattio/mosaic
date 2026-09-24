@@ -108,7 +108,80 @@ let colorterm_truecolor value =
   let v = String.lowercase_ascii value in
   String.equal v "truecolor" || String.equal v "24bit"
 
-let apply_environment_overrides caps =
+let env_present name =
+  match Sys.getenv_opt name with Some value -> value <> "" | None -> false
+
+let decimal s =
+  if s <> "" && String.for_all (fun c -> c >= '0' && c <= '9') s then
+    int_of_string_opt s
+  else None
+
+let ghostty_wide_version version =
+  let parts = String.split_on_char '-' version in
+  let release =
+    match parts with
+    | core :: suffix -> (
+        match String.split_on_char '.' core with
+        | [ major; minor; patch ] -> (
+            match (decimal major, decimal minor, decimal patch) with
+            | Some major, Some minor, Some patch ->
+                major > 1
+                || (major = 1 && minor > 3)
+                || major = 1 && minor = 3
+                   && (patch > 0
+                      ||
+                      match suffix with
+                      | [] -> true
+                      | [ commits; revision ] ->
+                          Option.is_some (decimal commits)
+                          && String.length revision > 1
+                          && revision.[0] = 'g'
+                          && String.for_all
+                               (function
+                                 | '0' .. '9' | 'a' .. 'f' | 'A' .. 'F' -> true
+                                 | _ -> false)
+                               (String.sub revision 1
+                                  (String.length revision - 1))
+                      | _ -> false)
+            | _ -> false)
+        | _ -> false)
+    | [] -> false
+  in
+  release
+  || String.starts_with ~prefix:"0.0.0-" version
+     && String.length version > 14
+     && version.[14] = '.'
+     &&
+     match decimal (String.sub version 6 8) with
+     | Some date -> date >= 20260224
+     | None -> false
+
+let direct_ghostty_wide term =
+  let lower = String.lowercase_ascii term in
+  (not Sys.win32)
+  && (not
+        (List.exists env_present
+           [
+             "SSH_CONNECTION"; "SSH_CLIENT"; "SSH_TTY"; "TMUX"; "STY"; "ZELLIJ";
+           ]))
+  && (not
+        (List.exists
+           (fun prefix -> String.starts_with ~prefix lower)
+           [ "tmux"; "screen"; "zellij" ]))
+  &&
+  match
+    (Sys.getenv_opt "TERM_PROGRAM", Sys.getenv_opt "TERM_PROGRAM_VERSION")
+  with
+  | Some name, Some version ->
+      String.lowercase_ascii name = "ghostty" && ghostty_wide_version version
+  | _ -> false
+
+let apply_environment_overrides ?info caps =
+  let caps =
+    if caps.unicode_width = `Unicode_wide then
+      { caps with unicode_width = `Unicode }
+    else caps
+  in
   (* On Windows, assume modern terminal capabilities (Windows Terminal, ConPTY,
      etc.) *)
   let caps =
@@ -179,6 +252,17 @@ let apply_environment_overrides caps =
           { caps with rgb = true; hyperlinks = true }
         else caps)
       caps
+  in
+  let caps =
+    if
+      direct_ghostty_wide caps.term
+      && Option.fold ~none:true
+           ~some:(fun info ->
+             (not info.from_xtversion)
+             || String.lowercase_ascii info.name = "ghostty")
+           info
+    then { caps with unicode_width = `Unicode_wide }
+    else caps
   in
   let caps =
     with_env_bool "TERMUX_VERSION"
@@ -415,14 +499,14 @@ let apply_event_internal (caps, info) (event : Input.Response.capability) =
 let apply_event ?(apply_env_overrides = false) ~caps ~info event =
   let caps, info = apply_event_internal (caps, info) event in
   let caps =
-    if apply_env_overrides then apply_environment_overrides caps else caps
+    if apply_env_overrides then apply_environment_overrides ~info caps else caps
   in
   (caps, info)
 
 let apply_events ?(apply_env_overrides = false) ~caps ~info events =
   let caps, info = List.fold_left apply_event_internal (caps, info) events in
   let caps =
-    if apply_env_overrides then apply_environment_overrides caps else caps
+    if apply_env_overrides then apply_environment_overrides ~info caps else caps
   in
   (caps, info)
 
@@ -443,9 +527,6 @@ let cursor_position_request = Ansi.(to_string (query Cursor_position))
 let kitty_graphics_query = Ansi.(to_string (query Kitty_graphics))
 let primary_device_attrs = Ansi.(to_string (query Device_attributes))
 let iterm2_proprietary_query = "\027]1337;ReportCellSize\007"
-
-let env_present name =
-  match Sys.getenv_opt name with Some value -> value <> "" | None -> false
 
 let is_tmux ~term =
   env_present "TMUX"
@@ -604,7 +685,8 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
                     | Input.Response.Device_attributes _ -> found_da := true
                     | _ -> ()));
             let caps =
-              if apply_env_overrides then apply_environment_overrides !caps_ref
+              if apply_env_overrides then
+                apply_environment_overrides ~info:!info_ref !caps_ref
               else !caps_ref
             in
             let info = !info_ref in
@@ -630,7 +712,8 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
             info_ref := info';
             maybe_send_tmux_pending info');
     let caps =
-      if apply_env_overrides then apply_environment_overrides !caps_ref
+      if apply_env_overrides then
+        apply_environment_overrides ~info:!info_ref !caps_ref
       else !caps_ref
     in
     (caps, !info_ref)

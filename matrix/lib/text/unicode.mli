@@ -39,3 +39,7 @@ val packed_props : Uchar.t -> int
 val grapheme_props : Uchar.t -> int
 (** [grapheme_props u] is all grapheme properties in a single lookup. Bit
     layout: bits 0–4 = gcb, bits 5–6 = incb, bit 7 = extpic. *)
+
+val is_zero_in_grapheme : Uchar.t -> bool
+(** [is_zero_in_grapheme u] is [true] when [u] contributes no additional width
+    inside a cluster under the wider grapheme policy. *)

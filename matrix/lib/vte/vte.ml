@@ -580,7 +580,8 @@ let put_text t text =
       end
     in
     (match width_method with
-    | `Unicode -> Text.iter_grapheme_info ~width_method ~tab_width:2 emit text
+    | `Unicode | `Unicode_wide ->
+        Text.iter_grapheme_info ~width_method ~tab_width:2 emit text
     | `Wcwidth when t.insert_mode ->
         Text.iter_grapheme_info ~width_method ~tab_width:2 emit text
     | `Wcwidth ->

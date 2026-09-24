@@ -556,8 +556,8 @@ let apply_config t =
   Terminal.enable_modify_other_keys terminal
     (not (Terminal.kitty_keyboard_enabled terminal));
   Terminal.set_unicode_width terminal
-    (if caps.unicode_width = `Unicode && not t.config.explicit_width then
-       `Unicode
+    (if caps.unicode_width <> `Wcwidth && not t.config.explicit_width then
+       caps.unicode_width
      else `Wcwidth);
   refresh_render_region t
 

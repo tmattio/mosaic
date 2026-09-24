@@ -79,7 +79,7 @@ let build_lines t =
   in
   aux [] t.sections
 
-let layout t =
+let layout t ~width_method =
   match build_lines t with
   | [] -> None
   | lines ->
@@ -92,8 +92,7 @@ let layout t =
                 (* Use Matrix_text.measure for correct Unicode width
                    calculation *)
                 let w =
-                  Matrix_text.measure ~width_method:`Unicode ~tab_width:2
-                    line.text
+                  Matrix_text.measure ~width_method ~tab_width:2 line.text
                 in
                 max acc w)
           0 lines
@@ -127,7 +126,7 @@ let draw_layout t grid { lines; width; height } ~x ~y =
     lines
 
 let render ?corner ?(offset = (0, 0)) t grid =
-  match layout t with
+  match layout t ~width_method:(Grid.width_method grid) with
   | None -> ()
   | Some l -> (
       let dx, dy = offset in

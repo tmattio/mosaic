@@ -14,7 +14,7 @@
 
    Layout per 16-bit entry: - bits 0-4: grapheme_cluster_break (0-17) - bits
    5-6: indic_conjunct_break (0-3) - bit 7: extended_pictographic (boolean) -
-   bits 8-9: width (encoded: 0=-1, 1=0, 2=1, 3=2)
+   bits 8-9: width (encoded: 0=-1, 1=0, 2=1, 3=2) - bit 10: zero width inside a grapheme
 
    Surrogates (U+D800-U+DFFF) are excluded from the table.
 
@@ -99,6 +99,16 @@ let terminal_wide_symbol_override cp =
   || (cp >= 0x1FAE0 && cp <= 0x1FAE7)
   || (cp >= 0x1FAF0 && cp <= 0x1FAF8)
 
+(* Matches uucode's wcwidth_zero_in_grapheme property used by OpenTUI. *)
+let zero_in_grapheme u gcb =
+  let cp = Uchar.to_int u in
+  (match Uucp.Gc.general_category u with
+    | `Cc | `Cs | `Zl | `Zp | `Mn | `Me -> true
+    | _ -> false)
+  || (cp <> 0x00AD && Uucp.Gen.is_default_ignorable u)
+  || Uucp.Emoji.is_emoji_modifier u
+  || gcb = 15 || gcb = 14 || gcb = 11
+
 let compute_prop_table () =
   let buf = Bytes.create (unicode_packed_size * 2) in
   for packed = 0 to unicode_packed_size - 1 do
@@ -117,6 +127,7 @@ let compute_prop_table () =
       lor ((incb land 0x03) lsl 5)
       lor (if extpic then 0x80 else 0)
       lor ((width_enc land 0x03) lsl 8)
+      lor if zero_in_grapheme u gcb then 0x400 else 0
     in
     Bytes.set_uint16_le buf (packed * 2) v
   done;
