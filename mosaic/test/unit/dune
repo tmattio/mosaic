@@ -89,7 +89,7 @@
  (name test_edit_buffer)
  (modules test_edit_buffer)
  (package mosaic)
- (libraries windtrap mosaic.ui matrix.text))
+ (libraries windtrap mosaic.ui matrix matrix.text))
 
 (test
  (name test_text_input)
@@ -260,3 +260,9 @@
  (modules test_diff)
  (package mosaic)
  (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi))
+
+(test
+ (name test_editor)
+ (modules test_editor)
+ (package mosaic)
+ (libraries windtrap mosaic.ui matrix matrix.text))

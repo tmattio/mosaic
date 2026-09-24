@@ -117,15 +117,19 @@ val select_all : t -> unit
 
 (** {1:editing Editing} *)
 
+val clear : t -> bool
+(** [clear t] deletes all text, saving an undo point if nonempty. *)
+
 val insert : t -> string -> bool
 (** [insert t s] is [true] iff inserting [s] changed the text of [t].
 
-    If a selection is active it is deleted first. Then [s] is inserted at the
-    cursor position. The result is resegmented, allowing combining characters to
-    join adjacent clusters even at {!max_length} [t]. If the full insertion
-    exceeds the limit, only an insertion prefix fitting the available grapheme
-    capacity is admitted; existing unselected text is preserved. An undo point
-    is saved before any modification. *)
+    [s] replaces the active selection or is inserted at the cursor. If the
+    resulting text is unchanged, the caret, selection and history are preserved.
+    The result is resegmented, allowing combining characters to join adjacent
+    clusters even at {!max_length} [t]. If the full insertion exceeds the limit,
+    only an insertion prefix fitting the available grapheme capacity is
+    admitted; existing unselected text is preserved. An undo point is saved
+    before any modification. *)
 
 val delete_backward : t -> bool
 (** [delete_backward t] is [true] iff a deletion changed the text of [t].
@@ -301,3 +305,11 @@ val caret : t -> Matrix.Text.Layout.caret
 val set_caret : ?select:bool -> t -> Matrix.Text.Layout.caret -> unit
 (** [set_caret t caret] sets the clamped cursor and its affinity. [select],
     default [false], extends selection as in {!set_cursor_offset}. *)
+
+val copy : t -> t
+(** [copy t] is an independent buffer sharing immutable text, source indexes and
+    history with [t]. Its cost is independent of the text length. *)
+
+val same : t -> t -> bool
+(** [same a b] tests whether copies retain the same content, interaction state
+    and history. *)

@@ -29,3 +29,5 @@ module Code = Code
 module Line_number = Line_number
 module Diff = Diff
 module Vnode = Vnode
+module Editor = Editor
+module Scroll = Scroll

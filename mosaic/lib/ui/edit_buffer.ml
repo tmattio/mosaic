@@ -84,6 +84,18 @@ let create ?(max_length = 1000) ?(width_method = `Unicode) ?(tab_width = 2)
     width_method;
   }
 
+(* Copies share immutable content, source indexes and history entries. *)
+let copy t = { t with content = t.content }
+
+let same a b =
+  a.content == b.content
+  && a.cursor_pos = b.cursor_pos
+  && a.affinity = b.affinity
+  && a.selection_anchor = b.selection_anchor
+  && a.max_length = b.max_length
+  && a.undo_stack == b.undo_stack
+  && a.redo_stack == b.redo_stack
+
 (* ───── Content ───── *)
 
 let text t = t.content
@@ -265,6 +277,14 @@ let delete_selection t =
       save_undo t;
       delete_grapheme_range t lo hi;
       true
+
+let clear t =
+  if is_empty t then false
+  else begin
+    save_undo t;
+    delete_grapheme_range t 0 (length t);
+    true
+  end
 
 (* ───── Max length ───── *)
 

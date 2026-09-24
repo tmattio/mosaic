@@ -112,3 +112,9 @@ module Diff = Diff
 
 module Vnode = Vnode
 (** Virtual node tree for declarative UI descriptions. *)
+
+module Editor = Editor
+(** Persistent text, caret, selection, and undo state. *)
+
+module Scroll = Scroll
+(** Persistent viewport positions and symbolic follow/reveal targets. *)

@@ -248,6 +248,21 @@ let insert_empty_no_selection_returns_false () =
   let changed = Edit_buffer.insert buf "" in
   is_false ~msg:"not changed" changed
 
+let insert_same_selected_text_is_noop () =
+  let buf = Edit_buffer.create "a" in
+  is_true (Edit_buffer.insert buf "b");
+  is_true (Edit_buffer.undo buf);
+  Edit_buffer.select_all buf;
+  let source = Edit_buffer.source buf in
+  is_false (Edit_buffer.insert buf "a");
+  equal string "a" (Edit_buffer.text buf);
+  equal int 1 (Edit_buffer.cursor buf);
+  equal (option (pair int int)) (Some (0, 1)) (Edit_buffer.selection buf);
+  is_true (Edit_buffer.source buf == source);
+  is_false ~msg:"no undo point added" (Edit_buffer.undo buf);
+  is_true ~msg:"redo history preserved" (Edit_buffer.redo buf);
+  equal string "ab" (Edit_buffer.text buf)
+
 let insert_replaces_selection () =
   let buf = Edit_buffer.create "hello world" in
   Edit_buffer.select_all buf;
@@ -1198,24 +1213,25 @@ let gen_insert =
 (* Offsets are drawn beyond the text so the clamping contract is exercised. *)
 let gen_offset = Gen.int_range (-2) 12
 
+let inserted_model m s =
+  let first, last =
+    match model_selection m with
+    | Some range -> range
+    | None -> (m.cursor, m.cursor)
+  in
+  let text =
+    String.sub m.text 0 first ^ s
+    ^ String.sub m.text last (String.length m.text - last)
+  in
+  if text = m.text then m
+  else
+    { (push_undo m) with text; cursor = first + String.length s; anchor = None }
+
 let commands =
   [
-    command "insert" gen_insert
-      ~next:(fun m s ->
-        let m =
-          match delete_selection m with Some m -> m | None -> push_undo m
-        in
-        {
-          m with
-          text =
-            String.sub m.text 0 m.cursor
-            ^ s
-            ^ String.sub m.text m.cursor (String.length m.text - m.cursor);
-          cursor = m.cursor + String.length s;
-          anchor = None;
-        })
-      (fun _ s buf ->
-        is_true ~msg:"insert of a non-empty string changes the text"
+    command "insert" gen_insert ~next:inserted_model (fun m s buf ->
+        equal ~msg:"insert reports whether the text changed" bool
+          ((inserted_model m s).text <> m.text)
           (Edit_buffer.insert buf s));
     call "delete_backward"
       ~next:(fun m ->
@@ -1442,6 +1458,8 @@ let () =
           test "insert empty no selection returns false"
             insert_empty_no_selection_returns_false;
           test "insert replaces selection" insert_replaces_selection;
+          test "same selected text preserves state and history"
+            insert_same_selected_text_is_noop;
           test "insert preserves newlines" insert_preserves_newlines;
           test "insert enforces max_length" insert_enforces_max_length;
           test "insert full buffer no room" insert_full_buffer_no_room;
