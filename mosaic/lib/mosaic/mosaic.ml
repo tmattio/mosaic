@@ -265,15 +265,9 @@ module Sub = struct
   let on_keys bindings =
     On_key
       (fun ev ->
-        let rec loop : (Shortcut.t * 'msg) list -> 'msg option = function
-          | [] -> None
-          | (shortcut, msg) :: rest ->
-              if Shortcut.matches shortcut ev then (
-                Event.Key.prevent_default ev;
-                Some msg)
-              else loop rest
-        in
-        loop bindings)
+        let message = Shortcut.Private.find bindings ev in
+        if Option.is_some message then Event.Key.prevent_default ev;
+        message)
 
   let on_key_all f = On_key_all f
   let on_mouse f = On_mouse f

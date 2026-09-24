@@ -81,30 +81,63 @@ let space = char ' '
 let equal a b = a.modifiers = b.modifiers && Key.equal a.key b.key
 let lowercase code = if code >= 65 && code <= 90 then code + 32 else code
 
+let resolve ~find_char ~find_key bindings (ev : Key.event) =
+  if ev.event_type = Key.Release then None
+  else
+    let modifier = modifiers ev.modifier in
+    let direct =
+      match normalize_key ev.key with
+      | Key.Char code -> (
+          let code = Uchar.to_int code in
+          match find_char bindings modifier code with
+          | Some _ as found -> found
+          | None ->
+              let lower = lowercase code in
+              if lower = code then None else find_char bindings modifier lower)
+      | key -> find_key bindings modifier key
+    in
+    match direct with
+    | Some _ -> direct
+    | None -> (
+        match ev.base_key with
+        | None -> None
+        | Some base ->
+            find_char bindings modifier (lowercase (Uchar.to_int base)))
+
+let matches_char t modifier code =
+  t.modifiers = modifier
+  && match t.key with Key.Char c -> Uchar.to_int c = code | _ -> false
+
+let matches_key t modifier key = t.modifiers = modifier && Key.equal t.key key
+
+let find_char t modifier code =
+  if matches_char t modifier code then Some () else None
+
+let find_key t modifier key =
+  if matches_key t modifier key then Some () else None
+
 let matches t event =
-  let ev = Event.Key.data event in
-  ev.event_type <> Key.Release
-  && t.modifiers = modifiers ev.modifier
-  &&
-  let key = normalize_key ev.key in
-  Key.equal t.key key
-  ||
-  match t.key with
-  | Key.Char wanted -> (
-      let wanted = Uchar.to_int wanted in
-      (match key with
-        | Key.Char actual -> wanted = lowercase (Uchar.to_int actual)
-        | _ -> false)
-      ||
-      match ev.base_key with
-      | None -> false
-      | Some base -> wanted = lowercase (Uchar.to_int base))
-  | _ -> false
+  Option.is_some (resolve ~find_char ~find_key t (Event.Key.data event))
+
+let rec find_last matches modifier key found = function
+  | [] -> ( match found with [] -> None | (_, value) :: _ -> Some value)
+  | (shortcut, _) :: rest as bindings ->
+      let found = if matches shortcut modifier key then bindings else found in
+      find_last matches modifier key found rest
+
+let find_list_char bindings modifier code =
+  find_last matches_char modifier code [] bindings
+
+let find_list_key bindings modifier key =
+  find_last matches_key modifier key [] bindings
+
+let find bindings event =
+  resolve ~find_char:find_list_char ~find_key:find_list_key bindings
+    (Event.Key.data event)
 
 module Private = struct
+  let resolve = resolve
+  let find = find
   let key t = t.key
   let modifier t = t.modifiers
-  let modifiers = modifiers
-  let normalize_key = normalize_key
-  let lowercase = lowercase
 end

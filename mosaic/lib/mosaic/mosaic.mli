@@ -943,9 +943,11 @@ module Sub : sig
       stops subsequent handlers. *)
 
   val on_keys : (Shortcut.t * 'msg) list -> 'msg t
-  (** [on_keys bindings] delivers key events to the first matching shortcut in
-      [bindings], dispatching its message. Key release events are ignored. See
-      {!Shortcut} for shortcut matching semantics. *)
+  (** [on_keys bindings] dispatches the message bound to the event and prevents
+      its default action. Later equivalent shortcuts override earlier ones.
+      Resolution prefers the direct key, then its lowercase ASCII form, then the
+      base-layout key, as widget bindings do. Key releases are ignored. See
+      {!Shortcut} for modifier and keypad matching. *)
 
   val on_key_all : (Event.key -> 'msg option) -> 'msg t
   (** [on_key_all f] is like {!val-on_key} but delivers all key events

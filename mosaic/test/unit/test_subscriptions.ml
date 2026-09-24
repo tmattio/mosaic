@@ -17,7 +17,7 @@ type model = {
   tick_count : int;
 }
 
-type msg = Tick of float | Every_fired | Quit | Submit
+type msg = Tick of float | Every_fired | Quit
 
 let update msg m =
   match msg with
@@ -36,7 +36,7 @@ let update msg m =
         else { m with elapsed_time = elapsed; tick_count = m.tick_count + 1 }
       else m
   | Every_fired -> { m with tick_count = m.tick_count + 1 }
-  | Quit | Submit -> m
+  | Quit -> m
 
 (* ── Subscription collectors ── *)
 
@@ -170,19 +170,70 @@ let shortcut_alt_matches_matrix_alt_meta () =
   is_true ~msg:"Alt also requires Matrix meta"
     (Shortcut.matches (Shortcut.alt 'x') ev)
 
-let sub_on_keys_uses_first_matching_binding () =
-  let sub =
-    Sub.on_keys [ (Shortcut.char 'q', Quit); (Shortcut.char 'q', Submit) ]
+let sub_on_keys_resolution () =
+  let resolve bindings event =
+    match Sub.on_keys bindings with
+    | Sub.On_key f -> f event
+    | _ -> fail "expected On_key"
   in
-  match sub with
-  | Sub.On_key f -> (
-      match f (char 'q') with
-      | Some Quit -> ()
-      | Some Submit -> fail "expected Quit, got Submit"
-      | Some (Tick dt) -> failf "expected Quit, got Tick %f" dt
-      | Some Every_fired -> fail "expected Quit, got Every_fired"
-      | None -> fail "expected Quit")
-  | _ -> fail "expected On_key"
+  let check message expected bindings event =
+    equal ~msg:message (option int) expected (resolve bindings event);
+    equal ~msg:"only bound events prevent defaults" bool
+      (Option.is_some expected)
+      (Event.Key.default_prevented event)
+  in
+  check "later equivalent bindings override earlier ones" (Some 2)
+    [ (Shortcut.char 'q', 1); (Shortcut.char 'q', 2) ]
+    (char 'q');
+  check "keypad equivalents override earlier ones" (Some 2)
+    [ (Shortcut.enter, 1); (Shortcut.key Input.Key.KP_enter, 2) ]
+    (key Input.Key.Enter);
+  check "exact uppercase precedes lowercase regardless of order" (Some 1)
+    [ (Shortcut.char 'Q', 1); (Shortcut.char 'q', 2) ]
+    (char 'Q');
+  check "direct character precedes base layout regardless of order" (Some 1)
+    [ (Shortcut.char 'x', 1); (Shortcut.char 'q', 2) ]
+    (char ~base_key:(Uchar.of_char 'q') 'x');
+  check "normalized direct character precedes base layout" (Some 1)
+    [ (Shortcut.char 'x', 1); (Shortcut.char 'q', 2) ]
+    (char ~base_key:(Uchar.of_char 'q') 'X');
+  check "base-layout fallback remains available" (Some 2)
+    [ (Shortcut.char 'q', 1); (Shortcut.char 'q', 2) ]
+    (char ~base_key:(Uchar.of_char 'Q') 'x');
+  check "release never resolves" None
+    [ (Shortcut.char 'q', 1) ]
+    (char ~event_type:Input.Key.Release 'q');
+  check "unbound modifiers remain available" None
+    [ (Shortcut.char 'q', 1) ]
+    (char ~modifier:{ Input.Modifier.none with ctrl = true } 'q')
+
+let sub_on_keys_does_not_compile_or_allocate_per_override () =
+  let shortcut = Shortcut.char 'q' in
+  let bindings = List.init 128 (fun value -> (shortcut, value)) in
+  let before = Gc.allocated_bytes () in
+  let sub = Sys.opaque_identity (Sub.on_keys bindings) in
+  let constructed = Gc.allocated_bytes () -. before in
+  is_true ~msg:"model updates do not compile a binding table"
+    (constructed < 1024.);
+  let measure bindings =
+    let dispatch =
+      match Sub.on_keys bindings with
+      | Sub.On_key f -> f
+      | _ -> fail "expected key subscription"
+    in
+    let event = char 'q' in
+    let before = Gc.allocated_bytes () in
+    for i = 1 to 10000 do
+      ignore i;
+      ignore (Sys.opaque_identity (dispatch event))
+    done;
+    Gc.allocated_bytes () -. before
+  in
+  ignore sub;
+  let single = measure [ (shortcut, 127) ] in
+  let layered = measure bindings in
+  is_true ~msg:"overrides do not add allocation to event dispatch"
+    (layered <= single +. 1024.)
 
 let cmd_copy_to_clipboard_maps_without_changing_payload () =
   match Cmd.map (fun msg -> msg) (Cmd.copy_to_clipboard "hello") with
@@ -257,7 +308,9 @@ let () =
         shortcut_matches_legacy_shift_char;
       test "Shortcut Alt matches Matrix Alt/Meta"
         shortcut_alt_matches_matrix_alt_meta;
-      test "Sub.on_keys first match" sub_on_keys_uses_first_matching_binding;
+      test "Sub.on_keys binding resolution" sub_on_keys_resolution;
+      test "Sub.on_keys allocation across overrides"
+        sub_on_keys_does_not_compile_or_allocate_per_override;
       test "Cmd.copy_to_clipboard maps without changing payload"
         cmd_copy_to_clipboard_maps_without_changing_payload;
       test "Cmd.clear_selection maps to itself"

@@ -88,9 +88,14 @@ val matches : t -> Event.key -> bool
 (**/**)
 
 module Private : sig
+  val resolve :
+    find_char:('a -> int -> int -> 'b option) ->
+    find_key:('a -> int -> Matrix_input.Key.t -> 'b option) ->
+    'a ->
+    Matrix_input.Key.event ->
+    'b option
+
+  val find : (t * 'a) list -> Event.key -> 'a option
   val key : t -> Matrix_input.Key.t
   val modifier : t -> int
-  val modifiers : Matrix_input.Modifier.t -> int
-  val normalize_key : Matrix_input.Key.t -> Matrix_input.Key.t
-  val lowercase : int -> int
 end

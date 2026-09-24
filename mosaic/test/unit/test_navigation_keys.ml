@@ -3,7 +3,7 @@ open Mosaic_ui
 module Key = Matrix_input.Key
 module Modifier = Matrix_input.Modifier
 
-type bindings = Default | Override | Replace
+type bindings = Default | Override | Replace | Precedence
 
 let bindings mode ~key ~forward ~backward =
   match mode with
@@ -13,6 +13,13 @@ let bindings mode ~key ~forward ~backward =
         (Mosaic.Shortcut.key key, backward); (Mosaic.Shortcut.char 'n', forward);
       ]
   | Replace -> [ (Mosaic.Shortcut.char 'n', backward) ]
+  | Precedence ->
+      [
+        (Shortcut.char 'q', backward);
+        (Shortcut.char 'Q', backward);
+        (Shortcut.char 'q', forward);
+        (Shortcut.char 'x', backward);
+      ]
 
 let on_key prevent event =
   if prevent then Event.Key.prevent_default event;
@@ -160,6 +167,33 @@ let custom_binding_lifecycle build forward ~mlx =
   equal ~msg:"default navigation remains after removal" (list string)
     [ "change:C" ] (take ())
 
+let subscriptions_and_widgets_agree build ~mlx =
+  let render, send, take = fixture build ~mlx in
+  render ~mode:Precedence ();
+  let bindings =
+    bindings Precedence ~key:Key.Down ~forward:"change:C" ~backward:"change:A"
+  in
+  let dispatch =
+    match Mosaic.Sub.on_keys bindings with
+    | Mosaic.Sub.On_key f -> f
+    | _ -> fail "expected key subscription"
+  in
+  List.iter
+    (fun (key, base_key, event_type) ->
+      let data = Key.make ?base_key ~event_type key in
+      let expected = dispatch (Event.Key.of_input data) in
+      send ?base_key ~event_type key;
+      equal ~msg:"subscription and compiled widget resolve the same binding"
+        (list string) (Option.to_list expected) (take ()))
+    [
+      (Key.Char (Uchar.of_char 'q'), None, Press);
+      (Key.Char (Uchar.of_char 'Q'), None, Repeat);
+      (Key.Char (Uchar.of_char 'x'), Some (Uchar.of_char 'q'), Press);
+      (Key.Char (Uchar.of_char 'X'), Some (Uchar.of_char 'q'), Press);
+      (Key.Char (Uchar.of_int 0x0441), Some (Uchar.of_char 'Q'), Press);
+      (Key.Char (Uchar.of_char 'q'), None, Release);
+    ]
+
 let () =
   run "mosaic.navigation-keys"
     (List.concat_map
@@ -174,6 +208,8 @@ let () =
                      exact_matching_and_accepted_state build forward keypad ~mlx);
                  test "custom binding lifecycle" (fun () ->
                      custom_binding_lifecycle build forward ~mlx);
+                 test "subscription and widget resolution agree" (fun () ->
+                     subscriptions_and_widgets_agree build ~mlx);
                ])
            [ false; true ])
        widgets)

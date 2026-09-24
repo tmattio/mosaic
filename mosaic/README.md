@@ -268,6 +268,7 @@ ISC. See [LICENSE](../LICENSE).
 Widgets and subscriptions share `Shortcut.t`. Editor and selection-widget
 `key_bindings` pair a typed shortcut with a widget action; custom entries
 replace defaults for the same shortcut, with the last entry taking precedence.
+`Sub.on_keys` uses the same precedence: compose bindings as `defaults @ overrides`.
 For example:
 
 ```ocaml
