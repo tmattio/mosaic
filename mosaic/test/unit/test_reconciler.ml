@@ -902,9 +902,50 @@ let removed_memo_releases_view () =
     (Weak.check weak 0);
   equal ~msg:"removed subtree" int 0 (child_count renderer)
 
+let plain_rich_transitions_reuse_text_and_select_wrapped_content () =
+  let renderer, reconciler = make () in
+  let style =
+    Toffee.Style.default
+    |> Toffee.Style.set_width (Toffee.Style.Dimension.length 3.)
+  in
+  render_view reconciler (Vnode.text ~key:"text" ~style "before");
+  do_frame renderer;
+  let node = List.hd (children_of renderer) in
+  let fragments = Mosaic_ui.Text.Fragment.[ text "ab"; bold [ text "cdef" ] ] in
+  render_view reconciler
+    (Vnode.rich_text ~key:"text" ~style ~wrap:`Char
+       ~text_style:(Ansi.Style.make ~fg:Ansi.Color.red ())
+       fragments);
+  do_frame renderer;
+  is_true ~msg:"plain to rich retains native node"
+    (node == List.hd (children_of renderer));
+  let info = Option.get (Renderable.line_info node) in
+  equal ~msg:"wrapping crosses style boundaries" int 2 info.display_line_count;
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
+  is_true ~msg:"nested style rendered"
+    (Ansi.Attr.mem Ansi.Attr.Bold (Matrix_grid.get_style grid 2).attrs);
+  let x = Renderable.x node and y = Renderable.y node in
+  let selection =
+    Selection.create ~anchor:{ x; y } ~focus:{ x = x + 2; y = y + 1 } ()
+  in
+  ignore (Renderable.Private.emit_selection_changed node (Some selection));
+  equal ~msg:"selection crosses wrapping and fragment boundaries" string
+    "abcdef"
+    (Renderable.Private.get_selected_text node);
+  render_view reconciler (Vnode.text ~key:"text" ~style "after");
+  do_frame renderer;
+  is_true ~msg:"rich to plain retains native node"
+    (node == List.hd (children_of renderer));
+  equal ~msg:"plain content displayed" string "a"
+    (Matrix_grid.get_text
+       (Matrix_screen.next_grid (Renderer.screen renderer))
+       0)
+
 let () =
   run "mosaic.reconciler"
     [
+      test "plain/rich transitions reuse text and select wrapped content"
+        plain_rich_transitions_reuse_text_and_select_wrapped_content;
       group "Focus"
         [
           test "duplicate visible focus is rejected"

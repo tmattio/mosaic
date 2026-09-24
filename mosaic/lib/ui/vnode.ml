@@ -227,6 +227,43 @@ let text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   Element
     { kind; key; attrs; handlers; callbacks = No_callbacks; children = [] }
 
+let rich_text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
+    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
+    ?on_click ?on_focus_request ?on_size ?text_style ?wrap ?selectable
+    ?selection_bg ?selection_fg ?tab_width ?truncate content =
+  let kind =
+    Text
+      (Text.Props.make_rich ?text_style ?wrap ?selectable ?selection_bg
+         ?selection_fg ?tab_width ?truncate content)
+  in
+  let attrs =
+    {
+      id;
+      style;
+      visible;
+      z_index;
+      opacity;
+      focusable = focusable || Option.is_some on_focus_request;
+      focused;
+      buffered;
+      live;
+      ref;
+    }
+  in
+  let handlers =
+    {
+      on_mouse;
+      on_key;
+      on_paste;
+      on_click;
+      on_size;
+      on_focus_request = Option.map (fun message () -> message) on_focus_request;
+    }
+  in
+  Element
+    { kind; key; attrs; handlers; callbacks = No_callbacks; children = [] }
+
 let slider ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
     ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste

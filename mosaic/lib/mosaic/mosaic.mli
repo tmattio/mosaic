@@ -600,6 +600,14 @@ module Scroll_bar : sig
       same defaults as {!Mosaic_ui.Scroll_bar.style}. *)
 end
 
+(** Structured content for {!val-rich_text}. *)
+module Text : sig
+  type fragment = Mosaic_ui.Text.fragment
+  (** An immutable text fragment with optional nested styles. *)
+
+  module Fragment = Mosaic_ui.Text.Fragment
+end
+
 (** Companion types for the {!val-text} and {!val-code} widgets. *)
 module Text_surface : sig
   type wrap = Mosaic_ui.Text_surface.wrap
@@ -1437,6 +1445,72 @@ val text :
   'msg t
 (** [text content] is a text element. Widget-specific visual options follow
     {!Mosaic_ui.Text}; layout and paint use the labelled arguments above. *)
+
+val rich_text :
+  ?key:string ->
+  ?display:Display.t ->
+  ?box_sizing:Box_sizing.t ->
+  ?position:Position.t ->
+  ?overflow:Overflow.t point ->
+  ?scrollbar_width:float ->
+  ?text_align:Text_align.t ->
+  ?inset:length_percentage_auto rect ->
+  ?flex_direction:Flex_direction.t ->
+  ?flex_wrap:Flex_wrap.t ->
+  ?justify_content:Justify.t ->
+  ?align_items:Align.t ->
+  ?size:dimension size ->
+  ?min_size:dimension size ->
+  ?max_size:dimension size ->
+  ?aspect_ratio:float ->
+  ?gap:length_percentage size ->
+  ?padding:length_percentage rect ->
+  ?margin:length_percentage_auto rect ->
+  ?border_width:length_percentage rect ->
+  ?align_self:Align.t ->
+  ?align_content:Justify.t ->
+  ?justify_items:Align.t ->
+  ?justify_self:Align.t ->
+  ?flex_grow:float ->
+  ?flex_shrink:float ->
+  ?flex_basis:dimension ->
+  ?grid_template_rows:Grid.template list ->
+  ?grid_template_columns:Grid.template list ->
+  ?grid_auto_rows:Grid.track list ->
+  ?grid_auto_columns:Grid.track list ->
+  ?grid_auto_flow:Grid_auto_flow.t ->
+  ?grid_template_areas:Grid.area list ->
+  ?grid_template_column_names:string list list ->
+  ?grid_template_row_names:string list list ->
+  ?grid_row:Grid.placement line ->
+  ?grid_column:Grid.placement line ->
+  ?style:Ansi.Style.t ->
+  ?visible:bool ->
+  ?z_index:int ->
+  ?opacity:float ->
+  ?buffered:bool ->
+  ?live:bool ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?focused:bool ->
+  ?text_style:Ansi.Style.t ->
+  ?wrap:Text_surface.wrap ->
+  ?selectable:bool ->
+  ?selection_bg:Ansi.Color.t ->
+  ?selection_fg:Ansi.Color.t ->
+  ?tab_width:int ->
+  ?truncate:bool ->
+  Text.fragment list ->
+  'msg t
+(** [rich_text fragments] renders structured text as one selectable text widget.
+    Fragment styles inherit from [text_style]; nested colours override inherited
+    colours. Wrapping and selection cross fragment boundaries. All labelled
+    options have the same meaning as {!text}. Switching between {!text} and
+    [rich_text] retains the text widget. *)
 
 val slider :
   ?key:string ->

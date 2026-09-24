@@ -558,11 +558,34 @@ let empty_spans_do_not_prevent_adjacent_normalization () =
 
 (* ── Runner ── *)
 
+let rich_props_keep_geometry_and_accept_plain_transitions () =
+  let _, txt = make_text () in
+  let fragments = Text.Fragment.[ text "ab"; bold [ text "cd" ] ] in
+  let props = Text.Props.make_rich ~wrap:`Char fragments in
+  Text.apply_props txt props;
+  equal string "abcd" (Text.plain_text txt);
+  let geometry = Text_surface.layout (Text.surface txt) in
+  Text.apply_props txt
+    (Text.Props.make_rich ~wrap:`Char ~text_style:red_style fragments);
+  is_true ~msg:"rich style-only props retain geometry"
+    (geometry == Text_surface.layout (Text.surface txt));
+  let painted = fst (Text_buffer.style_at (Text.buffer txt) 2) in
+  is_true ~msg:"nested bold survives base style update"
+    (Ansi.Attr.mem Ansi.Attr.Bold painted.attrs);
+  is_true ~msg:"nested foreground inherits new base"
+    (Option.equal Ansi.Color.equal painted.fg red_style.fg);
+  Text.apply_props txt (Text.Props.make ~content:"plain" ());
+  equal string "plain" (Text.plain_text txt);
+  Text.apply_props txt (Text.Props.make_rich []);
+  equal string "" (Text.plain_text txt)
+
 let () =
   run "mosaic.text"
     [
       group "Content ownership"
         [
+          test "rich props retain geometry and accept plain transitions"
+            rich_props_keep_geometry_and_accept_plain_transitions;
           test "content observers agree" content_observers_agree;
           test "fragment style changes repaint inherited components"
             fragment_style_changes_repaint_inherited_components;

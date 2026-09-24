@@ -14,6 +14,8 @@ type content =
 let plain_content text = if text = "" then Plain "" else Plain text
 
 let rec fragments_equal a b =
+  a == b
+  ||
   match (a, b) with
   | [], [] -> true
   | Text left :: rest_left, Text right :: rest_right ->
@@ -42,41 +44,97 @@ let content_equal a b =
 (* Props *)
 
 module Props = struct
-  type t = {
-    content : string;
-    text_style : Ansi.Style.t;
-    wrap : Text_surface.wrap;
-    selectable : bool;
-    selection_bg : Ansi.Color.t option;
-    selection_fg : Ansi.Color.t option;
-    tab_width : int;
-    truncate : bool;
-  }
+  type t =
+    | Plain of {
+        content : string;
+        text_style : Ansi.Style.t;
+        wrap : Text_surface.wrap;
+        selectable : bool;
+        selection_bg : Ansi.Color.t option;
+        selection_fg : Ansi.Color.t option;
+        tab_width : int;
+        truncate : bool;
+      }
+    | Rich of {
+        fragments : fragment list;
+        text_style : Ansi.Style.t;
+        wrap : Text_surface.wrap;
+        selectable : bool;
+        selection_bg : Ansi.Color.t option;
+        selection_fg : Ansi.Color.t option;
+        tab_width : int;
+        truncate : bool;
+      }
 
   let make ?(content = "") ?(text_style = Ansi.Style.default) ?(wrap = `None)
       ?(selectable = true) ?selection_bg ?selection_fg ?(tab_width = 2)
       ?(truncate = false) () =
-    {
-      content;
-      text_style;
-      wrap;
-      selectable;
-      selection_bg;
-      selection_fg;
-      tab_width;
-      truncate;
-    }
+    Plain
+      {
+        content;
+        text_style;
+        wrap;
+        selectable;
+        selection_bg;
+        selection_fg;
+        tab_width;
+        truncate;
+      }
+
+  let make_rich ?(text_style = Ansi.Style.default) ?(wrap = `None)
+      ?(selectable = true) ?selection_bg ?selection_fg ?(tab_width = 2)
+      ?(truncate = false) fragments =
+    Rich
+      {
+        fragments;
+        text_style;
+        wrap;
+        selectable;
+        selection_bg;
+        selection_fg;
+        tab_width;
+        truncate;
+      }
 
   let default = make ()
 
+  let text_style = function
+    | Plain { text_style; _ } | Rich { text_style; _ } -> text_style
+
+  let wrap = function Plain { wrap; _ } | Rich { wrap; _ } -> wrap
+
+  let selectable = function
+    | Plain { selectable; _ } | Rich { selectable; _ } -> selectable
+
+  let selection_bg = function
+    | Plain { selection_bg; _ } | Rich { selection_bg; _ } -> selection_bg
+
+  let selection_fg = function
+    | Plain { selection_fg; _ } | Rich { selection_fg; _ } -> selection_fg
+
+  let tab_width = function
+    | Plain { tab_width; _ } | Rich { tab_width; _ } -> tab_width
+
+  let truncate = function
+    | Plain { truncate; _ } | Rich { truncate; _ } -> truncate
+
+  let content = function
+    | Plain { content; _ } -> plain_content content
+    | Rich { fragments; _ } -> Fragments fragments
+
   let equal a b =
-    String.equal a.content b.content
-    && Ansi.Style.equal a.text_style b.text_style
-    && a.wrap = b.wrap
-    && a.selectable = b.selectable
-    && Option.equal Ansi.Color.equal a.selection_bg b.selection_bg
-    && Option.equal Ansi.Color.equal a.selection_fg b.selection_fg
-    && a.tab_width = b.tab_width && a.truncate = b.truncate
+    a == b
+    || (match (a, b) with
+         | Plain a, Plain b -> String.equal a.content b.content
+         | Rich a, Rich b -> fragments_equal a.fragments b.fragments
+         | _ -> false)
+       && Ansi.Style.equal (text_style a) (text_style b)
+       && wrap a = wrap b
+       && selectable a = selectable b
+       && Option.equal Ansi.Color.equal (selection_bg a) (selection_bg b)
+       && Option.equal Ansi.Color.equal (selection_fg a) (selection_fg b)
+       && tab_width a = tab_width b
+       && truncate a = truncate b
 end
 
 (* Fragment builder *)
@@ -259,6 +317,13 @@ let plain_text t = Text_buffer.plain_text (buffer t)
 (* Content installation *)
 
 let install_content t ~text_style content =
+  let content =
+    if content_equal t.content content then t.content
+    else
+      match content with
+      | Fragments fragments -> Fragments (normalize_fragments fragments)
+      | Plain _ | Styled _ -> content
+  in
   let style_changed =
     not (Ansi.Style.equal (Text_buffer.default_style (buffer t)) text_style)
   in
@@ -274,13 +339,13 @@ let install_content t ~text_style content =
   end
 
 let apply_props t (props : Props.t) =
-  Text_renderable.set_wrap t.text props.wrap;
-  Text_renderable.set_tab_width t.text props.tab_width;
-  Text_renderable.set_truncate t.text props.truncate;
-  Text_renderable.set_selection_bg t.text props.selection_bg;
-  Text_renderable.set_selection_fg t.text props.selection_fg;
-  Text_renderable.set_selectable t.text props.selectable;
-  install_content t ~text_style:props.text_style (plain_content props.content)
+  Text_renderable.set_wrap t.text (Props.wrap props);
+  Text_renderable.set_tab_width t.text (Props.tab_width props);
+  Text_renderable.set_truncate t.text (Props.truncate props);
+  Text_renderable.set_selection_bg t.text (Props.selection_bg props);
+  Text_renderable.set_selection_fg t.text (Props.selection_fg props);
+  Text_renderable.set_selectable t.text (Props.selectable props);
+  install_content t ~text_style:(Props.text_style props) (Props.content props)
 
 (* Construction *)
 
@@ -293,12 +358,15 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content
   in
   let text =
     Text_renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity
-      ~text_style:props.text_style ~wrap:props.wrap ~selectable:props.selectable
-      ?selection_bg:props.selection_bg ?selection_fg:props.selection_fg
-      ~tab_width:props.tab_width ~truncate:props.truncate ?on_selection ()
+      ~text_style:(Props.text_style props) ~wrap:(Props.wrap props)
+      ~selectable:(Props.selectable props)
+      ?selection_bg:(Props.selection_bg props)
+      ?selection_fg:(Props.selection_fg props)
+      ~tab_width:(Props.tab_width props) ~truncate:(Props.truncate props)
+      ?on_selection ()
   in
-  let t = { text; content = plain_content props.content; flat_cache = None } in
-  if props.content <> "" then rebuild_buffer t;
+  let t = { text; content = Props.content props; flat_cache = None } in
+  if t.content <> Plain "" then rebuild_buffer t;
   t
 
 (* Content *)
@@ -311,7 +379,7 @@ let set_content t text =
 let set_fragments t fragments =
   install_content t
     ~text_style:(Text_buffer.default_style (buffer t))
-    (Fragments (normalize_fragments fragments))
+    (Fragments fragments)
 
 let set_spans t spans =
   set_fragments t

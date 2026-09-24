@@ -161,6 +161,19 @@ module Props : sig
     t
   (** [make ()] is a property set with the same defaults as {!val-create}. *)
 
+  val make_rich :
+    ?text_style:Ansi.Style.t ->
+    ?wrap:Text_surface.wrap ->
+    ?selectable:bool ->
+    ?selection_bg:Ansi.Color.t ->
+    ?selection_fg:Ansi.Color.t ->
+    ?tab_width:int ->
+    ?truncate:bool ->
+    fragment list ->
+    t
+  (** [make_rich fragments] declares structured text with the same presentation
+      defaults as {!make}. Fragment styles inherit from [text_style]. *)
+
   val default : t
   (** [default] is [make ()]. *)
 

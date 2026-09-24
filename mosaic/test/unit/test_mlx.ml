@@ -98,9 +98,40 @@ let line_number_requires_one_child () =
     (function Invalid_argument _ -> true | _ -> false)
     (fun () -> ignore (Mosaic_mlx.line_number ~children:[] ()))
 
+let rich_children_and_high_level_text_share_the_widget () =
+  let renderer, reconciler = make () in
+  let fragments = Mosaic.Text.Fragment.[ text "a"; bold [ text "b" ] ] in
+  let direct =
+    Mosaic.rich_text ~key:"text"
+      ~text_style:(Mosaic.Ansi.Style.make ~fg:Mosaic.Ansi.Color.red ())
+      fragments
+  in
+  render renderer reconciler direct ignore;
+  let node = List.hd (Renderable.children (Renderer.root renderer)) in
+  let view =
+    Mosaic_mlx.rich_text ~key:"text"
+      ~text_style:(Mosaic.Ansi.Style.make ~fg:Mosaic.Ansi.Color.blue ())
+      ~children:fragments ()
+  in
+  render renderer reconciler view ignore;
+  is_true ~msg:"MLX preserves the same text node"
+    (node == List.hd (Renderable.children (Renderer.root renderer)));
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
+  equal string "b" (Matrix_grid.get_text grid 1);
+  is_true ~msg:"MLX keeps nested bold"
+    (Mosaic.Ansi.Attr.mem Mosaic.Ansi.Attr.Bold
+       (Matrix_grid.get_style grid 1).attrs);
+  is_true ~msg:"MLX inherits base colour"
+    (Mosaic.Ansi.Color.equal Mosaic.Ansi.Color.blue (Matrix_grid.get_fg grid 1));
+  render renderer reconciler (Mosaic_mlx.rich_text ~key:"text" ()) ignore;
+  is_true ~msg:"empty rich content retains text node"
+    (node == List.hd (Renderable.children (Renderer.root renderer)))
+
 let () =
   run "mosaic.mlx"
     [
+      test "rich children and high-level text share the widget"
+        rich_children_and_high_level_text_share_the_widget;
       test "children and model-owned editor" children_and_editor_state;
       test "children and model-owned scroll" scroll_children_and_state;
       test "line-number children contract" line_number_requires_one_child;

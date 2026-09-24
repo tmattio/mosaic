@@ -319,6 +319,39 @@ val text :
     - [truncate] controls whether overlong lines are truncated with an ellipsis.
       Defaults to [false]. *)
 
+val rich_text :
+  ?key:string ->
+  ?id:string ->
+  ?style:Toffee.Style.t ->
+  ?visible:bool ->
+  ?z_index:int ->
+  ?opacity:float ->
+  ?focusable:bool ->
+  ?focused:bool ->
+  ?buffered:bool ->
+  ?live:bool ->
+  ?ref:(Renderable.t -> unit) ->
+  ?on_mouse:(Event.mouse -> 'msg option) ->
+  ?on_key:(Event.key -> 'msg option) ->
+  ?on_paste:(Event.paste -> 'msg option) ->
+  ?on_click:(Event.mouse -> 'msg option) ->
+  ?on_focus_request:'msg ->
+  ?on_size:(w:int -> h:int -> 'msg option) ->
+  ?text_style:Ansi.Style.t ->
+  ?wrap:Text_surface.wrap ->
+  ?selectable:bool ->
+  ?selection_bg:Ansi.Color.t ->
+  ?selection_fg:Ansi.Color.t ->
+  ?tab_width:int ->
+  ?truncate:bool ->
+  Text.fragment list ->
+  'msg t
+(** [rich_text fragments] renders structured text as one selectable text widget.
+    Fragment styles inherit from [text_style]; nested colours override inherited
+    colours. Wrapping and selection cross fragment boundaries. All labelled
+    options have the same meaning as {!text}. Switching between {!text} and
+    [rich_text] retains the text widget. *)
+
 val slider :
   ?key:string ->
   ?id:string ->

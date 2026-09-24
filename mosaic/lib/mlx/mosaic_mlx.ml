@@ -95,6 +95,29 @@ let text ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?selectable ?selection_bg ?selection_fg ?tab_width ?truncate
     (String.concat "" children)
 
+let rich_text ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
+    ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
+    ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
+    ?align_self ?align_content ?justify_items ?justify_self ?flex_grow
+    ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+    ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+    ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
+    ?style ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key
+    ?on_paste ?on_click ?on_focus_request ?on_size ?focused ?text_style ?wrap
+    ?selectable ?selection_bg ?selection_fg ?tab_width ?truncate
+    ?(children = []) () =
+  Mosaic.rich_text ?key ?display ?box_sizing ?position ?overflow
+    ?scrollbar_width ?text_align ?inset ?flex_direction ?flex_wrap
+    ?justify_content ?align_items ?size ?min_size ?max_size ?aspect_ratio ?gap
+    ?padding ?margin ?border_width ?align_self ?align_content ?justify_items
+    ?justify_self ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
+    ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
+    ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
+    ?grid_row ?grid_column ?style ?visible ?z_index ?opacity ?buffered ?live
+    ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
+    ?text_style ?wrap ?selectable ?selection_bg ?selection_fg ?tab_width
+    ?truncate children
+
 let code ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width

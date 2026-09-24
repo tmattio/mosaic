@@ -148,11 +148,17 @@ let view model =
               (Printf.sprintf "Wrap Mode: %s" (wrap_mode_to_string model.wrap))
             ~size:{ width = px 40; height = auto }
             [
-              text
+              rich_text
                 ~size:{ width = pct 100; height = auto }
                 ~wrap:(wrap_mode_to_prop model.wrap)
-                "This is a longer text that demonstrates different wrapping \
-                 behaviors. Press 'w' to cycle through wrap modes.";
+                Text.Fragment.
+                  [
+                    text "This text wraps across ";
+                    bold [ text "bold" ];
+                    text ", ";
+                    fg Ansi.Color.cyan [ italic [ text "coloured italic" ] ];
+                    text ", and plain fragments. Press 'w' to cycle wrap modes.";
+                  ];
             ];
         ];
       (* Footer *)
