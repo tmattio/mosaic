@@ -1,0 +1,13 @@
+# thumper baseline v1
+# suite: selection
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.5.1 · 64-bit · release
+
+select-positional-5000	alloc_words	exact	55
+select-value-5000	alloc_words	exact	20130
+table-positional-5000	alloc_words	exact	67
+table-value-5000	alloc_words	exact	20147
+tabs-positional-5000	alloc_words	exact	53
+tabs-value-5000	alloc_words	exact	20128

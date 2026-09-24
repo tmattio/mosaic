@@ -72,3 +72,48 @@
  (locks /bench)
  (action
   (run %{exe:bench_text_layout.exe} history)))
+
+(executable
+ (name bench_editor)
+ (modules bench_editor)
+ (libraries thumper mosaic.ui))
+
+(rule
+ (alias runtest)
+ (locks /bench)
+ (action
+  (progn
+   (run %{exe:bench_editor.exe} --quick)
+   (diff? editor.thumper editor.thumper.corrected))))
+
+(executable
+ (name bench_runtime)
+ (modules bench_runtime)
+ (libraries thumper mosaic matrix matrix.test))
+
+(rule
+ (alias runtest)
+ (locks /bench)
+ (action
+  (progn
+   (run %{exe:bench_runtime.exe} --quick)
+   (diff? runtime.thumper runtime.thumper.corrected))))
+
+(rule
+ (alias runtest)
+ (locks /bench)
+ (action
+  (run %{exe:bench_editor.exe} history)))
+
+(executable
+ (name bench_selection)
+ (modules bench_selection)
+ (libraries thumper mosaic mosaic.ui))
+
+(rule
+ (alias runtest)
+ (locks /bench)
+ (action
+  (progn
+   (run %{exe:bench_selection.exe} --quick)
+   (diff? selection.thumper selection.thumper.corrected))))

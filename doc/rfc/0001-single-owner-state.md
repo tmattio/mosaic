@@ -1,25 +1,33 @@
 # RFC 0001: Single-owner state — re-founding Mosaic's application contract
 
-- Status: Draft; input to the design pipeline. Evidence gathered 2026-08-21
-  from three independent audits (Mentat friction, Mosaic fix-history
-  forensics, Mosaic API/mental-model review), summarized in §1 and Appendix A.
+- Status: Implemented in the worktree; latency acceptance remains pending
+  (2026-09-24). The scope correction below preserves labelled styling and MLX.
+  Original evidence gathered 2026-08-21 from three independent audits
+  (Mentat friction, fix history, API review), summarized in §1 and Appendix A.
 - Audience: Mosaic maintainers; Mentat maintainers (spice RFC 0016 §9.3
   delegates all measurement, wrapping, truncation, and scrolling to Mosaic and
   is a direct consumer of this contract).
 - Baselines: mosaic @ `712ad398`, spice/mentat @ `e8506bc9`, OpenTUI reference
-  at `_opentui/packages/core`. Commit hashes below belong to the mosaic repo
-  unless marked `[spice]`.
+  refreshed from `anomalyco/opentui` main on 2026-09-24 at
+  `4b1474e009bf78365a7a4866e83a9e522533ef42` (§1.4). Commit hashes below
+  belong to the mosaic repo unless marked `[spice]`.
 - Compatibility: none. This is a breaking re-founding of the `mosaic` contract
   layer (element API, reconciler contract, widget state ownership, focus,
-  sizing defaults). Matrix, Toffee, the renderer core, and the widget
-  internals (`Edit_buffer`, `Text_surface`, `Selection`) are preserved.
-  `mosaic.mlx` is deleted (§8, Q8).
+  and event ordering). Existing labelled layout/paint arguments and sizing
+  defaults are preserved. Preserve Matrix/Toffee boundaries and retained rendering.
+  Widget internals require adaptation: `Edit_buffer` and `Selection` are
+  mutable today. [RFC 0003](0003-text-layout.md) owns shared text geometry
+  and supersedes the original promise to preserve text internals.
+  `mosaic.mlx` remains supported and follows the same state-ownership contract.
+- Scope decision (2026-09-24): implement state ownership independently of any
+  styling API redesign. Keep labelled constructor arguments and the MLX syntax
+  adapter. Usage in this repository does not establish external library usage.
 
 ## Summary
 
 Mosaic runs an Elm loop — immutable model, full re-render per frame — over
 retained, self-mutating widget objects inherited from OpenTUI's design. The
-boundary between the two, reconciliation, is unsound by construction: it
+current boundary between the two, reconciliation, has ambiguous ownership: it
 decides whether to write widget state by comparing the new declaration to the
 old declaration, never the declaration to the widget. Since widgets move on
 their own (keys, clicks, wheel, sticky scroll), every interactive widget
@@ -32,11 +40,16 @@ arguments and fails silently and non-locally (§2.2).
 
 This RFC rules one principle and derives the API from it:
 
-> **The framework holds no interactive state. Every widget's state is a plain
+> **Declarative widgets take their accepted interaction state from a plain
 > value in the application's model; the widget renders it, and when an event
 > would change it, the framework hands the application the entire proposed
 > next value as a message. Storing that value is the only way anything
 > moves.**
+
+This contract covers declarative editor, scroll, selection-widget and focus
+state. Low-level renderables and `embed` remain explicit integration boundaries:
+the integrator owns their state. Renderer-managed pointer gestures and native
+text selection are not persistent application widget values.
 
 The retained renderable tree survives as the renderer's private output cache
 — the role `Matrix.Screen`'s cell grid already plays — so a wrong diff is a
@@ -44,9 +57,8 @@ redraw glitch, never data loss. Layout-dependent transitions (wheel scrolling
 against viewport extents, cursor motion in wrapped text) run framework-side
 at dispatch time, where geometry lives, and deliver whole state values to
 `update`: the application never measures ("framework proposes, model
-disposes", §4.3). Sizing gets TUI-shaped semantics: column as the default
-axis, a first-class `fill`, zero minimums on flexible children, and a hard
-one-way rule between measurement and rendering (§4.5).
+disposes", §4.3). Existing sizing defaults and labelled layout arguments remain unchanged
+(§4.5). Measurement and rendering must still share consistent geometry.
 
 By construction this deletes: the controlled/uncontrolled distinction and
 both of its failure modes; the `create`/`apply_props` dual path and its
@@ -54,10 +66,9 @@ seven-widget fix cycle; the keyed one-shot scroll request + `on_*_applied`
 retirement protocol; `Cmd.focus`-by-string-id and its one-frame retry;
 reconciliation-driven state loss and transplant; callbacks reporting indices
 into widget-private lists; `~ref`; and every shadow-state flag in Mentat
-(§6). Performance is preserved because Bubbletea's slowness came from its
-render target (strings, no retained layer), not from state living in the
-model; Mosaic keeps cell buffers, retained layout, and diff-driven damage
-tracking, and the redesign is gated on benchmarks (§7).
+(§6). Mosaic keeps cell buffers, retained layout, and diff-driven damage
+tracking. These are design constraints, not evidence that persistent state
+or dispatch changes are free; the redesign is gated on measurements (§7).
 
 ## 1. Background: the evidence
 
@@ -200,6 +211,43 @@ Representative hazards (full list in Appendix A.3):
   nineteen times; `Renderable` exposes 65 mutating functions as a public
   escape hatch; no component abstraction beyond nested-TEA `map` boilerplate.
 
+### 1.4 Primary reference: current OpenTUI upstream
+
+The primary implementation reference is upstream OpenTUI, fetched from
+`https://github.com/anomalyco/opentui.git` main on 2026-09-24. Its head was
+`4b1474e009bf78365a7a4866e83a9e522533ef42` (2026-09-23), also the local
+checkout at verification time. These are source observations, not performance
+measurements:
+
+- [EditBuffer](https://github.com/anomalyco/opentui/blob/4b1474e009bf78365a7a4866e83a9e522533ef42/packages/native/src/edit-buffer.zig)
+  is a mutable owner of text, cursors and edit operations. Its underlying
+  [rope](https://github.com/anomalyco/opentui/blob/4b1474e009bf78365a7a4866e83a9e522533ef42/packages/native/src/rope.zig)
+  has persistent nodes and saved roots for undo. Persistent storage does
+  not imply a persistent application-facing editor.
+- Both [React](https://github.com/anomalyco/opentui/blob/4b1474e009bf78365a7a4866e83a9e522533ef42/packages/react/src/utils/index.ts)
+  and [Solid](https://github.com/anomalyco/opentui/blob/4b1474e009bf78365a7a4866e83a9e522533ef42/packages/solid/src/reconciler.ts)
+  adapt declarations to retained objects. React compares old and new props;
+  a retained design does not require a signals runtime.
+- [Textarea](https://github.com/anomalyco/opentui/blob/4b1474e009bf78365a7a4866e83a9e522533ef42/packages/core/src/renderables/Textarea.ts)
+  distinguishes initial text from subsequent editing.
+  [ScrollBox](https://github.com/anomalyco/opentui/blob/4b1474e009bf78365a7a4866e83a9e522533ef42/packages/core/src/renderables/ScrollBox.ts)
+  retains viewport position and sticky-edge state. These are deliberate
+  ownership choices, not bugs that model persistence inherently fixes.
+- [TextBufferView](https://github.com/anomalyco/opentui/blob/4b1474e009bf78365a7a4866e83a9e522533ef42/packages/native/src/text-buffer-view.zig)
+  shares the row-building algorithm between measurement and rendering,
+  caches by content epoch and geometry inputs, and reuses allocation
+  capacity. Wrapping participates in measurement.
+- [KeyHandler](https://github.com/anomalyco/opentui/blob/4b1474e009bf78365a7a4866e83a9e522533ef42/packages/core/src/lib/KeyHandler.ts)
+  runs global listeners before focused-renderable handlers and distinguishes
+  stopping propagation from preventing default behavior.
+
+Follow these storage, geometry, event-ordering and retained-rendering
+principles first. Model-owned interaction remains the proposed Mosaic
+departure for replayable application state; it is not an OpenTUI contract.
+Its acceptance and synchronization costs must be established before a
+catalog-wide migration. RFC 0003's approved model-ownership assumptions
+remain in effect; changing them requires an explicit revision of both RFCs.
+
 ## 2. Diagnosis
 
 ### 2.1 Fault one: no single owner of interactive state
@@ -207,8 +255,8 @@ Representative hazards (full list in Appendix A.3):
 Mosaic straddles three paradigms: an Elm runtime, React-retained widgets
 without React's controlled/uncontrolled discipline, and immediate-mode
 escape hatches (`~ref`, `embed`, the `Renderable` surface). The seam is
-narrow and structural: **the reconciler is the only writer of widget state,
-and it decides whether to write by comparing two declarations to each other,
+narrow and structural: **the reconciler writes widget state alongside event
+handlers, and decides whether to write by comparing two declarations,
 never the declaration to the widget.** The retained widget moves on its own;
 that motion is invisible to a declaration-vs-declaration diff; so the widget
 drifts and the reconciler never notices. The `has_live_controlled_value`
@@ -219,12 +267,11 @@ already demonstrate. Every fix at this seam trades one failure mode for the
 other; §1.1's shadow state and §1.2's clusters 2–3 are this one fault seen
 from the application and history sides.
 
-OpenTUI itself does not have this fault: it is honestly retained. Its Solid
-binding writes a property only when a signal fires and never re-asserts, so
-uncontrolled is the natural state. Mosaic's divergence — full re-render TEA
-over those same retained objects — created the seam. There are only two
-coherent positions, and Mosaic occupies the one indefensible spot between
-them.
+OpenTUI's retained ownership is a coherent alternative. Both its Solid and
+React bindings patch retained objects; full view reconstruction alone does
+not make that architecture unsound. Mosaic's fault is its ambiguous contract
+for which owner may change a given value, and when a declaration is binding.
+Single ownership is the requirement; immutability is one way to satisfy it.
 
 ### 2.2 Fault two: web flexbox with web defaults
 
@@ -252,18 +299,19 @@ chosen; listed so scope is honest.
 Toffee (near-inert since the rewrite); Matrix (ordinary terminal-plumbing
 maturation); the reconciler's diff machinery (O(1) key matching, stable
 handler closures, physical-equality subtree sharing — competent machinery
-pointed at an unsound contract); the widget internals (`Edit_buffer`,
-`Text_surface`, `Selection` are already value-shaped). And 61% of Mentat's
-UI bugs are its own domain logic; no redesign touches those.
+pointed at an ambiguous contract). The existing mutable `Edit_buffer`,
+`Text_surface` and `Selection` are useful implementations, but cannot be
+treated as persistent values without adaptation. And 61% of Mentat's UI
+bugs are its own domain logic; no redesign touches those.
 
 ## 3. The ruling
 
 Adopt the full-Elm position: all interactive state lives in the model as
 plain values; widgets are pure functions of that state; the renderable tree
-is disposable output. Rejected: the full-signals position (OpenTUI+Solid
-fine-grained reactivity) — coherent, but abandons TEA, is a far larger
-departure for OCaml, and gives up the property Mentat's architecture is
-built on (one model, one update, replayable messages). Rejected: the status
+is disposable output. This remains the proposed target because it preserves
+replayable whole-model interaction. An OpenTUI-style retained design could
+keep TEA for domain state without adding signals, but would give up that
+whole-model property (§8). Rejected: the status
 quo plus patching — §1.2 shows five months of principled patching at the
 seam converging on no fixed point, because the seam itself is the defect.
 
@@ -291,15 +339,16 @@ take an `~id` so timer identity stops depending on declaration order.
 
 ### 4.2 The widget pattern
 
-Every stateful widget is the same shape: a module whose `t` is a persistent
-value with pure operations, an element constructor taking `state:` and a
-non-optional `on_change:`, and optional interception hooks.
+Every stateful widget takes its accepted value from the model and reports
+proposals through a required semantic callback. Editors, trees and scroll
+positions use persistent values; scalar controls and selection widgets use
+ordinary application values. Optional raw-event hooks provide interception.
 
 ```ocaml
 module Editor : sig
   type t                              (* persistent: text, cursor, selection *)
   val empty : t
-  val of_string : string -> t
+  val of_string : ?max_length:int -> string -> t
   val text : t -> string
   val clear : t -> t
   val insert : string -> t -> t       (* pure edits for update-side use *)
@@ -307,44 +356,67 @@ module Editor : sig
 end
 
 val textarea :
-  ?style:Style.attr list ->
+  (* Existing labelled layout and paint arguments are retained. *)
   ?focused:bool ->                    (* derived from the model, §4.4 *)
+  ?on_focus_request:'msg ->
   state:Editor.t ->
-  on_change:(Editor.t -> 'msg option) ->  (* the ENTIRE next state *)
-  ?on_key:(Event.key -> 'msg option) ->   (* Some consumes before default *)
+  on_change:(Editor.t -> 'msg) ->         (* the ENTIRE next state *)
+  ?on_key:(Event.key -> 'msg option) ->   (* interception contract: Q6 *)
   ?placeholder:string ->
   unit -> 'msg t
 
 module Scroll : sig
   type t
-  val at : int -> t
-  val follow : [ `Top | `Bottom ] -> t -> t   (* symbolic, stable, idempotent *)
-  val reveal : line:int -> t -> t             (* resolved at render *)
+  val at : ?x:int -> int -> t
+  val follow : [ `Top | `Bottom | `Left | `Right ] -> t -> t
+  val reveal : ?column:int -> line:int -> t -> t  (* resolved at render *)
 end
 
 val scroll_box :
-  ?style:Style.attr list -> ?focused:bool ->
-  scroll:Scroll.t -> on_scroll:(Scroll.t -> 'msg option) ->
+  (* Existing labelled layout and paint arguments are retained. *)
+  ?focused:bool ->
+  scroll:Scroll.t -> on_scroll:(Scroll.t -> 'msg) ->
   'msg t list -> 'msg t
 ```
 
-`select`, `tab_select`, `table`, `tree`, `slider` follow identically; for
-`tree`, the expansion set becomes the application's value, so callbacks
-report nodes, not indices into a widget-private flattened list.
-`on_change` returning `None` rejects the proposal (read-only for free);
-returning a modified value overrides it (input filtering for free).
-`on_change` is a non-optional label so an inert widget is a type error, not
-a silent runtime state.
+`select`, `tab_select`, and `table` take `~selected:'a option` and an explicit
+`~equal:('a -> 'a -> bool)`. `Select.item value label`,
+`Tab_select.item value label`, and `Table.row value cells` associate presentation
+with application values. Values must be distinct under `equal`. Reordering
+preserves selection by value; `None` or an absent value displays no selection,
+without choosing a replacement or emitting a callback. Navigation proposes a
+current value through `on_change:('a -> 'msg)`; activation without a selected
+item does nothing. The tree keeps its expansion set and selected ID in
+`Tree.State.t`, and activation reports a current `Tree.item`.
+
+Semantic callbacks (`on_change`, `on_scroll`, `on_submit`, `on_activate`)
+return messages directly. `update` accepts, transforms, or rejects a proposal;
+delivery alone does not imply acceptance. Raw event callbacks retain
+`'msg option`, with `None` filtering that event. No optional-message wrapper
+is needed for a semantic proposal already identified by the widget.
+
+Editor proposals also include caret, selection, and affinity changes. Accepting
+those changes must not mark text modified or trigger text-dependent commands.
+Compare `Editor.text` before and after the proposal for dirty flags, submission
+status, autosave, and other content-dependent work, while retaining the complete
+accepted `Editor.t`. Cursor-only transitions share text and source indexes.
 
 ### 4.3 Framework proposes, model disposes
 
 Transition functions that need geometry — wheel scrolling against viewport
 and content extents, PageDown, cursor motion across wrapped lines, mouse
-hit-to-cursor mapping — run framework-side at dispatch time, where last
-frame's layout lives. They read the state the application declared in the
-last view, compute the whole next value, and deliver it to `update`. The
-application never measures; there is never a second copy to drift. Symbolic
-scroll positions (`Follow `Bottom`, `Reveal line`) are resolved against real
+hit-to-cursor mapping — run framework-side at dispatch time. They read the
+latest accepted state, compute the whole next value, and deliver it to
+`update`. Before deriving the next input's proposal, the runtime applies the
+resulting messages and refreshes widget declarations from the resulting model
+(§5). A rejected or transformed proposal must never become the next event's
+starting state.
+
+Geometry must describe that accepted source and the relevant layout inputs.
+Reuse cached geometry when valid; refresh it before a geometry-dependent
+transition when content or layout has changed. This is framework work, not
+application measurement. Symbolic scroll positions (`Follow `Bottom`,
+`Reveal line`) are resolved against real
 extents at render time each frame, so they are stable values requiring no
 write-back and no retirement protocol. Applications that do need geometry as
 data get it explicitly via `?on_size:(w:int -> h:int -> 'msg option)`
@@ -354,39 +426,37 @@ data get it explicitly via `?on_size:(w:int -> h:int -> 'msg option)`
 
 Focus is a model field. The view marks the focused node
 (`~focused:(model.focus = `Composer)`); keys are delivered to the node
-marked focused; clicks move focus only if a handler dispatches a message
-saying so. `Cmd.focus`, the `~id` namespace, the one-frame retry, framework
+marked focused. `~on_focus_request:msg` declares the message for an ordinary
+left-button press on an unfocused focusable node. The nearest focusable
+ancestor's request is delivered before caret and selection defaults, which
+proceed only if the resulting declaration leaves that same live node focused.
+Rejection or removal cancels those defaults without mutating the target editor.
+Already-focused nodes need no request; Shift/native-selection gestures do not
+request focus. Constructing or mapping a view does not dispatch the message.
+`~on_click` remains a release gesture callback.
+
+`Cmd.focus`, the `~id` namespace, the one-frame retry, framework
 click-to-focus mutation, and `~autofocus` are deleted. Tab traversal is
-application-owned; the library ships a pure ring helper. The multiplicity
-rule for `~focused:true` is Q5.
+application-owned; `Focus.next` and `Focus.prev` traverse an application-supplied
+order using explicit equality. Empty orders yield no focus. Missing or unknown
+focus chooses the first/last entry; traversal wraps. Multiple visible focused
+nodes raise `Invalid_argument`; hidden subtrees do not participate.
 
-### 4.5 Sizing
+### 4.5 Layout and styling: preserve the existing API
 
-One style vocabulary, defined once, with TUI defaults:
+Keep the existing labelled layout and paint arguments, including `~size`,
+`~padding`, `~flex_direction`, `~background`, and text's `~style:Ansi.Style.t`.
+Keep the existing layout defaults. State ownership does not require replacing
+these arguments with an attribute list or changing flex-shrink behavior.
 
-```ocaml
-module Style : sig
-  type attr
-  val fill : attr          (* grow + shrink, min 0 — §1.1's 68-site incantation *)
-  val w : dim -> attr      val h : dim -> attr
-  val pad : int -> attr    val gap : int -> attr
-  val row : attr           (* column is the default axis *)
-  val border : ?style:Border.t -> unit -> attr
-  val fg : Color.t -> attr val bg : Color.t -> attr
-  val truncate : attr      (* render-only; never feeds measurement *)
-  (* ~30 attrs total, one flat list, one documentation site *)
-end
+The earlier attribute-list proposal is withdrawn from this implementation.
+Any future styling redesign must demonstrate better user code, discoverability,
+and performance independently; reducing signature size is not sufficient.
 
-val column : ?style:Style.attr list -> ?on_click:(Event.mouse -> 'msg option) ->
-             ?on_size:(w:int -> h:int -> 'msg option) -> 'msg t list -> 'msg t
-val row    : (* same *)
-val text   : ?style:Style.attr list -> string -> 'msg t
-```
-
-Rules: column is the default axis; flexible children default to zero
-minimum; truncation and wrapping are strictly render-side (the §1.2 cluster-1
-principle, made structural); constructors carry ~5 parameters instead of
-~50. Whether `Style.attr list` beats a `Layout.t` record is Q3.
+Wrapping affects measured height at a definite width, using the same geometry
+as paint. Truncation must not replace source content in intrinsic measurement,
+and a previous paint width must not contaminate an unconstrained probe
+(RFC 0003).
 
 ### 4.6 Render caching
 
@@ -403,22 +473,26 @@ chat-transcript content.
 
 ## 5. Semantic contracts
 
-1. **Single owner.** The renderable tree is the renderer's private output
-   cache. It holds paint and layout state only, never interactive state. A
+1. **Single owner.** Declarative widget renderables cache the accepted model
+   for paint, layout and event proposals. They never commit a proposed value
+   independently of the model. Explicit low-level integrations own their state. A
    wrong diff is a redraw glitch; `create` vs `apply_props` cannot diverge
    because widgets render from prop state on every frame.
 2. **`~key` is non-semantic.** Identity affects performance, never behavior.
-3. **One dispatch discipline.** Every message — widget proposal, mouse
-   handler, subscription — is queued and applied in order; `view` runs once
-   after the batch. Within a batch the framework threads proposals (a second
-   wheel tick computes against the first tick's proposed value), so the
-   contract stays "on_change hands you the next state" (details: Q1).
+3. **One dispatch discipline.** Process input transactions in order. Apply
+   an input's resulting messages through `update`, then refresh declarations
+   from the accepted model before deriving the next interactive transition.
+   Subscription messages participate in the same ordering. Batch painting,
+   not speculative proposals. With an opaque model, the framework cannot
+   infer acceptance merely because `on_change` returned a message.
 4. **Measurement is one-way.** Layout reads the model through `view`; the
    model reads layout only through explicit data (`on_size`, and the
    geometry baked into proposals). Nothing rendered feeds back into
    intrinsic measurement.
-5. **The frame is atomic.** Events → update batch → view → layout → paint,
-   once. Anything that would dirty the frame mid-frame (scrollbar reveal,
+5. **Presentation is atomic.** Input/update/declaration synchronization may
+   repeat before a frame; paint presents the resulting state once. Refresh
+   layout earlier when a subsequent input needs changed geometry. Anything
+   that would dirty the frame mid-frame (scrollbar reveal,
    symbolic scroll resolution) is resolved inside the layout/paint pass, not
    by scheduling another frame the renderer may lose.
 
@@ -436,9 +510,9 @@ chat-transcript content.
 | Tree callbacks as indices into invisible flattened list | Expansion is the app's value; callbacks report nodes |
 | Physical-equality memoization (`per_palette`, theme-picker re-parse) | `memo` by structural key |
 | Sub last-one-wins; timer phase swap; dual dispatch ordering | Accumulate-all; `~id`; one queue |
-| 68 × sizing incantation across 26 files [spice] | `Style.fill` is the default posture |
-| 19 × ~50 optional args; 2,864-line mli | ~5 params + one `Style` vocabulary |
-| `~ref`, `Renderable` as public escape hatch | Removed from the app-facing surface |
+| Repeated sizing declarations [spice] | Separate design work; existing labels and defaults retained |
+| Repeated layout labels in signatures | Retained; signature reduction alone is not a user benefit |
+| `~ref` | Removed from declarative constructors; `embed` remains an explicit integration boundary |
 
 Not addressed by this RFC (out of scope, tracked separately): Mentat's own
 domain-logic bug volume; matrix-level terminal issues; syntax-highlighting
@@ -446,15 +520,9 @@ architecture beyond the `memo` contract.
 
 ## 7. Performance
 
-Context: OpenTUI exists because Bubbletea is slow. Bubbletea's slowness is
-its render target — `view` returns a styled **string**, layout is string
-manipulation with ANSI re-scanning, and diffing happens at line-of-string
-granularity after the allocation already happened. It is Elm without the
-retained half. None of that is "state in the model": Elm on the web is fast
-because a pure view feeds a vdom diff against a retained DOM.
-
-This design keeps OpenTUI's retained half — which is also how OpenTUI is
-actually used (React/Solid over the retained core):
+OpenTUI's implementation is the reference for retaining work and bounding
+allocation. Comparisons with other frameworks are not a substitute for
+measuring Mosaic's actual workloads. Preserve:
 
 - Cells, not strings: Matrix grid with cell-level damage diffing.
 - Retained layout: Toffee with dirty tracking; unchanged subtrees skip
@@ -470,23 +538,27 @@ Costs, honestly:
   layout → paint over the entire mounted tree; cost is O(mounted
   content)"). The redesign improves both bounding tools: `memo` becomes
   reliable (value keys) and the static area remains for settled content.
-- Persistent `Editor.t`: O(log n) per keystroke on a rope/zipper vs O(1)
-  amortized mutable — noise at human input rates on OCaml's minor heap.
-  Rendering from the value reuses the `text_surface` display-cache pattern,
-  keyed on `(value, wrap_width)` — honestly this time (§1.2 cluster 1's
-  cache was keyed dishonestly four times).
-- Proposal messages allocate one small record per input event. Irrelevant.
+  Synchronizing accepted declarations between inputs adds work beyond that
+  per-frame baseline; measure wheel storms and rapid input explicitly.
+- Current `Edit_buffer` edits copy flat strings and invalidate whole-text
+  indexing. Mutability does not make those operations O(1). OpenTUI's
+  persistent rope is the first storage reference; measure edits, indexing,
+  undo retention and layout together before choosing a representation.
+  RFC 0003 starts with flat strings and does not deliver incremental edits.
+- Proposals and persistent versions add allocations and may retain old
+  buffers. Record allocation, promotion and retained-history costs alongside
+  latency; do not assume they are negligible at human input rates.
 
-Risk concentration: frames where everything legitimately changes (resize
-reflow, theme switch) on a large mounted tree. That cost exists identically
-today; the mitigations exist today minus their fragility.
+Risk concentration: input bursts requiring repeated synchronization, retained
+editor history, and resize/theme changes on large mounted trees. Shared
+geometry must avoid flattening or re-indexing unchanged text per event.
 
 **Acceptance gates.** The redesign lands only with a benchmark suite wired
 into `dune runtest` (thumper-style baselines), covering at minimum:
 
 1. Keystroke → presented-frame latency, 5,000-block transcript behind a
    scroll box (memo discipline under fire).
-2. Wheel-scroll storm (proposal threading under batching, Q1).
+2. Wheel-scroll storm (accepted-state synchronization with batched paint, Q1).
 3. Full resize reflow at 250×70 (worst-case whole-tree frame).
 4. Idle-but-subscribed app: a pending timer performs zero view/reconcile/
    paint work (invariant already pinned by `test_loop.ml:224`).
@@ -495,16 +567,80 @@ into `dune runtest` (thumper-style baselines), covering at minimum:
 Baselines are recorded against current mosaic HEAD before the redesign
 branches, so every decision in the pipeline can be checked against numbers.
 
+### 7.1 Implementation measurements (2026-09-24)
+
+The runtime harness drives the parser, update, view, layout, paint and terminal
+submission through `Matrix_test`, stopping at the presented idle boundary.
+Mounting and the output oracle are outside measurement. Its 5,000 blocks have
+three text rows each; eight wheel events arrive together. A wheel sample includes both a down and
+up burst, presenting after each, to avoid direction-dependent sampling. The pre-change
+comparison is an isolated archive of `40c094cd`, with equivalent old-API input,
+scroll and cached transcript declarations. Both use OCaml 5.5.1, release profile,
+on the same Apple M1 Max host.
+
+| Runtime action | Before, allocated words | RFC baseline, allocated words | Change |
+| --- | ---: | ---: | ---: |
+| Insert/backspace through presentation | 5,846,986 | 3,858,948 | −34.0% |
+| Wheel roundtrip, two eight-event bursts | 4,604,250 | 4,084,260 | −11.3% |
+| Resize between 249×69 and 250×70 | 145,352,687 | 142,546,693 | −1.9% |
+
+The RFC figures are the stored release-profile `runtime.thumper` baseline.
+The subsequent API and focus improvements pass its existing allocation budget;
+the baseline has not been raised to accommodate them.
+
+The resize cost remains substantial in both versions. Allocation profiling
+points to Toffee flex item construction and whole-tree layout rounding; this
+RFC does not change Toffee. The 500-row reconciler microbenchmark drops from
+60,670 to 36,193 words for an unchanged tree, and from 78,665 to 54,188 for
+reordering.
+
+Domain-value selection adds a linear lookup and conversion when declaring a
+select, tab strip or table. With 5,000 preconstructed items, declarations
+allocate 20,130 / 20,128 / 20,147 words respectively, versus 55 / 53 / 67 for
+equivalent positional Vnodes. This includes the application layout wrapper;
+the variable overhead is about four words per item. Native navigation keeps
+indices, and callbacks map to values in constant time. The allocation-only
+`selection.thumper` baseline makes this conversion cost explicit.
+
+Persistent editor cursor movement allocates 58 words per left/right pair for
+both 128-byte and 1MB buffers, versus zero for the mutable engine. Independent
+1MB insertions allocate 1,312,585 words versus 1,312,567 for an engine copy:
+18 additional words for the persistent wrapper. The history retention check
+verifies the existing 200-snapshot bound and release of obsolete editor states
+and text indexes. Flat-string snapshot storage still scales with document size.
+
+`mosaic/bench/editor.thumper` and `runtime.thumper` gate allocation increases
+above 5% through `dune runtest mosaic/bench`. `EDITOR_TIMING=1` and
+`RUNTIME_TIMING=1` additionally measure wall time and promotion. The idle timer
+invariant is covered by loop tests.
+
+**Open gate:** latency and promotion comparison on a quiet host. The current
+host was fully CPU-saturated during measurement, making timing comparisons
+inconclusive. Lower allocations are not evidence that latency improved; this
+RFC is not ready for performance sign-off until that comparison is completed.
+
 ## 8. Alternatives considered
 
 - **Status quo + patching.** Rejected: §1.2 documents five months of
   principled patching at the seam with no fixed point, because each fix
   trades silent divergence for forced revert or back. The two open xfails at
   HEAD are unclosed semantic holes, not backlog.
-- **Full signals/retained (OpenTUI+Solid).** Rejected: coherent and fast,
-  but abandons TEA (Mentat's architecture), requires a fine-grained
-  reactivity runtime OCaml does not have, and gives up replayable
-  single-model semantics.
+- **Retained widget ownership (OpenTUI core with a declarative adapter).**
+  Credible alternative: initialize an editor once, then use explicit editing
+  operations and notifications rather than mirroring its text in props.
+  Retains TEA for domain state without requiring signals. Widget identity
+  owns interaction state; whole-model snapshots no longer capture it.
+- **Application-owned mutable editors and scroll state.** The view borrows
+  an explicit handle, for example `textarea ~editor:model.editor ()`;
+  `update` may call `Editor.clear model.editor`. One object replaces the
+  model/widget copies and survives remounting. This simplifies acceptance
+  mechanics, but old models alias new interaction state, so whole-model
+  replay is lost. Not selected while replay and RFC 0003's model-owned
+  interaction remain requirements. Reconsider explicitly if the persistent
+  design fails its performance or complexity gates.
+- **Full signals (OpenTUI+Solid).** Separate from retained ownership:
+  introducing a reactive application runtime is unnecessary to obtain the
+  retained-core benefits and would replace the existing TEA contract.
 - **Bubbletea-literal** (no framework layout or routing; apps receive raw
   events + window size; widgets render to strings). Rejected: forfeits
   Toffee layout and mouse hit-testing, which Mentat genuinely uses, and
@@ -521,50 +657,80 @@ branches, so every decision in the pipeline can be checked against numbers.
   against spice RFC 0016 §9.3. Framework-side proposals keep geometry out of
   application code entirely.
 
-## 9. Open questions for the pipeline
+## 9. Implementation decisions and remaining integration work
 
-- **Q1 — Proposal batching semantics.** Within one update batch, proposals
-  thread framework-side (each computed against the latest proposed value).
-  Specify the exact ordering with interleaved key/mouse/subscription
-  messages, and what a rejected proposal (`on_change` returns `None`) means
-  for subsequent proposals in the same batch.
-- **Q2 — Persistent `Editor.t` representation.** Rope vs zipper vs piece
-  table; grapheme-aware indexing; undo as a value (list of states vs
-  inverted operations); the display-cache key and eviction policy. This is
-  the largest single piece of implementation work and the enabling move.
-- **Q3 — Style surface.** `Style.attr list` (one vocabulary, permissive) vs
-  a `Layout.t` record with defaults (typed per-node applicability, `with`
-  update syntax). Decide with Mentat call-site diffs as the benchmark:
-  rewrite 10 representative Mentat views under each candidate.
-- **Q4 — Layout-data channel.** Is `on_size` sufficient, or do some
-  Mentat cases (reviewed pane widths, gutter alignment) need a richer
-  explicit geometry snapshot delivered to `update`? Enumerate the actual
-  Mentat call sites that hand-measure today and check each against the
-  proposal mechanism.
-- **Q5 — `~focused` multiplicity.** Zero focused nodes: keys fall through to
-  `Sub.on_key` only. Multiple: first in tree order wins vs a runtime
-  diagnostic. Decide; also decide whether a `Focus.ring` helper ships in
-  core or as a library.
-- **Q6 — Key interception layering.** `on_key` returning `Some` consumes
-  before the default edit. Does Mentat's capture-phase ask (global shortcuts
-  that beat the focused composer, from its upstream-asks list) need a
-  capture hook, or is `Sub.on_key` ordering (Q1) enough?
-- **Q7 — Widget catalog scope.** Which of the 19 elements survive the
-  re-shape as core widgets vs become library code over the primitives
-  (`markdown`, `code`, `diff`, `table` are candidates for the latter given
-  the `memo` contract).
-- **Q8 — `mosaic.mlx`.** Zero users in either repo, already drifted.
-  Proposal: delete; revisit only with a concrete consumer.
-- **Q9 — Migration staging.** Mentat pins mosaic at HEAD and already absorbs
-  semantic changes as unplanned work (an entire spice branch,
-  `campaign/tui-mosaic-adaptation`, absorbs one renderer change plus ~33
-  golden re-records). Decide: parallel library (`mosaic2`-style incubation)
-  vs in-place breaking change behind the pin; and which Mentat surface
-  migrates first (the composer + transcript is the highest-pain, and its
-  wrappers `scrollport`/`prims`/`prose` are the spec for acceptance).
-- **Q10 — Event model details.** One propagation story for mouse (bubble +
-  optional capture?), one meaning for consumption, and whether
-  `prevent_default`/`stop_propagation` both survive.
+The implementation resolves the library choices below. Performance acceptance
+remains pending: §7.1 records allocation measurements, but latency and promotion
+must still be compared on a quiet host. Mentat migration has not been performed
+as part of this implementation.
+
+- **Q1 — Accepted-state synchronization. Resolved.** Input and subscription
+  messages pass through `update` synchronously; declarations refresh from the
+  accepted model before the next interactive transition. Rejected or normalized
+  proposals never become speculative input state. Geometry preparation settles
+  synchronous layout invalidations before input dispatch and presentation;
+  layout-only preparation does not advance animations. Deliberately deferred
+  editor proposals can be checked with `Editor.accept ~current`, which rejects
+  proposals based on a superseded source, caret, selection or affinity state.
+  Runtime and editor measurements are recorded in §7.1; its open performance
+  gate remains applicable.
+- **Q2 — Persistent `Editor.t` representation. Resolved for this implementation.**
+  `Editor.t` wraps the existing flat-string editing engine with persistent
+  operations. Versions share immutable text, grapheme indexes and history
+  entries; widget scratch buffers cannot mutate published editor values.
+  Cursor-only changes share the indexed source. Text edits still splice and
+  index flat strings, and undo history retains at most 200 text snapshots per
+  branch. This is not an incremental rope implementation; its allocation and
+  retention costs are described in §7.1.
+- **Q3 — Style surface. Resolved.** Preserve labelled layout/paint arguments
+  and existing defaults (§4.5). A separate proposal may evaluate alternatives
+  against real call sites and measured costs.
+- **Q4 — Layout-data channel. Consumer validation remains open.** `on_size`
+  delivers allocated dimensions, and geometry-dependent widget actions produce
+  state proposals without application measurement. Mentat's pane-width and
+  gutter-alignment call sites still need to be checked against these channels.
+  Whether those consumers need additional geometry data remains an integration
+  question; no richer snapshot API is introduced here.
+- **Q5 — Focus. Resolved.** No focused node means only global key capture;
+  multiple visible focused declarations raise `Invalid_argument`. Hidden
+  subtrees do not participate. `Focus.next/prev ~equal order current` provide
+  pure application-owned traversal. `on_focus_request` proposes pointer focus
+  before caret/selection defaults and requires accepted focus on the same live
+  node (§4.4).
+- **Q6 — Key interception layering. Resolved.** `Sub.on_key` captures before
+  the focused element's `on_key` handlers and default editing action, following
+  OpenTUI's ordering. Capture messages update the accepted declarations before
+  focused-widget dispatch. Returning a message does not consume the event;
+  `prevent_default` suppresses the default action and `stop_propagation` stops
+  subsequent handler traversal. Paste uses the same capture-before-default
+  layering through `Sub.on_paste`.
+- **Q7 — Widget catalog scope. Resolved.** The existing catalog remains in
+  Mosaic, including `markdown`, `code`, `diff` and `table`. Interactive
+  declarative widgets receive application-owned state and report proposals;
+  this change does not extract widgets into separate libraries. `embed` remains
+  an explicit integration boundary whose owner manages the embedded
+  renderable's properties and interaction state.
+- **Q8 — `mosaic.mlx`. Resolved.** The supported syntax adapter is retained
+  and follows the same labelled constructors and state-ownership contract as
+  Mosaic. It shares the rendering implementation; repository-local syntax
+  usage is not treated as evidence of external usage.
+- **Q9 — Migration staging. Library staging resolved; Mentat migration open.**
+  The library changes in place, with a breaking state-ownership API, rather
+  than introducing a parallel `mosaic2` library. Repository examples and
+  adapters use the new contract. Mentat still needs a coordinated dependency
+  pin and migration plan, including which surface moves first and validation
+  of its composer/transcript wrappers (`scrollport`, `prims`, `prose`). This
+  implementation does not establish that consumer migration is complete.
+- **Q10 — Event model details. Resolved.** Mouse events are hit-tested and
+  bubble through the renderable tree; `Sub.on_mouse` then receives unconsumed
+  events, while `Sub.on_mouse_all` also receives consumed events. No mouse
+  capture subscription is added. `prevent_default` controls default behavior
+  and consumed-event filtering; `stop_propagation` controls handler traversal.
+  Declarative mouse dispatch proposes focus through `on_focus_request` and
+  applies pointer defaults only after acceptance. Semantic callbacks return
+  messages directly; raw event callbacks return optional messages. All
+  subscription kinds accumulate in declaration order, and timer/tick identity
+  uses explicit, unique IDs.
 
 ## Appendix A: evidence tables
 
