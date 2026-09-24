@@ -164,13 +164,14 @@ val scrollback_size : t -> int
 
 val scrollback_lines : t -> string list
 (** [scrollback_lines t] is the scrollback content as plain-text strings ordered
-    oldest to newest. Style information is discarded. Trailing spaces are
-    trimmed during compression. Empty if scrollback is disabled, empty, or the
-    alternate screen is active. O({!scrollback_size}). *)
+    oldest to newest. Style information is discarded and trailing spaces are
+    trimmed. Empty if scrollback is disabled, empty, or the alternate screen is
+    active. Time is linear in the stored text size. *)
 
 val render_with_scrollback : t -> offset:int -> Matrix_grid.t -> unit
 (** [render_with_scrollback t ~offset dst] renders a snapshot combining
-    scrollback history and the live screen into [dst].
+    scrollback history and the live screen into [dst]. History retains text
+    styles, hyperlinks, and decorated trailing spaces.
 
     The top rows of [dst] are filled with scrollback lines (oldest at the top)
     and the remaining rows with the current screen. [offset] is the number of

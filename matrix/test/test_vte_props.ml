@@ -193,6 +193,10 @@ let prop_split_invariance (rows, cols, s, cuts) =
   let split = Vte.create ~scrollback:16 ~rows ~cols () in
   feed_chunks split (chunks_of s cuts);
   equal ~msg:"screen content" string (Vte.to_string whole) (Vte.to_string split);
+  for idx = 0 to (rows * cols) - 1 do
+    is_true ~msg:"grid styles and spans"
+      (Grid.cells_equal (Vte.grid whole) idx (Vte.grid split) idx)
+  done;
   equal ~msg:"cursor position" (pair int int) (Vte.cursor_pos whole)
     (Vte.cursor_pos split);
   equal ~msg:"cursor visibility" bool (Vte.cursor_visible whole)

@@ -4,21 +4,10 @@ module Text = Matrix_text
 type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
 (* Internal cursor state *)
 
-(* Style run for compressed scrollback - represents contiguous bytes with same
-   style *)
-type style_run = {
-  start_byte : int; (* Byte offset in UTF-8 string *)
-  end_byte : int; (* Byte offset (exclusive) *)
-  fg : Ansi.Color.t;
-  bg : Ansi.Color.t;
-  attrs : Ansi.Attr.t;
-}
+type style_run = { start_byte : int; style : Ansi.Style.t }
+type scrollback_line = { text : string; styles : style_run array }
 
-(* Compressed scrollback line - text + sparse style runs *)
-type scrollback_line = {
-  text : string; (* UTF-8 encoded text *)
-  styles : style_run array; (* Sorted by start_byte, non-overlapping *)
-}
+let empty_scrollback_line = { text = ""; styles = [||] }
 
 type scrollback = {
   lines : scrollback_line array; (* Ring buffer of compressed lines *)
@@ -33,133 +22,71 @@ type scroll_region = { mutable top : int; mutable bottom : int }
 
 module Int_set = Set.Make (Int)
 
-(* Compress a grid row into text + style runs with byte offsets using the new
-   Grid/Text API. We avoid raw Bigarray access and rely on per-cell accessors.
-   Continuation cells are skipped; each starting cell contributes exactly one
-   grapheme string (including spaces). *)
-(* Compress a grid row into text + style runs using public Grid/Text APIs. *)
-let compress_row grid row cols =
+(* Store complete styles, including hyperlinks, only when they change. Spaces
+   can be omitted only when they carry no visible decoration or link. *)
+let compress_row ~default_bg grid row cols =
   let buf = Buffer.create (cols * 2) in
-  let styles_rev = ref [] in
-
-  (* Track the current run with immediates (Color.t and packed attrs are
-     ints): no per-cell key tuples, rgba decoding or polymorphic compares in
-     this hot path — it runs for every line entering scrollback. *)
-  let have_run = ref false in
+  let styles = ref [] in
   let current_fg = ref Ansi.Color.default_fg in
   let current_bg = ref Ansi.Color.default_bg in
   let current_attrs = ref 0 in
-  let style_start_byte = ref 0 in
-
-  let flush_style_run end_byte =
-    if !have_run then
-      styles_rev :=
-        {
-          start_byte = !style_start_byte;
-          end_byte;
-          fg = !current_fg;
-          bg = !current_bg;
-          attrs = Ansi.Attr.unpack !current_attrs;
-        }
-        :: !styles_rev
-  in
-
+  let current_link = ref "" in
+  let content_end = ref 0 in
   for col = 0 to cols - 1 do
     let idx = (row * cols) + col in
-
-    (* Skip continuation cells: grapheme already handled at its start cell. *)
-    if not (Grid.is_continuation grid idx) then
-      (* Determine grapheme text for this cell. *)
+    if not (Grid.is_continuation grid idx) then begin
       let text =
         if Grid.is_empty grid idx then " " else Grid.get_text grid idx
       in
-
-      if text <> "" then begin
-        let fg = Grid.get_fg grid idx in
-        let bg = Grid.get_bg grid idx in
-        let attrs = Grid.get_attrs grid idx in
-
-        (* Style run change detection. *)
-        if
-          (not !have_run)
-          || (not (Ansi.Color.equal fg !current_fg))
-          || (not (Ansi.Color.equal bg !current_bg))
-          || attrs <> !current_attrs
-        then begin
-          flush_style_run (Buffer.length buf);
-          have_run := true;
-          current_fg := fg;
-          current_bg := bg;
-          current_attrs := attrs;
-          style_start_byte := Buffer.length buf
-        end;
-
-        (* Append grapheme text. *)
-        Buffer.add_string buf text
-      end
+      let fg = Grid.get_fg grid idx in
+      let bg = Grid.get_bg grid idx in
+      let attrs = Grid.get_attrs grid idx in
+      let link = Grid.get_link grid idx in
+      if
+        !styles = []
+        || (not (Ansi.Color.equal fg !current_fg))
+        || (not (Ansi.Color.equal bg !current_bg))
+        || attrs <> !current_attrs || link <> !current_link
+      then begin
+        styles :=
+          { start_byte = Buffer.length buf; style = Grid.get_style grid idx }
+          :: !styles;
+        current_fg := fg;
+        current_bg := bg;
+        current_attrs := attrs;
+        current_link := link
+      end;
+      Buffer.add_string buf text;
+      if
+        text <> " "
+        || Ansi.Color.Packed.alpha (Ansi.Color.Packed.encode bg) > 0
+           && not (Ansi.Color.equal bg default_bg)
+        || attrs <> 0 || link <> ""
+      then content_end := Buffer.length buf
+    end
   done;
-
-  (* Finalize text and style runs. *)
-  let text = Buffer.contents buf in
-  let len = String.length text in
-
-  (* Trim trailing spaces from text. *)
-  let rec find_end i =
-    if i < 0 then 0
-    else if String.unsafe_get text i = ' ' then find_end (i - 1)
-    else i + 1
+  let text = Buffer.sub buf 0 !content_end in
+  let rec trim_runs = function
+    | run :: rest when run.start_byte >= !content_end -> trim_runs rest
+    | runs -> runs
   in
-  let trimmed_len = find_end (len - 1) in
-  let trimmed =
-    if trimmed_len = len then text else String.sub text 0 trimmed_len
-  in
+  { text; styles = Array.of_list (List.rev (trim_runs !styles)) }
 
-  (* Flush final style run, trimmed to text length. *)
-  flush_style_run trimmed_len;
-
-  let trimmed_styles =
-    List.rev_map
-      (fun run -> { run with end_byte = min run.end_byte trimmed_len })
-      !styles_rev
-    |> Array.of_list
-  in
-
-  { text = trimmed; styles = trimmed_styles }
-
-(* Decompress a scrollback line into a grid row using the public Grid/Text API.
-   We assume the destination grid has been cleared beforehand. *)
-let decompress_line line grid row _cols =
-  if Array.length line.styles = 0 || String.length line.text = 0 then ()
-  else
-    let text = line.text in
-    let text_len = String.length text in
-    let col = ref 0 in
-    let max_cols = Grid.width grid in
-    let width_method = Grid.width_method grid in
-
-    Array.iter
-      (fun run ->
-        let start_byte = max 0 run.start_byte in
-        let end_byte = min run.end_byte text_len in
-
-        if start_byte < end_byte && end_byte <= text_len && !col < max_cols then
-          let seg_len = end_byte - start_byte in
-          if seg_len > 0 then
-            try
-              let segment = String.sub text start_byte seg_len in
-              if segment <> "" then (
-                let style =
-                  Ansi.Style.default |> Ansi.Style.fg run.fg
-                  |> Ansi.Style.bg run.bg
-                  |> Ansi.Style.with_attrs run.attrs
-                in
-                Grid.draw_text grid ~x:!col ~y:row ~style ~text:segment;
-                let w = Text.measure ~width_method ~tab_width:2 segment in
-                col := min max_cols (!col + w))
-            with Invalid_argument _ ->
-              (* Skip problematic segments *)
-              ())
-      line.styles
+let decompress_line line grid row =
+  let col = ref 0 in
+  let width_method = Grid.width_method grid in
+  for i = 0 to Array.length line.styles - 1 do
+    let run = line.styles.(i) in
+    let stop =
+      if i + 1 = Array.length line.styles then String.length line.text
+      else line.styles.(i + 1).start_byte
+    in
+    if !col < Grid.width grid then begin
+      let text = String.sub line.text run.start_byte (stop - run.start_byte) in
+      Grid.draw_text grid ~x:!col ~y:row ~style:run.style ~text;
+      col := !col + Text.measure ~width_method ~tab_width:2 text
+    end
+  done
 
 type dirty_state = {
   mutable dirty : bool;
@@ -210,8 +137,7 @@ let create ?(scrollback = 10000) ?width_method ?(default_fg = Ansi.Color.white)
   let scrollback_buffer =
     if scrollback <= 0 then None
     else
-      let empty_line = { text = ""; styles = [||] } in
-      let lines = Array.make scrollback empty_line in
+      let lines = Array.make scrollback empty_scrollback_line in
       Some { lines; head = 0; count = 0; capacity = scrollback }
   in
   Grid.clear ~color:default_bg primary;
@@ -388,7 +314,15 @@ let scrollback_lines t =
         for i = 0 to sb.count - 1 do
           let idx = (start_idx + i) mod sb.capacity in
           let line = sb.lines.(idx) in
-          lines := line.text :: !lines
+          let stop = ref (String.length line.text) in
+          while !stop > 0 && line.text.[!stop - 1] = ' ' do
+            decr stop
+          done;
+          let text =
+            if !stop = String.length line.text then line.text
+            else String.sub line.text 0 !stop
+          in
+          lines := text :: !lines
         done;
         List.rev !lines
 
@@ -425,7 +359,7 @@ let render_with_scrollback t ~offset dst =
               (sb.head - 1 - scrollback_offset + sb.capacity) mod sb.capacity
           in
           let line = sb.lines.(scrollback_idx) in
-          decompress_line line dst i t.cols
+          decompress_line line dst i
         done;
 
         (* Render visible screen lines *)
@@ -447,7 +381,9 @@ let push_to_scrollback t row =
   | Some _ when t.active_grid != t.primary -> ()
   | Some sb ->
       (* Compress the row and store it *)
-      let compressed = compress_row t.active_grid row t.cols in
+      let compressed =
+        compress_row ~default_bg:t.default_bg t.active_grid row t.cols
+      in
       sb.lines.(sb.head) <- compressed;
       sb.head <- (sb.head + 1) mod sb.capacity;
       if sb.count < sb.capacity then sb.count <- sb.count + 1
@@ -456,6 +392,7 @@ let clear_scrollback t =
   match t.scrollback with
   | None -> ()
   | Some sb ->
+      Array.fill sb.lines 0 sb.capacity empty_scrollback_line;
       sb.head <- 0;
       sb.count <- 0
 
@@ -513,11 +450,7 @@ let put_text t text =
     Option.value t.style.Ansi.Style.bg ~default:t.default_bg
     |> resolve_color ~default:t.default_bg
   in
-  let attrs = t.style.Ansi.Style.attrs in
-  let style =
-    Ansi.Style.default |> Ansi.Style.fg fg |> Ansi.Style.bg bg
-    |> Ansi.Style.with_attrs attrs
-  in
+  let style = t.style |> Ansi.Style.fg fg |> Ansi.Style.bg bg in
   let width_method = Grid.width_method t.active_grid in
   (* A run beginning with zero-width graphemes continues the grapheme drawn
      by an earlier write (its base sits in the preceding cell): merge the
@@ -560,122 +493,107 @@ let put_text t text =
       end
     end
   in
-  if t.insert_mode then
-    let line_width = t.cols in
-    Text.iter_graphemes
-      (fun ~offset:off ~len:l ->
-        if t.cursor.col >= line_width && t.auto_wrap_mode then (
-          advance_row t;
-          set_cursor_pos t ~row:t.cursor.row ~col:0);
-
-        (* Read the row after wrap handling: a wrap moves the cursor. *)
-        let row = t.cursor.row in
-        if row < t.rows && t.cursor.col >= line_width then (
-          (* DECAWM off at the right margin: overwrite the last column and
-             stay pinned, as in the non-insert path. Inserting at the margin
-             would shift every surviving cell off the row anyway. *)
-          let cluster = String.sub text off l in
-          Grid.draw_text t.active_grid ~x:(line_width - 1) ~y:row ~text:cluster
-            ~style;
-          mark_row_dirty t row)
-        else if row < t.rows && t.cursor.col < line_width then
-          let w =
-            Text.width_at ~width_method ~tab_width:2 text ~byte_offset:off
-          in
-          let insert_w = min w (line_width - t.cursor.col) in
-
-          if insert_w > 0 then (
-            Grid.blit_region ~src:t.active_grid ~dst:t.active_grid
-              ~src_x:t.cursor.col ~src_y:row
-              ~width:(line_width - t.cursor.col - insert_w)
-              ~height:1 ~dst_x:(t.cursor.col + insert_w) ~dst_y:row;
-
-            (* Clear the newly opened gap and draw the cluster. *)
-            erase_region t ~x:t.cursor.col ~y:row ~width:insert_w ~height:1;
-            let cluster = String.sub text off l in
-            Grid.draw_text t.active_grid ~x:t.cursor.col ~y:row ~text:cluster
-              ~style;
-            mark_row_dirty t row;
-            set_cursor_pos t ~row
-              ~col:(min line_width (t.cursor.col + insert_w))))
-      text
+  if text = "" then ()
+  else if (not t.insert_mode) && String.length text <= t.cols - t.cursor.col
+  then begin
+    (* Printable UTF-8 never occupies more columns than bytes. This bounded
+       fit check keeps short writes allocation-light without rescanning suffixes. *)
+    Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row ~text ~style;
+    mark_row_dirty t t.cursor.row;
+    let width = Text.measure ~width_method ~tab_width:2 text in
+    set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col + width)
+  end
   else
-    let remaining = ref text in
-    while String.length !remaining > 0 do
-      (* Handle pending wrap *)
-      if t.cursor.col >= t.cols && t.auto_wrap_mode then (
-        advance_row t;
-        set_cursor_pos t ~row:t.cursor.row ~col:0);
-
-      if t.cursor.row >= t.rows then remaining := ""
-      else
-        let available = t.cols - t.cursor.col in
-        if available <= 0 then (
-          (* DECAWM off at the right margin: each grapheme overwrites the
-             last column and the cursor stays pinned, as on a real
-             terminal. Dropping the run instead would also break split
-             invariance: a later chunk's combining mark attaches to the
-             margin cell, whose base must therefore have been drawn. *)
-          let x = t.cols - 1 in
-          let run = !remaining in
-          Text.iter_graphemes
-            (fun ~offset ~len ->
-              Grid.draw_text t.active_grid ~x ~y:t.cursor.row
-                ~text:(String.sub run offset len)
-                ~style)
-            run;
+    (* Accumulate one contiguous row slice at a time. No suffix is copied or
+     remeasured: every display unit is visited once before Grid draws it. *)
+    let start = ref 0 in
+    let stop = ref 0 in
+    let columns = ref 0 in
+    let flush () =
+      if !columns > 0 then begin
+        let segment =
+          if !start = 0 && !stop = String.length text then text
+          else String.sub text !start (!stop - !start)
+        in
+        Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
+          ~text:segment ~style;
+        mark_row_dirty t t.cursor.row;
+        set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col + !columns);
+        columns := 0
+      end
+    in
+    let emit ~offset ~len ~width =
+      if width = 0 then
+        begin if !columns > 0 then stop := offset + len
+        else if t.cursor.col > 0 then begin
+          let x = ref (min (t.cols - 1) (t.cursor.col - 1)) in
+          while
+            !x > 0
+            && Grid.is_continuation t.active_grid ((t.cursor.row * t.cols) + !x)
+          do
+            decr x
+          done;
+          let idx = (t.cursor.row * t.cols) + !x in
+          Grid.draw_text t.active_grid ~x:!x ~y:t.cursor.row
+            ~text:(Grid.get_text t.active_grid idx ^ String.sub text offset len)
+            ~style:(Grid.get_style t.active_grid idx);
+          mark_row_dirty t t.cursor.row
+        end
+        end
+      else begin
+        if t.insert_mode || t.cursor.col + !columns + width > t.cols then
+          flush ();
+        if t.cursor.col >= t.cols && t.auto_wrap_mode then begin
+          advance_row t;
+          set_cursor_pos t ~row:t.cursor.row ~col:0
+        end;
+        if
+          (not t.insert_mode)
+          && width > t.cols - t.cursor.col
+          && t.auto_wrap_mode && t.cursor.col > 0
+        then begin
+          advance_row t;
+          set_cursor_pos t ~row:t.cursor.row ~col:0
+        end;
+        if t.insert_mode || width > t.cols - t.cursor.col then begin
+          let x = min t.cursor.col (t.cols - 1) in
+          let inserted = min width (t.cols - t.cursor.col) in
+          if t.insert_mode && inserted > 0 then begin
+            Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x:x
+              ~src_y:t.cursor.row
+              ~width:(t.cols - x - inserted)
+              ~height:1 ~dst_x:(x + inserted) ~dst_y:t.cursor.row;
+            erase_region t ~x ~y:t.cursor.row ~width:inserted ~height:1
+          end;
+          Grid.draw_text t.active_grid ~x ~y:t.cursor.row
+            ~text:(String.sub text offset len)
+            ~style;
           mark_row_dirty t t.cursor.row;
-          remaining := "")
-        else
-          let s = !remaining in
-          let len = String.length s in
-
-          (* Fast path: if the whole string fits in remaining columns, draw
-             once. *)
-          let total_w = Text.measure ~width_method ~tab_width:2 s in
-          if total_w <= available then (
-            Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row ~text:s
-              ~style;
-            mark_row_dirty t t.cursor.row;
-            set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col + total_w);
-            remaining := "")
-          else
-            let fit =
-              Text.find_wrap_pos ~width_method ~tab_width:2 s
-                ~max_columns:available
-            in
-            if fit.byte_offset = 0 && len > 0 then (
-              if t.auto_wrap_mode && t.cursor.col > 0 then
-                (* First grapheme is wider than the space left at the margin
-                   (e.g. a CJK character at the last column). Mark the line
-                   full so the pending-wrap path above moves to the next row
-                   and retries the same grapheme. *)
-                set_cursor_pos t ~row:t.cursor.row ~col:t.cols
-              else
-                (* Auto-wrap off, or a grapheme wider than the whole line:
-                   draw just this grapheme with Grid.draw_text's truncation
-                   semantics and continue with the rest of the run, exactly
-                   as if the remainder had arrived in a later chunk. *)
-                let first =
-                  Text.find_pos ~width_method ~tab_width:2
-                    ~include_start_before:true s ~columns:available
-                in
-                let stop =
-                  if first.byte_offset > 0 then first.byte_offset else len
-                in
-                Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
-                  ~text:(String.sub s 0 stop) ~style;
-                mark_row_dirty t t.cursor.row;
-                remaining := String.sub s stop (len - stop))
-            else
-              let segment = String.sub s 0 fit.byte_offset in
-              Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
-                ~text:segment ~style;
-              mark_row_dirty t t.cursor.row;
-              set_cursor_pos t ~row:t.cursor.row
-                ~col:(t.cursor.col + fit.columns_used);
-              remaining := String.sub s fit.byte_offset (len - fit.byte_offset)
-    done
+          if t.insert_mode && inserted > 0 then
+            set_cursor_pos t ~row:t.cursor.row ~col:(x + inserted)
+        end
+        else begin
+          if !columns = 0 then start := offset;
+          stop := offset + len;
+          columns := !columns + width
+        end
+      end
+    in
+    (match width_method with
+    | `Unicode -> Text.iter_grapheme_info ~width_method ~tab_width:2 emit text
+    | `Wcwidth when t.insert_mode ->
+        Text.iter_grapheme_info ~width_method ~tab_width:2 emit text
+    | `Wcwidth ->
+        let offset = ref 0 in
+        while !offset < String.length text do
+          let decoded = String.get_utf_8_uchar text !offset in
+          let len = Uchar.utf_decode_length decoded in
+          emit ~offset:!offset ~len
+            ~width:
+              (Text.uchar_width ~tab_width:2 (Uchar.utf_decode_uchar decoded));
+          offset := !offset + len
+        done);
+    flush ()
 
 (* Handle control characters *)
 let handle_control_char t code =
@@ -721,7 +639,7 @@ let handle_text t text =
 
 let apply_sgr_attr style attr =
   match attr with
-  | `Reset -> Ansi.Style.default
+  | `Reset -> Ansi.Style.make ?link:style.Ansi.Style.link ()
   | `Bold -> Ansi.Style.with_bold true style
   | `Dim -> Ansi.Style.with_dim true style
   | `Italic -> Ansi.Style.with_italic true style

@@ -815,10 +815,120 @@ let unicode_malformed_utf8 () =
   equal ~msg:"malformed UTF-8" string "A\239\191\189\239\191\189BC"
     (String.trim output)
 
+let hyperlinks_survive_styles_and_scrollback () =
+  let vte = Vte.create ~rows:1 ~cols:8 () in
+  Vte.feed_string vte
+    "\027]8;;https://example.test\027\\a\027[31mb\027[0mc\027]8;;\027\\d";
+  let check grid =
+    for i = 0 to 2 do
+      equal ~msg:"link survives SGR changes" string "https://example.test"
+        (Grid.get_link grid i)
+    done;
+    equal ~msg:"OSC8 closes link" string "" (Grid.get_link grid 3)
+  in
+  check (Vte.grid vte);
+  Vte.feed_string vte "\r\n";
+  let dst = Grid.create ~width:8 ~height:1 () in
+  Vte.render_with_scrollback vte ~offset:1 dst;
+  check dst
+
+let scrollback_preserves_decorated_spaces () =
+  let vte = Vte.create ~rows:1 ~cols:8 () in
+  Vte.feed_string vte
+    "x\027[44m  \027[0;4m \027[0m\027]8;;https://space.test\027\\ \
+     \027]8;;\027\\";
+  let before = Vte.grid vte in
+  let styles = Array.init 5 (Grid.get_style before) in
+  Vte.feed_string vte "\r\n";
+  equal ~msg:"plain history remains trimmed" (list string) [ "x" ]
+    (Vte.scrollback_lines vte);
+  let dst = Grid.create ~width:8 ~height:1 () in
+  Vte.render_with_scrollback vte ~offset:1 dst;
+  Array.iteri
+    (fun i expected ->
+      is_true ~msg:"paint, attributes and links survive compression"
+        (Ansi.Style.equal expected (Grid.get_style dst i)))
+    styles
+
+let clearing_scrollback_releases_text () =
+  List.iter
+    (fun reset ->
+      let vte = Vte.create ~rows:1 ~cols:80 () in
+      let weak = Weak.create 1 in
+      let fill () =
+        Vte.feed_string vte (String.make 40 'x' ^ "\r\n");
+        Weak.set weak 0 (Some (List.hd (Vte.scrollback_lines vte)))
+      in
+      fill ();
+      Gc.full_major ();
+      is_true ~msg:"live history owns its text" (Weak.check weak 0);
+      if reset then Vte.reset vte else Vte.feed_string vte "\027[3J";
+      Gc.full_major ();
+      is_false ~msg:"cleared history releases its text" (Weak.check weak 0);
+      equal ~msg:"history cleared" int 0 (Vte.scrollback_size vte))
+    [ false; true ]
+
+let wcwidth_combining_at_margin_and_insert () =
+  let vte = Vte.create ~width_method:`Wcwidth ~rows:1 ~cols:2 () in
+  Vte.feed_string vte "\027[?7labć";
+  equal ~msg:"mark attaches to overwritten margin glyph" string "ć"
+    (Grid.get_text (Vte.grid vte) 1);
+  Vte.reset vte;
+  Vte.feed_string vte "\027[4hé";
+  equal ~msg:"insert preserves the entire cluster" string "é"
+    (Grid.get_text (Vte.grid vte) 0);
+  equal ~msg:"insert measures the cluster" (pair int int) (0, 1)
+    (Vte.cursor_pos vte)
+
+let wcwidth_insert_measures_complete_cluster () =
+  let vte = Vte.create ~width_method:`Wcwidth ~rows:1 ~cols:8 () in
+  Vte.feed_string vte "ABCDEFGH\r\027[4h👨‍💻";
+  equal ~msg:"insert shifts by the entire four-column cluster" string "A"
+    (Grid.get_text (Vte.grid vte) 4);
+  equal ~msg:"insert keeps the ZWJ sequence" string "👨‍💻"
+    (Grid.get_text (Vte.grid vte) 0);
+  equal ~msg:"cursor uses the complete width" (pair int int) (0, 4)
+    (Vte.cursor_pos vte)
+
+let long_runs_match_fragmented_runs () =
+  List.iter
+    (fun width_method ->
+      List.iter
+        (fun insert ->
+          let whole = Vte.create ~width_method ~rows:3 ~cols:13 () in
+          let split = Vte.create ~width_method ~rows:3 ~cols:13 () in
+          if insert then begin
+            Vte.feed_string whole "\027[4h";
+            Vte.feed_string split "\027[4h"
+          end;
+          let unit = "ab中é" in
+          let text = String.concat "" (List.init 150 (fun _ -> unit)) in
+          Vte.feed_string whole text;
+          List.iter (Vte.feed_string split) (List.init 150 (fun _ -> unit));
+          equal ~msg:"row slices match separate runs" string
+            (Vte.to_string split) (Vte.to_string whole);
+          equal ~msg:"cursor matches separate runs" (pair int int)
+            (Vte.cursor_pos split) (Vte.cursor_pos whole);
+          equal ~msg:"history matches separate runs" (list string)
+            (Vte.scrollback_lines split)
+            (Vte.scrollback_lines whole))
+        [ false; true ])
+    [ `Unicode; `Wcwidth ]
+
 (** {1 Test Suite} *)
 
 let tests =
   [
+    test "hyperlinks survive styles and scrollback"
+      hyperlinks_survive_styles_and_scrollback;
+    test "scrollback preserves decorated spaces"
+      scrollback_preserves_decorated_spaces;
+    test "clearing scrollback releases text" clearing_scrollback_releases_text;
+    test "long runs match fragmented runs" long_runs_match_fragmented_runs;
+    test "wcwidth combining at margin and insert"
+      wcwidth_combining_at_margin_and_insert;
+    test "wcwidth insert measures complete cluster"
+      wcwidth_insert_measures_complete_cluster;
     test "margin overwrite with wrap off" margin_overwrite_with_wrap_off;
     test "create with defaults" create_with_defaults;
     test "create with no scrollback" create_with_no_scrollback;

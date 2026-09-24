@@ -1,0 +1,16 @@
+# thumper baseline v1
+# suite: vte
+
+# machine: ca352e279bc47cb1
+# host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
+# ocaml: 5.4.1+relocatable · 64-bit · release
+
+vte/feed-ascii-16384	alloc_words	exact	62665
+vte/feed-ascii-40	alloc_words	exact	220
+vte/feed-ascii-4096	alloc_words	exact	14515
+vte/feed-ascii-65536	alloc_words	exact	255667
+vte/feed-unicode	alloc_words	exact	447625
+vte/feed-unicode-short	alloc_words	exact	279
+vte/feed-wcwidth	alloc_words	exact	798185
+vte/scrollback-append-styled	alloc_words	exact	236156
+vte/scrollback-render-styled	alloc_words	exact	5123

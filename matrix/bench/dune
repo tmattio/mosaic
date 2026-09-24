@@ -75,3 +75,16 @@
   (progn
    (run %{exe:bench_runtime.exe} --wait-quiet 60)
    (diff? runtime.thumper runtime.thumper.corrected))))
+
+(executable
+ (name bench_vte)
+ (modules bench_vte)
+ (libraries thumper matrix.vte matrix.grid))
+
+(rule
+ (alias bench)
+ (locks /bench)
+ (action
+  (progn
+   (run %{exe:bench_vte.exe} --wait-quiet 60)
+   (diff? vte.thumper vte.thumper.corrected))))
