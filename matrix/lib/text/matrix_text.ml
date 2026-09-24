@@ -71,6 +71,11 @@ let[@inline] codepoint_width_unicode ~tab_width cp =
     if cp = 0x09 then tab_width else if cp < 32 || cp = 127 then -1 else 1
   else Unicode.tty_width_hint (Uchar.unsafe_of_int cp)
 
+let uchar_width ~tab_width uchar =
+  codepoint_width_wcwidth
+    ~tab_width:(normalize_tab_width tab_width)
+    (Uchar.to_int uchar)
+
 (* Unicode-width state machine.
 
    The [`Unicode] width method folds a cluster's codepoints through a small
@@ -299,103 +304,60 @@ let[@inline] decode_codepoint str pos =
     else replacement
   else replacement
 
-let find_wrap_pos_ascii ~tab_width str len ~max_columns =
-  let rec loop i count columns =
-    if i >= len then
-      { byte_offset = len; grapheme_count = count; columns_used = columns }
-    else
-      let width =
-        ascii_width ~tab_width (Char.code (String.unsafe_get str i))
-      in
-      if width <= 0 then loop (i + 1) count columns
-      else
-        let next_columns = columns + width in
-        if next_columns > max_columns then
-          { byte_offset = i; grapheme_count = count; columns_used = columns }
-        else loop (i + 1) (count + 1) next_columns
-  in
-  loop 0 0 0
-
-let find_pos_ascii ~tab_width ~include_start_before str len ~columns =
-  let rec loop i count used =
-    if i >= len then
-      { byte_offset = len; grapheme_count = count; columns_used = used }
-    else
-      let width =
-        ascii_width ~tab_width (Char.code (String.unsafe_get str i))
-      in
-      if width <= 0 then loop (i + 1) count used
-      else
-        let next_used = used + width in
-        if
-          (include_start_before && used >= columns)
-          || ((not include_start_before) && next_used > columns)
-        then { byte_offset = i; grapheme_count = count; columns_used = used }
-        else loop (i + 1) (count + 1) next_used
-  in
-  loop 0 0 0
-
-let find_wrap_pos_grapheme ~width_method ~tab_width str ~max_columns =
-  let len = Stdlib.String.length str in
-  if len = 0 || max_columns <= 0 then zero_position
-  else if is_ascii_only str len 0 then
-    find_wrap_pos_ascii ~tab_width str len ~max_columns
+(* Top-level loops share fitting and positioning without allocating a closure
+   for each query. *)
+let rec find_pos_ascii str len tab_width include_start_before columns i count
+    used =
+  if i >= len then
+    { byte_offset = len; grapheme_count = count; columns_used = used }
   else
-    let seg = Uuseg_grapheme_cluster.create () in
-    let rec loop offset count columns =
-      if offset >= len then
-        { byte_offset = len; grapheme_count = count; columns_used = columns }
+    let width = ascii_width ~tab_width (Char.code (String.unsafe_get str i)) in
+    if width <= 0 then
+      find_pos_ascii str len tab_width include_start_before columns (i + 1)
+        count used
+    else
+      let next_used = used + width in
+      if
+        (include_start_before && used >= columns)
+        || ((not include_start_before) && next_used > columns)
+      then { byte_offset = i; grapheme_count = count; columns_used = used }
       else
-        let end_pos = next_boundary seg str offset len in
-        let width =
-          cluster_width ~method_:width_method ~tab_width str offset
-            (end_pos - offset)
-        in
-        if width <= 0 then loop end_pos count columns
-        else
-          let next_columns = columns + width in
-          if next_columns > max_columns then
-            {
-              byte_offset = offset;
-              grapheme_count = count;
-              columns_used = columns;
-            }
-          else loop end_pos (count + 1) next_columns
+        find_pos_ascii str len tab_width include_start_before columns (i + 1)
+          (count + 1) next_used
+
+let rec find_pos_clusters seg str len width_method tab_width
+    include_start_before columns offset count used =
+  if offset >= len then
+    { byte_offset = len; grapheme_count = count; columns_used = used }
+  else
+    let end_pos = next_boundary seg str offset len in
+    let width =
+      cluster_width ~method_:width_method ~tab_width str offset
+        (end_pos - offset)
     in
-    loop 0 0 0
+    if width <= 0 then
+      find_pos_clusters seg str len width_method tab_width include_start_before
+        columns end_pos count used
+    else
+      let next_used = used + width in
+      if
+        (include_start_before && used >= columns)
+        || ((not include_start_before) && next_used > columns)
+      then { byte_offset = offset; grapheme_count = count; columns_used = used }
+      else
+        find_pos_clusters seg str len width_method tab_width
+          include_start_before columns end_pos (count + 1) next_used
 
 let find_pos_grapheme ~width_method ~tab_width ~include_start_before str
     ~columns =
   let len = Stdlib.String.length str in
   if len = 0 || columns <= 0 then zero_position
   else if is_ascii_only str len 0 then
-    find_pos_ascii ~tab_width ~include_start_before str len ~columns
+    find_pos_ascii str len tab_width include_start_before columns 0 0 0
   else
     let seg = Uuseg_grapheme_cluster.create () in
-    let rec loop offset count used =
-      if offset >= len then
-        { byte_offset = len; grapheme_count = count; columns_used = used }
-      else
-        let end_pos = next_boundary seg str offset len in
-        let width =
-          cluster_width ~method_:width_method ~tab_width str offset
-            (end_pos - offset)
-        in
-        if width <= 0 then loop end_pos count used
-        else
-          let next_used = used + width in
-          if
-            (include_start_before && used >= columns)
-            || ((not include_start_before) && next_used > columns)
-          then
-            {
-              byte_offset = offset;
-              grapheme_count = count;
-              columns_used = used;
-            }
-          else loop end_pos (count + 1) next_used
-    in
-    loop 0 0 0
+    find_pos_clusters seg str len width_method tab_width include_start_before
+      columns 0 0 0
 
 let find_wrap_pos_wcwidth ~tab_width str ~max_columns =
   let len = Stdlib.String.length str in
@@ -436,7 +398,9 @@ let find_wrap_pos ~width_method ~tab_width str ~max_columns =
   let tab_width = normalize_tab_width tab_width in
   match width_method with
   | `Wcwidth -> find_wrap_pos_wcwidth ~tab_width str ~max_columns
-  | `Unicode -> find_wrap_pos_grapheme ~width_method ~tab_width str ~max_columns
+  | `Unicode ->
+      find_pos_grapheme ~width_method ~tab_width ~include_start_before:false str
+        ~columns:max_columns
 
 let find_pos ~width_method ~tab_width ?(include_start_before = false) str
     ~columns =

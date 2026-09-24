@@ -587,6 +587,36 @@ let c1_control_widths () =
   check_zero "C1 U+008A" 0x008A;
   check_zero "C1 U+009F" 0x009F
 
+let scalar_width_agrees_with_measurement () =
+  let bytes = Bytes.create 4 in
+  List.iter
+    (fun cp ->
+      let uchar = Uchar.of_int cp in
+      let len = Bytes.set_utf_8_uchar bytes 0 uchar in
+      let text = Bytes.sub_string bytes 0 len in
+      List.iter
+        (fun width_method ->
+          equal int
+            (measure ~width_method ~tab_width:4 text)
+            (uchar_width ~tab_width:4 uchar))
+        [ `Unicode; `Wcwidth ])
+    [
+      0;
+      9;
+      32;
+      127;
+      0x85;
+      0x301;
+      0x915;
+      0x94D;
+      0x200D;
+      0x754C;
+      0xFE0F;
+      0x1F1EB;
+      0x1F680;
+      0x10FFFF;
+    ]
+
 let () =
   run "matrix.text"
     [
@@ -599,6 +629,8 @@ let () =
             (fun (name, input, width_method, tab_width, expected) ->
               check_width name expected (measure ~width_method ~tab_width input));
           test "ASCII fast path" ascii_fast_path_consistency;
+          test "scalar width agrees with measurement"
+            scalar_width_agrees_with_measurement;
           test "multi-grapheme regression" measure_multi_grapheme_regression;
           test "malformed UTF-8" malformed_utf8_measurement;
           test "measure_sub validation" measure_sub_validation;

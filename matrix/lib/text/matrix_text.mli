@@ -3,7 +3,13 @@
     This module contains the Unicode text operations needed by terminal
     renderers: grapheme cluster iteration, display-width measurement, and
     lightweight break discovery. It does not own cells, styles, or interned
-    storage. *)
+    storage.
+
+    {!iter_graphemes} and {!grapheme_count} always follow Unicode grapheme
+    boundaries, independently of terminal width policy. Width-dependent position
+    operations instead follow the terminal's display units: clusters in
+    [`Unicode] mode and codepoints in [`Wcwidth] mode. Use Unicode boundaries
+    for editing text; use display positions for fitting and placing it. *)
 
 type width_method = [ `Unicode | `Wcwidth ]
 (** The type for width calculation methods.
@@ -24,6 +30,11 @@ type grapheme = { byte_offset : int; byte_length : int; width : int }
 (** The type for a grapheme or codepoint span.
 
     Values returned in [`Wcwidth] mode describe one codepoint. *)
+
+val uchar_width : tab_width:int -> Uchar.t -> int
+(** [uchar_width ~tab_width u] is the display width of [u] in isolation.
+    Controls and combining characters contribute [0]. Width policies agree on
+    individual scalars; measuring a sequence requires {!measure}. *)
 
 val measure : width_method:width_method -> tab_width:int -> string -> int
 (** [measure ~width_method ~tab_width s] is the display width of [s]. Control
@@ -61,7 +72,8 @@ val iter_grapheme_info :
   string ->
   unit
 (** [iter_grapheme_info ~width_method ~tab_width f s] calls
-    [f ~offset ~len ~width] for each non-zero-width grapheme cluster in [s]. *)
+    [f ~offset ~len ~width] for each non-zero-width Unicode grapheme cluster in
+    [s]. The width policy changes the reported width, not the boundaries. *)
 
 val iter_wrap_breaks :
   (break_byte_offset:int -> next_byte_offset:int -> grapheme_offset:int -> unit) ->
@@ -92,7 +104,8 @@ val find_wrap_pos :
 
     If the next grapheme would exceed [max_columns], the result points to the
     start of that grapheme. In [`Wcwidth] mode, movement is by codepoint rather
-    than by grapheme cluster. *)
+    than by grapheme cluster, and stops as soon as the column budget is reached,
+    before any following zero-width codepoints. *)
 
 val find_pos :
   width_method:width_method ->
