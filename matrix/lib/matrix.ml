@@ -106,14 +106,8 @@ type app = {
   config : config;
   backend : Backend.t;
   screen : Screen.t;
-  (* Frame output accumulator, retained across submits. [Buffer.clear] keeps
-     the high-water-mark capacity, so steady-state frames allocate nothing
-     here (a fresh 4 KiB buffer per frame would be a direct major-heap
-     allocation every submit). *)
-  submit_buf : Buffer.t;
-  (* Retained scratch for handing [submit_buf]'s contents to [write_output]
-     without a per-frame string allocation; grows to the high-water mark. *)
-  mutable submit_scratch : bytes;
+  (* One retained writer owns the complete terminal frame. *)
+  submit_buf : Ansi.Writer.t;
   (* Input events captured during startup (probe, primary anchor), replayed
      before the first backend read. *)
   mutable pending_startup_events : Input.t list;
@@ -440,26 +434,27 @@ let reset_scroll_region_seq = Ansi.(to_string reset_scrolling_region)
 let reset_cursor_color_seq = Ansi.(to_string reset_cursor_color)
 
 (* Helpers for buffered frame output. All frame content is accumulated into
-   a Buffer.t and flushed as a single write in submit. *)
+   an ANSI writer and flushed as a single write in submit. *)
 
 let buf_cursor_position buf ~row ~col =
-  Buffer.add_string buf
-    Ansi.(to_string (cursor_position ~row:(max 1 row) ~col:(max 1 col)))
+  Ansi.cursor_position ~row:(max 1 row) ~col:(max 1 col) buf
 
-let buf_erase_line buf = Buffer.add_string buf erase_entire_line
+let buf_erase_line buf = Ansi.Writer.write_string buf erase_entire_line
 
 let apply_primary_op buf = function
   | Primary.Move_cursor { row; col } -> buf_cursor_position buf ~row ~col
-  | Primary.Reset_sgr -> Buffer.add_string buf sgr_reset
-  | Primary.Write s -> Buffer.add_string buf s
+  | Primary.Reset_sgr -> Ansi.Writer.write_string buf sgr_reset
+  | Primary.Write s -> Ansi.Writer.write_string buf s
   | Primary.Erase_line -> buf_erase_line buf
-  | Primary.Erase_below -> Buffer.add_string buf erase_below_seq
-  | Primary.Clear_and_home -> Buffer.add_string buf clear_and_home_seq
-  | Primary.Clear_scrollback -> Buffer.add_string buf clear_scrollback_seq
-  | Primary.Scroll_up n -> Buffer.add_string buf Ansi.(to_string (scroll_up ~n))
+  | Primary.Erase_below -> Ansi.Writer.write_string buf erase_below_seq
+  | Primary.Clear_and_home -> Ansi.Writer.write_string buf clear_and_home_seq
+  | Primary.Clear_scrollback ->
+      Ansi.Writer.write_string buf clear_scrollback_seq
+  | Primary.Scroll_up n -> Ansi.scroll_up ~n buf
   | Primary.Set_scroll_region { top; bottom } ->
-      Buffer.add_string buf Ansi.(to_string (set_scrolling_region ~top ~bottom))
-  | Primary.Reset_scroll_region -> Buffer.add_string buf reset_scroll_region_seq
+      Ansi.set_scrolling_region ~top ~bottom buf
+  | Primary.Reset_scroll_region ->
+      Ansi.Writer.write_string buf reset_scroll_region_seq
 
 let apply_primary_plan ?(resize_screen = true) t ~buf (plan : Primary.plan) =
   List.iter (apply_primary_op buf) plan.terminal_ops;
@@ -479,9 +474,9 @@ let flush_static_queue ?(resize_screen = true) t ~buf =
   let primary, plan = Primary.flush_static t.primary in
   t.primary <- primary;
   if plan.terminal_ops <> [] then (
-    Buffer.add_string buf "\027[?7l";
+    Ansi.Writer.write_string buf "\027[?7l";
     apply_primary_plan ~resize_screen t ~buf plan;
-    Buffer.add_string buf "\027[?7h")
+    Ansi.Writer.write_string buf "\027[?7h")
 
 let effective_size t =
   match t.config.mode with
@@ -520,9 +515,9 @@ let static_clear t =
   else
     let primary, plan = Primary.clear_static t.primary in
     t.primary <- primary;
-    let buf = Buffer.create 16 in
+    let buf = Ansi.Writer.create 16 in
     List.iter (apply_primary_op buf) plan.terminal_ops;
-    Terminal.send t.terminal (Buffer.contents buf);
+    Terminal.send t.terminal (Ansi.Writer.contents buf);
     if plan.invalidate_presented then Screen.invalidate_presented t.screen;
     if plan.force_full_redraw then force_full_redraw t;
     let cols, rows = t.backend.terminal_size () in
@@ -643,22 +638,22 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~position =
   (match position with
   | Some (row, col) ->
       buf_cursor_position buf ~row ~col;
-      if cursor.visible then Buffer.add_string buf cursor_show_seq
+      if cursor.visible then Ansi.Writer.write_string buf cursor_show_seq
   | None -> ());
   if cursor.visible then begin
     let shape = cursor_shape cursor in
     if shape_dirty t shape then begin
-      Buffer.add_string buf Ansi.(to_string (cursor_style ~shape));
+      Ansi.cursor_style ~shape buf;
       Terminal.note_appearance_emitted t.terminal `Cursor_style;
       t.last_cursor_shape <- Some shape
     end;
     if color_dirty t cursor.color then begin
       (match cursor.color with
       | Some (r, g, b) ->
-          Buffer.add_string buf Ansi.(to_string (cursor_color ~r ~g ~b));
+          Ansi.cursor_color ~r ~g ~b buf;
           Terminal.note_appearance_emitted t.terminal `Cursor_color
       | None ->
-          Buffer.add_string buf reset_cursor_color_seq;
+          Ansi.Writer.write_string buf reset_cursor_color_seq;
           Terminal.note_appearance_reset t.terminal `Cursor_color);
       t.last_cursor_color <- Some cursor.color
     end
@@ -680,12 +675,12 @@ let submit ?primary_required_rows t =
     let caps = Terminal.capabilities t.terminal in
     let use_sync = Terminal.tty t.terminal && caps.sync in
     let buf = t.submit_buf in
-    Buffer.clear buf;
+    Ansi.Writer.reset_pos buf;
 
     (* Preamble: BSU + cursor hide. *)
-    if use_sync then Buffer.add_string buf sync_output_on;
-    Buffer.add_string buf cursor_hide_seq;
-    let preamble_len = Buffer.length buf in
+    if use_sync then Ansi.Writer.write_string buf sync_output_on;
+    Ansi.Writer.write_string buf cursor_hide_seq;
+    let preamble_len = Ansi.Writer.len buf in
 
     (* No cursor homing here: the diff renderer emits an absolute
        cursor_position for every run it touches, so anything written between
@@ -741,14 +736,13 @@ let submit ?primary_required_rows t =
       | Some height ->
           Some { Screen.y = Primary.render_offset t.primary; height }
     in
-    Screen.render_to_buffer ~full:forced_full ?scroll_hint ?viewport t.screen
-      buf;
+    Screen.render_into ~full:forced_full ?scroll_hint ?viewport t.screen buf;
     (match active_h with
     | Some active ->
         let offset = Primary.render_offset t.primary in
         if offset + active < t.height then (
           buf_cursor_position buf ~row:(offset + active + 1) ~col:1;
-          Buffer.add_string buf erase_below_seq)
+          Ansi.Writer.write_string buf erase_below_seq)
     | None -> ());
 
     (* Skip the write when nothing beyond the preamble was produced and cursor
@@ -762,20 +756,14 @@ let submit ?primary_required_rows t =
       | `Alt -> t.height
     in
     let position = cursor_output_position t ~cursor ~cursor_max_row in
-    if Buffer.length buf > preamble_len || cursor_dirty t ~cursor ~position then begin
-      if t.config.mode = `Alt then
-        Buffer.add_string buf
-          Ansi.(to_string (cursor_position ~row:t.height ~col:1));
+    if Ansi.Writer.len buf > preamble_len || cursor_dirty t ~cursor ~position
+    then begin
+      if t.config.mode = `Alt then Ansi.cursor_position ~row:t.height ~col:1 buf;
       apply_cursor_state t ~buf ~cursor ~position;
-      if use_sync then Buffer.add_string buf sync_output_off;
+      if use_sync then Ansi.Writer.write_string buf sync_output_off;
 
-      let len = Buffer.length buf in
-      if len > Bytes.length t.submit_scratch then
-        t.submit_scratch <-
-          Bytes.create (max len (2 * Bytes.length t.submit_scratch));
-      Buffer.blit buf 0 t.submit_scratch 0 len;
       t.frame_modes_armed <- true;
-      t.backend.write_output t.submit_scratch 0 len
+      t.backend.write_output (Ansi.Writer.buffer buf) 0 (Ansi.Writer.len buf)
     end;
 
     if t.frame_dump_every > 0 then (
@@ -1177,8 +1165,7 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           config;
           backend;
           screen;
-          submit_buf = Buffer.create 4096;
-          submit_scratch = Bytes.create 4096;
+          submit_buf = Ansi.Writer.create 4096;
           pending_startup_events = List.rev !startup_events;
           running = true;
           redraw_requested = false;

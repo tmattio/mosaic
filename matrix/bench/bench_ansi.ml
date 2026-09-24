@@ -164,7 +164,6 @@ module Attr = Ansi.Attr
 
 (* Shared buffer for all Sgr_state benchmarks - reused per iteration.
    Alternating styles at 1920 cells can emit ~50 bytes per cell. *)
-let sgr_buf = Bytes.create 131072
 
 (* Palette of styles for realistic TUI rendering *)
 let palette =
@@ -190,7 +189,7 @@ let palette =
 
 (* Pre-allocated state and writer for zero-allocation benchmarks *)
 let sgr_state_tui = Sgr.create ()
-let sgr_writer_tui = Ansi.Writer.make sgr_buf
+let sgr_writer_tui = Ansi.Writer.create 131072
 
 let sgr_tui_frame_80x24 =
   Thumper.bench "sgr_tui_frame_80x24" (fun () ->
@@ -212,7 +211,7 @@ let sgr_tui_frame_80x24 =
       ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_tui)))
 
 let sgr_state_same = Sgr.create ()
-let sgr_writer_same = Ansi.Writer.make sgr_buf
+let sgr_writer_same = Ansi.Writer.create 131072
 let sgr_white = C.of_rgb 255 255 255
 
 let sgr_same_style_1920 =
@@ -229,7 +228,7 @@ let sgr_same_style_1920 =
       ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_same)))
 
 let sgr_state_alt = Sgr.create ()
-let sgr_writer_alt = Ansi.Writer.make sgr_buf
+let sgr_writer_alt = Ansi.Writer.create 131072
 let sgr_red = C.of_rgb 255 0 0
 let sgr_green = C.of_rgb 0 255 0
 let sgr_alt_bg = C.of_rgb 26 26 26
@@ -256,7 +255,7 @@ let link_url = "https://example.com/path/to/resource"
 (* Pre-allocated literal sequence *)
 let link_text = Ansi.literal "link text here"
 let sgr_state_link = Sgr.create ()
-let sgr_writer_link = Ansi.Writer.make sgr_buf
+let sgr_writer_link = Ansi.Writer.create 131072
 let sgr_link_fg = C.of_rgb 77 128 255
 
 let sgr_hyperlink_transitions =
@@ -282,7 +281,7 @@ let partial_colors =
   [| C.of_rgb 255 0 0; C.of_rgb 0 255 0; C.of_rgb 0 0 255; C.of_rgb 255 255 0 |]
 
 let sgr_state_partial = Sgr.create ()
-let sgr_writer_partial = Ansi.Writer.make sgr_buf
+let sgr_writer_partial = Ansi.Writer.create 131072
 let sgr_partial_bg = C.of_rgb 26 26 38
 
 let sgr_partial_changes =

@@ -109,9 +109,8 @@ type t = {
   mutable row_offset : int;
   diff : diff_ctx;
   (* Retained ANSI output capacity; grows only past its high-water mark.
-     [render_writer] wraps [render_bytes] and is rebuilt only when it grows. *)
-  mutable render_bytes : bytes;
-  mutable render_writer : Ansi.writer;
+     [render_writer] is used only by the string-returning convenience API. *)
+  render_writer : Ansi.writer;
   (* Clock time of the last committed frame; nan before the first frame. *)
   mutable last_render_time : float;
   (* Capabilities *)
@@ -126,10 +125,6 @@ type t = {
 
 let[@inline] width_step w = if w <= 0 then 1 else w
 let[@inline] clamp_height grid height = max 0 (min (Grid.height grid) height)
-
-(* Avoid a first-frame retry for ordinary terminals without imposing the old
-   2 MiB reservation on every standalone or offscreen Screen. *)
-let initial_render_buffer_size = 16 * 1024
 
 (* --- Core Rendering Logic --- *)
 
@@ -383,6 +378,7 @@ let emit_frame (r : t) ~(mode : render_mode) ~scroll_hint ~viewport
     | Some v -> clamp_height r.next v.height
   in
   let render_start = r.clock () in
+  let output_start = Ansi.Writer.len writer in
   let c = r.diff in
   c.mode <- mode;
   c.curr <- r.next;
@@ -399,16 +395,10 @@ let emit_frame (r : t) ~(mode : render_mode) ~scroll_hint ~viewport
   c.prev <- prev;
   c.prev_width <- Grid.width prev;
   c.prev_height <- min (Grid.height prev) c.height;
-  let cells =
-    try run_diff c
-    with exn ->
-      let bt = Printexc.get_raw_backtrace () in
-      Ansi.Sgr_state.reset r.sgr_state;
-      Printexc.raise_with_backtrace exn bt
-  in
+  let cells = run_diff c in
   r.emit_f.e_elapsed_ms <- (r.clock () -. render_start) *. 1000.;
   r.e_cells <- cells;
-  r.e_output_len <- Ansi.Writer.len writer;
+  r.e_output_len <- Ansi.Writer.len writer - output_start;
   r.e_presented_height <- presented_height r height
 
 let commit_frame r =
@@ -416,43 +406,23 @@ let commit_frame r =
   clear_unpresented_rows r r.e_presented_height;
   finalize_frame r
 
-let grow_capacity current required =
-  if required > Sys.max_string_length then raise_notrace Ansi.Writer.Buffer_full;
-  let doubled =
-    if current > Sys.max_string_length / 2 then Sys.max_string_length
-    else current * 2
-  in
-  let capacity = max required doubled in
-  if capacity <= current then raise_notrace Ansi.Writer.Buffer_full;
-  capacity
+let render_into ?(full = false) ?scroll_hint ?viewport frame writer =
+  let mode = if full then `Full else `Diff in
+  prepare_frame frame;
+  (try emit_frame frame ~mode ~scroll_hint ~viewport ~writer
+   with exn ->
+     let bt = Printexc.get_raw_backtrace () in
+     frame.diff.out <- frame.render_writer;
+     Ansi.Sgr_state.reset frame.sgr_state;
+     Printexc.raise_with_backtrace exn bt);
+  frame.diff.out <- frame.render_writer;
+  commit_frame frame
 
-let emit_to_render_bytes frame ~mode ~scroll_hint ~viewport =
+let render ?full ?scroll_hint ?viewport frame =
   let writer = frame.render_writer in
   Ansi.Writer.reset_pos writer;
-  try emit_frame frame ~mode ~scroll_hint ~viewport ~writer
-  with Ansi.Writer.Buffer_full ->
-    let counter = Ansi.Writer.make_counting () in
-    emit_frame frame ~mode ~scroll_hint ~viewport ~writer:counter;
-    let capacity =
-      grow_capacity (Bytes.length frame.render_bytes) frame.e_output_len
-    in
-    frame.render_bytes <- Bytes.create capacity;
-    frame.render_writer <- Ansi.Writer.make frame.render_bytes;
-    emit_frame frame ~mode ~scroll_hint ~viewport ~writer:frame.render_writer
-
-let render ?(full = false) ?scroll_hint ?viewport frame =
-  let mode = if full then `Full else `Diff in
-  prepare_frame frame;
-  emit_to_render_bytes frame ~mode ~scroll_hint ~viewport;
-  commit_frame frame;
-  Bytes.sub_string frame.render_bytes ~pos:0 ~len:frame.e_output_len
-
-let render_to_buffer ?(full = false) ?scroll_hint ?viewport frame buffer =
-  let mode = if full then `Full else `Diff in
-  prepare_frame frame;
-  emit_to_render_bytes frame ~mode ~scroll_hint ~viewport;
-  commit_frame frame;
-  Buffer.add_subbytes buffer frame.render_bytes 0 frame.e_output_len
+  render_into ?full ?scroll_hint ?viewport frame writer;
+  Ansi.Writer.contents writer
 
 (* Creation & Management *)
 
@@ -464,8 +434,7 @@ let create ?width_method ?(cursor_visible = true) ?(explicit_width = false)
      compare complex cells and hyperlinks by handle across frames. *)
   let current = Grid.create ~width:1 ~height:1 ~width_method:w_method () in
   let sgr_state = Ansi.Sgr_state.create () in
-  let render_bytes = Bytes.create initial_render_buffer_size in
-  let render_writer = Ansi.Writer.make render_bytes in
+  let render_writer = Ansi.Writer.create 0 in
   {
     clock;
     stats = { frame_count = 0; total_cells = 0; total_bytes = 0 };
@@ -522,7 +491,6 @@ let create ?width_method ?(cursor_visible = true) ?(explicit_width = false)
         explicit_cursor_positioning = false;
         hyperlinks = true;
       };
-    render_bytes;
     render_writer;
     last_render_time = Float.nan;
   }

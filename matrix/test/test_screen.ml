@@ -615,6 +615,50 @@ let test_buffer_overflow_prevention () =
     (fun len -> len > 1000)
     (String.length output)
 
+let test_render_into_appends_and_commits_once () =
+  let build screen id =
+    Screen.build screen ~width:32 ~height:2 (fun grid hits ->
+        let style =
+          Ansi.Style.hyperlink "https://example.com/target" Ansi.Style.default
+        in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"A styled frame with 世界" ~style;
+        Grid.draw_text grid ~x:0 ~y:1 ~text:"second row";
+        Screen.Hit_grid.add hits ~x:0 ~y:0 ~width:2 ~height:1 ~id)
+  in
+  let reference = Screen.create () in
+  build reference 42;
+  let expected = Screen.render reference in
+  let screen = Screen.create () in
+  build screen 42;
+  let writer = Ansi.Writer.create 1 in
+  Ansi.Writer.write_string writer "prefix:";
+  let initial_capacity = Bytes.length (Ansi.Writer.buffer writer) in
+  Screen.render_into screen writer;
+  equal ~msg:"caller prefix survives growth and frame output matches render"
+    string ("prefix:" ^ expected)
+    (Ansi.Writer.contents writer);
+  satisfies ~claim:"frame grows the caller's tiny writer" int
+    (fun capacity -> capacity > initial_capacity)
+    (Bytes.length (Ansi.Writer.buffer writer));
+  equal ~msg:"frame metrics exclude the caller prefix" int
+    (String.length expected) (Screen.last_metrics screen).bytes;
+  equal ~msg:"first frame commits once" int 1 (Screen.stats screen).frame_count;
+  equal ~msg:"first hit grid is published" int 42
+    (Screen.query_hit screen ~x:0 ~y:0);
+  build screen 77;
+  equal ~msg:"next hit grid stays private until rendering" int 42
+    (Screen.query_hit screen ~x:0 ~y:0);
+  Ansi.Writer.reset_pos writer;
+  Ansi.Writer.write_string writer "next:";
+  Screen.render_into screen writer;
+  equal ~msg:"committed baseline makes the identical frame empty" string "next:"
+    (Ansi.Writer.contents writer);
+  equal ~msg:"unchanged frame reports zero output bytes" int 0
+    (Screen.last_metrics screen).bytes;
+  equal ~msg:"second frame commits once" int 2 (Screen.stats screen).frame_count;
+  equal ~msg:"hit changes publish even without visual output" int 77
+    (Screen.query_hit screen ~x:0 ~y:0)
+
 let test_render_large_hyperlinked_frame_succeeds () =
   let r = Screen.create () in
   let width = 96 in
@@ -1016,6 +1060,8 @@ let () =
         [
           test "Extremely wide characters" test_extremely_wide_char;
           test "Buffer overflow prevention" test_buffer_overflow_prevention;
+          test "Render into caller writer appends and commits once"
+            test_render_into_appends_and_commits_once;
           test "Large hyperlinked Screen.render succeeds"
             test_render_large_hyperlinked_frame_succeeds;
           test "Resize triggers full redraw" test_resize_full_redraw;

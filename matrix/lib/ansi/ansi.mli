@@ -11,8 +11,7 @@
 
     For render loops, use {!emit} with a pre-allocated buffer:
     {[
-    let buf = Bytes.create 65536 in
-    let w = Ansi.Writer.make buf in
+    let w = Ansi.Writer.create 65536 in
     Ansi.emit (Ansi.cursor_position ~row:1 ~col:1) w;
     Ansi.emit (Ansi.literal "Hello") w
     ]}
@@ -62,11 +61,7 @@ val emit : t -> writer -> unit
 (** [emit seq w] applies [seq] to [w]. *)
 
 val to_string : t -> string
-(** [to_string seq] converts [seq] to a string. Allocates a temporary buffer. *)
-
-val to_buffer : t -> Buffer.t -> unit
-(** [to_buffer seq buf] appends [seq] to [buf]. Allocates an intermediate string
-    via {!to_string}. *)
+(** [to_string seq] runs [seq] once and returns its output as a string. *)
 
 (** {1:csi CSI and SGR primitives} *)
 

@@ -124,8 +124,8 @@ type viewport = {
 }
 (** A terminal viewport rendered by the screen.
 
-    [None] in {!render} and {!render_to_buffer} means render the full next grid
-    at the screen's current {!row_offset}. [Some v] renders the first [v.height]
+    [None] in {!render} and {!render_into} means render the full next grid at
+    the screen's current {!row_offset}. [Some v] renders the first [v.height]
     grid rows at terminal row offset [v.y]. *)
 
 val render :
@@ -146,19 +146,20 @@ val render :
       viewport are not presented and do not become active hit regions.
 
     [render] copies the retained output into a fresh string every call; hot
-    paths should prefer {!render_to_buffer}. *)
+    paths should prefer {!render_into}. *)
 
-val render_to_buffer :
+val render_into :
   ?full:bool ->
   ?scroll_hint:scroll_hint ->
   ?viewport:viewport ->
   t ->
-  Buffer.t ->
+  Ansi.Writer.t ->
   unit
-(** [render_to_buffer ~full ~scroll_hint ~viewport t buf] is like {!render}, but
-    appends the ANSI output to [buf]. This is the intended per-frame eliminator:
-    output storage is retained by [t], so frames within the prior high-water
-    mark allocate no output scratch. *)
+(** [render_into ~full ~scroll_hint ~viewport t writer] is like {!render}, but
+    appends output directly to [writer]. The caller owns and resets the writer;
+    its existing contents are preserved. Frame byte metrics count only the
+    appended output. Reuse the writer to retain output capacity across frames.
+*)
 
 (** {1:screen_state Screen state} *)
 

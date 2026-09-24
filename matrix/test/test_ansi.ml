@@ -198,19 +198,17 @@ let style_shared_disable_codes () =
 let style_emit_function () =
   (* Test that emit produces the same output as sgr_sequence *)
   let style = Style.make ~fg:Color.red ~bold:true () in
-  let buf = Bytes.create 64 in
-  let w = Writer.make buf in
+  let w = Writer.create 64 in
   Style.emit style w;
-  let emitted = Bytes.sub_string buf 0 (Writer.len w) in
+  let emitted = Writer.contents w in
   let seq = Style.sgr_sequence style in
   check_seq "emit matches sgr_sequence" seq emitted;
 
   (* Test emit with prev style *)
-  let buf2 = Bytes.create 64 in
-  let w2 = Writer.make buf2 in
+  let w2 = Writer.create 64 in
   let style2 = Style.make ~fg:Color.red ~italic:true () in
   Style.emit ~prev:style style2 w2;
-  let emitted2 = Bytes.sub_string buf2 0 (Writer.len w2) in
+  let emitted2 = Writer.contents w2 in
   (* Should only disable bold (22) and enable italic (3) - not emit fg again *)
   let codes2 = Style.to_sgr_codes ~prev:style style2 in
   satisfies ~claim:"non-empty emit delta" string
@@ -257,182 +255,162 @@ let style_compare_and_hash () =
 (* --- 3. SGR State Machine (Diffing) --- *)
 
 let sgr_state_transitions () =
-  let buf = Bytes.create 128 in
-  let w = Writer.make buf in
+  let w = Writer.create 128 in
   let state = Sgr_state.create () in
 
   (* 1. Initial: emits reset(0) + attributes *)
   Sgr_state.update state w ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.bold) ~link:"";
 
-  let out1 = Writer.slice w in
+  let out1 = Writer.contents w in
   (* Expect: Reset(0); FG(Red); Bold(1) *)
   (* Sequence: \x1b[0;38;2;255;0;0;1m *)
-  check_seq "initial transition" "\x1b[0;38;2;255;0;0;1m" (Bytes.to_string out1);
+  check_seq "initial transition" "\x1b[0;38;2;255;0;0;1m" out1;
 
   (* 2. No-op: update with exact same values *)
-  let w2 = Writer.make buf in
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.bold) ~link:"";
   equal ~msg:"noop update empty" int 0 (Writer.len w2);
 
   (* 3. Delta: Remove Bold, keep color *)
-  let w3 = Writer.make buf in
+  let w3 = Writer.create 128 in
   Sgr_state.update state w3 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:0 ~link:"";
 
   (* Only the attribute changes; the foreground is already active. *)
-  let out3 = Bytes.to_string (Writer.slice w3) in
+  let out3 = Writer.contents w3 in
   check_seq "delta transition" "\x1b[22m" out3
 
 let sgr_foreground_only_change_does_not_reset () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   Sgr_state.update state w1 ~fg:(Color.of_rgb 255 0 0)
     ~bg:(Color.of_rgb 0 0 255) ~attrs:(Attr.pack Attr.bold) ~link:"";
-  let w2 = Writer.make buf in
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:(Color.of_rgb 0 255 0)
     ~bg:(Color.of_rgb 0 0 255) ~attrs:(Attr.pack Attr.bold) ~link:"";
-  let out = Bytes.to_string (Writer.slice w2) in
+  let out = Writer.contents w2 in
   check_seq "foreground-only delta" "\x1b[38;2;0;255;0m" out;
   is_false ~msg:"foreground-only delta does not reset"
     (String.starts_with ~prefix:"\x1b[0" out)
 
 let sgr_background_only_change_does_not_reset () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   Sgr_state.update state w1 ~fg:(Color.of_rgb 255 0 0)
     ~bg:(Color.of_rgb 0 0 255) ~attrs:(Attr.pack Attr.bold) ~link:"";
-  let w2 = Writer.make buf in
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:(Color.of_rgb 255 0 0)
     ~bg:(Color.of_rgb 0 255 0) ~attrs:(Attr.pack Attr.bold) ~link:"";
-  check_seq "background-only delta" "\x1b[48;2;0;255;0m"
-    (Bytes.to_string (Writer.slice w2))
+  check_seq "background-only delta" "\x1b[48;2;0;255;0m" (Writer.contents w2)
 
 let sgr_shared_attr_disable_reenables_survivor () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   let bold_dim = Attr.union Attr.bold Attr.dim in
   Sgr_state.update state w1 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack bold_dim) ~link:"";
-  let w2 = Writer.make buf in
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.dim) ~link:"";
-  check_seq "bold disabled and dim restored" "\x1b[22;2m"
-    (Bytes.to_string (Writer.slice w2))
+  check_seq "bold disabled and dim restored" "\x1b[22;2m" (Writer.contents w2)
 
 let sgr_enclosure_disable_group () =
   (* SGR 54 clears both Framed and Encircled; the diff must treat the pair as
      one group when disabling and re-enabling survivors. *)
-  let buf = Bytes.create 128 in
   (* Encircled -> none must emit the shared disable code, not an empty CSI m
      (which terminals treat as a full SGR reset). *)
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   Sgr_state.update state w1 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.encircled) ~link:"";
-  let w2 = Writer.make buf in
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg ~attrs:0
     ~link:"";
-  check_seq "encircled disabled via 54" "\x1b[54m"
-    (Bytes.to_string (Writer.slice w2));
+  check_seq "encircled disabled via 54" "\x1b[54m" (Writer.contents w2);
   (* Overline+Encircled -> Encircled: dropping overline must not emit 54. *)
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   Sgr_state.update state w1 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack (Attr.union Attr.overline Attr.encircled))
     ~link:"";
-  let w2 = Writer.make buf in
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.encircled) ~link:"";
-  check_seq "overline drop keeps encircled" "\x1b[55m"
-    (Bytes.to_string (Writer.slice w2));
+  check_seq "overline drop keeps encircled" "\x1b[55m" (Writer.contents w2);
   (* Framed+Encircled -> Framed: disable via 54, then re-enable framed. *)
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   Sgr_state.update state w1 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack (Attr.union Attr.framed Attr.encircled))
     ~link:"";
-  let w2 = Writer.make buf in
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.framed) ~link:"";
   check_seq "encircled disabled and framed restored" "\x1b[54;51m"
-    (Bytes.to_string (Writer.slice w2))
+    (Writer.contents w2)
 
 let sgr_same_rgba_different_intent_emits_color_delta () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   Sgr_state.update state w1 ~fg:(Color.indexed 1) ~bg:Color.default_bg ~attrs:0
     ~link:"";
-  let w2 = Writer.make buf in
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:(Color.of_rgb 128 0 0) ~bg:Color.default_bg
     ~attrs:0 ~link:"";
-  check_seq "intent-only color delta" "\x1b[38;2;128;0;0m"
-    (Bytes.to_string (Writer.slice w2))
+  check_seq "intent-only color delta" "\x1b[38;2;128;0;0m" (Writer.contents w2)
 
 let sgr_transparent_bg_resets () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   Sgr_state.update state w1 ~fg:(Color.of_rgb 255 0 0)
     ~bg:(Color.of_rgb 0 0 255) ~attrs:0 ~link:"";
   check_seq "bg applied" "\x1b[0;38;2;255;0;0;48;2;0;0;255m"
-    (Bytes.to_string (Writer.slice w1));
-  let w2 = Writer.make buf in
+    (Writer.contents w1);
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:0 ~link:"";
-  check_seq "bg cleared to default" "\x1b[49m"
-    (Bytes.to_string (Writer.slice w2))
+  check_seq "bg cleared to default" "\x1b[49m" (Writer.contents w2)
 
 let sgr_transparent_fg_resets_to_default () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
-  let w1 = Writer.make buf in
+  let w1 = Writer.create 128 in
   Sgr_state.update state w1 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:0 ~link:"";
-  check_seq "fg applied" "\x1b[0;38;2;255;0;0m"
-    (Bytes.to_string (Writer.slice w1));
-  let w2 = Writer.make buf in
+  check_seq "fg applied" "\x1b[0;38;2;255;0;0m" (Writer.contents w1);
+  let w2 = Writer.create 128 in
   Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg ~attrs:0
     ~link:"";
-  let out = Bytes.to_string (Writer.slice w2) in
+  let out = Writer.contents w2 in
   check_seq "fg cleared to default" "\x1b[39m" out;
   is_false ~msg:"default fg is not emitted as truecolor black"
     (String.contains out '3' && String.contains out '8')
 
 let sgr_rgb_downgrades_to_ansi256 () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
   Sgr_state.set_color_depth state `Ansi256;
-  let w = Writer.make buf in
+  let w = Writer.create 128 in
   Sgr_state.update state w ~fg:(Color.of_rgb 255 0 0) ~bg:(Color.of_rgb 0 0 255)
     ~attrs:0 ~link:"";
   check_seq "rgb downgraded to ansi256" "\x1b[0;38;5;9;48;5;12m"
-    (Bytes.to_string (Writer.slice w))
+    (Writer.contents w)
 
 let sgr_rgb_downgrades_to_ansi16 () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
   Sgr_state.set_color_depth state `Ansi16;
-  let w = Writer.make buf in
+  let w = Writer.create 128 in
   Sgr_state.update state w ~fg:(Color.of_rgb 255 0 0) ~bg:(Color.of_rgb 0 0 255)
     ~attrs:0 ~link:"";
-  check_seq "rgb downgraded to ansi16" "\x1b[0;91;104m"
-    (Bytes.to_string (Writer.slice w))
+  check_seq "rgb downgraded to ansi16" "\x1b[0;91;104m" (Writer.contents w)
 
 let sgr_indexed_stays_indexed_without_truecolor () =
-  let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
   Sgr_state.set_color_depth state `Ansi256;
-  let w = Writer.make buf in
+  let w = Writer.create 128 in
   Sgr_state.update state w ~fg:(Color.indexed 42) ~bg:(Color.indexed 99)
     ~attrs:0 ~link:"";
-  check_seq "indexed preserved" "\x1b[0;38;5;42;48;5;99m"
-    (Bytes.to_string (Writer.slice w))
+  check_seq "indexed preserved" "\x1b[0;38;5;42;48;5;99m" (Writer.contents w)
 
 (* --- 4. Parser Resilience --- *)
 
@@ -745,8 +723,7 @@ let parser_mode_sequences () =
 (* --- 5. Writer & Low-Level Escape --- *)
 
 let writer_utf8_encoding () =
-  let buf = Bytes.create 16 in
-  let w = Writer.make buf in
+  let w = Writer.create 16 in
 
   (* 1 byte: A *)
   utf8 (Char.code 'A') w;
@@ -755,14 +732,13 @@ let writer_utf8_encoding () =
   (* 4 byte: 🚀 (Rocket 0x1F680) *)
   utf8 0x1F680 w;
 
-  let out = Bytes.to_string (Writer.slice w) in
+  let out = Writer.contents w in
   equal ~msg:"utf8 encoding" string "A€🚀" out
 
 let writer_hyperlink_params () =
-  let buf = Bytes.create 64 in
-  let w = Writer.make buf in
+  let w = Writer.create 64 in
   hyperlink_start ~params:"id=123" ~url:"http://foo" w;
-  let out = Bytes.to_string (Writer.slice w) in
+  let out = Writer.contents w in
   (* OSC 8 ; params ; url ST (\x1b\\) *)
   check_seq "hyperlink with params" "\x1b]8;id=123;http://foo\x1b\\" out
 
@@ -791,25 +767,61 @@ let color_scheme_report_query () =
     (Ansi.to_string (Ansi.query Ansi.Color_scheme_report))
 
 let writer_invalid_scalar_replacement () =
-  let buf = Bytes.create 8 in
-  let w = Writer.make buf in
+  let w = Writer.create 8 in
   (* Surrogate code point should be clamped to U+FFFD *)
   utf8 0xD800 w;
-  check_seq "invalid scalar -> replacement" "\xef\xbf\xbd"
-    (Bytes.to_string (Writer.slice w))
+  check_seq "invalid scalar -> replacement" "\xef\xbf\xbd" (Writer.contents w)
+
+let writer_growth_preserves_output () =
+  let w = Writer.create 0 in
+  Writer.write_char w 'a';
+  let tail = String.make 1024 'b' in
+  Writer.write_string w tail;
+  let snapshot = Writer.contents w in
+  equal ~msg:"string growth preserves the prefix" string ("a" ^ tail) snapshot;
+  Writer.reset_pos w;
+  Writer.write_string w "reset";
+  equal ~msg:"reset clears the length" string "reset" (Writer.contents w);
+  equal ~msg:"contents does not alias retained storage" string ("a" ^ tail)
+    snapshot;
+  let w = Writer.create 4 in
+  Writer.write_string w "abcd";
+  Writer.write_subbytes w (Writer.buffer w) 1 3;
+  equal ~msg:"growth accepts its own buffer as source" string "abcdbcd"
+    (Writer.contents w);
+  Writer.write_subbytes w (Writer.buffer w) 0 1;
+  equal ~msg:"append accepts its own buffer without growth" string "abcdbcda"
+    (Writer.contents w)
 
 let writer_checked_bounds () =
-  let w = Writer.make (Bytes.create 1) in
-  Writer.write_char w 'a';
-  (try
-     Writer.write_char w 'b';
-     fail "expected write_char overflow"
-   with Writer.Buffer_full -> ());
-  let w = Writer.make (Bytes.create 4) in
-  try
-    Writer.write_subbytes w (Bytes.of_string "abc") 2 2;
-    fail "expected invalid source slice"
-  with Invalid_argument _ -> ()
+  let w = Writer.create 4 in
+  Writer.write_string w "ok";
+  let source = Bytes.of_string "abc" in
+  List.iter
+    (fun (off, len) ->
+      (try
+         Writer.write_subbytes w source off len;
+         failf "expected invalid source slice off=%d len=%d" off len
+       with Invalid_argument _ -> ());
+      equal ~msg:"invalid slice preserves output" string "ok"
+        (Writer.contents w))
+    [ (-1, 1); (0, -1); (2, 2); (4, 0); (max_int, 1); (1, max_int) ];
+  Writer.write_subbytes w source 3 0;
+  equal ~msg:"empty slice at source end is valid" string "ok"
+    (Writer.contents w)
+
+let to_string_calls_emitter_once () =
+  let calls = ref 0 in
+  let payload = String.make 4096 'x' in
+  let result =
+    Ansi.to_string (fun writer ->
+        incr calls;
+        Writer.write_string writer (string_of_int !calls);
+        Writer.write_string writer payload)
+  in
+  equal ~msg:"emitter executes once even when output grows" int 1 !calls;
+  equal ~msg:"stateful emitter output is preserved" string ("1" ^ payload)
+    result
 
 (* --- 6. High Level API --- *)
 
@@ -837,8 +849,7 @@ let parameter_clamping () =
 
 let explicit_error_handling () =
   try
-    let buf = Bytes.create 16 in
-    let w = Writer.make buf in
+    let w = Writer.create 16 in
     (set_scrolling_region ~top:10 ~bottom:5) w;
     fail "scrolling region validation failed"
   with Invalid_argument _ -> ()
@@ -1064,7 +1075,9 @@ let tests =
         test "tmux passthrough doubles ESC" tmux_passthrough_doubles_esc;
         test "color scheme report query" color_scheme_report_query;
         test "invalid scalar replacement" writer_invalid_scalar_replacement;
+        test "growth preserves output" writer_growth_preserves_output;
         test "checked bounds" writer_checked_bounds;
+        test "to_string calls emitter once" to_string_calls_emitter_once;
       ];
     group "High Level API"
       [

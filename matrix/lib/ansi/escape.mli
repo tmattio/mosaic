@@ -7,11 +7,6 @@
 
 type writer = Writer.t
 
-val make : bytes -> writer
-val len : writer -> int
-val reset_pos : writer -> unit
-val slice : writer -> bytes
-
 (** {1:combinators Combinators} *)
 
 type t = writer -> unit
@@ -25,7 +20,6 @@ val bytes : bytes -> off:int -> len:int -> t
 val utf8 : int -> t
 val emit : t -> writer -> unit
 val to_string : t -> string
-val to_buffer : t -> Buffer.t -> unit
 
 (** {1:csi CSI and SGR} *)
 

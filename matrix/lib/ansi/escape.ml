@@ -8,13 +8,6 @@ type terminator = [ `Bel | `St ]
 let char_0 = Char.code '0' (* 48 *)
 let char_a_hex = Char.code 'a' - 10 (* 87: for hex digits a-f *)
 
-(* Writer primitives — delegated to Writer module *)
-
-let make = Writer.make
-let len = Writer.len
-let reset_pos = Writer.reset_pos
-let slice = Writer.slice
-
 (* Low-level writing — delegated to Writer module *)
 
 let write_char = Writer.write_char
@@ -124,29 +117,9 @@ let utf8 cp w =
 (* IO Utilities *)
 
 let to_string (t : t) =
-  (* Pass 1: counting *)
-  let counter = Writer.make_counting () in
-  t counter;
-  let n = Writer.len counter in
-  (* Fast path: return empty string literal without allocation *)
-  if n = 0 then ""
-  else
-    (* Pass 2: actual write *)
-    let bytes = Bytes.create n in
-    let w = Writer.make bytes in
-    t w;
-    let actual = Writer.len w in
-    if actual <> n then
-      invalid_arg
-        (Printf.sprintf
-           "Escape.to_string: stateful sequence detected (expected %d bytes, \
-            wrote %d)"
-           n actual);
-    Bytes.unsafe_to_string bytes
-
-(* to_buffer: convenience wrapper via to_string (allocates intermediate
-   string) *)
-let to_buffer t buf = Buffer.add_string buf (to_string t)
+  let w = Writer.create 0 in
+  t w;
+  Writer.contents w
 
 (* CSI / SGR helpers *)
 

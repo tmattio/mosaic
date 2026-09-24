@@ -1,52 +1,39 @@
-(** Byte buffer writers for escape sequence emission.
+(** Growable byte writers for escape sequence emission.
 
-    A writer wraps a {!Stdlib.Bytes.t} buffer and manages a write position.
-    Writers are mutable and not thread-safe: use one writer per thread. *)
-
-(** {1:writers Writers} *)
+    Writers own their storage and retain capacity across {!reset_pos} calls.
+    They are mutable and not thread-safe. *)
 
 type t
-(** The type for byte buffer writers. *)
+(** The type for byte writers. *)
 
-exception Buffer_full
-(** Raised when a write exceeds the destination buffer's capacity or a counting
-    writer exceeds the maximum OCaml byte-sequence length. *)
-
-val make : bytes -> t
-(** [make buf] is a writer targeting [buf]. The buffer must be large enough to
-    contain all generated output.
-
-    Write operations raise {!Buffer_full} if they would exceed [buf]. *)
-
-val make_counting : unit -> t
-(** [make_counting ()] is a writer that tracks output length without writing any
-    bytes. Useful for measuring escape sequence sizes before allocating a
-    buffer. *)
-
-(** {1:inspection Inspection} *)
+val create : int -> t
+(** [create capacity] is an empty writer with the given initial capacity.
+    Storage grows as needed. Raises [Invalid_argument] if [capacity] is negative
+    or exceeds [Sys.max_string_length]. *)
 
 val len : t -> int
 (** [len w] is the number of bytes written so far. *)
 
 val reset_pos : t -> unit
-(** [reset_pos w] resets the write position to zero. The underlying buffer is
-    not cleared. *)
+(** [reset_pos w] empties [w], retaining its capacity. *)
 
-val slice : t -> bytes
-(** [slice w] is a fresh copy of the bytes written so far. *)
+val contents : t -> string
+(** [contents w] is a copy of the bytes written so far. *)
 
-(** {1:writing Writing} *)
+val buffer : t -> bytes
+(** [buffer w] is borrowed storage containing output in the first [len w] bytes.
+    Do not mutate it or retain it across writes or {!reset_pos}. Use it with a
+    synchronous byte consumer to avoid copying the output. *)
 
 val write_char : t -> char -> unit
-(** [write_char w c] appends character [c]. In counting mode, increments the
-    position without writing. *)
+(** [write_char w c] appends [c]. *)
 
 val write_string : t -> string -> unit
-(** [write_string w s] appends string [s]. *)
+(** [write_string w s] appends [s]. *)
 
 val write_subbytes : t -> bytes -> int -> int -> unit
-(** [write_subbytes w buf off len] appends [len] bytes from [buf] starting at
-    offset [off].
+(** [write_subbytes w b off len] appends the given slice of [b]. Raises
+    [Invalid_argument] if the slice is outside [b]. *)
 
-    Raises [Invalid_argument] if the source slice is out of bounds and
-    {!Buffer_full} if the destination has insufficient remaining capacity. *)
+(** Writes raise [Invalid_argument] if the output would exceed
+    [Sys.max_string_length]. *)
