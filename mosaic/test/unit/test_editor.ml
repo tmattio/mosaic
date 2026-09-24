@@ -87,16 +87,25 @@ let combining_insertion_and_limit () =
   equal int 1 (Editor.cursor edited);
   equal string "e" (Editor.text original)
 
-let frozen_private_bridge () =
+let no_op_identity () =
   let original = Editor.of_string "ab" in
-  let scratch = Editor.Private.buffer original in
-  ignore (Edit_buffer.insert scratch "x" : bool);
-  let proposal =
-    Editor.Private.propose ~base:original ~preferred_col:None scratch
-  in
-  Edit_buffer.set_text scratch "corruption";
-  equal string "ab" (Editor.text original);
-  equal string "abx" (Editor.text proposal)
+  is_true (Editor.move_end original == original);
+  is_true (Editor.clear_selection original == original);
+  is_true (Editor.insert "" original == original);
+  is_true (Editor.undo original == original);
+  is_true (Editor.delete_forward original == original)
+
+let imperative_copy_is_independent () =
+  let original = Edit_buffer.create "ab" in
+  let branch = Edit_buffer.copy original in
+  ignore (Edit_buffer.insert branch "x" : bool);
+  Edit_buffer.set_cursor original 0;
+  equal string "ab" (Edit_buffer.text original);
+  equal string "abx" (Edit_buffer.text branch);
+  equal int 3 (Edit_buffer.cursor branch);
+  ignore (Edit_buffer.undo branch : bool);
+  equal string "ab" (Edit_buffer.text branch);
+  equal int 0 (Edit_buffer.cursor original)
 
 let () =
   run "Editor"
@@ -110,6 +119,6 @@ let () =
       test "stale same-source proposals" stale_same_source_proposal;
       test "stale affinity proposal" stale_affinity_proposal;
       test "combining insertion at limit" combining_insertion_and_limit;
-      test "private scratch cannot mutate published values"
-        frozen_private_bridge;
+      test "no-op edits preserve identity" no_op_identity;
+      test "imperative copies remain independent" imperative_copy_is_independent;
     ]

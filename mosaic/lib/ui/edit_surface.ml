@@ -247,11 +247,9 @@ end
 
 type t = {
   node : Renderable.t;
-  mutable buf : Edit_buffer.t;
   text_buf : Text_buffer.t;
   surface : Text_surface.t;
   mutable props : Props.t;
-  mutable preferred_col : int option;
   mutable on_change : Editor.t -> unit;
   mutable on_submit : (string -> unit) option;
   mode : mode;
@@ -263,9 +261,9 @@ type t = {
 let node t = t.node
 let state t = t.props.state
 let surface t = t.surface
-let value t = Edit_buffer.text t.buf
-let cursor t = Edit_buffer.cursor t.buf
-let selection t = Edit_buffer.selection t.buf
+let value t = Editor.text t.props.state
+let cursor t = Editor.cursor t.props.state
+let selection t = Editor.selection t.props.state
 
 let sanitize_text t s =
   match t.mode with
@@ -280,7 +278,8 @@ let register_line_info t =
        (fun () ->
          let di = Text_surface.layout t.surface in
          {
-           Renderable.line_count = Edit_buffer.line_count t.buf;
+           Renderable.line_count =
+             Layout.Source.line_count (Editor.source t.props.state);
            display_line_count = Matrix.Text.Layout.row_count di;
            logical_line = Matrix.Text.Layout.logical_line di;
            continuation = Matrix.Text.Layout.continuation di;
@@ -295,24 +294,12 @@ let set_on_submit t h = t.on_submit <- h
 let fire_on_submit t =
   match t.on_submit with Some f -> f (value t) | None -> ()
 
-let restore_editor t state =
-  t.buf <- Editor.Private.buffer state;
-  t.preferred_col <- Editor.Private.preferred_col state
-
-let propose t ~base =
-  if t.props.state == base then begin
-    let next =
-      Editor.Private.propose ~base ~preferred_col:t.preferred_col t.buf
-    in
-    if next != base then begin
-      (* Restore before invoking user code: acceptance can replace props reentrantly. *)
-      restore_editor t base;
-      if
-        t.mode <> `Single_line
-        || Layout.Source.line_count (Editor.source next) = 1
-      then t.on_change next
-    end
-  end
+let propose t ~base next =
+  if
+    t.props.state == base && next != base
+    && (t.mode <> `Single_line
+       || Layout.Source.line_count (Editor.source next) = 1)
+  then t.on_change next
 
 (* Sync *)
 
@@ -331,11 +318,11 @@ let spans_text_equals spans text =
     String.equal (Buffer.contents buf) text
 
 let sync_content t =
-  let text = Edit_buffer.text t.buf in
+  let text = Editor.text t.props.state in
   if t.props.spans <> [] && spans_text_equals t.props.spans text then
     Text_buffer.set_styled_text t.text_buf t.props.spans
   else Text_buffer.set_text t.text_buf text;
-  Text_buffer.set_source t.text_buf (Edit_buffer.source t.buf)
+  Text_buffer.set_source t.text_buf (Editor.source t.props.state)
 
 let sync t =
   sync_content t;
@@ -357,11 +344,12 @@ let handle_blur t = sync_style t ~focused:false
 (* Display line mapping *)
 
 let find_cursor_display_line t =
-  fst (Layout.locate (Text_surface.layout t.surface) (Edit_buffer.caret t.buf))
+  fst
+    (Layout.locate (Text_surface.layout t.surface) (Editor.caret t.props.state))
 
 let cursor_visual_col t display_line =
   let row, column =
-    Layout.locate (Text_surface.layout t.surface) (Edit_buffer.caret t.buf)
+    Layout.locate (Text_surface.layout t.surface) (Editor.caret t.props.state)
   in
   if row = display_line then column else 0
 
@@ -423,7 +411,7 @@ let handle_resize t _node =
   else clamp_scroll_offsets t
 
 let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
-  let source = Edit_buffer.source t.buf in
+  let source = Editor.source t.props.state in
   let content_width =
     Layout.Source.columns source
       ~width_method:(Text_buffer.width_method t.text_buf)
@@ -471,13 +459,14 @@ let render_before t _self grid ~delta:_ =
       else t.props.background_color
     in
     Matrix_grid.clear_rect ~color:bg grid ~x:x0 ~y:y0 ~width:w ~height:h;
-    if Edit_buffer.is_empty t.buf && String.length t.props.placeholder > 0 then begin
+    if Editor.length t.props.state = 0 && String.length t.props.placeholder > 0
+    then begin
       let style = Ansi.Style.make ~fg:t.props.placeholder_color ~bg () in
       Matrix_grid.clip grid { x = x0; y = y0; width = w; height = h } (fun () ->
           Matrix_grid.draw_text ~style grid ~x:x0 ~y:y0
             ~text:t.props.placeholder)
     end;
-    match Edit_buffer.selection t.buf with
+    match Editor.selection t.props.state with
     | Some (lo, hi) ->
         Text_surface.set_selection_bg t.surface (Some t.props.selection_color);
         Text_surface.set_selection_fg t.surface t.props.selection_fg;
@@ -492,7 +481,7 @@ let render_after t _self grid ~delta:_ =
     | None -> ()
     | Some ghost
       when String.length ghost = 0
-           || Option.is_some (Edit_buffer.selection t.buf) ->
+           || Option.is_some (Editor.selection t.props.state) ->
         ()
     | Some ghost ->
         let dl = find_cursor_display_line t in
@@ -555,105 +544,92 @@ let register_selection t =
         x >= nx && x < nx + w && y >= ny && y < ny + h)
       ~on_change:(fun sel ->
         let base = t.props.state in
-        (match sel with
-        | None -> Edit_buffer.clear_selection t.buf
-        | Some sel ->
-            let nx = Renderable.x t.node and ny = Renderable.y t.node in
-            let anchor = Selection.anchor sel and focus = Selection.focus sel in
-            let anchor =
-              Text_surface.local_caret t.surface ~x:(anchor.x - nx)
-                ~y:(anchor.y - ny)
-            in
-            let focus =
-              Text_surface.local_caret t.surface ~x:(focus.x - nx)
-                ~y:(focus.y - ny)
-            in
-            Edit_buffer.set_caret t.buf anchor;
-            Edit_buffer.set_caret ~select:true t.buf focus);
-        t.preferred_col <- None;
-        propose t ~base;
-        Edit_buffer.has_selection t.buf)
+        let next =
+          match sel with
+          | None -> Editor.clear_selection base
+          | Some sel ->
+              let nx = Renderable.x t.node and ny = Renderable.y t.node in
+              let anchor = Selection.anchor sel
+              and focus = Selection.focus sel in
+              let anchor =
+                Text_surface.local_caret t.surface ~x:(anchor.x - nx)
+                  ~y:(anchor.y - ny)
+              in
+              let focus =
+                Text_surface.local_caret t.surface ~x:(focus.x - nx)
+                  ~y:(focus.y - ny)
+              in
+              Editor.Private.select_carets ~anchor ~cursor:focus base
+        in
+        propose t ~base next;
+        Option.is_some (Editor.selection t.props.state))
       ~clear:(fun () ->
         let base = t.props.state in
-        Edit_buffer.clear_selection t.buf;
-        propose t ~base)
-      ~get_text:(fun () -> Edit_buffer.selected_text t.buf)
+        propose t ~base (Editor.clear_selection base))
+      ~get_text:(fun () -> Editor.selected_text t.props.state)
   else Renderable.unset_selection t.node
 
 (* Vertical movement *)
 
 let move_vertical t ~select ~delta =
-  let di = Text_surface.layout t.surface in
-  let n = Layout.row_count di in
-  if n > 0 then begin
-    let dl = find_cursor_display_line t in
-    let target_line = dl + delta in
-    if target_line >= 0 && target_line < n then begin
-      let col =
-        match t.preferred_col with
-        | Some c -> c
-        | None ->
-            let c = cursor_visual_col t dl in
-            t.preferred_col <- Some c;
-            c
-      in
-      let target = caret_at_col t target_line col in
-      Edit_buffer.set_caret ~select t.buf target;
-      true
-    end
-    else false
-  end
-  else false
-
-(* Visual line navigation *)
+  let base = t.props.state in
+  let layout = Text_surface.layout t.surface in
+  let line = find_cursor_display_line t in
+  let target_line = line + delta in
+  if target_line < 0 || target_line >= Layout.row_count layout then base
+  else
+    let col =
+      match Editor.Private.preferred_col base with
+      | Some col -> col
+      | None -> cursor_visual_col t line
+    in
+    let next = Editor.set_caret ~select (caret_at_col t target_line col) base in
+    Editor.Private.propose ~base ~preferred_col:(Some col) next
 
 let move_visual_line_start t ~select =
-  let di = Text_surface.layout t.surface in
-  let n = Layout.row_count di in
-  if n > 0 then begin
-    let dl = find_cursor_display_line t in
-    let grapheme = Layout.row_start di dl in
-    Edit_buffer.set_caret ~select t.buf
-      Layout.{ grapheme; affinity = Downstream };
-    true
-  end
-  else false
+  let layout = Text_surface.layout t.surface in
+  if Layout.row_count layout = 0 then t.props.state
+  else
+    let grapheme = Layout.row_start layout (find_cursor_display_line t) in
+    Editor.set_caret ~select
+      Layout.{ grapheme; affinity = Downstream }
+      t.props.state
 
 let move_visual_line_end t ~select =
-  let di = Text_surface.layout t.surface in
-  let n = Layout.row_count di in
-  if n > 0 then begin
-    let dl = find_cursor_display_line t in
-    let grapheme = display_line_end_offset t dl in
-    Edit_buffer.set_caret ~select t.buf Layout.{ grapheme; affinity = Upstream };
-    true
-  end
-  else false
+  let layout = Text_surface.layout t.surface in
+  if Layout.row_count layout = 0 then t.props.state
+  else
+    let grapheme = display_line_end_offset t (find_cursor_display_line t) in
+    Editor.set_caret ~select
+      Layout.{ grapheme; affinity = Upstream }
+      t.props.state
 
 (* Key handling *)
 
-type key_result = Unhandled | Handled | Vertical
-
-let handled result =
-  ignore (result : bool);
-  Handled
-
-let vertical result =
-  ignore (result : bool);
-  Vertical
-
 let line_home t ~select =
-  if Edit_buffer.move_line_start ~select t.buf then true
-  else
-    let line = Edit_buffer.cursor_line t.buf in
-    line > 0 && Edit_buffer.move_left ~select t.buf
+  let base = t.props.state in
+  let next = Editor.move_line_start ~select base in
+  if
+    ((not select) && Option.is_some (Editor.selection base))
+    || Editor.cursor next <> Editor.cursor base
+  then next
+  else if
+    Layout.Source.line_of_offset (Editor.source base) (Editor.cursor base) > 0
+  then Editor.move_left ~select next
+  else next
 
 let line_end t ~select =
-  if Edit_buffer.move_line_end ~select t.buf then true
-  else
-    let line = Edit_buffer.cursor_line t.buf in
-    line < Edit_buffer.line_count t.buf - 1
-    && Edit_buffer.move_right ~select t.buf
+  let base = t.props.state in
+  let next = Editor.move_line_end ~select base in
+  if
+    ((not select) && Option.is_some (Editor.selection base))
+    || Editor.cursor next <> Editor.cursor base
+  then next
+  else if
+    Layout.Source.line_of_offset (Editor.source base) (Editor.cursor base)
+    < Layout.Source.line_count (Editor.source base) - 1
+  then Editor.move_right ~select next
+  else next
 
 let regular_text data c =
   let m = data.Matrix_input.Key.modifier in
@@ -672,58 +648,52 @@ let regular_text data c =
       if code < 32 || code = 127 then None else Some text
 
 let run_action t action =
+  let base = t.props.state in
   match action with
-  | Move_left -> handled (Edit_buffer.move_left t.buf)
-  | Move_right -> handled (Edit_buffer.move_right t.buf)
+  | Move_left -> Some (Editor.move_left base)
+  | Move_right -> Some (Editor.move_right base)
   | Move_up when t.mode = `Multiline ->
-      vertical (move_vertical t ~select:false ~delta:(-1))
+      Some (move_vertical t ~select:false ~delta:(-1))
   | Move_down when t.mode = `Multiline ->
-      vertical (move_vertical t ~select:false ~delta:1)
-  | Move_up | Move_down -> Unhandled
-  | Select_left -> handled (Edit_buffer.move_left ~select:true t.buf)
-  | Select_right -> handled (Edit_buffer.move_right ~select:true t.buf)
+      Some (move_vertical t ~select:false ~delta:1)
+  | Move_up | Move_down -> None
+  | Select_left -> Some (Editor.move_left ~select:true base)
+  | Select_right -> Some (Editor.move_right ~select:true base)
   | Select_up when t.mode = `Multiline ->
-      vertical (move_vertical t ~select:true ~delta:(-1))
+      Some (move_vertical t ~select:true ~delta:(-1))
   | Select_down when t.mode = `Multiline ->
-      vertical (move_vertical t ~select:true ~delta:1)
-  | Select_up | Select_down -> Unhandled
-  | Line_home -> handled (line_home t ~select:false)
-  | Line_end -> handled (line_end t ~select:false)
-  | Select_line_home -> handled (line_home t ~select:true)
-  | Select_line_end -> handled (line_end t ~select:true)
-  | Visual_line_home -> handled (move_visual_line_start t ~select:false)
-  | Visual_line_end -> handled (move_visual_line_end t ~select:false)
-  | Select_visual_line_home -> handled (move_visual_line_start t ~select:true)
-  | Select_visual_line_end -> handled (move_visual_line_end t ~select:true)
-  | Buffer_home -> handled (Edit_buffer.move_home t.buf)
-  | Buffer_end -> handled (Edit_buffer.move_end t.buf)
-  | Select_buffer_home -> handled (Edit_buffer.move_home ~select:true t.buf)
-  | Select_buffer_end -> handled (Edit_buffer.move_end ~select:true t.buf)
-  | Delete_line -> handled (Edit_buffer.delete_line t.buf)
-  | Delete_to_line_end -> handled (Edit_buffer.delete_to_line_end t.buf)
-  | Delete_to_line_start -> handled (Edit_buffer.delete_to_line_start t.buf)
-  | Backspace -> handled (Edit_buffer.delete_backward t.buf)
-  | Delete -> handled (Edit_buffer.delete_forward t.buf)
-  | Newline when t.mode = `Multiline -> handled (Edit_buffer.insert t.buf "\n")
-  | Newline ->
+      Some (move_vertical t ~select:true ~delta:1)
+  | Select_up | Select_down -> None
+  | Line_home -> Some (line_home t ~select:false)
+  | Line_end -> Some (line_end t ~select:false)
+  | Select_line_home -> Some (line_home t ~select:true)
+  | Select_line_end -> Some (line_end t ~select:true)
+  | Visual_line_home -> Some (move_visual_line_start t ~select:false)
+  | Visual_line_end -> Some (move_visual_line_end t ~select:false)
+  | Select_visual_line_home -> Some (move_visual_line_start t ~select:true)
+  | Select_visual_line_end -> Some (move_visual_line_end t ~select:true)
+  | Buffer_home -> Some (Editor.move_home base)
+  | Buffer_end -> Some (Editor.move_end base)
+  | Select_buffer_home -> Some (Editor.move_home ~select:true base)
+  | Select_buffer_end -> Some (Editor.move_end ~select:true base)
+  | Delete_line -> Some (Editor.delete_line base)
+  | Delete_to_line_end -> Some (Editor.delete_to_line_end base)
+  | Delete_to_line_start -> Some (Editor.delete_to_line_start base)
+  | Backspace -> Some (Editor.delete_backward base)
+  | Delete -> Some (Editor.delete_forward base)
+  | Newline when t.mode = `Multiline -> Some (Editor.insert "\n" base)
+  | Newline | Submit ->
       fire_on_submit t;
-      Handled
-  | Undo -> handled (Edit_buffer.undo t.buf)
-  | Redo -> handled (Edit_buffer.redo t.buf)
-  | Word_forward -> handled (Edit_buffer.move_word_forward t.buf)
-  | Word_backward -> handled (Edit_buffer.move_word_backward t.buf)
-  | Select_word_forward ->
-      handled (Edit_buffer.move_word_forward ~select:true t.buf)
-  | Select_word_backward ->
-      handled (Edit_buffer.move_word_backward ~select:true t.buf)
-  | Delete_word_forward -> handled (Edit_buffer.delete_word_forward t.buf)
-  | Delete_word_backward -> handled (Edit_buffer.delete_word_backward t.buf)
-  | Select_all ->
-      Edit_buffer.select_all t.buf;
-      Handled
-  | Submit ->
-      fire_on_submit t;
-      Handled
+      Some (Editor.Private.propose ~base ~preferred_col:None base)
+  | Undo -> Some (Editor.undo base)
+  | Redo -> Some (Editor.redo base)
+  | Word_forward -> Some (Editor.move_word_forward base)
+  | Word_backward -> Some (Editor.move_word_backward base)
+  | Select_word_forward -> Some (Editor.move_word_forward ~select:true base)
+  | Select_word_backward -> Some (Editor.move_word_backward ~select:true base)
+  | Delete_word_forward -> Some (Editor.delete_word_forward base)
+  | Delete_word_backward -> Some (Editor.delete_word_backward base)
+  | Select_all -> Some (Editor.select_all base)
 
 let key_result_of_event t data =
   match Keymap.action t.keymap data with
@@ -733,9 +703,9 @@ let key_result_of_event t data =
       | Matrix_input.Key.Char c -> (
           match regular_text data c with
           | Some text ->
-              handled (Edit_buffer.insert t.buf (sanitize_text t text))
-          | None -> Unhandled)
-      | _ -> Unhandled)
+              Some (Editor.insert (sanitize_text t text) t.props.state)
+          | None -> None)
+      | _ -> None)
 
 let handle_key t (ev : Event.key) =
   let data = Event.Key.data ev in
@@ -745,15 +715,16 @@ let handle_key t (ev : Event.key) =
   | _ when Event.Key.default_prevented ev -> ()
   | _ -> (
       let base = t.props.state in
-      let result = key_result_of_event t data in
-      match result with
-      | Unhandled -> ()
-      | Handled | Vertical ->
+      match key_result_of_event t data with
+      | None -> ()
+      | Some next ->
           Event.Key.prevent_default ev;
-          if t.props.state == base then begin
-            if result <> Vertical then t.preferred_col <- None;
-            propose t ~base
-          end)
+          let next =
+            Editor.Private.propose ~base
+              ~preferred_col:(Editor.Private.preferred_col next)
+              next
+          in
+          propose t ~base next)
 
 (* Mouse handling *)
 
@@ -771,9 +742,7 @@ let handle_mouse t ev =
 let handle_paste t text =
   let base = t.props.state in
   let text = sanitize_text t (Ansi.strip text) in
-  ignore (Edit_buffer.insert t.buf text : bool);
-  t.preferred_col <- None;
-  propose t ~base
+  propose t ~base (Editor.insert text base)
 
 (* Construction *)
 
@@ -794,18 +763,15 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state ?spans
       ?show_cursor ?key_bindings ()
   in
   let width_method = Renderable.Private.width_method node in
-  let buf = Editor.Private.buffer state in
   let text_buf = Text_buffer.create ~width_method () in
   let surface = Text_surface.create node text_buf in
   Text_surface.set_wrap surface props.wrap;
   let t =
     {
       node;
-      buf;
       text_buf;
       surface;
       props;
-      preferred_col = Editor.Private.preferred_col state;
       on_change;
       on_submit;
       mode;
@@ -860,7 +826,6 @@ let apply_props t (props : Props.t) =
   let source_changed =
     Editor.source t.props.state != Editor.source props.state
   in
-  if state_changed then restore_editor t props.state;
   if t.props.wrap <> props.wrap then Text_surface.set_wrap t.surface props.wrap;
   t.props <- props;
   if keymap_changed then

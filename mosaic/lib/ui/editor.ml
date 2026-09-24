@@ -1,131 +1,785 @@
-type t = {
-  buffer : Edit_buffer.t;
-  revision : unit ref;
-  base : unit ref option;
-  preferred_col : int option;
-}
+module Buffer = struct
+  module Layout = Matrix.Text.Layout
+  module Source = Layout.Source
 
-let of_string ?(max_length = max_int) text =
-  {
-    buffer = Edit_buffer.create ~max_length text;
-    revision = ref ();
-    base = None;
-    preferred_col = None;
+  (* ───── Helpers ───── *)
+
+  let strip_newlines s =
+    let buf = Buffer.create (String.length s) in
+    let len = String.length s in
+    let i = ref 0 in
+    while !i < len do
+      let c = String.unsafe_get s !i in
+      if c = '\r' then
+        begin if !i + 1 < len && String.unsafe_get s (!i + 1) = '\n' then
+          i := !i + 2
+        else incr i
+        end
+      else if c = '\n' then incr i
+      else begin
+        Buffer.add_char buf c;
+        incr i
+      end
+    done;
+    if Buffer.length buf = len then s else Buffer.contents buf
+
+  let indexed_text s max_graphemes =
+    let source = Source.of_string s in
+    if Source.length source <= max_graphemes then source
+    else Source.of_string (Source.slice source ~first:0 ~last:max_graphemes)
+
+  (* ───── Types ───── *)
+
+  type snapshot = {
+    content : string;
+    cursor_pos : int;
+    affinity : Layout.affinity;
+    selection_anchor : int option;
   }
 
+  type t = {
+    mutable content : string;
+    mutable cursor_pos : int;
+    mutable affinity : Layout.affinity;
+    mutable selection_anchor : int option;
+    mutable max_length : int;
+    mutable undo_stack : snapshot list;
+    mutable redo_stack : snapshot list;
+    mutable cache : Source.t option;
+    tab_width : int;
+    width_method : Matrix.Text.width_method;
+    mutable revision : unit ref;
+    mutable base : unit ref option;
+    mutable preferred_col : int option;
+  }
+
+  (* ───── Cache ───── *)
+
+  let ensure_cache t =
+    match t.cache with
+    | Some c -> c
+    | None ->
+        let c = Source.of_string t.content in
+        t.cache <- Some c;
+        c
+
+  let source = ensure_cache
+  let invalidate_cache t = t.cache <- None
+  let find_line = Source.line_of_offset
+  let byte_offset_of_grapheme_in_content c i = Source.byte_offset c i
+
+  (* ───── Construction ───── *)
+
+  let create ?(max_length = 1000) ?(width_method = `Unicode) ?(tab_width = 2)
+      initial =
+    let max_length = Int.max 0 max_length in
+    let tab_width = Int.max 1 tab_width in
+    let source = indexed_text initial max_length in
+    {
+      content = Source.text source;
+      cursor_pos = Source.length source;
+      affinity = Layout.Downstream;
+      selection_anchor = None;
+      max_length;
+      undo_stack = [];
+      redo_stack = [];
+      cache = Some source;
+      tab_width;
+      width_method;
+      revision = ref ();
+      base = None;
+      preferred_col = None;
+    }
+
+  (* Copies share immutable content, source indexes and history entries. *)
+  let copy t = { t with content = t.content }
+
+  let same a b =
+    a.content == b.content
+    && a.cursor_pos = b.cursor_pos
+    && a.affinity = b.affinity
+    && a.selection_anchor = b.selection_anchor
+    && a.max_length = b.max_length
+    && a.undo_stack == b.undo_stack
+    && a.redo_stack == b.redo_stack
+
+  (* ───── Content ───── *)
+
+  let text t = t.content
+
+  let set_text t s =
+    let source = indexed_text s t.max_length in
+    t.affinity <- Layout.Downstream;
+    t.content <- Source.text source;
+    t.cache <- Some source;
+    t.cursor_pos <- Source.length source;
+    t.selection_anchor <- None
+
+  let length t =
+    let c = ensure_cache t in
+    Source.length c
+
+  let display_width t =
+    let c = ensure_cache t in
+    Source.columns ~width_method:t.width_method ~tab_width:t.tab_width c
+      ~first:0 ~last:(Source.length c)
+
+  let is_empty t = String.length t.content = 0
+
+  (* ───── Line information ───── *)
+
+  let line_count t =
+    let c = ensure_cache t in
+    Source.line_count c
+
+  let cursor_line t =
+    let c = ensure_cache t in
+    find_line c t.cursor_pos
+
+  let cursor_col t =
+    let c = ensure_cache t in
+    let line = find_line c t.cursor_pos in
+    t.cursor_pos - Source.line_start c line
+
+  (* ───── Cursor ───── *)
+
+  let cursor t = t.cursor_pos
+
+  let set_cursor t pos =
+    t.affinity <- Layout.Downstream;
+    let c = ensure_cache t in
+    t.cursor_pos <- Int.max 0 (Int.min pos (Source.length c));
+    t.selection_anchor <- None
+
+  let caret t = Layout.{ grapheme = t.cursor_pos; affinity = t.affinity }
+
+  let cursor_display_offset t =
+    Source.columns ~width_method:t.width_method ~tab_width:t.tab_width
+      (ensure_cache t) ~first:0 ~last:t.cursor_pos
+
+  (* ───── Selection ───── *)
+
+  let selection t =
+    match t.selection_anchor with
+    | None -> None
+    | Some anchor ->
+        let lo = Int.min anchor t.cursor_pos in
+        let hi = Int.max anchor t.cursor_pos in
+        if lo = hi then None else Some (lo, hi)
+
+  let has_selection t = Option.is_some (selection t)
+
+  let selected_text t =
+    match selection t with
+    | None -> ""
+    | Some (lo, hi) ->
+        let c = ensure_cache t in
+        let byte_lo = byte_offset_of_grapheme_in_content c lo in
+        let byte_hi = byte_offset_of_grapheme_in_content c hi in
+        String.sub t.content byte_lo (byte_hi - byte_lo)
+
+  let clear_selection t = t.selection_anchor <- None
+
+  let select_all t =
+    t.affinity <- Layout.Downstream;
+    let c = ensure_cache t in
+    t.selection_anchor <- Some 0;
+    t.cursor_pos <- Source.length c
+
+  (* ───── Undo / Redo ───── *)
+
+  (* Each undo point snapshots the full content — O(document) retained per
+   entry — so the history must be bounded: keep the newest entries and drop
+   the oldest, as OpenTUI's rope trims its history (rope.zig max_undo_depth).
+   Editing a large buffer in a long-lived widget stays bounded at
+   O(max_undo_depth × document). *)
+  let max_undo_depth = 200
+
+  let take n lst =
+    let rec go acc n = function
+      | [] -> List.rev acc
+      | _ when n <= 0 -> List.rev acc
+      | x :: rest -> go (x :: acc) (n - 1) rest
+    in
+    go [] n lst
+
+  let save_undo t =
+    let stack =
+      if List.length t.undo_stack >= max_undo_depth then
+        take (max_undo_depth - 1) t.undo_stack
+      else t.undo_stack
+    in
+    t.undo_stack <-
+      {
+        content = t.content;
+        cursor_pos = t.cursor_pos;
+        affinity = t.affinity;
+        selection_anchor = t.selection_anchor;
+      }
+      :: stack;
+    t.redo_stack <- []
+
+  let undo t =
+    match t.undo_stack with
+    | [] -> false
+    | snap :: rest ->
+        let old_content = t.content in
+        t.redo_stack <-
+          {
+            content = t.content;
+            cursor_pos = t.cursor_pos;
+            affinity = t.affinity;
+            selection_anchor = t.selection_anchor;
+          }
+          :: t.redo_stack;
+        t.undo_stack <- rest;
+        t.content <- snap.content;
+        t.cursor_pos <- snap.cursor_pos;
+        t.affinity <- snap.affinity;
+        t.selection_anchor <- snap.selection_anchor;
+        invalidate_cache t;
+        not (String.equal old_content snap.content)
+
+  let redo t =
+    match t.redo_stack with
+    | [] -> false
+    | snap :: rest ->
+        let old_content = t.content in
+        t.undo_stack <-
+          {
+            content = t.content;
+            cursor_pos = t.cursor_pos;
+            affinity = t.affinity;
+            selection_anchor = t.selection_anchor;
+          }
+          :: t.undo_stack;
+        t.redo_stack <- rest;
+        t.content <- snap.content;
+        t.cursor_pos <- snap.cursor_pos;
+        t.affinity <- snap.affinity;
+        t.selection_anchor <- snap.selection_anchor;
+        invalidate_cache t;
+        not (String.equal old_content snap.content)
+
+  (* ───── Internal mutation ───── *)
+
+  let delete_grapheme_range t lo hi =
+    let c = ensure_cache t in
+    let byte_lo = byte_offset_of_grapheme_in_content c lo in
+    let byte_hi = byte_offset_of_grapheme_in_content c hi in
+    let total_len = String.length t.content in
+    t.content <-
+      String.sub t.content 0 byte_lo
+      ^ String.sub t.content byte_hi (total_len - byte_hi);
+    t.selection_anchor <- None;
+    invalidate_cache t;
+    t.cursor_pos <-
+      Source.grapheme_of_byte (ensure_cache t) ~affinity:Downstream byte_lo;
+    t.affinity <- Layout.Downstream
+
+  let delete_selection t =
+    match selection t with
+    | None -> false
+    | Some (lo, hi) ->
+        save_undo t;
+        delete_grapheme_range t lo hi;
+        true
+
+  let clear t =
+    if is_empty t then false
+    else begin
+      save_undo t;
+      delete_grapheme_range t 0 (length t);
+      true
+    end
+
+  (* ───── Max length ───── *)
+
+  let max_length t = t.max_length
+
+  let set_max_length t n =
+    let n = Int.max 0 n in
+    t.max_length <- n;
+    let c = ensure_cache t in
+    if Source.length c > n then begin
+      let byte_end = byte_offset_of_grapheme_in_content c n in
+      t.content <- String.sub t.content 0 byte_end;
+      invalidate_cache t;
+      let new_len = n in
+      if t.cursor_pos > new_len then t.cursor_pos <- new_len;
+      t.selection_anchor <- None
+    end
+
+  (* ───── Editing ───── *)
+
+  let insert t inserted =
+    let old = ensure_cache t in
+    let first, last =
+      match selection t with
+      | Some range -> range
+      | None -> (t.cursor_pos, t.cursor_pos)
+    in
+    let a = Source.byte_offset old first and b = Source.byte_offset old last in
+    let prefix = String.sub t.content 0 a in
+    let suffix = String.sub t.content b (String.length t.content - b) in
+    let candidate = Source.of_string (prefix ^ inserted ^ suffix) in
+    let candidate, inserted_bytes =
+      if Source.length candidate <= t.max_length then
+        (candidate, String.length inserted)
+      else
+        let available =
+          max 0 (t.max_length - (Source.length old - (last - first)))
+        in
+        let admitted =
+          Source.slice (Source.of_string inserted) ~first:0 ~last:available
+        in
+        (Source.of_string (prefix ^ admitted ^ suffix), String.length admitted)
+    in
+    let content = Source.text candidate in
+    if String.equal content t.content then false
+    else begin
+      save_undo t;
+      t.content <- content;
+      t.cache <- Some candidate;
+      t.cursor_pos <-
+        Source.grapheme_of_byte candidate ~affinity:Downstream
+          (a + inserted_bytes);
+      t.affinity <- Layout.Downstream;
+      t.selection_anchor <- None;
+      true
+    end
+
+  let delete_backward t =
+    if has_selection t then delete_selection t
+    else if t.cursor_pos = 0 then false
+    else begin
+      save_undo t;
+      delete_grapheme_range t (t.cursor_pos - 1) t.cursor_pos;
+      true
+    end
+
+  let delete_forward t =
+    if has_selection t then delete_selection t
+    else
+      let c = ensure_cache t in
+      if t.cursor_pos >= Source.length c then false
+      else begin
+        save_undo t;
+        delete_grapheme_range t t.cursor_pos (t.cursor_pos + 1);
+        true
+      end
+
+  (* ───── Word boundaries ───── *)
+
+  let grapheme_contains_line_break t c i =
+    let start = byte_offset_of_grapheme_in_content c i in
+    let stop = byte_offset_of_grapheme_in_content c (i + 1) in
+    let rec loop byte_offset =
+      byte_offset < stop
+      &&
+      match String.unsafe_get t.content byte_offset with
+      | '\n' | '\r' -> true
+      | _ -> loop (byte_offset + 1)
+    in
+    loop start
+
+  let word_break_set t =
+    let c = ensure_cache t in
+    let s = Hashtbl.create 16 in
+    Matrix.Text.iter_word_breaks
+      (fun ~break_byte_offset ~next_byte_offset ~grapheme_offset ->
+        ignore break_byte_offset;
+        ignore next_byte_offset;
+        Hashtbl.replace s grapheme_offset ())
+      t.content;
+    for i = 0 to Source.length c - 1 do
+      if grapheme_contains_line_break t c i then Hashtbl.replace s i ()
+    done;
+    s
+
+  let next_word_boundary t =
+    let c = ensure_cache t in
+    let breaks = word_break_set t in
+    let pos = ref t.cursor_pos in
+    while !pos < Source.length c && not (Hashtbl.mem breaks !pos) do
+      incr pos
+    done;
+    while !pos < Source.length c && Hashtbl.mem breaks !pos do
+      incr pos
+    done;
+    !pos
+
+  let prev_word_boundary t =
+    let breaks = word_break_set t in
+    let pos = ref t.cursor_pos in
+    while !pos > 0 && Hashtbl.mem breaks (!pos - 1) do
+      decr pos
+    done;
+    while !pos > 0 && not (Hashtbl.mem breaks (!pos - 1)) do
+      decr pos
+    done;
+    !pos
+
+  (* ───── Word deletion ───── *)
+
+  let delete_word_backward t =
+    if has_selection t then delete_selection t
+    else if t.cursor_pos = 0 then false
+    else begin
+      let pos = prev_word_boundary t in
+      save_undo t;
+      delete_grapheme_range t pos t.cursor_pos;
+      true
+    end
+
+  let delete_word_forward t =
+    if has_selection t then delete_selection t
+    else
+      let c = ensure_cache t in
+      if t.cursor_pos >= Source.length c then false
+      else begin
+        let pos = next_word_boundary t in
+        save_undo t;
+        delete_grapheme_range t t.cursor_pos pos;
+        true
+      end
+
+  let delete_to_line_start t =
+    if has_selection t then delete_selection t
+    else
+      let c = ensure_cache t in
+      let line = find_line c t.cursor_pos in
+      let line_start = Source.line_start c line in
+      if t.cursor_pos <= line_start then false
+      else begin
+        save_undo t;
+        delete_grapheme_range t line_start t.cursor_pos;
+        true
+      end
+
+  let delete_to_line_end t =
+    if has_selection t then delete_selection t
+    else
+      let c = ensure_cache t in
+      let line = find_line c t.cursor_pos in
+      let line_end =
+        if line + 1 < Source.line_count c then
+          Source.line_start c (line + 1) - 1
+        else Source.length c
+      in
+      if t.cursor_pos >= line_end then false
+      else begin
+        save_undo t;
+        delete_grapheme_range t t.cursor_pos line_end;
+        true
+      end
+
+  let delete_to_start t =
+    if has_selection t then delete_selection t
+    else if t.cursor_pos = 0 then false
+    else begin
+      save_undo t;
+      delete_grapheme_range t 0 t.cursor_pos;
+      true
+    end
+
+  let delete_to_end t =
+    if has_selection t then delete_selection t
+    else
+      let c = ensure_cache t in
+      if t.cursor_pos >= Source.length c then false
+      else begin
+        save_undo t;
+        delete_grapheme_range t t.cursor_pos (Source.length c);
+        true
+      end
+
+  let delete_line t =
+    let c = ensure_cache t in
+    if Source.length c = 0 then false
+    else begin
+      save_undo t;
+      let line = find_line c t.cursor_pos in
+      let start, stop =
+        if Source.line_count c = 1 then (0, Source.length c)
+        else if line + 1 < Source.line_count c then
+          (Source.line_start c line, Source.line_start c (line + 1))
+        else (Source.line_start c line - 1, Source.length c)
+      in
+      delete_grapheme_range t start stop;
+      true
+    end
+
+  (* ───── Cursor movement ───── *)
+
+  let update_cursor_with_selection t ~select new_pos =
+    t.affinity <- Layout.Downstream;
+    let old_pos = t.cursor_pos in
+    if select then begin
+      (match t.selection_anchor with
+      | None -> t.selection_anchor <- Some old_pos
+      | Some _ -> ());
+      t.cursor_pos <- new_pos;
+      (* Clear selection if anchor equals cursor *)
+      match t.selection_anchor with
+      | Some a when a = t.cursor_pos -> t.selection_anchor <- None
+      | _ -> ()
+    end
+    else begin
+      t.cursor_pos <- new_pos;
+      t.selection_anchor <- None
+    end;
+    old_pos <> new_pos
+
+  let move_left ?(select = false) t =
+    if (not select) && has_selection t then begin
+      let lo, _ = Option.get (selection t) in
+      t.cursor_pos <- lo;
+      t.selection_anchor <- None;
+      t.affinity <- Layout.Downstream;
+      true
+    end
+    else if t.cursor_pos = 0 then false
+    else update_cursor_with_selection t ~select (t.cursor_pos - 1)
+
+  let move_right ?(select = false) t =
+    let c = ensure_cache t in
+    if (not select) && has_selection t then begin
+      let _, hi = Option.get (selection t) in
+      t.cursor_pos <- hi;
+      t.selection_anchor <- None;
+      t.affinity <- Layout.Downstream;
+      true
+    end
+    else if t.cursor_pos >= Source.length c then false
+    else update_cursor_with_selection t ~select (t.cursor_pos + 1)
+
+  let move_word_forward ?(select = false) t =
+    let c = ensure_cache t in
+    if (not select) && has_selection t then begin
+      let _, hi = Option.get (selection t) in
+      t.cursor_pos <- hi;
+      t.selection_anchor <- None;
+      t.affinity <- Layout.Downstream;
+      true
+    end
+    else if t.cursor_pos >= Source.length c then false
+    else
+      let target = next_word_boundary t in
+      update_cursor_with_selection t ~select target
+
+  let move_word_backward ?(select = false) t =
+    if (not select) && has_selection t then begin
+      let lo, _ = Option.get (selection t) in
+      t.cursor_pos <- lo;
+      t.selection_anchor <- None;
+      t.affinity <- Layout.Downstream;
+      true
+    end
+    else if t.cursor_pos = 0 then false
+    else
+      let target = prev_word_boundary t in
+      update_cursor_with_selection t ~select target
+
+  let move_home ?(select = false) t =
+    if (not select) && has_selection t then begin
+      t.cursor_pos <- 0;
+      t.selection_anchor <- None;
+      t.affinity <- Layout.Downstream;
+      true
+    end
+    else if t.cursor_pos = 0 then false
+    else update_cursor_with_selection t ~select 0
+
+  let move_end ?(select = false) t =
+    let c = ensure_cache t in
+    if (not select) && has_selection t then begin
+      t.cursor_pos <- Source.length c;
+      t.selection_anchor <- None;
+      t.affinity <- Layout.Downstream;
+      true
+    end
+    else if t.cursor_pos >= Source.length c then false
+    else update_cursor_with_selection t ~select (Source.length c)
+
+  let move_line_start ?(select = false) t =
+    let c = ensure_cache t in
+    let line = find_line c t.cursor_pos in
+    let target = Source.line_start c line in
+    if (not select) && has_selection t then begin
+      t.cursor_pos <- target;
+      t.selection_anchor <- None;
+      t.affinity <- Layout.Downstream;
+      true
+    end
+    else if t.cursor_pos = target then false
+    else update_cursor_with_selection t ~select target
+
+  let move_line_end ?(select = false) t =
+    let c = ensure_cache t in
+    let line = find_line c t.cursor_pos in
+    let target =
+      if line + 1 < Source.line_count c then Source.line_start c (line + 1) - 1
+      else Source.length c
+    in
+    if (not select) && has_selection t then begin
+      t.cursor_pos <- target;
+      t.selection_anchor <- None;
+      t.affinity <- Layout.Downstream;
+      true
+    end
+    else if t.cursor_pos >= target then false
+    else update_cursor_with_selection t ~select target
+
+  let set_cursor_offset ?(select = false) t pos =
+    let c = ensure_cache t in
+    let pos = Int.max 0 (Int.min pos (Source.length c)) in
+    ignore (update_cursor_with_selection t ~select pos : bool)
+
+  (* ───── Offset conversions ───── *)
+
+  let line_of_offset t pos =
+    let c = ensure_cache t in
+    let pos = Int.max 0 (Int.min pos (Source.length c)) in
+    find_line c pos
+
+  let col_of_offset t pos =
+    let c = ensure_cache t in
+    let pos = Int.max 0 (Int.min pos (Source.length c)) in
+    let line = find_line c pos in
+    pos - Source.line_start c line
+
+  let line_start t line =
+    let c = ensure_cache t in
+    let line = Int.max 0 (Int.min line (Source.line_count c - 1)) in
+    Source.line_start c line
+
+  let line_end t line =
+    let c = ensure_cache t in
+    let line = Int.max 0 (Int.min line (Source.line_count c - 1)) in
+    if line + 1 < Source.line_count c then Source.line_start c (line + 1) - 1
+    else Source.length c
+
+  let byte_offset t ~grapheme =
+    let c = ensure_cache t in
+    byte_offset_of_grapheme_in_content c grapheme
+
+  let set_caret ?(select = false) t (caret : Layout.caret) =
+    set_cursor_offset ~select t caret.grapheme;
+    t.affinity <- caret.affinity
+end
+
+type t = Buffer.t
+
+let of_string ?(max_length = max_int) text = Buffer.create ~max_length text
 let empty = of_string ""
-let text t = Edit_buffer.text t.buffer
-let length t = Edit_buffer.length t.buffer
-let cursor t = Edit_buffer.cursor t.buffer
-let caret t = Edit_buffer.caret t.buffer
-let selection t = Edit_buffer.selection t.buffer
-let selected_text t = Edit_buffer.selected_text t.buffer
-let source t = Edit_buffer.source t.buffer
+let text = Buffer.text
+let length = Buffer.length
+let cursor = Buffer.cursor
+let caret = Buffer.caret
+let selection = Buffer.selection
+let selected_text = Buffer.selected_text
+let source = Buffer.source
 
 let accept ~current proposal =
-  match proposal.base with
-  | Some base when base != current.revision -> current
+  match proposal.Buffer.base with
+  | Some base when base != current.Buffer.revision -> current
   | _ -> proposal
 
-let changed ~base buffer preferred_col =
-  if Edit_buffer.same base.buffer buffer && base.preferred_col = preferred_col
-  then base
+let transform f t =
+  let next = Buffer.copy t in
+  f next;
+  if Buffer.same t next && t.Buffer.preferred_col = None then t
   else begin
-    (* Undo restores a string snapshot. Index it once before publishing so
-       every subsequent cursor-only branch shares the restored source. *)
-    ignore (Edit_buffer.source buffer : Matrix.Text.Layout.Source.t);
-    { buffer; revision = ref (); base = Some base.revision; preferred_col }
+    ignore (Buffer.source next : Matrix.Text.Layout.Source.t);
+    next.revision <- ref ();
+    next.base <- Some t.revision;
+    next.preferred_col <- None;
+    next
   end
 
-let transform f t =
-  let buffer = Edit_buffer.copy t.buffer in
-  f buffer;
-  changed ~base:t buffer None
-
-let insert text =
-  transform (fun buffer -> ignore (Edit_buffer.insert buffer text : bool))
-
-let clear = transform (fun buffer -> ignore (Edit_buffer.clear buffer : bool))
+let insert text = transform (fun t -> ignore (Buffer.insert t text : bool))
+let clear = transform (fun t -> ignore (Buffer.clear t : bool))
 
 let set_cursor ?(select = false) pos =
-  transform (fun buffer -> Edit_buffer.set_cursor_offset ~select buffer pos)
+  transform (fun t -> Buffer.set_cursor_offset ~select t pos)
 
 let set_caret ?(select = false) caret =
-  transform (fun buffer -> Edit_buffer.set_caret ~select buffer caret)
+  transform (fun t -> Buffer.set_caret ~select t caret)
 
 let select ~anchor ~cursor =
-  transform (fun buffer ->
-      Edit_buffer.set_cursor buffer anchor;
-      Edit_buffer.set_cursor_offset ~select:true buffer cursor)
+  transform (fun t ->
+      Buffer.set_cursor t anchor;
+      Buffer.set_cursor_offset ~select:true t cursor)
 
-let clear_selection = transform Edit_buffer.clear_selection
-let select_all = transform Edit_buffer.select_all
+let clear_selection = transform Buffer.clear_selection
+let select_all = transform Buffer.select_all
 
 let delete_backward =
-  transform (fun buffer -> ignore (Edit_buffer.delete_backward buffer : bool))
+  transform (fun t -> ignore (Buffer.delete_backward t : bool))
 
 let delete_forward =
-  transform (fun buffer -> ignore (Edit_buffer.delete_forward buffer : bool))
+  transform (fun t -> ignore (Buffer.delete_forward t : bool))
 
 let delete_word_backward =
-  transform (fun buffer ->
-      ignore (Edit_buffer.delete_word_backward buffer : bool))
+  transform (fun t -> ignore (Buffer.delete_word_backward t : bool))
 
 let delete_word_forward =
-  transform (fun buffer ->
-      ignore (Edit_buffer.delete_word_forward buffer : bool))
+  transform (fun t -> ignore (Buffer.delete_word_forward t : bool))
 
 let delete_to_line_start =
-  transform (fun buffer ->
-      ignore (Edit_buffer.delete_to_line_start buffer : bool))
+  transform (fun t -> ignore (Buffer.delete_to_line_start t : bool))
 
 let delete_to_line_end =
-  transform (fun buffer ->
-      ignore (Edit_buffer.delete_to_line_end buffer : bool))
+  transform (fun t -> ignore (Buffer.delete_to_line_end t : bool))
 
-let delete_line =
-  transform (fun buffer -> ignore (Edit_buffer.delete_line buffer : bool))
-
-let undo = transform (fun buffer -> ignore (Edit_buffer.undo buffer : bool))
-let redo = transform (fun buffer -> ignore (Edit_buffer.redo buffer : bool))
+let delete_line = transform (fun t -> ignore (Buffer.delete_line t : bool))
+let undo = transform (fun t -> ignore (Buffer.undo t : bool))
+let redo = transform (fun t -> ignore (Buffer.redo t : bool))
 
 let move_left ?(select = false) =
-  transform (fun buffer -> ignore (Edit_buffer.move_left ~select buffer : bool))
+  transform (fun t -> ignore (Buffer.move_left ~select t : bool))
 
 let move_right ?(select = false) =
-  transform (fun buffer ->
-      ignore (Edit_buffer.move_right ~select buffer : bool))
+  transform (fun t -> ignore (Buffer.move_right ~select t : bool))
 
 let move_word_backward ?(select = false) =
-  transform (fun buffer ->
-      ignore (Edit_buffer.move_word_backward ~select buffer : bool))
+  transform (fun t -> ignore (Buffer.move_word_backward ~select t : bool))
 
 let move_word_forward ?(select = false) =
-  transform (fun buffer ->
-      ignore (Edit_buffer.move_word_forward ~select buffer : bool))
+  transform (fun t -> ignore (Buffer.move_word_forward ~select t : bool))
 
 let move_home ?(select = false) =
-  transform (fun buffer -> ignore (Edit_buffer.move_home ~select buffer : bool))
+  transform (fun t -> ignore (Buffer.move_home ~select t : bool))
 
 let move_end ?(select = false) =
-  transform (fun buffer -> ignore (Edit_buffer.move_end ~select buffer : bool))
+  transform (fun t -> ignore (Buffer.move_end ~select t : bool))
 
 let move_line_start ?(select = false) =
-  transform (fun buffer ->
-      ignore (Edit_buffer.move_line_start ~select buffer : bool))
+  transform (fun t -> ignore (Buffer.move_line_start ~select t : bool))
 
 let move_line_end ?(select = false) =
-  transform (fun buffer ->
-      ignore (Edit_buffer.move_line_end ~select buffer : bool))
+  transform (fun t -> ignore (Buffer.move_line_end ~select t : bool))
 
 module Private = struct
-  let buffer t = Edit_buffer.copy t.buffer
-  let preferred_col t = t.preferred_col
+  module Buffer = Buffer
 
-  let propose ~base ~preferred_col buffer =
-    if Edit_buffer.same base.buffer buffer && base.preferred_col = preferred_col
-    then base
+  let preferred_col t = t.Buffer.preferred_col
+
+  let select_carets ~anchor ~cursor =
+    transform (fun t ->
+        Buffer.set_caret t anchor;
+        Buffer.set_caret ~select:true t cursor)
+
+  let propose ~base ~preferred_col next =
+    if Buffer.same base next && base.Buffer.preferred_col = preferred_col then
+      base
+    else if
+      (match next.base with
+        | Some revision -> revision == base.revision
+        | None -> false)
+      && next.preferred_col = preferred_col
+    then next
     else
-      (* Never publish the mutable scratch buffer retained by a widget. *)
-      changed ~base (Edit_buffer.copy buffer) preferred_col
+      { next with revision = ref (); base = Some base.revision; preferred_col }
 end

@@ -12,7 +12,7 @@ let persistent_cursor editor = editor |> Editor.move_left |> Editor.move_right
 
 let mutable_insert original =
   (* Both variants preserve the input and insert into an independent branch.
-     This isolates the persistent wrapper's cost from flat-string indexing. *)
+     This compares ownership paths through the same editing implementation. *)
   let buffer = Edit_buffer.copy original in
   ignore (Edit_buffer.insert buffer "y" : bool);
   buffer

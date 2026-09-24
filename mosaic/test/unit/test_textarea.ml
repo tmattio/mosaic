@@ -306,6 +306,34 @@ let rejected_cursor_does_not_affect_next_edit () =
   equal int 2 (Textarea.cursor ta);
   equal string "abx" (Editor.text (List.hd !proposals))
 
+let rejected_movement_preserves_preferred_column () =
+  let proposal = ref Editor.empty in
+  let _, ta =
+    make_textarea ~value:"abcde\nx\nabcde" ~cursor:4 ~accept:false
+      ~on_change:(fun next -> proposal := next)
+      ()
+  in
+  ignore (render_textarea ta ~width:20 ~height:3 : Matrix_grid.t);
+  send_key ta Matrix_input.Key.Down;
+  equal ~msg:"short row clamps the caret" int 7 (Editor.cursor !proposal);
+  update_editor ta (fun current -> Editor.accept ~current !proposal);
+  let accepted = Textarea.state ta in
+  send_key ta Matrix_input.Key.Down;
+  equal ~msg:"vertical proposal restores desired column" int 12
+    (Editor.cursor !proposal);
+  is_true ~msg:"rejected vertical proposal leaves state intact"
+    (Textarea.state ta == accepted);
+  send_key ta Matrix_input.Key.Left;
+  equal ~msg:"horizontal proposal starts from accepted short row" int 6
+    (Editor.cursor !proposal);
+  send_key ta Matrix_input.Key.Up;
+  equal ~msg:"rejected movement preserves desired column" int 4
+    (Editor.cursor !proposal);
+  is_true ~msg:"proposal still derives from accepted state"
+    (Editor.accept ~current:accepted !proposal == !proposal);
+  equal ~msg:"original accepted value stays intact" int 7
+    (Editor.cursor accepted)
+
 let transformed_acceptance_is_next_event_base () =
   let widget = ref None in
   let on_change proposal =
@@ -468,6 +496,17 @@ let ctrl_e_moves_to_line_end () =
   update_editor ta (Editor.set_cursor 4);
   send_char_with_mod ta ~modifier:ctrl_mod 'e';
   equal ~msg:"cursor at line end" int 7 (Editor.cursor (Textarea.state ta))
+
+let logical_boundary_collapses_selection_without_crossing_line () =
+  let _, ta = make_textarea ~value:"one\ntwo\nthree" () in
+  update_editor ta (Editor.select ~anchor:1 ~cursor:4);
+  send_char_with_mod ta ~modifier:ctrl_mod 'a';
+  equal ~msg:"Home stays at selected line start" int 4 (Textarea.cursor ta);
+  is_none (Editor.selection (Textarea.state ta));
+  update_editor ta (Editor.select ~anchor:12 ~cursor:7);
+  send_char_with_mod ta ~modifier:ctrl_mod 'e';
+  equal ~msg:"End stays at selected line end" int 7 (Textarea.cursor ta);
+  is_none (Editor.selection (Textarea.state ta))
 
 let ctrl_b_moves_left () =
   let t, ta = make_textarea ~value:"abc" () in
@@ -1007,6 +1046,8 @@ let () =
             rejected_edits_leave_state_and_history_intact;
           test "rejected caret does not affect next edit"
             rejected_cursor_does_not_affect_next_edit;
+          test "rejected movement preserves preferred column"
+            rejected_movement_preserves_preferred_column;
           test "transformed acceptance is next event base"
             transformed_acceptance_is_next_event_base;
           test "blur does not propose" blur_and_submit_do_not_propose_edits;
@@ -1038,6 +1079,8 @@ let () =
           test "Ctrl+A base key moves to line start"
             ctrl_a_base_key_moves_to_line_start;
           test "Ctrl+E moves to line end" ctrl_e_moves_to_line_end;
+          test "logical boundary collapses selection without crossing line"
+            logical_boundary_collapses_selection_without_crossing_line;
           test "Ctrl+B moves left" ctrl_b_moves_left;
           test "Ctrl+F moves right" ctrl_f_moves_right;
           test "Ctrl+D deletes forward" ctrl_d_deletes_forward;

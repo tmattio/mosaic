@@ -611,12 +611,15 @@ the variable overhead is about four words per item. Native navigation keeps
 indices, and callbacks map to values in constant time. The allocation-only
 `selection.thumper` baseline makes this conversion cost explicit.
 
-Persistent editor cursor movement allocates 58 words per left/right pair for
-both 128-byte and 1MB buffers, versus zero for the mutable engine. Independent
-1MB insertions allocate 1,312,585 words versus 1,312,567 for an engine copy:
-18 additional words for the persistent wrapper. The history retention check
-verifies the existing 200-snapshot bound and release of obsolete editor states
-and text indexes. Flat-string snapshot storage still scales with document size.
+Persistent editor cursor movement allocates 54 words per left/right pair for
+both 128-byte and 1MB buffers, versus zero for imperative movement. Independent
+1MB insertions allocate 1,312,583 words versus 1,312,570 for an imperative copy.
+Both paths use one editing implementation. Sharing its representation adds
+three words to an imperative copy; persistent operations avoid the former
+outer wrapper, and widgets no longer retain scratch editing buffers. The
+history retention check verifies the existing 200-snapshot bound and release
+of obsolete editor states and text indexes. Flat-string snapshot storage still
+scales with document size.
 
 `mosaic/bench/editor.thumper` and `runtime.thumper` gate allocation increases
 above 5% through `dune runtest mosaic/bench`. `EDITOR_TIMING=1` and
@@ -684,9 +687,10 @@ as part of this implementation.
   Runtime and editor measurements are recorded in §7.1; its open performance
   gate remains applicable.
 - **Q2 — Persistent `Editor.t` representation. Resolved for this implementation.**
-  `Editor.t` wraps the existing flat-string editing engine with persistent
-  operations. Versions share immutable text, grapheme indexes and history
-  entries; widget scratch buffers cannot mutate published editor values.
+  `Editor.t` owns the flat-string editing implementation; the imperative
+  `Edit_buffer` API delegates to the same primitives. Persistent operations
+  copy one owned state record. Versions share immutable text, grapheme indexes
+  and history entries; widgets derive proposals directly from accepted values.
   Cursor-only changes share the indexed source. Text edits still splice and
   index flat strings, and undo history retains at most 200 text snapshots per
   branch. This is not an incremental rope implementation; its allocation and

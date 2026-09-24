@@ -7,7 +7,7 @@
 
 cursor-engine-128b	alloc_words	exact	0
 cursor-engine-1mb	alloc_words	exact	0
-cursor-persistent-128b	alloc_words	exact	58
-cursor-persistent-1mb	alloc_words	exact	58
+cursor-persistent-128b	alloc_words	exact	54
+cursor-persistent-1mb	alloc_words	exact	54
 insert-engine-copy-1mb	alloc_words	exact	1312567
-insert-persistent-1mb	alloc_words	exact	1312585
+insert-persistent-1mb	alloc_words	exact	1312583
