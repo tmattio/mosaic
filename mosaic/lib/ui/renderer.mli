@@ -27,6 +27,7 @@ val create :
   ?clock:(unit -> float) ->
   ?screen:Matrix.Screen.t ->
   ?style:Toffee.Style.t ->
+  ?request_render:(unit -> unit) ->
   unit ->
   t
 (** [create ()] is a renderer with a root renderable and an empty screen. The
@@ -39,6 +40,9 @@ val create :
       and the host presents frames with a single diff. Alpha blending is enabled
       on the adopted screen's grids. [width_method] and [clock] are ignored when
       [screen] is given.
+    - [request_render]: wakes the host event loop when a node requests a frame.
+      Defaults to doing nothing. The callback must be thread-safe and must not
+      raise or render synchronously; worker highlighters can call it.
     - [style]: the root node's initial style. Defaults to
       {!Toffee.Style.default}. *)
 

@@ -74,6 +74,7 @@ and node = {
   mutable id : string;
   num : int;
   mutable destroyed : bool;
+  mutable cleanup : (unit -> unit) option;
   (* Layout *)
   mutable style : Toffee.Style.t;
   mutable original_display : Toffee.Style.display;
@@ -301,6 +302,7 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     id;
     num;
     destroyed = false;
+    cleanup = None;
     style;
     original_display = Toffee.Style.display style;
     layout_dirty = true;
@@ -682,7 +684,10 @@ let destroy t =
     t.on_frame <- None;
     t.on_resize <- None;
     t.on_lifecycle_pass <- None;
-    t.cursor_provider <- None)
+    t.cursor_provider <- None;
+    let cleanup = t.cleanup in
+    t.cleanup <- None;
+    Option.iter (fun f -> f ()) cleanup)
 
 let rec destroy_recursively t =
   if not t.destroyed then (
@@ -1145,6 +1150,10 @@ module Private = struct
     let toffee_node = toffee_exn (Toffee.new_leaf ctx.tree prepared) in
     let id = Option.value id ~default:(Printf.sprintf "node-%d" num) in
     make_node ctx ~toffee_node ~id ~num ~style:prepared ()
+
+  let set_cleanup t f =
+    check_alive t;
+    t.cleanup <- Some f
 
   let num t = t.num
   let toffee_node t = t.toffee_node

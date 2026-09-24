@@ -96,11 +96,45 @@ let invalid_range_raises () =
         (Syntax_highlight.of_triples [ (0, 10, "keyword") ]
         |> Syntax_highlight.to_spans ~style ~content:"abc"))
 
+let vocabulary_fallback_and_extensions () =
+  List.iter
+    (fun scope ->
+      let expected = Syntax_style.resolve Syntax_style.default scope in
+      is_true
+        ~msg:(scope ^ " dotted refinement inherits its category")
+        (Ansi.Style.equal expected
+           (Syntax_style.resolve Syntax_style.default (scope ^ ".example"))))
+    [
+      "comment";
+      "string";
+      "number";
+      "constant";
+      "keyword";
+      "operator";
+      "punctuation";
+      "function";
+      "type";
+      "variable";
+      "module";
+      "attribute";
+      "label";
+      "embedded";
+      "tag";
+    ];
+  let style = Syntax_style.make ~base:green [ ("application.custom", red) ] in
+  is_true ~msg:"unknown scope keeps base style"
+    (Ansi.Style.equal green (Syntax_style.resolve style "unknown.scope"));
+  is_true ~msg:"applications may extend the vocabulary"
+    (Ansi.Style.equal red
+       (Syntax_style.resolve style "application.custom.child"))
+
 let () =
   run "mosaic.syntax_highlight"
     [
       group "Ranges"
         [
+          test "scope vocabulary fallback and extensions"
+            vocabulary_fallback_and_extensions;
           test "of_triples applies style" of_triples_applies_style;
           test "overlapping same scope keeps later range active"
             overlapping_same_scope_keeps_later_range_active;

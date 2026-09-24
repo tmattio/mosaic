@@ -752,3 +752,128 @@ let%expect_test "static commit emits content taller than the viewport" =
             lines);
     ];
   [%expect {| |}]
+
+let join_worker worker =
+  let joined = Atomic.make false in
+  ignore
+    (Thread.create
+       (fun () ->
+         Thread.join worker;
+         Atomic.set joined true)
+       ()
+      : Thread.t);
+  let tries = ref 0 in
+  while (not (Atomic.get joined)) && !tries < 5000 do
+    incr tries;
+    Thread.delay 0.001
+  done;
+  is_true ~msg:"worker exits within five seconds" (Atomic.get joined)
+
+let%expect_test "threaded highlighting wakes an idle application" =
+  let released = Atomic.make false in
+  let worker = Atomic.make None in
+  let highlighter =
+    Mosaic.Code.Highlighter.threaded (fun ~language:_ ~content:_ ->
+        Atomic.set worker (Some (Thread.self ()));
+        while not (Atomic.get released) do
+          Thread.delay 0.001
+        done;
+        let meta =
+          { Mosaic.Syntax_highlight.default_meta with conceal = Some "done" }
+        in
+        [
+          Mosaic.Syntax_highlight.range ~meta ~start_byte:0 ~end_byte:3
+            ~scope:"keyword" ();
+        ])
+  in
+  let syntax = Mosaic.Code.with_highlighter ~language:"example" highlighter in
+  let base = app () in
+  let application =
+    { base with Mosaic.view = (fun _ -> Mosaic.code ~syntax "let x") }
+  in
+  let phase = ref 0 in
+  let on_idle t ~timeout:_ =
+    if !phase = 0 then begin
+      phase := 1;
+      equal ~msg:"plain initial frame" string "let x"
+        (String.trim (Matrix_test.screen t));
+      Atomic.set released true;
+      let tries = ref 0 in
+      while Atomic.get worker = None && !tries < 5000 do
+        incr tries;
+        Thread.delay 0.001
+      done;
+      let thread =
+        match Atomic.get worker with
+        | Some thread -> thread
+        | None -> fail "worker did not start"
+      in
+      join_worker thread;
+      is_true ~msg:"completion requests a host frame"
+        (Matrix.redraw_requested (Matrix_test.app t))
+    end
+    else begin
+      equal ~msg:"highlight applied without user input" string "done x"
+        (String.trim (Matrix_test.screen t));
+      Matrix_test.stop t
+    end
+  in
+  let t = Matrix_test.create ~on_idle ~width:20 ~height:1 () in
+  Fun.protect
+    ~finally:(fun () -> Atomic.set released true)
+    (fun () -> Mosaic.run ~matrix:(Matrix_test.app t) application);
+  [%expect {| |}]
+
+let%expect_test "application exit cancels queued highlighting" =
+  List.iter
+    (fun exceptional ->
+      let released = Atomic.make false in
+      let worker = Atomic.make None in
+      let calls = Atomic.make [] in
+      let highlighter =
+        Mosaic.Code.Highlighter.threaded (fun ~language:_ ~content ->
+            Atomic.set worker (Some (Thread.self ()));
+            Atomic.set calls (content :: Atomic.get calls);
+            while not (Atomic.get released) do
+              Thread.delay 0.001
+            done;
+            [])
+      in
+      let syntax =
+        Mosaic.Code.with_highlighter ~language:"example" highlighter
+      in
+      let base = app () in
+      let application =
+        {
+          base with
+          Mosaic.view =
+            (fun _ ->
+              Mosaic.box
+                [ Mosaic.code ~syntax "first"; Mosaic.code ~syntax "queued" ]);
+        }
+      in
+      let on_idle t ~timeout:_ =
+        let tries = ref 0 in
+        while Atomic.get worker = None && !tries < 5000 do
+          incr tries;
+          Thread.delay 0.001
+        done;
+        is_true ~msg:"first worker started" (Option.is_some (Atomic.get worker));
+        if exceptional then failwith "application failed"
+        else Matrix_test.stop t
+      in
+      let t = Matrix_test.create ~on_idle ~width:20 ~height:2 () in
+      Fun.protect
+        ~finally:(fun () -> Atomic.set released true)
+        (fun () ->
+          if exceptional then
+            raises_match ~msg:"application failure preserved"
+              (function
+                | Failure message -> message = "application failed" | _ -> false)
+              (fun () -> Mosaic.run ~matrix:(Matrix_test.app t) application)
+          else Mosaic.run ~matrix:(Matrix_test.app t) application);
+      join_worker (Option.get (Atomic.get worker));
+      equal ~msg:"closed application leaves no queued work" (list string)
+        [ "first" ] (Atomic.get calls))
+    [ false; true ];
+  [%expect {| |}]

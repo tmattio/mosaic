@@ -69,9 +69,9 @@ let precomputed_highlights_apply_style () =
 
 let sync_highlighter_applies_style () =
   let highlighter =
-    Code.Highlighter.sync (fun request ->
-        equal ~msg:"request content" string "let x" request.content;
-        equal ~msg:"request language" string "ocaml" request.language;
+    Code.Highlighter.sync (fun ~language ~content ->
+        equal ~msg:"request content" string "let x" content;
+        equal ~msg:"request language" string "ocaml" language;
         highlights)
   in
   let syntax =
@@ -285,6 +285,154 @@ let is_highlighting_false_for_sync_highlights () =
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   is_false ~msg:"not highlighting" (Code.is_highlighting code)
 
+let await label ready =
+  let deadline = Unix.gettimeofday () +. 5. in
+  while not (ready ()) do
+    if Unix.gettimeofday () >= deadline then fail ("timed out: " ^ label);
+    Thread.delay 0.001
+  done
+
+let join_worker label worker =
+  let joined = Atomic.make false in
+  ignore
+    (Thread.create
+       (fun () ->
+         Thread.join worker;
+         Atomic.set joined true)
+       ()
+      : Thread.t);
+  await label (fun () -> Atomic.get joined)
+
+let gate () =
+  let mutex = Mutex.create () in
+  let condition = Condition.create () in
+  let released = ref false in
+  let wait () =
+    Mutex.protect mutex (fun () ->
+        while not !released do
+          Condition.wait condition mutex
+        done)
+  in
+  let release () =
+    Mutex.protect mutex (fun () ->
+        released := true;
+        Condition.broadcast condition)
+  in
+  (wait, release)
+
+let threaded_requests_are_bounded_and_cancelled () =
+  let wait, release = gate () in
+  let calls = Atomic.make [] in
+  let highlighter =
+    Code.Highlighter.threaded (fun ~language ~content ->
+        if language <> "ocaml" then failwith "wrong request language";
+        Atomic.set calls (content :: Atomic.get calls);
+        if content = "let old" then wait ();
+        highlights)
+  in
+  let renderer = Renderer.create () in
+  let syntax =
+    Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
+      highlighter
+  in
+  let code =
+    Code.create ~parent:(Renderer.root renderer) ~content:"let old" ~syntax ()
+  in
+  Fun.protect ~finally:release (fun () ->
+      await "first request started" (fun () -> Atomic.get calls <> []);
+      let obsolete = Weak.create 1 in
+      let queue_obsolete () =
+        let content = String.make 10000 'x' in
+        Weak.set obsolete 0 (Some content);
+        Code.set_content code content
+      in
+      queue_obsolete ();
+      for i = 1 to 100 do
+        Code.set_content code (Printf.sprintf "let edit%d" i)
+      done;
+      Code.set_content code "let final";
+      let discarded =
+        Code.create ~parent:(Renderer.root renderer) ~content:"let discarded"
+          ~syntax ()
+      in
+      Renderable.destroy (Code.node discarded);
+      let other =
+        Code.create ~parent:(Renderer.root renderer) ~content:"let other"
+          ~syntax ()
+      in
+      Thread.delay 0.01;
+      equal ~msg:"one executing request, no worker per edit" (list string)
+        [ "let old" ] (Atomic.get calls);
+      Gc.full_major ();
+      is_false ~msg:"cancelled queued source is released"
+        (Weak.check obsolete 0);
+      release ();
+      await "live requests completed" (fun () ->
+          render_code code;
+          render_code other;
+          not (Code.is_highlighting code || Code.is_highlighting other));
+      equal ~msg:"only live FIFO requests execute" (list string)
+        [ "let old"; "let final"; "let other" ]
+        (List.rev (Atomic.get calls));
+      equal ~msg:"stale result cannot replace current source" string "let final"
+        (Text_buffer.plain_text (Code.buffer code));
+      is_false ~msg:"destroyed widget cancelled"
+        (Code.is_highlighting discarded))
+
+let threaded_failure_and_idle_restart () =
+  let worker = Atomic.make None in
+  let highlighter =
+    Code.Highlighter.threaded (fun ~language:_ ~content ->
+        Atomic.set worker (Some (Thread.self ()));
+        if content = "bad" then failwith "highlight failed" else highlights)
+  in
+  let renderer = Renderer.create () in
+  let syntax =
+    Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
+      highlighter
+  in
+  let code =
+    Code.create ~parent:(Renderer.root renderer) ~content:"bad" ~syntax ()
+  in
+  await "failure delivered" (fun () ->
+      render_code code;
+      not (Code.is_highlighting code));
+  equal ~msg:"exception falls back to plain text" string "bad"
+    (Text_buffer.plain_text (Code.buffer code));
+  let first = Option.get (Atomic.get worker) in
+  join_worker "idle worker exits" first;
+  Code.set_content code "let x";
+  await "restarted worker delivered" (fun () ->
+      render_code code;
+      not (Code.is_highlighting code));
+  let second = Option.get (Atomic.get worker) in
+  is_false ~msg:"idle worker is replaced on demand"
+    (Thread.id first = Thread.id second);
+  join_worker "restarted worker exits" second;
+  match line_spans code with
+  | first :: _ ->
+      is_true ~msg:"worker survives an earlier failure"
+        (Ansi.Style.equal red (span_style first))
+  | [] -> fail "expected highlighted span"
+
+let destroy_cancels_job_once () =
+  let cancellations = ref 0 in
+  let highlighter =
+    Code.Highlighter.async (fun _ ~notify:_ ->
+        Code.Highlighter.job
+          ~poll:(fun () -> None)
+          ~cancel:(fun () -> incr cancellations))
+  in
+  let syntax = Code.with_highlighter ~language:"ocaml" highlighter in
+  let ctx, code = make_code ~content:"let x" ~syntax () in
+  Renderable.destroy (Code.node code);
+  Renderable.destroy (Code.node code);
+  equal ~msg:"cleanup is idempotent" int 1 !cancellations;
+  is_false ~msg:"destroyed code has no pending job" (Code.is_highlighting code);
+  equal ~msg:"node unregistered" (list string)
+    [ Renderable.id (Code.node code) ]
+    !(ctx.unregister_log)
+
 let () =
   run "mosaic.code"
     [
@@ -311,6 +459,13 @@ let () =
           test "invalid highlights fall back to plain text"
             invalid_highlights_fall_back_to_plain_text;
           test "conceal metadata applies" conceal_metadata_applies;
+        ];
+      group "Workers"
+        [
+          test "bounded queue cancels obsolete work"
+            threaded_requests_are_bounded_and_cancelled;
+          test "failure and idle restart" threaded_failure_and_idle_restart;
+          test "destroy cancels once" destroy_cancels_job_once;
         ];
       group "Updates"
         [

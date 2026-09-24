@@ -54,8 +54,8 @@ type t = {
   focused : Renderable.t option ref;
   (* Lifecycle *)
   lifecycle_set : (int, Renderable.t) Hashtbl.t;
-  (* Dirty tracking — shared ref, same as focused. *)
-  dirty : bool ref;
+  (* Worker notifications only mutate this scheduling flag. *)
+  dirty : bool Atomic.t;
   (* Available space of the last layout compute, as (width, layout_height).
      Layout is recomputed only when this changes or the Toffee root is dirty
      (any set_style/measure/mark_dirty/attach/detach marks ancestors up to
@@ -443,7 +443,7 @@ let handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind =
               Renderable.Private.emit_mouse node drop_ev
           | None -> ());
           t.captured <- None;
-          t.dirty := true;
+          Atomic.set t.dirty true;
           Some up_ev
       | _ ->
           let ev = Event.Mouse.make ~x ~y ~modifiers ?target:captured_id kind in
@@ -523,7 +523,8 @@ let dispatch_mouse_internal t ~x ~y ~modifiers kind =
 
 (* ───── Creation ───── *)
 
-let create ?width_method ?clock ?screen ?style () =
+let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
+    () =
   let tree = Toffee.new_tree () in
   let adopted = Option.is_some screen in
   let screen =
@@ -538,7 +539,7 @@ let create ?width_method ?clock ?screen ?style () =
   let toffee_map = Hashtbl.create 256 in
   let lifecycle_set = Hashtbl.create 16 in
   let next_num = ref 0 in
-  let dirty = ref true in
+  let dirty = Atomic.make true in
   let focused = ref None in
   let pointer = { position = None; modifiers = Input.Modifier.none } in
   let selection_state =
@@ -565,7 +566,8 @@ let create ?width_method ?clock ?screen ?style () =
   let ctx : Renderable.Private.context =
     {
       tree;
-      schedule = (fun () -> dirty := true);
+      schedule =
+        (fun () -> if not (Atomic.exchange dirty true) then request_render ());
       focus =
         (fun node ->
           if not (Renderable.focusable node) then false
@@ -697,7 +699,8 @@ let pending_work t =
   List.rev (collect [] t.root)
 
 let is_settled t =
-  (not !(t.dirty)) && match pending_work t with [] -> true | _ :: _ -> false
+  (not (Atomic.get t.dirty))
+  && match pending_work t with [] -> true | _ :: _ -> false
 
 (* ───── Measure Function ───── *)
 
@@ -807,7 +810,7 @@ let render_frame ?layout_height (t : t) ~width ~height ~delta =
      schedule its successor. In particular, widgets may discover geometry in
      their render function and change a sibling's visibility after the command
      list has already been built. That change must survive for another pass. *)
-  t.dirty := false;
+  Atomic.set t.dirty false;
   (* A render pass owns the complete next frame, including blank cells:
      Screen.build guarantees cleared buffers before drawing, so when
      settlement performs another pass before presenting the first one,
@@ -910,7 +913,8 @@ let render ?full t =
   let scroll_hint = take_scroll_hint t in
   Screen.render ?full ?scroll_hint t.screen
 
-let needs_render t = !(t.dirty) || Renderable.Private.live_count t.root > 0
+let needs_render t =
+  Atomic.get t.dirty || Renderable.Private.live_count t.root > 0
 
 let render_frame_until_settled ?(max_passes = 4) t ~width ~height ~delta =
   let max_passes = max 1 max_passes in

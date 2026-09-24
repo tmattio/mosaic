@@ -710,8 +710,12 @@ let run ?matrix
           |> Toffee.Style.set_height Toffee.Style.Dimension.auto)
     | `Alt -> None
   in
+  let rendering = Atomic.make false in
   let renderer =
-    Renderer.create ?style:renderer_style ~screen:(Matrix.screen matrix_app) ()
+    Renderer.create ?style:renderer_style ~screen:(Matrix.screen matrix_app)
+      ~request_render:(fun () ->
+        if not (Atomic.get rendering) then Matrix.request_redraw matrix_app)
+      ()
   in
   let container = Renderer.root renderer in
   let reconciler = Reconciler.create ~container in
@@ -776,45 +780,58 @@ let run ?matrix
     | `Alt -> None
   in
 
-  Matrix.run runtime.matrix_app ~primary_required_rows
-    ~on_frame:(fun _app ~dt ->
-      handle_tick runtime ~dt;
-      handle_every_subs runtime;
-      process_pending_msgs runtime;
-      (* A fired timer moved its deadline even when no message re-collected
+  let finish_render () =
+    (* Reconciliation invalidations are consumed by this frame. A worker or
+       widget may still request a follow-up while it renders. Clear the gate
+       before checking dirty so a concurrent notification cannot be lost. *)
+    Atomic.set rendering false;
+    if Renderer.needs_render runtime.renderer then
+      Matrix.request_redraw runtime.matrix_app
+  in
+  let render_frame () =
+    render runtime;
+    let width, height = Matrix.effective_size runtime.matrix_app in
+    Renderer.render_frame runtime.renderer ~width ~height ~delta:!frame_delta;
+    (match Matrix.mode runtime.matrix_app with
+    | `Alt -> ()
+    | `Primary ->
+        let required =
+          max 1 (Renderable.height (Renderer.root runtime.renderer))
+        in
+        if required > height then
+          Renderer.render_frame runtime.renderer ~layout_height:required ~width
+            ~height ~delta:!frame_delta);
+    (* The renderer built directly into the runtime's screen; Matrix.submit
+       presents it with a single diff. Forward the frame's hardware scroll
+       hint so a scrolled viewport diffs only its revealed rows. *)
+    (match Renderer.take_scroll_hint runtime.renderer with
+    | Some hint -> Matrix.set_scroll_hint runtime.matrix_app hint
+    | None -> ());
+    process_pending_focus runtime
+  in
+  let on_render _app =
+    Atomic.set rendering true;
+    Fun.protect ~finally:finish_render render_frame
+  in
+
+  Fun.protect
+    ~finally:(fun () -> Reconciler.unmount runtime.reconciler)
+    (fun () ->
+      Matrix.run runtime.matrix_app ~primary_required_rows
+        ~on_frame:(fun _app ~dt ->
+          handle_tick runtime ~dt;
+          handle_every_subs runtime;
+          process_pending_msgs runtime;
+          (* A fired timer moved its deadline even when no message re-collected
          subscriptions, so the wakeup re-arms here. *)
-      arm_every_wakeup runtime;
-      (* Matrix reports [dt] in seconds; the render pipeline runs on
+          arm_every_wakeup runtime;
+          (* Matrix reports [dt] in seconds; the render pipeline runs on
          milliseconds. Convert once at the boundary. *)
-      frame_delta := dt *. 1000.)
-    ~on_input:(fun _app input -> handle_input runtime input)
-    ~on_resize:(fun _app ~cols ~rows ->
-      handle_resize runtime ~width:cols ~height:rows)
-    ~on_render:(fun _app ->
-      render runtime;
-      let width, height = Matrix.effective_size runtime.matrix_app in
-      Renderer.render_frame runtime.renderer ~width ~height ~delta:!frame_delta;
-      (match Matrix.mode runtime.matrix_app with
-      | `Alt -> ()
-      | `Primary ->
-          let required =
-            max 1 (Renderable.height (Renderer.root runtime.renderer))
-          in
-          if required > height then
-            Renderer.render_frame runtime.renderer ~layout_height:required
-              ~width ~height ~delta:!frame_delta);
-      (* A widget can discover geometry while rendering and request a pass that
-         includes a newly visible child. Matrix consumed the current redraw
-         before invoking us, so explicitly retain that follow-up request. *)
-      if Renderer.needs_render runtime.renderer then
-        Matrix.request_redraw runtime.matrix_app;
-      (* The renderer built directly into the runtime's screen; Matrix.submit
-         presents it with a single diff. Forward the frame's hardware scroll
-         hint so a scrolled viewport diffs only its revealed rows. *)
-      (match Renderer.take_scroll_hint runtime.renderer with
-      | Some hint -> Matrix.set_scroll_hint runtime.matrix_app hint
-      | None -> ());
-      process_pending_focus runtime)
+          frame_delta := dt *. 1000.)
+        ~on_input:(fun _app input -> handle_input runtime input)
+        ~on_resize:(fun _app ~cols ~rows ->
+          handle_resize runtime ~width:cols ~height:rows)
+        ~on_render)
 
 let empty = Vnode.empty
 let fragment = Vnode.fragment

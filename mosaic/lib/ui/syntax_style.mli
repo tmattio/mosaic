@@ -3,7 +3,25 @@
     A syntax style resolves dot-separated group names with hierarchical
     fallback: ["keyword.control.flow"] tries ["keyword.control.flow"], then
     ["keyword.control"], then ["keyword"]. This follows the TextMate/tree-sitter
-    scope convention. *)
+    scope convention.
+
+    {1:scopes Scope vocabulary}
+
+    Portable highlighters emit scopes whose first segment is one of: [comment],
+    [string], [number], [constant], [keyword], [operator], [punctuation],
+    [function], [type], [variable], [module], [attribute], [label], [embedded],
+    or [tag]. Dotted refinements, such as [variable.member], [function.builtin],
+    and [keyword.control], retain the corresponding base category. [embedded]
+    identifies an embedded-language region; its contents may carry more specific
+    scopes.
+
+    This vocabulary is the backend/theme contract, not a language registry.
+    Producers should normalize backend-specific captures into these categories.
+    Applications may define additional scopes in a custom style. Unmapped scopes
+    are retained and resolve to the base style; they are never dropped. Language
+    names remain opaque application-defined strings.
+
+    See doc/highlighting.md for integration recipes. *)
 
 (** {1:types Types} *)
 

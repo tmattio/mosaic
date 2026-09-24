@@ -34,6 +34,9 @@ let default =
       ("operator", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 255 151 0) ());
       ("punctuation", Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ());
       ("constant", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 209 154 102) ());
+      ("module", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 86 182 194) ());
+      ("label", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 224 108 117) ());
+      ("embedded", Ansi.Style.default);
       ("tag", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 224 108 117) ());
       ("attribute", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 229 192 123) ());
     ]

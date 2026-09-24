@@ -10,38 +10,86 @@ module Highlighter = struct
     | Async of (request -> notify:(unit -> unit) -> job)
 
   let job ~poll ~cancel = { poll; cancel }
-  let sync f = Sync f
+  let sync f = Sync (fun { language; content } -> f ~language ~content)
   let async f = Async f
 
-  let failed_job exn =
-    let pending = ref (Some (Error exn)) in
-    {
-      poll =
-        (fun () ->
-          match !pending with
-          | None -> None
-          | Some outcome ->
-              pending := None;
-              Some outcome);
-      cancel = (fun () -> pending := None);
-    }
+  type work = {
+    request : request;
+    notify : unit -> unit;
+    mutable cancelled : bool;
+    mutable outcome : result option;
+  }
+
+  let threaded f =
+    let mutex = Mutex.create () in
+    let pending = Queue.create () in
+    let running = ref false in
+    let rec work () =
+      match
+        Mutex.protect mutex (fun () ->
+            match Queue.take_opt pending with
+            | None ->
+                running := false;
+                None
+            | Some task -> Some task)
+      with
+      | None -> ()
+      | Some task ->
+          let outcome =
+            try
+              Ok
+                (f ~language:task.request.language ~content:task.request.content)
+            with exn -> Error exn
+          in
+          Mutex.protect mutex (fun () ->
+              if not task.cancelled then begin
+                task.outcome <- Some outcome;
+                (* Notification only schedules a render; it never polls the job. *)
+                try task.notify () with _ -> ()
+              end);
+          work ()
+    in
+    async (fun request ~notify ->
+        let task = { request; notify; cancelled = false; outcome = None } in
+        Mutex.protect mutex (fun () ->
+            Queue.add task pending;
+            if not !running then begin
+              running := true;
+              try ignore (Thread.create work () : Thread.t)
+              with exn ->
+                running := false;
+                Queue.clear pending;
+                raise exn
+            end);
+        job
+          ~poll:(fun () ->
+            Mutex.protect mutex (fun () ->
+                let result = task.outcome in
+                task.outcome <- None;
+                result))
+          ~cancel:(fun () ->
+            Mutex.protect mutex (fun () ->
+                task.cancelled <- true;
+                task.outcome <- None;
+                (* Remove cancelled input immediately, preserving the live FIFO. *)
+                for _ = 1 to Queue.length pending do
+                  let queued = Queue.take pending in
+                  if queued != task then Queue.add queued pending
+                done)))
+
+  let completed outcome =
+    let pending = ref (Some outcome) in
+    job
+      ~poll:(fun () ->
+        let result = !pending in
+        pending := None;
+        result)
+      ~cancel:(fun () -> pending := None)
 
   let start t request ~notify =
     match t with
-    | Async f -> ( try f request ~notify with exn -> failed_job exn)
-    | Sync f ->
-        let outcome = try Ok (f request) with exn -> Error exn in
-        let pending = ref (Some outcome) in
-        {
-          poll =
-            (fun () ->
-              match !pending with
-              | None -> None
-              | Some outcome ->
-                  pending := None;
-                  Some outcome);
-          cancel = (fun () -> pending := None);
-        }
+    | Async f -> ( try f request ~notify with exn -> completed (Error exn))
+    | Sync f -> completed (try Ok (f request) with exn -> Error exn)
 end
 
 (* Syntax *)
@@ -318,6 +366,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content ?syntax
   Renderable.set_pending_provider
     (Text_renderable.node text)
     (Some (fun () -> pending_work t));
+  Renderable.Private.set_cleanup (node t) (fun () -> cancel_job t);
   render_content t props;
   t
 

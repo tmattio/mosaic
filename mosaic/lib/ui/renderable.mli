@@ -415,6 +415,7 @@ module Private : sig
   type context = {
     tree : unit Toffee.tree;
     schedule : unit -> unit;
+        (** Requests a render. Must be safe to call from a worker thread. *)
     focus : t -> bool;
     blur : t -> unit;
     get_selection : unit -> Selection.t option;
@@ -445,6 +446,12 @@ module Private : sig
       Optional parameters:
       - [id]: identifier string. Defaults to ["node-N"].
       - [style]: flexbox style. Defaults to {!Toffee.Style.default}. *)
+
+  val set_cleanup : t -> (unit -> unit) -> unit
+  (** [set_cleanup t f] installs the widget's resource cleanup callback,
+      replacing any previous callback. Destruction calls it exactly once, after
+      detaching the node. [f] must not raise or mutate the destroyed node.
+      Raises [Invalid_argument] if [t] is already destroyed. *)
 
   (** {2:identity Identity} *)
 

@@ -3,7 +3,8 @@
     Parses CommonMark source via {e cmarkit} and renders it as a tree of child
     {!Renderable.t} values. Supports headings, paragraphs, code blocks, lists,
     blockquotes, tables, thematic breaks, and inline formatting (emphasis,
-    strong, code spans, links, strikethrough, and task lists). *)
+    strong, code spans, links, strikethrough, and task lists). See
+    doc/highlighting.md for backend-neutral fenced-code highlighting. *)
 
 type t
 (** The type for markdown display widgets. *)

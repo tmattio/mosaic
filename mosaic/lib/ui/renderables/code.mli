@@ -6,7 +6,8 @@
 
     [Code] differs from {!Text} in its defaults: wrapping defaults to [`None],
     tab width defaults to [4], and it registers as a
-    {!type:Renderable.line_info} provider. *)
+    {!type:Renderable.line_info} provider. See doc/highlighting.md for backend
+    integration and Markdown fence recipes. *)
 
 (** {1:types Types} *)
 
@@ -40,16 +41,33 @@ module Highlighter : sig
   val job : poll:(unit -> result option) -> cancel:(unit -> unit) -> job
   (** [job ~poll ~cancel] is an asynchronous job. [poll ()] returns [None] while
       the job is pending and [Some outcome] once it has completed. [cancel ()]
-      asks the producer to stop work or discard its result. *)
+      asks the producer to stop work or discard its result. The consumer calls
+      it when content changes or the code widget is destroyed. *)
 
-  val sync : (request -> Syntax_highlight.t) -> t
+  val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
   (** [sync f] is a synchronous highlighter. Exceptions raised by [f] are
       treated as highlighting failures and fall back to plain text. *)
+
+  val threaded : (language:string -> content:string -> Syntax_highlight.t) -> t
+  (** [threaded f] runs whole-buffer requests on a worker systhread. Reuse the
+      returned highlighter: it runs at most one call to [f] at a time, queues
+      live requests in order, and releases its worker when the queue empties.
+      Cancelled queued requests are removed immediately. A running call cannot
+      be interrupted; cancellation discards its result. Polling and cancellation
+      are thread-safe and do not wait for [f] to finish. Exceptions from [f]
+      become highlighting failures, falling back to plain text.
+
+      [f] must finish, must not mutate renderables, and must synchronize any
+      state shared outside this highlighter. Systhreads do not provide CPU
+      parallelism. Native calls that retain the OCaml runtime lock can still
+      block rendering. Use {!async} for a different execution policy. *)
 
   val async : (request -> notify:(unit -> unit) -> job) -> t
   (** [async f] is an asynchronous highlighter. [f] starts a job for a request.
       The job producer should call [notify] when [poll] may return a completed
-      result. Exceptions raised by the starter or job polling are treated as
+      result. [notify] is safe to call from a worker thread. Its only effect is
+      to schedule rendering; polling and applying results happen on the render
+      thread. Exceptions raised by the starter or job polling are treated as
       highlighting failures and fall back to plain text. *)
 end
 

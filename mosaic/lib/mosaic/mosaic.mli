@@ -704,7 +704,20 @@ module Code : sig
     type t = Mosaic_ui.Code.Highlighter.t
 
     val job : poll:(unit -> result option) -> cancel:(unit -> unit) -> job
-    val sync : (request -> Mosaic_ui.Syntax_highlight.t) -> t
+
+    val sync :
+      (language:string -> content:string -> Mosaic_ui.Syntax_highlight.t) -> t
+    (** [sync f] runs [f] on the rendering thread; errors fall back to plain
+        text. *)
+
+    val threaded :
+      (language:string -> content:string -> Mosaic_ui.Syntax_highlight.t) -> t
+    (** [threaded f] serializes requests on one on-demand worker systhread per
+        highlighter. Cancellation removes queued requests and discards running
+        results. Reuse the highlighter across renders. See
+        {!Mosaic_ui.Code.Highlighter.threaded} for the threading contract and
+        doc/highlighting.md for integration recipes. *)
+
     val async : (request -> notify:(unit -> unit) -> job) -> t
   end
 
@@ -728,7 +741,8 @@ module Code : sig
       configuration produced by [highlighter]. *)
 end
 
-(** Syntax styles: maps capture-group names to terminal styles. *)
+(** Syntax styles. The normative scope vocabulary and fallback rules are
+    documented in {!Mosaic_ui.Syntax_style}; see also doc/highlighting.md. *)
 module Syntax_style : sig
   type t = Mosaic_ui.Syntax_style.t
   (** The type for syntax styles. *)

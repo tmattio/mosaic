@@ -9,6 +9,7 @@
  (public_name mosaic.ui)
  (private_modules diff_patch edit_surface keymap text_crop text_renderable)
  (libraries
+  threads.posix
   toffee
   cmarkit
   matrix.ansi
