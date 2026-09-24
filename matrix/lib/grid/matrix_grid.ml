@@ -485,6 +485,18 @@ let push_clip t rect = Scissor_stack.push t.scissor_stack rect
 let pop_clip t = Scissor_stack.pop t.scissor_stack
 let clear_clip t = Scissor_stack.clear t.scissor_stack
 
+let clip_region t =
+  match Scissor_stack.current t.scissor_stack with
+  | None -> { x = 0; y = 0; width = t.width; height = t.height }
+  | Some r ->
+      let x = max 0 r.x and y = max 0 r.y in
+      {
+        x;
+        y;
+        width = max 0 (min t.width (r.x + r.width) - x);
+        height = max 0 (min t.height (r.y + r.height) - y);
+      }
+
 let intersects_clip t (r : region) =
   if r.width <= 0 || r.height <= 0 then false
   else

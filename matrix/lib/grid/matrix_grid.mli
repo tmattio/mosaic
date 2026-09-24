@@ -338,6 +338,10 @@ val pop_clip : t -> unit
 val clear_clip : t -> unit
 (** [clear_clip g] removes all clipping regions. *)
 
+val clip_region : t -> region
+(** [clip_region g] is the effective scissor intersected with grid bounds. An
+    empty intersection has zero width or height. *)
+
 val intersects_clip : t -> region -> bool
 (** [intersects_clip g r] is [true] iff the positive-area region [r] intersects
     both [g]'s bounds and its effective clipping region. *)
