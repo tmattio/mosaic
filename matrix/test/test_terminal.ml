@@ -995,6 +995,101 @@ let test_set_raw_clears_iexten () =
   T.restore fd saved;
   is_true ~msg:"restore re-enables iexten" (get_iexten fd)
 
+let clipboard_routes =
+  [
+    ("direct", "xterm", None, None, false, "\027]52;c;dGVzdA==\007");
+    ( "tmux TERM",
+      "tmux-256color",
+      None,
+      None,
+      false,
+      "\027Ptmux;\027\027]52;c;dGVzdA==\007\027\\" );
+    ( "tmux environment",
+      "screen-256color",
+      Some "session",
+      Some "screen",
+      false,
+      "\027Ptmux;\027\027]52;c;dGVzdA==\007\027\\" );
+    ( "tmux identity",
+      "xterm",
+      None,
+      Some "screen",
+      true,
+      "\027Ptmux;\027\027]52;c;dGVzdA==\007\027\\" );
+    ( "Screen TERM",
+      "screen-256color",
+      None,
+      None,
+      false,
+      "\027P\027]52;c;dGVzdA==\007\027\\" );
+    ( "Screen environment",
+      "xterm",
+      None,
+      Some "screen",
+      false,
+      "\027P\027]52;c;dGVzdA==\007\027\\" );
+  ]
+
+let test_clipboard_route (_, term_var, tmux, sty, identity, expected) =
+  setenv "TERM" (Some term_var);
+  setenv "TMUX" tmux;
+  setenv "STY" sty;
+  with_tty_terminal @@ fun term buf ->
+  if identity then
+    T.apply_capability_event term (Input.Response.Xtversion "tmux 3.5a");
+  T.copy_to_clipboard term "test";
+  equal string expected (Buffer.contents buf);
+  T.close term
+
+let test_screen_clipboard_chunks () =
+  setenv "TERM" (Some "screen-256color");
+  setenv "TMUX" None;
+  setenv "STY" None;
+  with_tty_terminal @@ fun term buf ->
+  List.iter
+    (fun size ->
+      Buffer.clear buf;
+      let payload = String.make size 'A' in
+      T.copy_to_clipboard term payload;
+      let output = Buffer.contents buf in
+      let decoded = Buffer.create (String.length output) in
+      let offset = ref 0 in
+      let chunks = ref 0 in
+      while !offset < String.length output do
+        equal ~msg:"DCS prefix" string "\027P" (String.sub output !offset 2);
+        let start = !offset + 2 in
+        let finish = String.index_from output start '\027' in
+        (* Only the first payload has an ESC: the OSC introducer. *)
+        let finish =
+          if finish = start then String.index_from output (start + 1) '\027'
+          else finish
+        in
+        equal ~msg:"DCS terminator" string "\027\\" (String.sub output finish 2);
+        let count = finish - start in
+        is_true ~msg:"bounded nonempty payload" (count > 0 && count <= 252);
+        if finish + 2 < String.length output then
+          equal ~msg:"full intermediate chunk" int 252 count;
+        Buffer.add_substring decoded output start count;
+        incr chunks;
+        offset := finish + 2
+      done;
+      let expected = Ansi.(to_string (set_clipboard ~text:payload)) in
+      equal ~msg:"one intact OSC 52 across envelopes" string expected
+        (Buffer.contents decoded);
+      equal ~msg:"chunk count" int
+        ((String.length expected + 251) / 252)
+        !chunks)
+    [ 0; 1; 182; 183; 184; 185; 372; 4096 ];
+  T.close term
+
+let test_non_tty_clipboard () =
+  setenv "TERM" (Some "screen");
+  setenv "TMUX" None;
+  with_terminal @@ fun term buf ->
+  T.copy_to_clipboard term "test";
+  equal string "" (Buffer.contents buf);
+  T.close term
+
 let () =
   run "Terminal"
     [
@@ -1003,6 +1098,14 @@ let () =
           test "no escape sequences on non-TTY" test_non_tty_no_escape_sequences;
           test "state tracking on non-TTY" test_non_tty_state_tracking;
           test "tty send" test_tty_send;
+        ];
+      group "clipboard"
+        [
+          cases "route" clipboard_routes
+            ~name:(fun (name, _, _, _, _, _) -> name)
+            test_clipboard_route;
+          test "Screen chunk boundaries" test_screen_clipboard_chunks;
+          test "non-TTY clipboard" test_non_tty_clipboard;
         ];
       group "capabilities"
         [

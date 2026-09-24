@@ -117,6 +117,10 @@ val is_tmux : term:string -> bool
 (** [is_tmux ~term] is [true] when running inside tmux: [$TMUX] is set and
     non-empty, or [term] starts with ["tmux"]. *)
 
+val is_screen : term:string -> bool
+(** [is_screen ~term] is [true] when [$STY] is non-empty or [term] starts with
+    ["screen"], unless {!is_tmux} identifies tmux. *)
+
 (** {1:constructors Constructors} *)
 
 val initial : ?provided:t -> term:string -> unit -> t * terminal_info

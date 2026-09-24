@@ -536,7 +536,8 @@ let is_tmux ~term =
 
 let is_screen ~term =
   (not (is_tmux ~term))
-  && String.starts_with ~prefix:"screen" (String.lowercase_ascii term)
+  && (env_present "STY"
+     || String.starts_with ~prefix:"screen" (String.lowercase_ascii term))
 
 (* Wrap an escape sequence for tmux DCS passthrough. All ESC bytes (0x1b) in the
    payload are doubled so tmux forwards them to the outer terminal. *)

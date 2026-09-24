@@ -416,7 +416,29 @@ let set_title t title =
   t.title_sent <- true;
   send t Ansi.(to_string (set_title ~title))
 
-let copy_to_clipboard t text = send t Ansi.(to_string (set_clipboard ~text))
+let copy_to_clipboard t text =
+  let seq = Ansi.set_clipboard ~text in
+  if
+    Caps.is_tmux ~term:t.caps.term
+    || t.terminal_info.from_xtversion
+       && String.lowercase_ascii t.terminal_info.name = "tmux"
+  then send t (Ansi.to_string (Ansi.tmux_passthrough seq))
+  else if Caps.is_screen ~term:t.caps.term then (
+    (* Screen forwards at most 252 payload bytes per DCS envelope. OSC 52
+       uses BEL so its terminator cannot close the enclosing DCS early. *)
+    let seq = Ansi.to_string seq in
+    let len = String.length seq in
+    let buf = Buffer.create (len + (4 * ((len + 251) / 252))) in
+    let off = ref 0 in
+    while !off < len do
+      let count = min 252 (len - !off) in
+      Buffer.add_string buf "\027P";
+      Buffer.add_substring buf seq !off count;
+      Buffer.add_string buf "\027\\";
+      off := !off + count
+    done;
+    send t (Buffer.contents buf))
+  else send t (Ansi.to_string seq)
 
 let notify t ~title ~body =
   let seq = Ansi.notify ~title ~body in

@@ -355,7 +355,8 @@ val set_title : t -> string -> unit
 
 val copy_to_clipboard : t -> string -> unit
 (** [copy_to_clipboard t s] sets the system clipboard to [s] (OSC 52) when the
-    terminal supports it. *)
+    terminal supports it. Inside tmux or GNU Screen, the sequence is wrapped for
+    DCS passthrough to the outer terminal. *)
 
 val notify : t -> title:string -> body:string -> unit
 (** [notify t ~title ~body] posts a desktop notification (OSC 9 followed by OSC
