@@ -66,6 +66,32 @@ let composed_clips_stay_empty () =
     Screen.Hit_grid.empty_id
     (Screen.Hit_grid.get hits ~x:1 ~y:0)
 
+let custom_hits_follow_crop () =
+  let image =
+    Image.custom ~width:5 ~height:1 (fun grid hits ~x ~y ->
+        Grid.draw_text grid ~x ~y ~text:"ABCDE";
+        Option.iter
+          (fun hits -> Screen.Hit_grid.add hits ~x ~y ~width:5 ~height:1 ~id:7)
+          hits)
+    |> Image.hcrop 1 1
+  in
+  let grid = Grid.create ~width:7 ~height:1 () in
+  let hits = Screen.Hit_grid.create ~width:7 ~height:1 in
+  Image.draw ~hits ~x:2 image grid;
+  for x = 0 to 6 do
+    let visible = x >= 2 && x < 5 in
+    equal
+      ~msg:(Printf.sprintf "cropped custom hit at %d" x)
+      int
+      (if visible then 7 else Screen.Hit_grid.empty_id)
+      (Screen.Hit_grid.get hits ~x ~y:0);
+    equal
+      ~msg:(Printf.sprintf "cropped custom visual at %d" x)
+      bool visible (cell_written grid x 0)
+  done;
+  Screen.Hit_grid.add hits ~x:0 ~y:0 ~width:7 ~height:1 ~id:8;
+  equal ~msg:"custom clip is popped" int 8 (Screen.Hit_grid.get hits ~x:0 ~y:0)
+
 let hsnap_defaults_to_center () =
   let grid = Grid.create ~width:3 ~height:1 () in
   let img = Image.hsnap 3 (Image.text "x") in
@@ -104,6 +130,7 @@ let () =
             box_without_fill_preserves_background;
           test "cropped padding stays empty" cropped_padding_stays_empty;
           test "composed clips stay empty" composed_clips_stay_empty;
+          test "custom hits follow crop" custom_hits_follow_crop;
         ];
       group "defaults"
         [

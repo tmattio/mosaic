@@ -65,8 +65,6 @@ type t = {
   (* Render command buffer — reused across frames. *)
   mutable commands : render_command array;
   mutable cmd_len : int;
-  (* Hit scissor stack — maintained during pass 3 for clipping hit regions. *)
-  mutable hit_scissors : Grid.region list;
   (* Hover tracking *)
   mutable hover_node : Renderable.t option;
   mutable hover_num : int;
@@ -648,7 +646,6 @@ let create ?width_method ?clock ?screen ?style () =
     lifecycle_set;
     commands = Array.make 64 Pop_scissor;
     cmd_len = 0;
-    hit_scissors = [];
     hover_node = None;
     hover_num = 0;
     pointer;
@@ -788,23 +785,16 @@ let execute_commands (t : t) ~(grid : Grid.t) ~(hits : Screen.Hit_grid.t)
     match t.commands.(i) with
     | Render node ->
         Renderable.Private.render_full node ~grid ~delta;
-        (* Add to hit grid, clipped by the hit scissor stack *)
         let bounds = Renderable.bounds node in
-        let clipped =
-          List.fold_left clip_rect_intersect bounds t.hit_scissors
-        in
-        if clipped.width > 0 && clipped.height > 0 then
-          Screen.Hit_grid.add hits ~x:clipped.x ~y:clipped.y
-            ~width:clipped.width ~height:clipped.height
-            ~id:(Renderable.Private.num node)
+        Screen.Hit_grid.add hits ~x:bounds.x ~y:bounds.y ~width:bounds.width
+          ~height:bounds.height
+          ~id:(Renderable.Private.num node)
     | Push_scissor clip ->
         Grid.push_clip grid clip;
-        t.hit_scissors <- clip :: t.hit_scissors
-    | Pop_scissor -> (
+        Screen.Hit_grid.push_clip hits clip
+    | Pop_scissor ->
         Grid.pop_clip grid;
-        match t.hit_scissors with
-        | _ :: rest -> t.hit_scissors <- rest
-        | [] -> ())
+        Screen.Hit_grid.pop_clip hits
     | Push_opacity opacity -> Grid.push_opacity grid opacity
     | Pop_opacity -> Grid.pop_opacity grid
   done
@@ -863,7 +853,7 @@ let render_frame ?layout_height (t : t) ~width ~height ~delta =
       end;
       (* Pass 2: Build render command list *)
       t.cmd_len <- 0;
-      t.hit_scissors <- [];
+      Screen.Hit_grid.clear_clip hits;
       build_commands t t.root ~parent_x:0. ~parent_y:0. ~clip:frame_clip ~delta;
       (* Pass 3: Execute render commands *)
       execute_commands t ~grid ~hits ~delta);

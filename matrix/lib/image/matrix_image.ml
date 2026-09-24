@@ -547,5 +547,10 @@ let draw ?hits ?(x = 0) ?(y = 0) t grid =
             let draw () = r.draw grid hits ~x:(x + r.x) ~y:(y + r.y) in
             match clip with
             | None -> draw ()
-            | Some rect -> Grid.clip grid rect draw))
+            | Some rect ->
+                Grid.clip grid rect (fun () ->
+                    match hits with
+                    | None -> draw ()
+                    | Some hits ->
+                        Matrix_screen.Hit_grid.with_clip hits rect draw)))
       t.ops
