@@ -44,8 +44,8 @@ let draw_pixel grid ~x ~y ~color ~alpha =
   else
     (* Use alpha blending *)
     let bg = color_with_alpha color alpha in
-    Grid.set_cell grid ~x ~y ~cell:Grid.Cell.space ~fg:Ansi.Color.white ~bg
-      ~attrs:Ansi.Attr.empty ~blend:true ()
+    Grid.set_uchar grid ~x ~y ~uchar:(Uchar.of_char ' ') ~fg:Ansi.Color.white
+      ~bg ~attrs:Ansi.Attr.empty ~blend:true ()
 
 let draw_brush grid ~cx ~cy ~brush =
   let half = brush.size / 2 in
@@ -173,7 +173,7 @@ let handle_key state key modifier =
 
 let () =
   let app =
-    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:true ~respect_alpha:true
+    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:true
       ~debug_overlay:false ()
   in
   let state = ref initial_state in
@@ -220,9 +220,7 @@ let () =
     ~on_resize:(fun _ ~cols ~rows ->
       (* Preserve canvas content on resize *)
       let old_grid = !canvas_grid in
-      let new_grid =
-        Grid.create ~width:cols ~height:rows ~respect_alpha:true ()
-      in
+      let new_grid = Grid.create ~width:cols ~height:rows () in
       Grid.clear ~color:Ansi.Color.black new_grid;
       (match old_grid with
       | Some og ->

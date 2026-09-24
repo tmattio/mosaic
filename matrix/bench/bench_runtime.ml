@@ -39,10 +39,9 @@ let single_cell =
       next := not !next;
       Matrix.prepare app;
       let char = if !next then 'X' else 'Y' in
-      Matrix.Grid.set_cell (Matrix.grid app) ~x:0 ~y:0
-        ~cell:(Matrix.Grid.Cell.of_uchar (Uchar.of_char char))
-        ~fg:Matrix.Ansi.Color.white ~bg:Matrix.Ansi.Color.black
-        ~attrs:Matrix.Ansi.Attr.empty ();
+      Matrix.Grid.set_uchar (Matrix.grid app) ~x:0 ~y:0
+        ~uchar:(Uchar.of_char char) ~fg:Matrix.Ansi.Color.white
+        ~bg:Matrix.Ansi.Color.black ~attrs:Matrix.Ansi.Attr.empty ();
       Matrix.submit app)
 
 let () =

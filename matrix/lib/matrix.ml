@@ -1075,15 +1075,15 @@ let close t =
 (* Construct the runtime over backend I/O. *)
 
 let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
-    ?(respect_alpha = false) ?(mouse_enabled = true) ?(mouse = None)
-    ?(bracketed_paste = true) ?(focus_reporting = true)
-    ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true) ?(debug_overlay = false)
-    ?(debug_overlay_corner = `Bottom_right) ?(debug_overlay_capacity = 120)
-    ?(frame_dump_every = 0) ?frame_dump_dir ?frame_dump_pattern
-    ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
-    ?(explicit_width = false) ?(input_timeout = None)
-    ?(resize_debounce = Some 0.1) ?(min_tui_height = 1) ?(start_idle = false)
-    ?(pace_redraws = true) ?initial_caps ~(backend : Backend.t) () =
+    ?(mouse_enabled = true) ?(mouse = None) ?(bracketed_paste = true)
+    ?(focus_reporting = true) ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true)
+    ?(debug_overlay = false) ?(debug_overlay_corner = `Bottom_right)
+    ?(debug_overlay_capacity = 120) ?(frame_dump_every = 0) ?frame_dump_dir
+    ?frame_dump_pattern ?(frame_dump_hits = false)
+    ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
+    ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(min_tui_height = 1)
+    ?(start_idle = false) ?(pace_redraws = true) ?initial_caps
+    ~(backend : Backend.t) () =
   let config =
     let effective_mouse_mode =
       if mouse_enabled then Some (Option.value ~default:`Sgr_any mouse)
@@ -1174,9 +1174,8 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         in
         let caps = Terminal.capabilities terminal in
         let screen =
-          Screen.create ~width_method:caps.unicode_width ~respect_alpha
-            ~cursor_visible ~explicit_width:config.explicit_width
-            ~clock:backend.now ()
+          Screen.create ~width_method:caps.unicode_width ~cursor_visible
+            ~explicit_width:config.explicit_width ~clock:backend.now ()
         in
         let capability_window_until =
           if config.raw_mode && Terminal.tty terminal then
@@ -1242,16 +1241,15 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
 (* Constructor: create a live app with Unix I/O *)
 
 let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
-    ?(respect_alpha = false) ?(mouse_enabled = true) ?(mouse = None)
-    ?(bracketed_paste = true) ?(focus_reporting = true)
-    ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true) ?(debug_overlay = false)
-    ?(debug_overlay_corner = `Bottom_right) ?(debug_overlay_capacity = 120)
-    ?(frame_dump_every = 0) ?frame_dump_dir ?frame_dump_pattern
-    ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
-    ?(explicit_width = false) ?(input_timeout = None)
-    ?(resize_debounce = Some 0.1) ?(output = `Stdout) ?(signal_handlers = true)
-    ?initial_caps ?(min_tui_height = 1) ?(start_idle = false)
-    ?(pace_redraws = true) () =
+    ?(mouse_enabled = true) ?(mouse = None) ?(bracketed_paste = true)
+    ?(focus_reporting = true) ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true)
+    ?(debug_overlay = false) ?(debug_overlay_corner = `Bottom_right)
+    ?(debug_overlay_capacity = 120) ?(frame_dump_every = 0) ?frame_dump_dir
+    ?frame_dump_pattern ?(frame_dump_hits = false)
+    ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
+    ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(output = `Stdout)
+    ?(signal_handlers = true) ?initial_caps ?(min_tui_height = 1)
+    ?(start_idle = false) ?(pace_redraws = true) () =
   let output_fd = match output with `Stdout -> Unix.stdout | `Fd fd -> fd in
   let input_fd = Unix.stdin in
   let output_is_tty = Terminal.is_tty output_fd in
@@ -1313,7 +1311,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         }
       in
       let app =
-        attach ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled ~mouse
+        attach ~mode ~raw_mode ~target_fps ~mouse_enabled ~mouse
           ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
           ~debug_overlay ~debug_overlay_corner ~debug_overlay_capacity
           ~frame_dump_every ?frame_dump_dir ?frame_dump_pattern ~frame_dump_hits

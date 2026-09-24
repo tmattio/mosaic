@@ -170,19 +170,19 @@ let sgr_buf = Bytes.create 131072
 let palette =
   [|
     (* fg, bg, attrs *)
-    (C.of_rgb 255 255 255, C.default, 0);
+    (C.of_rgb 255 255 255, C.default_bg, 0);
     (* white on default *)
-    (C.of_rgb 255 0 0, C.default, Attr.pack Attr.bold);
+    (C.of_rgb 255 0 0, C.default_bg, Attr.pack Attr.bold);
     (* red bold *)
-    (C.of_rgb 0 255 0, C.default, 0);
+    (C.of_rgb 0 255 0, C.default_bg, 0);
     (* green *)
     (C.of_rgb 0 0 255, C.of_rgb 51 51 51, 0);
     (* blue on gray *)
     (C.of_rgb 255 255 0, C.of_rgb 0 0 128, Attr.pack Attr.underline);
     (* yellow underline on blue *)
-    (C.of_rgb 128 128 128, C.default, Attr.pack Attr.dim);
+    (C.of_rgb 128 128 128, C.default_bg, Attr.pack Attr.dim);
     (* dim gray *)
-    (C.of_rgb 255 128 0, C.default, Attr.pack Attr.italic);
+    (C.of_rgb 255 128 0, C.default_bg, Attr.pack Attr.italic);
     (* orange italic *)
     (C.of_rgb 0 255 255, C.of_rgb 26 0 26, 0);
     (* cyan on dark purple *)
@@ -223,7 +223,7 @@ let sgr_same_style_1920 =
       Sgr.reset sgr_state_same;
       Ansi.Writer.reset_pos sgr_writer_same;
       for _ = 0 to 1919 do
-        Sgr.update sgr_state_same sgr_writer_same ~fg:sgr_white ~bg:C.default
+        Sgr.update sgr_state_same sgr_writer_same ~fg:sgr_white ~bg:C.default_bg
           ~attrs:0 ~link:""
       done;
       ignore (Sys.opaque_identity (Ansi.Writer.len sgr_writer_same)))
@@ -242,7 +242,7 @@ let sgr_alternating_styles_1920 =
       Ansi.Writer.reset_pos sgr_writer_alt;
       for i = 0 to 1919 do
         if i land 1 = 0 then
-          Sgr.update sgr_state_alt sgr_writer_alt ~fg:sgr_red ~bg:C.default
+          Sgr.update sgr_state_alt sgr_writer_alt ~fg:sgr_red ~bg:C.default_bg
             ~attrs:(Attr.pack Attr.bold) ~link:""
         else
           Sgr.update sgr_state_alt sgr_writer_alt ~fg:sgr_green ~bg:sgr_alt_bg
@@ -267,7 +267,8 @@ let sgr_hyperlink_transitions =
       Ansi.Writer.reset_pos sgr_writer_link;
       for i = 0 to 199 do
         let link = if i mod 5 < 2 then link_url else "" in
-        Sgr.update sgr_state_link sgr_writer_link ~fg:sgr_link_fg ~bg:C.default
+        Sgr.update sgr_state_link sgr_writer_link ~fg:sgr_link_fg
+          ~bg:C.default_bg
           ~attrs:(if i mod 5 < 2 then Attr.pack Attr.underline else 0)
           ~link;
         (* Simulate emitting some text *)

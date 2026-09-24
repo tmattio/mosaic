@@ -187,7 +187,7 @@ end
 
 let heatmap_color_fun ~color_scale ~vmin ~vmax =
   let len = Array.length color_scale in
-  if len = 0 then fun _ -> Color.default
+  if len = 0 then fun _ -> Color.transparent
   else fun v ->
     let t =
       if Float.equal vmin vmax then 0.
@@ -1983,7 +1983,7 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
     let color_scale =
       if Array.length color_scale > 0 then color_scale
       else if Array.length layout.theme.palette > 0 then layout.theme.palette
-      else [| Color.default |]
+      else [| Color.transparent |]
     in
     let n = Array.length xa in
     let vmin, vmax =

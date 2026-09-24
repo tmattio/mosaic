@@ -2,22 +2,6 @@ open Windtrap
 open Mosaic_ui
 open Test_harness
 
-(* ── Props ── *)
-
-let props_defaults () =
-  let p = Canvas.Props.default in
-  is_true ~msg:"equal to make()" (Canvas.Props.equal p (Canvas.Props.make ()))
-
-let props_equal_identical () =
-  let a = Canvas.Props.make () in
-  let b = Canvas.Props.make () in
-  is_true ~msg:"equal" (Canvas.Props.equal a b)
-
-let props_detects_respect_alpha_diff () =
-  let a = Canvas.Props.make ~respect_alpha:true () in
-  let b = Canvas.Props.make () in
-  is_false ~msg:"different" (Canvas.Props.equal a b)
-
 (* ── Construction ── *)
 
 let create_attaches () =
@@ -36,20 +20,6 @@ let create_grid_starts_at_1x1 () =
   let g = Canvas.grid canvas in
   equal ~msg:"width" int 1 (Matrix_grid.width g);
   equal ~msg:"height" int 1 (Matrix_grid.height g)
-
-let create_respect_alpha_default_false () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let canvas = Canvas.create ~parent:root () in
-  is_false ~msg:"default false" (Canvas.respect_alpha canvas)
-
-let create_respect_alpha_true () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let canvas = Canvas.create ~parent:root ~respect_alpha:true () in
-  is_true ~msg:"set true" (Canvas.respect_alpha canvas);
-  is_true ~msg:"grid respect_alpha"
-    (Matrix_grid.respect_alpha (Canvas.grid canvas))
 
 let create_grid_follows_screen_width_method () =
   let t = make_ctx ~width_method:`Wcwidth () in
@@ -122,53 +92,6 @@ let clear_schedules_render () =
 
 (* ── Properties ── *)
 
-let set_respect_alpha_updates_grid () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let canvas = Canvas.create ~parent:root () in
-  is_false ~msg:"initially false"
-    (Matrix_grid.respect_alpha (Canvas.grid canvas));
-  Canvas.set_respect_alpha canvas true;
-  is_true ~msg:"set true" (Matrix_grid.respect_alpha (Canvas.grid canvas));
-  is_true ~msg:"prop true" (Canvas.respect_alpha canvas)
-
-let set_respect_alpha_noop_same_value () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let canvas = Canvas.create ~parent:root () in
-  let before = !(t.schedule_count) in
-  Canvas.set_respect_alpha canvas false;
-  equal ~msg:"no schedule" int before !(t.schedule_count)
-
-let set_respect_alpha_schedules () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let canvas = Canvas.create ~parent:root () in
-  let before = !(t.schedule_count) in
-  Canvas.set_respect_alpha canvas true;
-  gt ~msg:"scheduled" ~than:before !(t.schedule_count)
-
-(* ── apply_props ── *)
-
-let apply_props_updates_respect_alpha () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let canvas = Canvas.create ~parent:root () in
-  let props = Canvas.Props.make ~respect_alpha:true () in
-  Canvas.apply_props canvas props;
-  is_true ~msg:"updated" (Canvas.respect_alpha canvas);
-  is_true ~msg:"grid updated" (Matrix_grid.respect_alpha (Canvas.grid canvas))
-
-let apply_props_noop_same () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let canvas = Canvas.create ~parent:root () in
-  let before = !(t.schedule_count) in
-  Canvas.apply_props canvas Canvas.Props.default;
-  equal ~msg:"no schedule" int before !(t.schedule_count)
-
-(* ── request_render ── *)
-
 let request_render_schedules () =
   let t = make_ctx () in
   let root = make_root t in
@@ -202,7 +125,7 @@ let fill_rect_fills_cells () =
   Renderable.Private.render node parent_grid ~delta:0.;
   Canvas.fill_rect canvas ~x:0 ~y:0 ~width:2 ~height:2 ~color:Ansi.Color.red;
   let g = Canvas.grid canvas in
-  let bg = Matrix_grid.get_background g (Matrix_grid.idx g ~x:0 ~y:0) in
+  let bg = Matrix_grid.get_bg g (Matrix_grid.idx g ~x:0 ~y:0) in
   is_true ~msg:"has fill color" (Ansi.Color.equal Ansi.Color.red bg)
 
 let width_height_accessors () =
@@ -306,9 +229,9 @@ let on_draw_none_clears_callback () =
   Renderable.Private.render node parent_grid ~delta:0.;
   equal ~msg:"still one" int 1 !draw_count
 
-(* ── set_cell ── *)
+(* ── set_uchar ── *)
 
-let set_cell_writes_glyph () =
+let set_uchar_writes_glyph () =
   let t = make_ctx () in
   let root = make_root t in
   let canvas = Canvas.create ~parent:root () in
@@ -316,14 +239,14 @@ let set_cell_writes_glyph () =
   let parent_grid = make_grid ~width:80 ~height:24 () in
   layout_node node ~x:0 ~y:0 ~width:10 ~height:5;
   Renderable.Private.render node parent_grid ~delta:0.;
-  let cell = Matrix_grid.Cell.of_uchar (Uchar.of_char 'Z') in
-  Canvas.set_cell canvas ~x:1 ~y:2 ~cell ~fg:Ansi.Color.red ~bg:Ansi.Color.blue
-    ~attrs:Ansi.Attr.empty ();
+  let cell = Uchar.of_char 'Z' in
+  Canvas.set_uchar canvas ~x:1 ~y:2 ~uchar:cell ~fg:Ansi.Color.red
+    ~bg:Ansi.Color.blue ~attrs:Ansi.Attr.empty ();
   let g = Canvas.grid canvas in
   let idx = Matrix_grid.idx g ~x:1 ~y:2 in
   equal ~msg:"text" string "Z" (Matrix_grid.get_text g idx);
   is_true ~msg:"bg"
-    (Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_background g idx))
+    (Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_bg g idx))
 
 (* ── on_resize dimensions ── *)
 
@@ -382,20 +305,10 @@ let pp_output () =
 let () =
   run "mosaic.canvas"
     [
-      group "Props"
-        [
-          test "default values" props_defaults;
-          test "equal on identical" props_equal_identical;
-          test "detects respect_alpha difference"
-            props_detects_respect_alpha_diff;
-        ];
       group "Construction"
         [
           test "attaches to parent" create_attaches;
           test "grid starts at 1x1" create_grid_starts_at_1x1;
-          test "respect_alpha defaults to false"
-            create_respect_alpha_default_false;
-          test "respect_alpha true propagates" create_respect_alpha_true;
           test "grid follows the screen width method"
             create_grid_follows_screen_width_method;
         ];
@@ -407,25 +320,13 @@ let () =
           test "skips zero dimensions" no_render_for_zero_dimensions;
         ];
       group "Clear" [ test "schedules render" clear_schedules_render ];
-      group "Properties"
-        [
-          test "set_respect_alpha updates grid" set_respect_alpha_updates_grid;
-          test "set_respect_alpha no-op on same value"
-            set_respect_alpha_noop_same_value;
-          test "set_respect_alpha schedules render" set_respect_alpha_schedules;
-        ];
-      group "apply_props"
-        [
-          test "updates respect_alpha" apply_props_updates_respect_alpha;
-          test "no-op on same props" apply_props_noop_same;
-        ];
       group "request_render"
         [ test "schedules render" request_render_schedules ];
       group "Drawing"
         [
           test "draw_text writes to grid" draw_text_writes_to_grid;
           test "fill_rect fills cells" fill_rect_fills_cells;
-          test "set_cell writes cell" set_cell_writes_glyph;
+          test "set_uchar writes cell" set_uchar_writes_glyph;
           test "width/height accessors" width_height_accessors;
         ];
       group "on_draw"

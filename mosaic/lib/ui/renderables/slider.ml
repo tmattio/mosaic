@@ -152,7 +152,7 @@ let thumb_cell ~orientation ~vthumb_start ~vthumb_end real_pos =
             if ts - vcell_start = 0 then 0x2580 (* ▀ *) else 0x2584 (* ▄ *)
           else 0x20 (* space — unreachable within thumb range *)
   in
-  Matrix_grid.Cell.of_uchar (Uchar.of_int code)
+  Uchar.of_int code
 
 let render t _self grid ~delta:_ =
   let w = Renderable.width t.node in
@@ -174,8 +174,9 @@ let render t _self grid ~delta:_ =
         for real_x = real_start to real_end do
           let cell = thumb_cell ~orientation ~vthumb_start ~vthumb_end real_x in
           for row = 0 to h - 1 do
-            Matrix_grid.set_cell ~blend:true grid ~x:(x + real_x) ~y:(y + row)
-              ~cell ~fg:thumb_color ~bg:track_color ~attrs:Ansi.Attr.empty ()
+            Matrix_grid.set_uchar ~blend:true grid ~x:(x + real_x) ~y:(y + row)
+              ~uchar:cell ~fg:thumb_color ~bg:track_color ~attrs:Ansi.Attr.empty
+              ()
           done
         done
     | `Vertical ->
@@ -184,8 +185,9 @@ let render t _self grid ~delta:_ =
         for real_y = real_start to real_end do
           let cell = thumb_cell ~orientation ~vthumb_start ~vthumb_end real_y in
           for col = 0 to w - 1 do
-            Matrix_grid.set_cell ~blend:true grid ~x:(x + col) ~y:(y + real_y)
-              ~cell ~fg:thumb_color ~bg:track_color ~attrs:Ansi.Attr.empty ()
+            Matrix_grid.set_uchar ~blend:true grid ~x:(x + col) ~y:(y + real_y)
+              ~uchar:cell ~fg:thumb_color ~bg:track_color ~attrs:Ansi.Attr.empty
+              ()
           done
         done
 

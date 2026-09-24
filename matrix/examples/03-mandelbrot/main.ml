@@ -225,8 +225,8 @@ let draw_fractal st (ctx : draw_context) =
                  let b = int_of_float (Float.round (!b_sum *. inv)) in
                  Ansi.Color.of_rgb r g b
              in
-             Grid.set_cell ctx.grid ~x ~y
-               ~cell:(Grid.Cell.of_uchar (Uchar.of_int (braille_code !mask)))
+             Grid.set_uchar ctx.grid ~x ~y
+               ~uchar:(Uchar.of_int (braille_code !mask))
                ~fg ~bg:inside_color ~attrs:empty_attrs ~blend:true ()
          done
        done);

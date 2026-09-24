@@ -51,11 +51,29 @@ let color_blending () =
   let fg = Color.of_rgba 255 255 255 128 in
   (* 50% White *)
 
-  (* Linear blend: 50% white over black should be approx gray 127 *)
-  let res = Color.blend ~mode:`Linear ~src:fg ~dst:bg () in
+  (* Source-over: half white over black is opaque gray. *)
+  let res = Color.blend ~src:fg ~dst:bg in
   let r, g, b, a = Color.to_rgba res in
   equal ~msg:"blend result opaque" int 255 a;
-  is_true ~msg:"blend result roughly gray" (r > 120 && r < 135 && r = g && g = b)
+  is_true ~msg:"blend result roughly gray" (r > 120 && r < 135 && r = g && g = b);
+  let red = Color.of_rgba 255 0 0 128 in
+  equal ~msg:"transparent destination preserves source channels" check_color red
+    (Color.blend ~src:red ~dst:Color.transparent);
+  equal ~msg:"translucent layers accumulate coverage" check_color
+    (Color.of_rgba 255 0 0 192)
+    (Color.blend ~src:red ~dst:red);
+  equal ~msg:"rounding alpha does not overflow RGB channels" check_color
+    (Color.of_rgba 255 255 255 128)
+    (Color.blend
+       ~src:(Color.of_rgba 255 255 255 128)
+       ~dst:(Color.of_rgba 255 255 255 1));
+  List.iter
+    (fun color ->
+      equal ~msg:"transparent source preserves intent" check_color color
+        (Color.blend ~src:Color.transparent ~dst:color);
+      equal ~msg:"opaque source preserves intent" check_color color
+        (Color.blend ~src:color ~dst:red))
+    [ Color.default_fg; Color.default_bg; Color.indexed 1 ]
 
 let color_intent_is_part_of_identity () =
   (* Exact equality must preserve terminal emission intent, while visual
@@ -71,7 +89,7 @@ let color_intent_is_part_of_identity () =
   is_false ~msg:"intent differs" (Color.equal indexed_red rgb_red);
   is_true ~msg:"rgba snapshot matches" (Color.equal_rgba indexed_red rgb_red);
   is_false ~msg:"default intent differs from transparent RGB"
-    (Color.equal Color.default (Color.of_rgba 0 0 0 0))
+    (Color.equal Color.default_bg (Color.of_rgba 0 0 0 0))
 
 let color_ansi16_palette_matches_standard_fallback () =
   (* The fallback ANSI16 table uses 0x80/0xc0 base colors. *)
@@ -244,7 +262,7 @@ let sgr_state_transitions () =
   let state = Sgr_state.create () in
 
   (* 1. Initial: emits reset(0) + attributes *)
-  Sgr_state.update state w ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default
+  Sgr_state.update state w ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.bold) ~link:"";
 
   let out1 = Writer.slice w in
@@ -254,13 +272,13 @@ let sgr_state_transitions () =
 
   (* 2. No-op: update with exact same values *)
   let w2 = Writer.make buf in
-  Sgr_state.update state w2 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default
+  Sgr_state.update state w2 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.bold) ~link:"";
   equal ~msg:"noop update empty" int 0 (Writer.len w2);
 
   (* 3. Delta: Remove Bold, keep color *)
   let w3 = Writer.make buf in
-  Sgr_state.update state w3 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default
+  Sgr_state.update state w3 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:0 ~link:"";
 
   (* Only the attribute changes; the foreground is already active. *)
@@ -298,10 +316,10 @@ let sgr_shared_attr_disable_reenables_survivor () =
   let state = Sgr_state.create () in
   let w1 = Writer.make buf in
   let bold_dim = Attr.union Attr.bold Attr.dim in
-  Sgr_state.update state w1 ~fg:Color.default ~bg:Color.default
+  Sgr_state.update state w1 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack bold_dim) ~link:"";
   let w2 = Writer.make buf in
-  Sgr_state.update state w2 ~fg:Color.default ~bg:Color.default
+  Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.dim) ~link:"";
   check_seq "bold disabled and dim restored" "\x1b[22;2m"
     (Bytes.to_string (Writer.slice w2))
@@ -314,32 +332,32 @@ let sgr_enclosure_disable_group () =
      (which terminals treat as a full SGR reset). *)
   let state = Sgr_state.create () in
   let w1 = Writer.make buf in
-  Sgr_state.update state w1 ~fg:Color.default ~bg:Color.default
+  Sgr_state.update state w1 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.encircled) ~link:"";
   let w2 = Writer.make buf in
-  Sgr_state.update state w2 ~fg:Color.default ~bg:Color.default ~attrs:0
+  Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg ~attrs:0
     ~link:"";
   check_seq "encircled disabled via 54" "\x1b[54m"
     (Bytes.to_string (Writer.slice w2));
   (* Overline+Encircled -> Encircled: dropping overline must not emit 54. *)
   let state = Sgr_state.create () in
   let w1 = Writer.make buf in
-  Sgr_state.update state w1 ~fg:Color.default ~bg:Color.default
+  Sgr_state.update state w1 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack (Attr.union Attr.overline Attr.encircled))
     ~link:"";
   let w2 = Writer.make buf in
-  Sgr_state.update state w2 ~fg:Color.default ~bg:Color.default
+  Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.encircled) ~link:"";
   check_seq "overline drop keeps encircled" "\x1b[55m"
     (Bytes.to_string (Writer.slice w2));
   (* Framed+Encircled -> Framed: disable via 54, then re-enable framed. *)
   let state = Sgr_state.create () in
   let w1 = Writer.make buf in
-  Sgr_state.update state w1 ~fg:Color.default ~bg:Color.default
+  Sgr_state.update state w1 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack (Attr.union Attr.framed Attr.encircled))
     ~link:"";
   let w2 = Writer.make buf in
-  Sgr_state.update state w2 ~fg:Color.default ~bg:Color.default
+  Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg
     ~attrs:(Attr.pack Attr.framed) ~link:"";
   check_seq "encircled disabled and framed restored" "\x1b[54;51m"
     (Bytes.to_string (Writer.slice w2))
@@ -348,10 +366,10 @@ let sgr_same_rgba_different_intent_emits_color_delta () =
   let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
   let w1 = Writer.make buf in
-  Sgr_state.update state w1 ~fg:(Color.indexed 1) ~bg:Color.default ~attrs:0
+  Sgr_state.update state w1 ~fg:(Color.indexed 1) ~bg:Color.default_bg ~attrs:0
     ~link:"";
   let w2 = Writer.make buf in
-  Sgr_state.update state w2 ~fg:(Color.of_rgb 128 0 0) ~bg:Color.default
+  Sgr_state.update state w2 ~fg:(Color.of_rgb 128 0 0) ~bg:Color.default_bg
     ~attrs:0 ~link:"";
   check_seq "intent-only color delta" "\x1b[38;2;128;0;0m"
     (Bytes.to_string (Writer.slice w2))
@@ -365,7 +383,7 @@ let sgr_transparent_bg_resets () =
   check_seq "bg applied" "\x1b[0;38;2;255;0;0;48;2;0;0;255m"
     (Bytes.to_string (Writer.slice w1));
   let w2 = Writer.make buf in
-  Sgr_state.update state w2 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default
+  Sgr_state.update state w2 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:0 ~link:"";
   check_seq "bg cleared to default" "\x1b[49m"
     (Bytes.to_string (Writer.slice w2))
@@ -374,12 +392,12 @@ let sgr_transparent_fg_resets_to_default () =
   let buf = Bytes.create 128 in
   let state = Sgr_state.create () in
   let w1 = Writer.make buf in
-  Sgr_state.update state w1 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default
+  Sgr_state.update state w1 ~fg:(Color.of_rgb 255 0 0) ~bg:Color.default_bg
     ~attrs:0 ~link:"";
   check_seq "fg applied" "\x1b[0;38;2;255;0;0m"
     (Bytes.to_string (Writer.slice w1));
   let w2 = Writer.make buf in
-  Sgr_state.update state w2 ~fg:Color.default ~bg:Color.default ~attrs:0
+  Sgr_state.update state w2 ~fg:Color.default_fg ~bg:Color.default_bg ~attrs:0
     ~link:"";
   let out = Bytes.to_string (Writer.slice w2) in
   check_seq "fg cleared to default" "\x1b[39m" out;

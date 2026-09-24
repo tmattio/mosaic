@@ -90,9 +90,9 @@ let%expect_test "placeholder color" =
        ());
   [%expect_exact
     {|
-[0;38;5;1mType here[38;2;255;255;255m           [0m
-[0;38;2;255;255;255m                    [0m
-[0;38;2;255;255;255m                    [0m|}]
+[0;38;5;1mType here[39m           [0m
+[0m                    [0m
+[0m                    [0m|}]
 
 let%expect_test "ctrl+u clears to line start" =
   let app = make_app () in

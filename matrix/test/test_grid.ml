@@ -159,11 +159,11 @@ let overflow_respects_scissor_for_wide_grapheme () =
   assert_valid_spans grid
 
 let alpha_blit_orphan_continuation_draws_space () =
-  let src = Grid.create ~width:3 ~height:1 ~respect_alpha:true () in
+  let src = Grid.create ~width:3 ~height:1 () in
   let style = Ansi.Style.make ~bg:(Ansi.Color.of_rgba 0 255 0 128) () in
   Grid.draw_text src ~x:0 ~y:0 ~text:"中" ~style;
   let dst = Grid.create ~width:1 ~height:1 () in
-  Grid.blit_region ~src ~dst ~src_x:1 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+  Grid.draw_region ~src ~dst ~src_x:1 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
     ~dst_y:0;
   equal ~msg:"dst(0,0) is space" int (Char.code ' ') (read_char dst 0 0)
 
@@ -182,6 +182,26 @@ let cross_store_blit_remaps_graphemes () =
 (* Regression: draw_text used to intern graphemes before scissor and bounds
    checks, leaking one refcount-0 store slot per distinct clipped grapheme
    until the store's id space was exhausted. *)
+let transparent_graphemes_do_not_leak_store () =
+  let src = Grid.create ~width:4 ~height:1 () in
+  let dst = Grid.create ~width:4 ~height:1 () in
+  let style =
+    Ansi.Style.make ~fg:Ansi.Color.transparent ~bg:Ansi.Color.transparent ()
+  in
+  List.iter
+    (fun text ->
+      Grid.draw_text ~style dst ~x:0 ~y:0 ~text;
+      Grid.clear src;
+      Grid.draw_text src ~x:0 ~y:0 ~text;
+      Grid.push_opacity dst 0.001;
+      Grid.draw_region ~src ~dst ~src_x:0 ~src_y:0 ~width:4 ~height:1 ~dst_x:0
+        ~dst_y:0;
+      Grid.draw_text dst ~x:0 ~y:0 ~text;
+      Grid.pop_opacity dst)
+    [ "👩‍🚀"; "👨‍💻"; "é" ];
+  equal ~msg:"invisible graphemes never occupy storage" (pair int int) (0, 0)
+    (Grid.grapheme_stats dst)
+
 let scissored_graphemes_do_not_leak_store () =
   let grid = Grid.create ~width:4 ~height:1 () in
   let _, slots0 = Grid.grapheme_stats grid in
@@ -260,37 +280,23 @@ let grapheme_store_churn_stays_balanced () =
     ~msg:(Printf.sprintf "slots stay bounded (max %d)" !max_slots)
     (!max_slots <= 120)
 
-(* A (idx, gen) handle from before a clear must be rejected even after its
-   slot has been reused for new content. *)
-let stale_cell_handles_are_rejected () =
-  let fr =
-    "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7"
-    (* FR flag *)
-  in
-  let de =
-    "\xF0\x9F\x87\xA9\xF0\x9F\x87\xAA"
-    (* DE flag *)
-  in
-  let grid = Grid.create ~width:4 ~height:1 () in
-  Grid.draw_text grid ~x:0 ~y:0 ~text:fr;
-  let stale = Grid.get_cell grid 0 in
-  equal ~msg:"live handle resolves" string fr (Grid.get_text grid 0);
-  Grid.clear grid;
-  Grid.draw_text grid ~x:0 ~y:0 ~text:de;
-  Grid.set_cell grid ~x:2 ~y:0 ~cell:stale ~fg:Ansi.Color.white
-    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
-  equal ~msg:"stale handle reads as empty" string ""
-    (Grid.get_text grid (idx grid 2 0));
-  (* Several reuse cycles bump the slot generation further; the original
-     handle must stay rejected. *)
+let copied_payloads_survive_source_reuse () =
+  let src = Grid.create ~width:4 ~height:1 () in
+  let dst = Grid.create ~width:4 ~height:1 () in
+  let flag = "🇫🇷" in
+  Grid.draw_text src ~x:0 ~y:0 ~text:flag
+    ~style:(Ansi.Style.make ~link:"https://example.com/flag" ());
+  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:2 ~height:1 ~dst_x:2
+    ~dst_y:0;
   for _ = 1 to 5 do
-    Grid.clear grid;
-    Grid.draw_text grid ~x:0 ~y:0 ~text:de
+    Grid.clear src;
+    Grid.draw_text src ~x:0 ~y:0 ~text:"🇩🇪"
   done;
-  Grid.set_cell grid ~x:2 ~y:0 ~cell:stale ~fg:Ansi.Color.white
-    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
-  equal ~msg:"stale handle still rejected" string ""
-    (Grid.get_text grid (idx grid 2 0))
+  equal ~msg:"copied grapheme owns its payload" string flag
+    (Grid.get_text dst 2);
+  equal ~msg:"copied hyperlink belongs to destination" string
+    "https://example.com/flag" (Grid.get_link dst 2);
+  assert_valid_spans dst
 
 (* Clearing one grid of a sharing group must not release payloads still
    referenced by a sibling. *)
@@ -345,11 +351,93 @@ let shared_storage_links_equal () =
   draw b "http://a";
   is_true ~msg:"identical links equal" (Grid.cells_equal a 0 b 0)
 
-let blit_preserves_respect_alpha () =
-  let src = Grid.create ~width:2 ~height:2 ~respect_alpha:true () in
-  let dst = Grid.create ~width:2 ~height:2 () in
-  Grid.blit ~src ~dst;
-  is_true ~msg:"respect alpha copied" (Grid.respect_alpha dst)
+let independent_storage_cells_equal () =
+  let a = Grid.create ~width:4 ~height:1 () in
+  let b = Grid.create ~width:4 ~height:1 () in
+  let draw grid text url =
+    Grid.draw_text grid ~x:0 ~y:0 ~text ~style:(Ansi.Style.make ~link:url ())
+  in
+  draw a "🇫🇷" "https://a";
+  draw b "🇩🇪" "https://b";
+  is_false ~msg:"colliding storage IDs are not equal" (Grid.cells_equal a 0 b 0);
+  Grid.clear b;
+  draw b "🇫🇷" "https://a";
+  for i = 0 to 1 do
+    is_true ~msg:"text and links compare across independent stores"
+      (Grid.cells_equal a i b i)
+  done;
+  Grid.clear b;
+  draw b "🇫🇷" "https://b";
+  is_false ~msg:"equal text with different URL differs"
+    (Grid.cells_equal a 0 b 0)
+
+let scalar_writes_preserve_spans () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  let draw x uchar =
+    Grid.set_uchar grid ~x ~y:0 ~uchar ~fg:Ansi.Color.white ~bg:Ansi.Color.black
+      ~attrs:Ansi.Attr.empty ()
+  in
+  Grid.clip grid
+    Grid.{ x = 1; y = 0; width = 1; height = 1 }
+    (fun () -> draw 1 (Uchar.of_int 0x4E2D));
+  equal ~msg:"wide scalar start" string "中" (Grid.get_text grid 1);
+  is_true ~msg:"continuation extends beyond clip" (Grid.is_continuation grid 2);
+  assert_valid_spans grid;
+  draw 2 (Uchar.of_char 'x');
+  equal ~msg:"overwriting continuation clears its start" string " "
+    (Grid.get_text grid 1);
+  draw 3 (Uchar.of_int 0x4E2D);
+  equal ~msg:"right-edge overflow becomes space" string " "
+    (Grid.get_text grid 3);
+  List.iter
+    (fun cp ->
+      draw 0 (Uchar.of_char 'a');
+      draw 1 (Uchar.of_char 'b');
+      draw 1 (Uchar.of_int cp);
+      is_true ~msg:"control or zero-width scalar empties its target"
+        (Grid.is_empty grid 1);
+      equal ~msg:"scalar does not extend preceding text" string "a"
+        (Grid.get_text grid 0);
+      equal ~msg:"empty scalar has no text" string "" (Grid.get_text grid 1))
+    [ 0; 9; 10; 27; 127; 0x0301 ];
+  assert_valid_spans grid
+
+let clipped_multi_column_grapheme () =
+  let src = Grid.create ~width:6 ~height:1 ~width_method:`Wcwidth () in
+  Grid.draw_text src ~x:0 ~y:0 ~text:"👨‍💻";
+  equal ~msg:"fixture spans four columns" int 4 (Grid.cell_width src 0);
+  List.iter
+    (fun transfer ->
+      let dst = Grid.create ~width:3 ~height:1 () in
+      transfer ~src ~dst ~src_x:0 ~src_y:0 ~width:3 ~height:1 ~dst_x:0 ~dst_y:0;
+      assert_valid_spans dst;
+      equal ~msg:"entire clipped grapheme becomes spaces" string "   "
+        (Grid.to_text ~trim:false dst))
+    [ Grid.blit_region; Grid.draw_region ];
+  Grid.draw_text src ~x:4 ~y:0 ~text:"x";
+  let dst = Grid.create ~width:2 ~height:1 () in
+  Grid.push_opacity dst 0.;
+  Grid.blit_region ~src ~dst ~src_x:4 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  Grid.draw_region ~src ~dst ~src_x:4 ~src_y:0 ~width:1 ~height:1 ~dst_x:1
+    ~dst_y:0;
+  Grid.pop_opacity dst;
+  equal ~msg:"copy ignores drawing opacity, composition observes it" string "x "
+    (Grid.to_text ~trim:false dst)
+
+let overlapping_wide_spans () =
+  let grid = Grid.create ~width:8 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"a中🇫🇷bc";
+  Grid.blit_region ~src:grid ~dst:grid ~src_x:0 ~src_y:0 ~width:7 ~height:1
+    ~dst_x:1 ~dst_y:0;
+  assert_valid_spans grid;
+  equal ~msg:"right shift preserves complete graphemes" string "aa中🇫🇷bc"
+    (Grid.to_text grid);
+  Grid.blit_region ~src:grid ~dst:grid ~src_x:1 ~src_y:0 ~width:7 ~height:1
+    ~dst_x:0 ~dst_y:0;
+  assert_valid_spans grid;
+  equal ~msg:"left shift preserves complete graphemes" string "a中🇫🇷bcc"
+    (Grid.to_text grid)
 
 let blit_bulk_tracks_graphemes () =
   let src = Grid.create ~width:4 ~height:1 () in
@@ -404,7 +492,7 @@ let diff_detects_single_rgb_step () =
   (* Cell comparison is exact on the packed color representation, so a single
      1/255 RGB step must register as a difference. *)
   let minimal_diff_color = Ansi.Color.of_rgba 1 1 1 1 in
-  Grid.set_cell b ~x:0 ~y:0 ~cell:(Grid.get_cell a 0) ~fg:Ansi.Color.white
+  Grid.set_uchar b ~x:0 ~y:0 ~uchar:(Uchar.of_char ' ') ~fg:Ansi.Color.white
     ~bg:minimal_diff_color ~attrs:Ansi.Attr.empty ();
   let diffs = diff_cells a b in
   equal ~msg:"diffs include cell when RGB changes by 1 step"
@@ -413,7 +501,7 @@ let diff_detects_single_rgb_step () =
     (Array.to_list diffs)
 
 let alpha_blit_blends_fg_bg () =
-  let src = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+  let src = Grid.create ~width:1 ~height:1 () in
   let dst = Grid.create ~width:1 ~height:1 () in
   let blue = Ansi.Color.of_rgba 0 0 255 255 in
   Grid.fill_rect dst ~x:0 ~y:0 ~width:1 ~height:1 ~color:blue;
@@ -421,20 +509,17 @@ let alpha_blit_blends_fg_bg () =
   let semi_green = Ansi.Color.of_rgba 0 255 0 128 in
   let style = Ansi.Style.make ~fg:semi_red ~bg:semi_green () in
   Grid.draw_text src ~x:0 ~y:0 ~text:"C" ~style;
-  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+  Grid.draw_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
     ~dst_y:0;
   let r_bg, g_bg, b_bg, a_bg = read_bg dst 0 0 in
-  (* Validate qualitative blend: green increases from 0, blue decreases from
-     255. Background alpha should match the overlay value (128) rather than
-     compositing with the destination alpha. *)
+  (* Source-over increases green and retains some destination blue. *)
   satisfies ~claim:"bg green increased (> 0)" int (fun g -> g > 0) g_bg;
   satisfies ~claim:"bg blue decreased (< 255)" int (fun b -> b < 255) b_bg;
   equal ~msg:"bg red stays 0" int 0 r_bg;
-  equal ~msg:"bg alpha is 128" int 128 a_bg;
+  equal ~msg:"bg alpha remains opaque" int 255 a_bg;
   let r_fg, _g_fg, _b_fg, a_fg = read_fg dst 0 0 in
-  (* With src FG alpha resolved to 0 in the source buffer, FG tint contribution
-     is zero; alpha uses destination background (255). *)
-  equal ~msg:"fg red stays 0" int 0 r_fg;
+  (* Foreground remains visible after composition onto an opaque grid. *)
+  satisfies ~claim:"foreground retains red" int (fun r -> r > 0) r_fg;
   equal ~msg:"fg alpha 255" int 255 a_fg
 
 let resize_shrink_clips_continuation () =
@@ -470,31 +555,21 @@ let create_defaults () =
   let grid = Grid.create ~width:2 ~height:3 () in
   equal ~msg:"width" int 2 (Grid.width grid);
   equal ~msg:"height" int 3 (Grid.height grid);
-  is_false ~msg:"respect alpha" (Grid.respect_alpha grid);
   is_true ~msg:"width method" (Grid.width_method grid = `Unicode)
 
 let create_with_configuration () =
-  let grid =
-    Grid.create ~width:1 ~height:1 ~width_method:`Wcwidth ~respect_alpha:true ()
-  in
-  is_true ~msg:"width method" (Grid.width_method grid = `Wcwidth);
-  is_true ~msg:"respect alpha" (Grid.respect_alpha grid)
+  let grid = Grid.create ~width:1 ~height:1 ~width_method:`Wcwidth () in
+  is_true ~msg:"width method" (Grid.width_method grid = `Wcwidth)
 
 let set_width_method_updates () =
   let grid = Grid.create ~width:1 ~height:1 () in
   Grid.set_width_method grid `Wcwidth;
   is_true ~msg:"updated" (Grid.width_method grid = `Wcwidth)
 
-let set_respect_alpha_updates () =
-  let grid = Grid.create ~width:1 ~height:1 () in
-  Grid.set_respect_alpha grid true;
-  is_true ~msg:"updated" (Grid.respect_alpha grid)
-
-let set_cell_writes_all_planes () =
+let set_uchar_writes_all_planes () =
   let grid = Grid.create ~width:2 ~height:2 () in
   let attrs = Ansi.Attr.bold in
-  Grid.set_cell ~blend:true grid ~x:1 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'A'))
+  Grid.set_uchar ~blend:true grid ~x:1 ~y:0 ~uchar:(Uchar.of_char 'A')
     ~fg:Ansi.Color.red ~bg:Ansi.Color.blue ~attrs ();
   equal ~msg:"char" int (Char.code 'A') (read_char grid 1 0);
   equal ~msg:"width" int 1 (read_width grid 1 0);
@@ -506,11 +581,10 @@ let set_cell_writes_all_planes () =
   let br, bg, bb, ba = Ansi.Color.to_rgba Ansi.Color.blue in
   equal ~msg:"bg color" rgba (br, (bg, (bb, ba))) (r_bg, (g_bg, (b_bg, a_bg)))
 
-let set_cell_outside_scissor_ignored () =
+let set_uchar_outside_scissor_ignored () =
   let grid = Grid.create ~width:2 ~height:2 () in
   Grid.push_clip grid { x = 1; y = 1; width = 1; height = 1 };
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'X'))
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'X')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   Grid.pop_clip grid;
   equal ~msg:"char remains empty" int 32 (read_char grid 0 0)
@@ -519,30 +593,23 @@ let with_scissor_restores_stack () =
   let grid = Grid.create ~width:2 ~height:2 () in
   let result =
     Grid.clip grid { x = 0; y = 0; width = 1; height = 1 } (fun () ->
-        Grid.set_cell ~blend:true grid ~x:0 ~y:0
-          ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'Y'))
+        Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'Y')
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
         42)
   in
   equal ~msg:"scoped result" int 42 result;
   equal ~msg:"inside write" int (Char.code 'Y') (read_char grid 0 0);
   (* After scope, writing outside should succeed. *)
-  Grid.set_cell ~blend:true grid ~x:1 ~y:1
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'Z'))
+  Grid.set_uchar ~blend:true grid ~x:1 ~y:1 ~uchar:(Uchar.of_char 'Z')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   equal ~msg:"char set" int (Char.code 'Z') (read_char grid 1 1)
 
-let set_cell_records_hyperlink () =
+let set_uchar_records_hyperlink () =
   let grid = Grid.create ~width:1 ~height:1 () in
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'L'))
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'L')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty
     ~link:"https://example.com" ();
-  (* Use the new zero-alloc accessor to get the ID *)
-  let id = Grid.get_link grid 0 in
-  match Grid.hyperlink_url grid id with
-  | Some url -> equal ~msg:"link stored" string "https://example.com" url
-  | None -> failwith "expected hyperlink"
+  equal ~msg:"link stored" string "https://example.com" (Grid.get_link grid 0)
 
 let draw_text_applies_style () =
   let grid = Grid.create ~width:4 ~height:1 () in
@@ -560,7 +627,7 @@ let draw_text_applies_style () =
     (r, (g, (b, a)))
   in
   let expected_bg_color =
-    Ansi.Color.blend ~src:bg_color ~dst:Ansi.Color.default ()
+    Ansi.Color.blend ~src:bg_color ~dst:Ansi.Color.transparent
   in
   let expected_bg =
     let r, g, b, a = Ansi.Color.to_rgba expected_bg_color in
@@ -629,25 +696,16 @@ let draw_box_left_border_spans_full_height () =
   equal ~msg:"middle cell" int pipe (read_char grid 0 1);
   equal ~msg:"bottom cell" int pipe (read_char grid 0 3)
 
-let set_cell_honours_blending () =
-  let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'B'))
+let set_uchar_honours_blending () =
+  let grid = Grid.create ~width:1 ~height:1 () in
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'B')
     ~fg:Ansi.Color.blue ~bg:Ansi.Color.blue ~attrs:Ansi.Attr.empty ();
   let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
   let semi_green = Ansi.Color.of_rgba 0 255 0 128 in
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'C'))
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'C')
     ~fg:semi_red ~bg:semi_green ~attrs:Ansi.Attr.empty ();
-  let expected_fg = Ansi.Color.blend ~src:semi_red ~dst:Ansi.Color.blue () in
-  (* Background alpha is replaced by the overlay alpha instead of being blended,
-     matching the renderer's contract for translucent backgrounds. *)
-  let expected_bg =
-    let blended = Ansi.Color.blend ~src:semi_green ~dst:Ansi.Color.blue () in
-    let r, g, b, _ = Ansi.Color.to_rgba blended in
-    (* overlay alpha = 128 *)
-    Ansi.Color.of_rgba r g b 128
-  in
+  let expected_bg = Ansi.Color.of_rgb 0 128 64 in
+  let expected_fg = Ansi.Color.of_rgb 128 64 32 in
   equal ~msg:"char" int (Char.code 'C') (read_char grid 0 0);
   equal ~msg:"width" int 1 (read_width grid 0 0);
   let expected_fg =
@@ -669,22 +727,16 @@ let set_cell_honours_blending () =
   equal ~msg:"fg blended" rgba expected_fg actual_fg;
   equal ~msg:"bg blended" rgba expected_bg actual_bg
 
-let set_cell_without_respect_still_blends () =
+let set_uchar_accumulates_alpha () =
   let grid = Grid.create ~width:1 ~height:1 () in
   let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'C'))
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'C')
     ~fg:semi_red ~bg:semi_red ~attrs:Ansi.Attr.empty ();
   equal ~msg:"char" int (Char.code 'C') (read_char grid 0 0);
   equal ~msg:"width" int 1 (read_width grid 0 0);
-  (* {!Grid.set_cell ~blend:true} always blends and keeps the destination alpha
-     for the foreground channel, so the default background alpha (0)
-     persists. *)
-  let expected =
-    let blended = Ansi.Color.blend ~src:semi_red ~dst:Ansi.Color.default () in
-    let r, g, b, _ = Ansi.Color.to_rgba blended in
-    (r, (g, (b, 0)))
-  in
+  (* Red foreground over the same translucent red background accumulates
+     coverage without darkening either layer. *)
+  let expected = (255, (0, (0, 192))) in
   let actual =
     let r, g, b, a = read_fg grid 0 0 in
     (r, (g, (b, a)))
@@ -704,12 +756,11 @@ let draw_text_blends_fg_alpha_over_opaque_bg () =
   satisfies ~claim:"blue component preserved (> 0)" int (fun blue -> blue > 0) b;
   satisfies ~claim:"red component applied (> 0)" int (fun red -> red > 0) r
 
-let blit_region_copies_alpha_when_source_ignores_alpha () =
+let blit_region_copies_alpha () =
   let src = Grid.create ~width:1 ~height:1 () in
   let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
-  Grid.set_cell src ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'R'))
-    ~fg:Ansi.Color.white ~bg:semi_red ~attrs:Ansi.Attr.empty ();
+  Grid.set_uchar src ~x:0 ~y:0 ~uchar:(Uchar.of_char 'R') ~fg:Ansi.Color.white
+    ~bg:semi_red ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   let opaque_blue = Ansi.Color.of_rgba 0 0 255 255 in
   Grid.fill_rect dst ~x:0 ~y:0 ~width:1 ~height:1 ~color:opaque_blue;
@@ -721,22 +772,21 @@ let blit_region_copies_alpha_when_source_ignores_alpha () =
   equal ~msg:"destination blue overwritten" int 0 b;
   equal ~msg:"source alpha copied" int 128 a
 
-let blit_region_blends_when_source_respects_alpha () =
-  let src = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+let draw_region_blends_alpha () =
+  let src = Grid.create ~width:1 ~height:1 () in
   let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
-  Grid.set_cell ~blend:false src ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'R'))
+  Grid.set_uchar ~blend:false src ~x:0 ~y:0 ~uchar:(Uchar.of_char 'R')
     ~fg:Ansi.Color.white ~bg:semi_red ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   let opaque_blue = Ansi.Color.of_rgba 0 0 255 255 in
   Grid.fill_rect dst ~x:0 ~y:0 ~width:1 ~height:1 ~color:opaque_blue;
-  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+  Grid.draw_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
     ~dst_y:0;
   let r, _g, b, a = read_bg dst 0 0 in
   equal ~msg:"char copied" int (Char.code 'R') (read_char dst 0 0);
   is_true ~msg:"background blended keeps blue" (b > 0 && b < 255);
   is_true ~msg:"background blended adds red" (r > 0 && r < 255);
-  equal ~msg:"matrix blend alpha policy" int 128 a
+  equal ~msg:"opaque destination stays opaque" int 255 a
 
 let scissor_push_intersects_parent () =
   let grid = Grid.create ~width:4 ~height:1 () in
@@ -745,13 +795,11 @@ let scissor_push_intersects_parent () =
   (* Child scissor outside parent should intersect to empty, so writes are
      clipped *)
   Grid.push_clip grid { x = 2; y = 0; width = 1; height = 1 };
-  Grid.set_cell ~blend:true grid ~x:2 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'B'))
+  Grid.set_uchar ~blend:true grid ~x:2 ~y:0 ~uchar:(Uchar.of_char 'B')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   (* Pop child, write inside parent *)
   Grid.pop_clip grid;
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'A'))
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'A')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   Grid.pop_clip grid;
   equal ~msg:"child write clipped by parent" int (Char.code ' ')
@@ -763,8 +811,7 @@ let clear_scissor_allows_future_writes () =
   let grid = Grid.create ~width:2 ~height:2 () in
   Grid.push_clip grid { x = 0; y = 0; width = 1; height = 1 };
   Grid.clear_clip grid;
-  Grid.set_cell ~blend:true grid ~x:1 ~y:1
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'W'))
+  Grid.set_uchar ~blend:true grid ~x:1 ~y:1 ~uchar:(Uchar.of_char 'W')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   equal ~msg:"write succeeded" int (Char.code 'W') (read_char grid 1 1)
 
@@ -808,8 +855,7 @@ let fill_rect_fills_region () =
 let replace_wide_grapheme_clears_continuations () =
   let grid = Grid.create ~width:3 ~height:1 () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"😊";
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'A'))
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'A')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   equal ~msg:"continuation cleared to space" int 32 (read_char grid 1 0);
   equal ~msg:"continuation width reset" int 1 (read_width grid 1 0)
@@ -835,20 +881,18 @@ let replace_wide_grapheme_clears_continuation_colors () =
      (r, (g, (b, a))))
 
 let fill_rect_alpha_preserves_glyph () =
-  let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'X'))
+  let grid = Grid.create ~width:1 ~height:1 () in
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'X')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   let overlay = Ansi.Color.of_rgba 0 255 0 128 in
   Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1 ~color:overlay;
   equal ~msg:"char preserved" int (Char.code 'X') (read_char grid 0 0);
-  (* BG alpha becomes overlay alpha with RGB blended against dest BG. *)
-  let blended_bg = Ansi.Color.blend ~src:overlay ~dst:Ansi.Color.black () in
-  let er, eg, eb, _ = Ansi.Color.to_rgba blended_bg in
-  let ea = 128 in
+  (* Background and foreground retain opaque coverage. *)
+  let blended_bg = Ansi.Color.blend ~src:overlay ~dst:Ansi.Color.black in
+  let er, eg, eb, ea = Ansi.Color.to_rgba blended_bg in
   let r, g, b, a = read_bg grid 0 0 in
   equal ~msg:"background blended" rgba (er, (eg, (eb, ea))) (r, (g, (b, a)));
-  let expected_fg = Ansi.Color.blend ~src:overlay ~dst:Ansi.Color.white () in
+  let expected_fg = Ansi.Color.blend ~src:overlay ~dst:Ansi.Color.white in
   let fr, fg, fb, fa = Ansi.Color.to_rgba expected_fg in
   let r, g, b, a = read_fg grid 0 0 in
   equal ~msg:"foreground tinted" rgba (fr, (fg, (fb, fa))) (r, (g, (b, a)))
@@ -967,12 +1011,11 @@ let blit_region_clears_right_truncated_wide_start () =
     (read_char dst 0 0);
   equal ~msg:"width reset" int 1 (read_width dst 0 0)
 
-let blit_region_copies_transparent_source_without_respect_alpha () =
+let blit_region_copies_transparent_source () =
   let src = Grid.create ~width:1 ~height:1 () in
   let transparent = Ansi.Color.of_rgba 0 0 0 0 in
-  Grid.set_cell src ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'T'))
-    ~fg:transparent ~bg:transparent ~attrs:Ansi.Attr.empty ();
+  Grid.set_uchar src ~x:0 ~y:0 ~uchar:(Uchar.of_char 'T') ~fg:transparent
+    ~bg:transparent ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   Grid.draw_text dst ~x:0 ~y:0 ~text:"D";
   Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
@@ -981,51 +1024,67 @@ let blit_region_copies_transparent_source_without_respect_alpha () =
   let _r, _g, _b, a = read_bg dst 0 0 in
   equal ~msg:"transparent background copied" int 0 a
 
-let blit_region_skips_transparent_source_with_respect_alpha () =
-  let src = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+let draw_region_skips_transparent_source () =
+  let src = Grid.create ~width:1 ~height:1 () in
   let transparent = Ansi.Color.of_rgba 0 0 0 0 in
-  Grid.set_cell ~blend:false src ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'T'))
+  Grid.set_uchar ~blend:false src ~x:0 ~y:0 ~uchar:(Uchar.of_char 'T')
     ~fg:transparent ~bg:transparent ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   Grid.draw_text dst ~x:0 ~y:0 ~text:"D";
-  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+  Grid.draw_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
     ~dst_y:0;
   equal ~msg:"transparent source skipped" int (Char.code 'D')
     (read_char dst 0 0)
 
 let blit_region_preserves_default_foreground_glyph () =
-  let src = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
-  let style = Ansi.Style.make ~fg:Ansi.Color.default () in
+  let src = Grid.create ~width:1 ~height:1 () in
+  let style = Ansi.Style.make ~fg:Ansi.Color.default_fg () in
   Grid.draw_text ~style src ~x:0 ~y:0 ~text:"T";
   equal ~msg:"source retains default foreground intent" bool true
-    (Ansi.Color.equal (Grid.get_fg src 0) Ansi.Color.default);
+    (Ansi.Color.equal (Grid.get_fg src 0) Ansi.Color.default_fg);
   let dst = Grid.create ~width:1 ~height:1 () in
   Grid.draw_text dst ~x:0 ~y:0 ~text:"D";
-  Grid.blit_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+  Grid.draw_region ~src ~dst ~src_x:0 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
     ~dst_y:0;
   equal ~msg:"default foreground glyph copied" int (Char.code 'T')
     (read_char dst 0 0);
   equal ~msg:"default foreground intent retained" bool true
-    (Ansi.Color.equal (Grid.get_fg dst 0) Ansi.Color.default)
+    (Ansi.Color.equal (Grid.get_fg dst 0) Ansi.Color.default_fg)
+
+let to_ansi_selects_complete_rows () =
+  let grid = Grid.create ~width:1 ~height:3 () in
+  List.iteri (fun y text -> Grid.draw_text grid ~x:0 ~y ~text) [ "A"; "B"; "C" ];
+  let ansi = Grid.to_ansi ~reset:false ~complete_rows:true ~rows:2 grid in
+  in_order ~msg:"selected rows are cleared, styled, and CRLF-terminated"
+    ~subs:[ "\027[2K"; "A"; "\r\n"; "\027[2K"; "B"; "\r\n" ]
+    ansi;
+  not_contains ~msg:"unselected row omitted" ~sub:"C" ansi;
+  equal ~msg:"zero rows serialize to no bytes" string ""
+    (Grid.to_ansi ~rows:0 grid);
+  let rejected =
+    try
+      ignore (Grid.to_ansi ~rows:4 grid : string);
+      false
+    with Invalid_argument _ -> true
+  in
+  is_true ~msg:"row prefix cannot exceed grid height" rejected
 
 let to_ansi_handles_empty_glyph () =
   let grid = Grid.create ~width:1 ~height:1 () in
-  Grid.set_cell grid ~x:0 ~y:0 ~cell:Grid.Cell.empty ~fg:Ansi.Color.white
+  Grid.set_uchar grid ~x:0 ~y:0 ~uchar:Uchar.min ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   let ansi = Grid.to_ansi ~reset:false grid in
   is_true ~msg:"serialized empty glyph as space" (String.contains ansi ' ')
 
-let to_ansi_handles_orphan_continuation () =
+let copied_partial_span_becomes_space () =
   let src = Grid.create ~width:2 ~height:1 () in
   Grid.draw_text src ~x:0 ~y:0 ~text:"中";
   let grid = Grid.create ~width:1 ~height:1 () in
-  let cont = Grid.get_cell src (Grid.idx src ~x:1 ~y:0) in
-  Grid.set_cell grid ~x:0 ~y:0 ~cell:cont ~fg:Ansi.Color.white
-    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  Grid.blit_region ~src ~dst:grid ~src_x:1 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  assert_valid_spans grid;
   let ansi = Grid.to_ansi ~reset:false grid in
-  is_true ~msg:"serialized orphan continuation as space"
-    (String.contains ansi ' ')
+  is_true ~msg:"partial span serializes as space" (String.contains ansi ' ')
 
 let to_ansi_preserves_indexed_foreground () =
   let grid = Grid.create ~width:1 ~height:1 () in
@@ -1037,9 +1096,8 @@ let to_ansi_preserves_indexed_foreground () =
 
 let blit_preserves_indexed_background_intent () =
   let src = Grid.create ~width:1 ~height:1 () in
-  Grid.set_cell src ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'X'))
-    ~fg:Ansi.Color.white ~bg:(Ansi.Color.indexed 99) ~attrs:Ansi.Attr.empty ();
+  Grid.set_uchar src ~x:0 ~y:0 ~uchar:(Uchar.of_char 'X') ~fg:Ansi.Color.white
+    ~bg:(Ansi.Color.indexed 99) ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   Grid.blit ~src ~dst;
   let ansi = Grid.to_ansi ~reset:false dst in
@@ -1132,8 +1190,7 @@ let canvas_blit_into_box () =
 
 let clear_resets_grid () =
   let grid = Grid.create ~width:2 ~height:2 () in
-  Grid.set_cell ~blend:true grid ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'Q'))
+  Grid.set_uchar ~blend:true grid ~x:0 ~y:0 ~uchar:(Uchar.of_char 'Q')
     ~fg:Ansi.Color.white ~bg:Ansi.Color.white ~attrs:Ansi.Attr.bold ();
   let color = Ansi.Color.of_rgb 10 20 30 in
   Grid.clear ~color grid;
@@ -1157,8 +1214,7 @@ let resize_updates_dimensions () =
 
 let blit_copies_full_buffer () =
   let src = Grid.create ~width:2 ~height:2 () in
-  Grid.set_cell ~blend:true src ~x:0 ~y:0
-    ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'A'))
+  Grid.set_uchar ~blend:true src ~x:0 ~y:0 ~uchar:(Uchar.of_char 'A')
     ~fg:Ansi.Color.cyan ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   Grid.blit ~src ~dst;
@@ -1171,8 +1227,7 @@ let blit_region_copies_subrect () =
   for y = 0 to 2 do
     for x = 0 to 2 do
       let code = Char.code 'a' + idx src x y in
-      Grid.set_cell ~blend:true src ~x ~y
-        ~cell:(Grid.Cell.of_uchar (Uchar.of_int code))
+      Grid.set_uchar ~blend:true src ~x ~y ~uchar:(Uchar.of_int code)
         ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ()
     done
   done;
@@ -1393,19 +1448,17 @@ let tests =
     test "create defaults" create_defaults;
     test "create with configuration" create_with_configuration;
     test "set width method" set_width_method_updates;
-    test "set respect alpha" set_respect_alpha_updates;
-    test "set cell writes all planes" set_cell_writes_all_planes;
-    test "set cell stores hyperlink" set_cell_records_hyperlink;
-    test "set cell outside scissor" set_cell_outside_scissor_ignored;
+    test "set cell writes all planes" set_uchar_writes_all_planes;
+    test "set cell stores hyperlink" set_uchar_records_hyperlink;
+    test "set cell outside scissor" set_uchar_outside_scissor_ignored;
     test "with scissor restores" with_scissor_restores_stack;
     test "clear preserves scissor" clear_preserves_scissor_state;
     test "draw text applies style" draw_text_applies_style;
     test "draw text inherits background" draw_text_inherits_existing_background;
     test "draw text skips newline" draw_text_skips_newline;
     test "clear scissor" clear_scissor_allows_future_writes;
-    test "set cell blends" set_cell_honours_blending;
-    test "set cell without respect_alpha still blends"
-      set_cell_without_respect_still_blends;
+    test "set cell blends" set_uchar_honours_blending;
+    test "set uchar accumulates alpha" set_uchar_accumulates_alpha;
     test "fill rect" fill_rect_fills_region;
     test "replace wide grapheme clears continuations"
       replace_wide_grapheme_clears_continuations;
@@ -1423,15 +1476,15 @@ let tests =
       fill_rect_clears_inline_wide_continuation;
     test "blit_region clears right-truncated wide start"
       blit_region_clears_right_truncated_wide_start;
-    test "blit_region copies transparent source without respect_alpha"
-      blit_region_copies_transparent_source_without_respect_alpha;
-    test "blit_region skips transparent source with respect_alpha"
-      blit_region_skips_transparent_source_with_respect_alpha;
+    test "blit_region copies transparent source"
+      blit_region_copies_transparent_source;
+    test "draw_region skips transparent source"
+      draw_region_skips_transparent_source;
     test "blit_region preserves terminal-default foreground glyph"
       blit_region_preserves_default_foreground_glyph;
+    test "to_ansi selects complete rows" to_ansi_selects_complete_rows;
     test "to_ansi handles empty glyph" to_ansi_handles_empty_glyph;
-    test "to_ansi handles orphan continuation"
-      to_ansi_handles_orphan_continuation;
+    test "copied partial span becomes space" copied_partial_span_becomes_space;
     test "to_ansi preserves indexed foreground"
       to_ansi_preserves_indexed_foreground;
     test "blit preserves indexed background intent"
@@ -1480,16 +1533,22 @@ let tests =
     test "cross-store blit remaps graphemes" cross_store_blit_remaps_graphemes;
     test "scissored graphemes do not leak store"
       scissored_graphemes_do_not_leak_store;
+    test "transparent graphemes do not leak store"
+      transparent_graphemes_do_not_leak_store;
     test "overflowing wide graphemes do not leak store"
       overflowing_wide_graphemes_do_not_leak_store;
     test "shared storage cells equal" shared_storage_cells_equal;
+    test "independent storage cells equal" independent_storage_cells_equal;
+    test "scalar writes preserve spans" scalar_writes_preserve_spans;
+    test "overlapping wide spans" overlapping_wide_spans;
+    test "clipped multi-column grapheme" clipped_multi_column_grapheme;
     test "shared storage links equal" shared_storage_links_equal;
     test "grapheme store churn stays balanced"
       grapheme_store_churn_stays_balanced;
-    test "stale cell handles are rejected" stale_cell_handles_are_rejected;
+    test "copied payloads survive source reuse"
+      copied_payloads_survive_source_reuse;
     test "shared store clear keeps sibling payloads"
       shared_store_clear_keeps_sibling_payloads;
-    test "blit preserves respect alpha" blit_preserves_respect_alpha;
     test "same-store bulk blit tracks graphemes" blit_bulk_tracks_graphemes;
     test "overlap blit direction correctness" overlap_blit_direction_correctness;
     test "box title left aligned" box_title_left_aligned;
@@ -1500,14 +1559,12 @@ let tests =
       resize_shrink_clips_stored_grapheme;
     test "draw_text blends FG alpha over opaque BG"
       draw_text_blends_fg_alpha_over_opaque_bg;
-    test "blit_region copies alpha when source ignores alpha"
-      blit_region_copies_alpha_when_source_ignores_alpha;
-    test "blit_region blends when source respects alpha"
-      blit_region_blends_when_source_respects_alpha;
+    test "blit_region copies alpha" blit_region_copies_alpha;
+    test "draw_region blends alpha" draw_region_blends_alpha;
     test "scissor push intersects parent" scissor_push_intersects_parent;
     (* Alpha overlay semantics *)
     test "semi-transparent overlay preserves text and tints fg" (fun () ->
-        let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+        let grid = Grid.create ~width:1 ~height:1 () in
         (* Draw text with white fg on black bg *)
         let white = Ansi.Color.of_rgba 255 255 255 255 in
         let black = Ansi.Color.of_rgba 0 0 0 255 in
@@ -1529,12 +1586,12 @@ let tests =
         equal ~msg:"fg alpha preserved" int 255 a_fg;
         (* BG should be blended (red over black) *)
         let r_bg, g_bg, b_bg, a_bg = read_bg grid 0 0 in
-        is_true ~msg:"bg red blended" (r_bg > 128 && r_bg < 255);
+        is_true ~msg:"bg red blended" (r_bg = 128);
         equal ~msg:"bg green blended" int 0 g_bg;
         equal ~msg:"bg blue blended" int 0 b_bg;
-        equal ~msg:"bg alpha is overlay" int 128 a_bg);
+        equal ~msg:"bg alpha stays opaque" int 255 a_bg);
     test "semi-transparent overlay on space doesn't preserve" (fun () ->
-        let grid = Grid.create ~width:1 ~height:1 ~respect_alpha:true () in
+        let grid = Grid.create ~width:1 ~height:1 () in
         (* Fill with white background (space) *)
         let white = Ansi.Color.of_rgba 255 255 255 255 in
         Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1 ~color:white;
@@ -1548,7 +1605,7 @@ let tests =
         equal ~msg:"bg red full" int 255 r_bg;
         is_true ~msg:"bg green blended" (g_bg > 0 && g_bg < 255);
         is_true ~msg:"bg blue blended" (b_bg > 0 && b_bg < 255);
-        equal ~msg:"bg alpha is overlay" int 128 a_bg);
+        equal ~msg:"bg alpha stays opaque" int 255 a_bg);
     (* Box clipping tests *)
     test "box partially off left edge uses correct corners" (fun () ->
         let grid = Grid.create ~width:3 ~height:3 () in
@@ -1619,8 +1676,7 @@ let tests =
     test "diff detects single char change" (fun () ->
         let a = Grid.create ~width:2 ~height:2 () in
         let b = Grid.copy a in
-        Grid.set_cell ~blend:true b ~x:1 ~y:1
-          ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'X'))
+        Grid.set_uchar ~blend:true b ~x:1 ~y:1 ~uchar:(Uchar.of_char 'X')
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
         let diffs = diff_cells a b in
         equal ~msg:"single diff at changed cell"
@@ -1639,8 +1695,7 @@ let tests =
     test "diff detects hyperlink change" (fun () ->
         let a = Grid.create ~width:2 ~height:2 () in
         let b = Grid.copy a in
-        Grid.set_cell ~blend:true b ~x:0 ~y:0
-          ~cell:(Grid.Cell.of_uchar (Uchar.of_char 'A'))
+        Grid.set_uchar ~blend:true b ~x:0 ~y:0 ~uchar:(Uchar.of_char 'A')
           ~fg:Ansi.Color.white ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty
           ~link:"http://example.com" ();
         let diffs = diff_cells a b in

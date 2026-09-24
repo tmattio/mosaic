@@ -802,10 +802,9 @@ let test_submit_reuses_render_capacity () =
   let changed_major_words =
     major_words_allocated (fun () ->
         Matrix.prepare app;
-        Matrix.Grid.set_cell (Matrix.grid app) ~x:0 ~y:0
-          ~cell:(Matrix.Grid.Cell.of_uchar (Uchar.of_char 'X'))
-          ~fg:Matrix.Ansi.Color.white ~bg:Matrix.Ansi.Color.black
-          ~attrs:Matrix.Ansi.Attr.empty ();
+        Matrix.Grid.set_uchar (Matrix.grid app) ~x:0 ~y:0
+          ~uchar:(Uchar.of_char 'X') ~fg:Matrix.Ansi.Color.white
+          ~bg:Matrix.Ansi.Color.black ~attrs:Matrix.Ansi.Attr.empty ();
         Matrix.submit app)
   in
   is_true

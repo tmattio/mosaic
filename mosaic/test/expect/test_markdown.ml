@@ -237,9 +237,11 @@ let%expect_test "code_syntax highlighting is applied" =
 let x
 ```|});
   [%expect
-    {|[0;38;2;255;151;0;1mlet[38;2;255;255;255;22m x     [0m
-[0;38;2;255;255;255m          [0m
-[0;38;2;255;255;255m          [0m|}]
+    {|
+    [0;38;2;255;151;0;1mlet[39;22m x     [0m
+    [0m          [0m
+    [0m          [0m
+    |}]
 
 (* ── Thematic breaks ── *)
 

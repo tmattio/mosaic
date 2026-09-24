@@ -66,10 +66,9 @@ let%expect_test "selection highlight" =
   send_key_with_mod app ~modifier:ctrl_mod
     (Matrix_input.Key.Char (Uchar.of_char 'a'));
   frame_ansi app ~width:20 ~height:1;
-  [%expect_exact
-    {|
+  [%expect_exact {|
 hello
-[0;38;5;7mhello[38;2;255;255;255m               [0m|}]
+[0;38;5;7mhello[39m               [0m|}]
 
 let%expect_test "narrow width shows start of content" =
   render ~width:5 ~height:1 (Vnode.input ~value:"hello world" ());
@@ -119,7 +118,7 @@ let%expect_test "placeholder color" =
   render_ansi ~width:20 ~height:1
     (Vnode.input ~placeholder:"Type here" ~placeholder_color:Ansi.Color.red ());
   [%expect_exact {|
-[0;38;5;1mType here[38;2;255;255;255m           [0m|}]
+[0;38;5;1mType here[39m           [0m|}]
 
 let%expect_test "focused vs unfocused styles" =
   let app = make_app () in
@@ -134,8 +133,8 @@ let%expect_test "focused vs unfocused styles" =
   frame_ansi app ~width:20 ~height:1;
   [%expect_exact
     {|
-[0;38;5;7mhi[38;2;255;255;255m                  [0m
-[0;38;5;2mhi[38;2;255;255;255m                  [0m|}]
+[0;38;5;7mhi[39m                  [0m
+[0;38;5;2mhi[39m                  [0m|}]
 
 let%expect_test "placeholder shows when focused and empty" =
   let app = make_app () in

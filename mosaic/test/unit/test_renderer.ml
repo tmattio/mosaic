@@ -337,24 +337,6 @@ let presented_cells_cleared_before_next_frame () =
   let grid = Matrix_screen.next_grid (Renderer.screen t) in
   equal ~msg:"stale glyph cleared" string " " (Matrix_grid.get_text grid 0)
 
-let post_process_runs () =
-  let t = make_renderer () in
-  let ran = ref false in
-  let _id = Renderer.add_post_process t (fun _grid ~delta:_ -> ran := true) in
-  do_frame t;
-  is_true ~msg:"post-process ran" !ran
-
-let remove_post_process () =
-  let t = make_renderer () in
-  let count = ref 0 in
-  let f _grid ~delta:_ = incr count in
-  let id = Renderer.add_post_process t f in
-  do_frame t;
-  equal ~msg:"ran once" int 1 !count;
-  Renderer.remove_post_process t id;
-  do_frame t;
-  equal ~msg:"not called again" int 1 !count
-
 (* ── Viewport culling ── *)
 
 let overflow_visible_descendant_reaching_viewport_renders () =
@@ -1691,8 +1673,6 @@ let () =
           test "callback receives delta" callback_receives_delta;
           test "remove callback stops it" remove_callback_stops_it;
           test "clear removes all callbacks" clear_removes_all_callbacks;
-          test "post-process runs" post_process_runs;
-          test "remove post-process" remove_post_process;
         ];
       group "Viewport culling"
         [

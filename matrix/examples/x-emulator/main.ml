@@ -474,7 +474,7 @@ let render state =
       let cache_key =
         ( text,
           fg_color_for_key,
-          Ansi.Color.default (* unused for rendering, just part of key *),
+          Ansi.Color.transparent (* unused for rendering, just part of key *),
           attr )
       in
       match Hashtbl.find_opt state.texture_cache cache_key with

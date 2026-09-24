@@ -73,15 +73,15 @@ let install_termination_handlers () =
 (* ───── Application Setup ───── *)
 
 let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
-    ?(respect_alpha = false) ?(mouse_enabled = true) ?(mouse = None)
-    ?(bracketed_paste = true) ?(focus_reporting = true)
-    ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true) ?(debug_overlay = false)
-    ?(debug_overlay_corner = `Bottom_right) ?(debug_overlay_capacity = 120)
-    ?(frame_dump_every = 0) ?frame_dump_dir ?frame_dump_pattern
-    ?(frame_dump_hits = false) ?(cursor_visible = mode = `Alt)
-    ?(explicit_width = false) ?(input_timeout = None)
-    ?(resize_debounce = Some 0.1) ?(min_tui_height = 1) ?(start_idle = false)
-    ?(signal_handlers = true) ?initial_caps ~sw ~clock ~stdin ~stdout () =
+    ?(mouse_enabled = true) ?(mouse = None) ?(bracketed_paste = true)
+    ?(focus_reporting = true) ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true)
+    ?(debug_overlay = false) ?(debug_overlay_corner = `Bottom_right)
+    ?(debug_overlay_capacity = 120) ?(frame_dump_every = 0) ?frame_dump_dir
+    ?frame_dump_pattern ?(frame_dump_hits = false)
+    ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
+    ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(min_tui_height = 1)
+    ?(start_idle = false) ?(signal_handlers = true) ?initial_caps ~sw ~clock
+    ~stdin ~stdout () =
   let input_eio_fd = Eio_unix.Resource.fd stdin in
   let output_eio_fd = Eio_unix.Resource.fd stdout in
   let output_is_tty =
@@ -237,13 +237,12 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         }
       in
       let app =
-        Matrix.attach ~mode ~raw_mode ~target_fps ~respect_alpha ~mouse_enabled
-          ~mouse ~bracketed_paste ~focus_reporting ~kitty_keyboard
-          ~exit_on_ctrl_c ~debug_overlay ~debug_overlay_corner
-          ~debug_overlay_capacity ~frame_dump_every ?frame_dump_dir
-          ?frame_dump_pattern ~frame_dump_hits ~cursor_visible ~explicit_width
-          ~input_timeout ~resize_debounce ~min_tui_height ~start_idle
-          ?initial_caps ~backend ()
+        Matrix.attach ~mode ~raw_mode ~target_fps ~mouse_enabled ~mouse
+          ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
+          ~debug_overlay ~debug_overlay_corner ~debug_overlay_capacity
+          ~frame_dump_every ?frame_dump_dir ?frame_dump_pattern ~frame_dump_hits
+          ~cursor_visible ~explicit_width ~input_timeout ~resize_debounce
+          ~min_tui_height ~start_idle ?initial_caps ~backend ()
       in
       app_ref := Some app;
       restore_winch := install_winch_handler ();

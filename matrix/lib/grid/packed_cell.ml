@@ -20,7 +20,7 @@ let default_tab_width = 2
 
 let () =
   if Sys.word_size <> 64 then
-    failwith "Matrix_grid.Cell: 64-bit OCaml required for packed cells"
+    failwith "Matrix_grid: 64-bit OCaml required for packed cells"
 
 let[@inline] normalize_tab_width w = if w <= 0 then default_tab_width else w
 
@@ -130,16 +130,9 @@ let make_continuation ~code ~left ~right =
 
 let of_uchar uchar =
   let cp = Uchar.to_int uchar in
-  let tab_width = default_tab_width in
-  if cp < 128 then
-    let width = ascii_width ~tab_width cp in
-    if width <= 0 then empty
-    else if cp = 0x09 then pack_simple cp 0
-    else pack_simple cp width
+  if cp < 128 then if cp < 0x20 || cp = 0x7F then empty else pack_simple cp 1
   else
-    let width =
-      Text.measure ~width_method:`Unicode ~tab_width (string_of_uchar uchar)
-    in
+    let width = Text.uchar_width ~tab_width:default_tab_width uchar in
     if width <= 0 then empty else pack_simple cp width
 
 let incref store cell =
@@ -227,3 +220,13 @@ let to_string store cell =
     string_of_uchar (Uchar.unsafe_of_int (cell land mask_codepoint))
   else
     Grapheme_store.to_string store ~idx:(unpack_idx cell) ~gen:(unpack_gen cell)
+
+let equal store1 c1 store2 c2 =
+  if is_inline c1 || is_inline c2 then c1 = c2
+  else
+    c1 land lnot 0x01FFFFFF = c2 land lnot 0x01FFFFFF
+    &&
+    if unpack_idx c1 = 0 || unpack_idx c2 = 0 then unpack_idx c1 = unpack_idx c2
+    else
+      Grapheme_store.equal store1 ~idx1:(unpack_idx c1) ~gen1:(unpack_gen c1)
+        store2 ~idx2:(unpack_idx c2) ~gen2:(unpack_gen c2)

@@ -1,9 +1,9 @@
 (** Terminal text styles.
 
-    A style aggregates foreground color, background color, text attributes, and
-    an optional hyperlink URL into an immutable value. Styles compose with
-    overlay semantics: colors and hyperlinks from the overlay replace those in
-    the base, while attributes are unioned. See {!merge}. *)
+    A style specifies optional foreground and background colors, text
+    attributes, and an optional hyperlink URL into an immutable value. Styles
+    compose with overlay semantics: colors and hyperlinks from the overlay
+    replace those in the base, while attributes are unioned. See {!merge}. *)
 
 (** {1:styles Styles} *)
 
@@ -14,8 +14,10 @@ type t = private {
   link : string option;
 }
 (** The type for styles. Fields are exposed for pattern matching but cannot be
-    modified directly. Use {!make} or the modifier functions to create new
-    instances. *)
+    modified directly. Absent colors and links inherit when merging; attributes
+    are additive. To disable an inherited attribute or link, apply a modifier to
+    the merged style. ANSI emission treats absent colors as terminal defaults.
+    Use {!make} or the modifier functions to create new instances. *)
 
 val default : t
 (** [default] is the empty style: no colors, no attributes, no hyperlink. *)
@@ -41,7 +43,7 @@ val make :
   unit ->
   t
 (** [make ?fg ?bg ... ()] is a style with the given properties. [fg] and [bg]
-    default to [None] (inherit terminal default). Boolean attributes default to
+    default to [None] (no override when merging). Boolean attributes default to
     [false]. [link] defaults to [None]. *)
 
 (** {1:modifiers Modifiers} *)
@@ -55,10 +57,10 @@ val bg : Color.t -> t -> t
 (** [bg c s] is [s] with background set to [c]. *)
 
 val with_no_fg : t -> t
-(** [with_no_fg s] is [s] with no foreground (inherits terminal default). *)
+(** [with_no_fg s] is [s] with no foreground override. *)
 
 val with_no_bg : t -> t
-(** [with_no_bg s] is [s] with no background (inherits terminal default). *)
+(** [with_no_bg s] is [s] with no background override. *)
 
 (** {2:mod_attrs Attributes} *)
 
@@ -128,7 +130,8 @@ val merge : base:t -> overlay:t -> t
     - Colors: [overlay] takes precedence. If [overlay.fg] is [None], [base.fg]
       is kept.
     - Attributes: union of [base] and [overlay] attributes.
-    - Link: [overlay] takes precedence. *)
+    - Link: a link present in [overlay] takes precedence; otherwise [base] is
+      kept. *)
 
 val ( ++ ) : t -> t -> t
 (** [base ++ overlay] is [merge ~base ~overlay]. *)

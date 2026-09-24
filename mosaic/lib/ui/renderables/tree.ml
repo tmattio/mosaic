@@ -465,8 +465,7 @@ let set_on_expand t cb = t.on_expand <- cb
 (* ───── Rendering Helpers ───── *)
 
 let draw_cell grid ~x ~y ~fg ~bg uch =
-  let cell = Matrix_grid.Cell.of_uchar uch in
-  Matrix_grid.set_cell grid ~x ~y ~cell ~fg ~bg ~attrs:Ansi.Attr.empty ()
+  Matrix_grid.set_uchar grid ~x ~y ~uchar:uch ~fg ~bg ~attrs:Ansi.Attr.empty ()
 
 (* ───── Key Handling ───── *)
 

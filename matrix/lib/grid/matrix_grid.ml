@@ -1,7 +1,6 @@
 (* grid.ml *)
 
 module Text = Matrix_text
-module Cell = Packed_cell
 module Color_packed = Ansi.Color.Packed
 
 (* {1 Internal modules} *)
@@ -57,16 +56,6 @@ module Buf = struct
     for i = pos to pos + len - 1 do
       set arr i v
     done
-end
-
-module Color_plane = struct
-  let[@inline] perceptual_alpha a =
-    if a >= 0.8 then
-      let norm = (a -. 0.8) *. 5. in
-      0.8 +. (Float.pow norm 0.2 *. 0.2)
-    else Float.pow a 0.9
-
-  let[@inline] mix src dst alpha = (src *. alpha) +. (dst *. (1. -. alpha))
 end
 
 module Rect = struct
@@ -126,19 +115,8 @@ module Links = struct
   let create () =
     { next_id = 1; forward = Hashtbl.create 32; reverse = Hashtbl.create 32 }
 
-  let clear t =
-    t.next_id <- 1;
-    Hashtbl.clear t.forward;
-    Hashtbl.clear t.reverse
-
-  let copy_state ~src ~dst =
-    clear dst;
-    dst.next_id <- src.next_id;
-    Hashtbl.iter (fun k v -> Hashtbl.add dst.forward k v) src.forward;
-    Hashtbl.iter (fun k v -> Hashtbl.add dst.reverse k v) src.reverse
-
   let intern t = function
-    | None -> no_link
+    | None | Some "" -> no_link
     | Some url -> (
         match Hashtbl.find_opt t.forward url with
         | Some id -> id
@@ -150,9 +128,7 @@ module Links = struct
             id)
 
   let resolve t id = Hashtbl.find_opt t.reverse id
-
-  let resolve_direct t id =
-    Option.value (Hashtbl.find_opt t.reverse id) ~default:""
+  let resolve_direct t id = try Hashtbl.find t.reverse id with Not_found -> ""
 end
 
 (* {1 Public types} *)
@@ -166,7 +142,6 @@ type t = {
   mutable height : int;
   grapheme_store : Grapheme_store.t;
   mutable width_method : Text.width_method;
-  mutable respect_alpha : bool;
   mutable chars : (int, Bigarray.int_elt) Buf.t;
   mutable fg_color : (int, Bigarray.int_elt) Buf.t;
   mutable bg_color : (int, Bigarray.int_elt) Buf.t;
@@ -184,21 +159,10 @@ type t = {
 let space_cell = Packed_cell.space
 let null_cell = Packed_cell.empty
 let no_link = Links.no_link
-let default_fg = Ansi.Color.of_rgb 255 255 255
-let default_bg = Ansi.Color.default
+let default_fg = Ansi.Color.default_fg
+let default_bg = Ansi.Color.transparent
 let default_fg_packed = Color_packed.encode default_fg
 let default_bg_packed = Color_packed.encode default_bg
-
-(** Terminal-default foreground has zero color alpha because it names a terminal
-    palette entry rather than an RGBA value. A glyph drawn with that intent
-    nevertheless has opaque coverage. Keep blanks transparent, but make glyph
-    coverage explicit while compositing. *)
-let foreground_composition_alpha ~code ~color ~alpha =
-  if
-    code <> null_cell && code <> space_cell
-    && Color_packed.intent color = Ansi.Color.Default
-  then 1.
-  else alpha
 
 (* {1 Helpers} *)
 
@@ -322,7 +286,7 @@ let fill_defaults t =
   Buf.fill t.bg_color default_bg_packed
 
 let create_with_store ~width ~height ~grapheme_store ~link_registry
-    ~width_method ~respect_alpha =
+    ~width_method =
   if width <= 0 || height <= 0 then
     invalid_arg "Matrix_grid.create: width and height must be > 0";
   let size = width * height in
@@ -332,7 +296,6 @@ let create_with_store ~width ~height ~grapheme_store ~link_registry
       height;
       grapheme_store;
       width_method;
-      respect_alpha;
       chars = Buf.make_int size;
       fg_color = Buf.make_int size;
       bg_color = Buf.make_int size;
@@ -348,16 +311,14 @@ let create_with_store ~width ~height ~grapheme_store ~link_registry
   fill_defaults t;
   t
 
-let create ~width ~height ?width_method ?(respect_alpha = false) () =
+let create ~width ~height ?width_method () =
   create_with_store ~width ~height ~grapheme_store:(Grapheme_store.create ())
     ~link_registry:(Links.create ())
     ~width_method:(Option.value width_method ~default:`Unicode)
-    ~respect_alpha
 
 let create_like g ~width ~height =
   create_with_store ~width ~height ~grapheme_store:g.grapheme_store
     ~link_registry:g.link_registry ~width_method:g.width_method
-    ~respect_alpha:g.respect_alpha
 
 (* {1 Accessors} *)
 
@@ -365,33 +326,27 @@ let width t = t.width
 let height t = t.height
 let width_method t = t.width_method
 let set_width_method t m = t.width_method <- m
-let respect_alpha t = t.respect_alpha
-let set_respect_alpha t b = t.respect_alpha <- b
-
-let hyperlink_url t id =
-  if id = no_link then None else Links.resolve t.link_registry id
-
-let hyperlink_url_direct t id =
-  if id = no_link then "" else Links.resolve_direct t.link_registry id
 
 (* {1 Cell accessors} *)
 
 let[@inline] idx t ~x ~y = (y * t.width) + x
-let[@inline] get_cell t idx = Buf.get_cell t.chars idx
+
+let[@inline] get_codepoint t idx =
+  let code = Buf.get_cell t.chars idx in
+  if Packed_cell.is_inline code then Packed_cell.codepoint code else -1
+
 let[@inline] get_attrs t idx = Buf.get t.attrs idx
-let[@inline] get_link t idx = Buf.get t.links idx
+let get_link t idx = Links.resolve_direct t.link_registry (Buf.get t.links idx)
 
 let get_style t idx =
   let attrs = Ansi.Attr.unpack (Buf.get t.attrs idx) in
-  let link = hyperlink_url t (Buf.get t.links idx) in
+  let link = Links.resolve t.link_registry (Buf.get t.links idx) in
   Ansi.Style.make ~fg:(get_fg t idx) ~bg:(get_bg t idx) ?link ()
   |> Ansi.Style.with_attrs attrs
 
-let get_background t idx = get_bg t idx
-
 let get_text t idx =
   let c = Buf.get_cell t.chars idx in
-  if Packed_cell.is_continuation c then ""
+  if c = Packed_cell.empty || Packed_cell.is_continuation c then ""
   else Packed_cell.to_string t.grapheme_store c
 
 let cell_text_length t idx =
@@ -405,13 +360,17 @@ let is_empty t idx = Buf.get_cell t.chars idx = Packed_cell.empty
 let is_continuation t idx =
   Packed_cell.is_continuation (Buf.get_cell t.chars idx)
 
-let is_inline t idx = Packed_cell.is_inline (Buf.get_cell t.chars idx)
 let cell_width t idx = Packed_cell.cell_width (Buf.get_cell t.chars idx)
 
 let[@inline] cells_equal t1 idx1 t2 idx2 =
-  Buf.get_cell t1.chars idx1 = Buf.get_cell t2.chars idx2
+  let same_graphemes = t1.grapheme_store == t2.grapheme_store in
+  let same_links = t1.link_registry == t2.link_registry in
+  let c1 = Buf.get_cell t1.chars idx1 and c2 = Buf.get_cell t2.chars idx2 in
+  (if same_graphemes then c1 = c2
+   else Packed_cell.equal t1.grapheme_store c1 t2.grapheme_store c2)
   && Buf.get t1.attrs idx1 = Buf.get t2.attrs idx2
-  && Buf.get t1.links idx1 = Buf.get t2.links idx2
+  && (if same_links then Buf.get t1.links idx1 = Buf.get t2.links idx2
+      else String.equal (get_link t1 idx1) (get_link t2 idx2))
   && Buf.get t1.fg_color idx1 = Buf.get t2.fg_color idx2
   && Buf.get t1.bg_color idx1 = Buf.get t2.bg_color idx2
 
@@ -580,85 +539,40 @@ let current_opacity t = t.opacity_product
 
 (* {1 Core cell writing} *)
 
-(** Zero-alloc core cell writer. Takes packed colors plus unpacked channels so
-    hot callers can avoid tuple allocation. *)
-let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b ~fg_a
-    ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link_id ~blending =
-  let fg_a = foreground_composition_alpha ~code ~color:fg_color ~alpha:fg_a in
-  (* Apply opacity stack *)
-  let fg_a, bg_a, blending, fg_color, bg_color =
-    if t.opacity_product < 1.0 then
-      let fg_a = fg_a *. t.opacity_product in
-      let bg_a = bg_a *. t.opacity_product in
-      ( fg_a,
-        bg_a,
-        true,
-        Color_packed.of_rgba_f fg_r fg_g fg_b fg_a,
-        Color_packed.of_rgba_f bg_r bg_g bg_b bg_a )
-    else (fg_a, bg_a, blending, fg_color, bg_color)
-  in
-  if blending && (bg_a < 0.999 || fg_a < 0.999) then begin
-    (* Blending path *)
-    let dst_bg = Buf.get t.bg_color idx in
-    let dr_bg = Color_packed.red_f dst_bg in
-    let dg_bg = Color_packed.green_f dst_bg in
-    let db_bg = Color_packed.blue_f dst_bg in
-    let da_bg = Color_packed.alpha_f dst_bg in
+let[@inline] apply_opacity t color =
+  if t.opacity_product >= 1. then color
+  else
+    Color_packed.with_alpha color
+      (int_of_float
+         (Float.round
+            (float_of_int (Color_packed.alpha color) *. t.opacity_product)))
 
-    let overlay_is_space = code = space_cell || code = null_cell in
+let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link_id ~blending
+    =
+  let fg_alpha = Color_packed.alpha fg_color in
+  let bg_alpha = Color_packed.alpha bg_color in
+  if blending && fg_alpha = 0 && bg_alpha = 0 then ()
+  else if blending && (fg_alpha < 255 || bg_alpha < 255) then begin
+    let dst_bg = Buf.get t.bg_color idx in
+    let blended_bg = Color_packed.blend ~src:bg_color ~dst:dst_bg in
     let dest_code = Buf.get_cell t.chars idx in
-    let dest_has_content = dest_code <> null_cell && dest_code <> space_cell in
     let preserve =
-      overlay_is_space && dest_has_content
+      (code = space_cell || code = null_cell)
+      && dest_code <> null_cell && dest_code <> space_cell
       && Packed_cell.cell_width dest_code = 1
     in
-
-    if preserve then begin
-      (* Preserve existing cell; tint foreground. The overlay link always wins
-         since the overlay is conceptually in front. *)
-      Buf.set t.links idx link_id;
-      if bg_a >= 0.999 then
-        let dst_fg = Buf.get t.fg_color idx in
-        Buf.set t.fg_color idx
-          (Color_packed.of_rgba_f bg_r bg_g bg_b (Color_packed.alpha_f dst_fg))
-      else if bg_a > 0.001 then
-        let dst_fg = Buf.get t.fg_color idx in
-        let dr_fg = Color_packed.red_f dst_fg in
-        let dg_fg = Color_packed.green_f dst_fg in
-        let db_fg = Color_packed.blue_f dst_fg in
-        let da_fg = Color_packed.alpha_f dst_fg in
-        let pa = Color_plane.perceptual_alpha bg_a in
-        let r = Color_plane.mix bg_r dr_fg pa in
-        let g = Color_plane.mix bg_g dg_fg pa in
-        let b = Color_plane.mix bg_b db_fg pa in
-        Buf.set t.fg_color idx (Color_packed.of_rgba_f r g b da_fg)
-    end
+    if preserve then
+      Buf.set t.fg_color idx
+        (Color_packed.blend ~src:bg_color ~dst:(Buf.get t.fg_color idx))
     else begin
-      (* Normal blended overwrite *)
       write_cell t idx code;
       Buf.set t.attrs idx attrs;
-      Buf.set t.links idx link_id;
-      if fg_a < 0.999 then
-        let pa = Color_plane.perceptual_alpha fg_a in
-        let r = Color_plane.mix fg_r dr_bg pa in
-        let g = Color_plane.mix fg_g dg_bg pa in
-        let b = Color_plane.mix fg_b db_bg pa in
-        Buf.set t.fg_color idx (Color_packed.of_rgba_f r g b da_bg)
-      else Buf.set t.fg_color idx fg_color
+      Buf.set t.fg_color idx (Color_packed.blend ~src:fg_color ~dst:blended_bg)
     end;
-
-    (* Always blend BG over dest BG *)
-    if bg_a <= 0.001 then ()
-    else if bg_a >= 0.999 then Buf.set t.bg_color idx bg_color
-    else
-      let pa = Color_plane.perceptual_alpha bg_a in
-      let r = Color_plane.mix bg_r dr_bg pa in
-      let g = Color_plane.mix bg_g dg_bg pa in
-      let b = Color_plane.mix bg_b db_bg pa in
-      Buf.set t.bg_color idx (Color_packed.of_rgba_f r g b bg_a)
+    Buf.set t.links idx link_id;
+    Buf.set t.bg_color idx blended_bg
   end
   else begin
-    (* Fast path: opaque overwrite *)
     write_cell t idx code;
     Buf.set t.attrs idx attrs;
     Buf.set t.links idx link_id;
@@ -668,18 +582,29 @@ let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b ~fg_a
 
 (* Cell writes *)
 
-let set_cell t ~x ~y ~(cell : Cell.t) ~fg ~bg ~attrs ?link
-    ?(blend = t.respect_alpha) () =
+let set_uchar t ~x ~y ~uchar ~fg ~bg ~attrs ?link ?(blend = false) () =
   if x >= 0 && y >= 0 && x < t.width && y < t.height && not (is_clipped t x y)
-  then
-    let idx = (y * t.width) + x in
-    let fg_r, fg_g, fg_b, fg_a = Ansi.Color.to_rgba_f fg in
-    let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba_f bg in
+  then begin
+    let code = Packed_cell.of_uchar uchar in
+    let width = max 1 (Packed_cell.cell_width code) in
+    let fits = x + width <= t.width in
+    let fg_color = Color_packed.encode fg
+    and bg_color = Color_packed.encode bg in
+    let fg_color = if blend then apply_opacity t fg_color else fg_color in
+    let bg_color = if blend then apply_opacity t bg_color else bg_color in
     let link_id = Links.intern t.link_registry link in
-    let attrs_packed = Ansi.Attr.pack attrs in
-    set_cell_internal t ~idx ~code:cell ~fg_color:(Color_packed.encode fg)
-      ~bg_color:(Color_packed.encode bg) ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r ~bg_g
-      ~bg_b ~bg_a ~attrs:attrs_packed ~link_id ~blending:blend
+    let attrs = Ansi.Attr.pack attrs in
+    for dx = 0 to min width (t.width - x) - 1 do
+      let cell =
+        if not fits then space_cell
+        else if dx = 0 then code
+        else Packed_cell.make_continuation ~code ~left:dx ~right:(width - dx - 1)
+      in
+      set_cell_internal t
+        ~idx:((y * t.width) + x + dx)
+        ~code:cell ~fg_color ~bg_color ~attrs ~link_id ~blending:blend
+    done
+  end
 
 (* {1 Bulk operations} *)
 
@@ -721,75 +646,29 @@ let fill_rect t ~x ~y ~width ~height ~color =
   match clip_rect_to_grid t Rect.{ x; y; width; height } with
   | None -> ()
   | Some r ->
-      let bg_r, bg_g, bg_b, bg_a = Ansi.Color.to_rgba_f color in
-      let bg_color = Color_packed.encode color in
-      let x0 = r.Rect.x and w = r.Rect.width in
-      let y0 = r.Rect.y in
-      let y1 = y0 + r.Rect.height - 1 in
-
-      if bg_a <= 0.001 then ()
-      else if bg_a < 0.999 then
-        (* Semi-transparent: per-cell alpha blending *)
-        let bg_a =
-          if t.opacity_product < 1.0 then bg_a *. t.opacity_product else bg_a
-        in
-        let pa = Color_plane.perceptual_alpha bg_a in
-        for row = y0 to y1 do
-          let base = (row * t.width) + x0 in
-          for dx = 0 to w - 1 do
-            let idx = base + dx in
-            let dst_bg = Buf.get t.bg_color idx in
-            let dr_bg = Color_packed.red_f dst_bg in
-            let dg_bg = Color_packed.green_f dst_bg in
-            let db_bg = Color_packed.blue_f dst_bg in
-            let overlay_is_space = true in
-            let dest_code = Buf.get_cell t.chars idx in
-            let dest_has_content =
-              dest_code <> null_cell && dest_code <> space_cell
-            in
-            let preserve =
-              overlay_is_space && dest_has_content
-              && Packed_cell.cell_width dest_code = 1
-            in
-            if preserve then begin
-              Buf.set t.links idx no_link;
-              let dst_fg = Buf.get t.fg_color idx in
-              let dr_fg = Color_packed.red_f dst_fg in
-              let dg_fg = Color_packed.green_f dst_fg in
-              let db_fg = Color_packed.blue_f dst_fg in
-              let da_fg = Color_packed.alpha_f dst_fg in
-              Buf.set t.fg_color idx
-                (Color_packed.of_rgba_f
-                   (Color_plane.mix bg_r dr_fg pa)
-                   (Color_plane.mix bg_g dg_fg pa)
-                   (Color_plane.mix bg_b db_fg pa)
-                   da_fg)
-            end
-            else begin
-              write_cell t idx space_cell;
-              Buf.set t.attrs idx 0;
-              Buf.set t.links idx no_link;
-              Buf.set t.fg_color idx default_fg_packed
-            end;
-            Buf.set t.bg_color idx
-              (Color_packed.of_rgba_f
-                 (Color_plane.mix bg_r dr_bg pa)
-                 (Color_plane.mix bg_g dg_bg pa)
-                 (Color_plane.mix bg_b db_bg pa)
-                 bg_a)
+      let bg_color = apply_opacity t (Color_packed.encode color) in
+      let alpha = Color_packed.alpha bg_color in
+      if alpha = 0 then ()
+      else if alpha = 255 then
+        fill_opaque_rect t ~x0:r.x ~y0:r.y ~width:r.width ~height:r.height
+          ~bg_color
+      else
+        for row = r.y to r.y + r.height - 1 do
+          let base = (row * t.width) + r.x in
+          for dx = 0 to r.width - 1 do
+            set_cell_internal t ~idx:(base + dx) ~code:space_cell
+              ~fg_color:default_fg_packed ~bg_color ~attrs:0 ~link_id:no_link
+              ~blending:true
           done
         done
-      else begin
-        (* Opaque: fast bulk fill *)
-        fill_opaque_rect t ~x0 ~y0 ~width:w ~height:r.height ~bg_color
-      end
+
+(* {1 Copying} *)
 
 let blit ~src ~dst =
   if src == dst then ()
   else (
     resize dst ~width:src.width ~height:src.height;
     dst.width_method <- src.width_method;
-    dst.respect_alpha <- src.respect_alpha;
     Buf.blit src.fg_color dst.fg_color;
     Buf.blit src.bg_color dst.bg_color;
     Buf.blit src.attrs dst.attrs;
@@ -797,8 +676,6 @@ let blit ~src ~dst =
     if src.grapheme_store == dst.grapheme_store then (
       Buf.blit src.chars dst.chars;
       Buf.blit src.links dst.links;
-      if dst.link_registry != src.link_registry then
-        Links.copy_state ~src:src.link_registry ~dst:dst.link_registry;
       Grapheme_tracker.clear dst.grapheme_tracker;
       let len = src.width * src.height in
       for i = 0 to len - 1 do
@@ -833,8 +710,7 @@ let blit ~src ~dst =
 
 let copy t =
   let dst =
-    create ~width:t.width ~height:t.height ~width_method:t.width_method
-      ~respect_alpha:t.respect_alpha ()
+    create ~width:t.width ~height:t.height ~width_method:t.width_method ()
   in
   blit ~src:t ~dst;
   dst
@@ -842,19 +718,21 @@ let copy t =
 (** Update grapheme tracker for a bulk row copy within the same grid. *)
 let bulk_update_graphemes t ~src_idx ~dst_idx ~len =
   if Grapheme_tracker.unique_count t.grapheme_tracker > 0 then begin
-    for i = 0 to len - 1 do
-      let code = Buf.get_cell t.chars (dst_idx + i) in
-      if not (Packed_cell.is_inline code) then
-        Grapheme_tracker.remove t.grapheme_tracker code
-    done;
+    (* Retain source payloads before releasing overwritten destination cells. *)
     for i = 0 to len - 1 do
       let code = Buf.get_cell t.chars (src_idx + i) in
       if not (Packed_cell.is_inline code) then
         Grapheme_tracker.add t.grapheme_tracker code
+    done;
+    for i = 0 to len - 1 do
+      let code = Buf.get_cell t.chars (dst_idx + i) in
+      if not (Packed_cell.is_inline code) then
+        Grapheme_tracker.remove t.grapheme_tracker code
     done
   end
 
-let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
+let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
+    =
   let width = max 0 width and height = max 0 height in
 
   (* Clamp negative source/destination offsets *)
@@ -901,7 +779,10 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
         in
 
         (* Full-width self-blit (scrolling) uses fast bulk copy *)
-        if same_grid && src_x = 0 && dst_x = 0 && width = src.width then begin
+        if
+          (not blend) && same_grid && src_x = 0 && dst_x = 0
+          && width = src.width
+        then begin
           let si = src_y * src.width in
           let di = dst_y * dst.width in
           let len = width * height in
@@ -921,6 +802,59 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
           Buf.blit
             (Bigarray.Array1.sub src.bg_color si len)
             (Bigarray.Array1.sub dst.bg_color di len)
+        end
+        else if (not blend) && same_grid then begin
+          (* Move storage before repairing edges: per-cell span cleanup could
+             erase source cells that an overlapping move has not read yet. *)
+          let row = ref y_start in
+          while !row <> y_limit do
+            let si = ((src_y + !row) * src.width) + src_x in
+            let di = ((dst_y + !row) * dst.width) + dst_x in
+            let last = di + width - 1 in
+            let left = Buf.get_cell dst.chars di in
+            let right = Buf.get_cell dst.chars last in
+            let old_start = di - Packed_cell.left_extent left in
+            let old_end =
+              last
+              +
+              if Packed_cell.is_inline right then
+                max 0 (Packed_cell.cell_width right - 1)
+              else Packed_cell.right_extent right
+            in
+            bulk_update_graphemes src ~src_idx:si ~dst_idx:di ~len:width;
+            Buf.blit_cell_range src.chars ~src_pos:si dst.chars ~dst_pos:di
+              ~len:width;
+            Buf.blit_range src.attrs ~src_pos:si dst.attrs ~dst_pos:di
+              ~len:width;
+            Buf.blit_range src.links ~src_pos:si dst.links ~dst_pos:di
+              ~len:width;
+            Buf.blit_range src.fg_color ~src_pos:si dst.fg_color ~dst_pos:di
+              ~len:width;
+            Buf.blit_range src.bg_color ~src_pos:si dst.bg_color ~dst_pos:di
+              ~len:width;
+            for i = old_start to di - 1 do
+              clear_cell dst i
+            done;
+            for i = last + 1 to old_end do
+              clear_cell dst i
+            done;
+            let first = Buf.get_cell dst.chars di in
+            let final = Buf.get_cell dst.chars last in
+            if Packed_cell.is_continuation first then
+              for i = di to min last (di + Packed_cell.right_extent first) do
+                clear_cell dst i
+              done;
+            let right_extent =
+              if Packed_cell.is_inline final then
+                max 0 (Packed_cell.cell_width final - 1)
+              else Packed_cell.right_extent final
+            in
+            if right_extent > 0 then
+              for i = max di (last - Packed_cell.left_extent final) to last do
+                clear_cell dst i
+              done;
+            row := !row + y_step
+          done
         end
         else begin
           (* General blit: cell-by-cell with cross-store support *)
@@ -947,76 +881,78 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
               let code = Buf.get_cell src.chars sidx in
               let fg_color = Buf.get src.fg_color sidx in
               let bg_color = Buf.get src.bg_color sidx in
-              let fg_r = Color_packed.red_f fg_color in
-              let fg_g = Color_packed.green_f fg_color in
-              let fg_b = Color_packed.blue_f fg_color in
-              let fg_a = Color_packed.alpha_f fg_color in
-              let bg_r = Color_packed.red_f bg_color in
-              let bg_g = Color_packed.green_f bg_color in
-              let bg_b = Color_packed.blue_f bg_color in
-              let bg_a = Color_packed.alpha_f bg_color in
-              let attrs = Buf.get src.attrs sidx in
-              let src_link = Buf.get src.links sidx in
-
-              let link_id =
-                match Links.resolve src.link_registry src_link with
-                | Some url -> Links.intern dst.link_registry (Some url)
-                | None -> no_link
+              let fg_color =
+                if blend then apply_opacity dst fg_color else fg_color
               in
+              let bg_color =
+                if blend then apply_opacity dst bg_color else bg_color
+              in
+              if
+                (not blend)
+                || Color_packed.alpha fg_color <> 0
+                || Color_packed.alpha bg_color <> 0
+              then begin
+                let attrs = Buf.get src.attrs sidx in
+                let src_link = Buf.get src.links sidx in
 
-              (* Detect orphan continuations whose start cell is outside the
+                let link_id =
+                  match Links.resolve src.link_registry src_link with
+                  | Some url -> Links.intern dst.link_registry (Some url)
+                  | None -> no_link
+                in
+
+                (* Detect orphan continuations whose start cell is outside the
                  copied region *)
-              let is_orphan =
-                Packed_cell.is_continuation code
-                && sx - Packed_cell.left_extent code < src_x
-              in
-              let is_right_truncated_start =
-                (not (Packed_cell.is_continuation code))
-                &&
-                let cw = Packed_cell.cell_width code in
-                cw > 1 && (sx + cw > src_x + width || dx + cw > dst_x + width)
-              in
+                let is_orphan =
+                  Packed_cell.is_continuation code
+                  && (sx - Packed_cell.left_extent code < src_x
+                     || sx + Packed_cell.right_extent code >= src_x + width)
+                in
+                let is_right_truncated_start =
+                  (not (Packed_cell.is_continuation code))
+                  &&
+                  let cw = Packed_cell.cell_width code in
+                  cw > 1 && (sx + cw > src_x + width || dx + cw > dst_x + width)
+                in
 
-              let mapped_code =
-                if is_orphan || is_right_truncated_start then space_cell
-                else if
-                  src.grapheme_store == dst.grapheme_store
-                  || Packed_cell.is_inline code
-                then code
-                else copy_cell code
-              in
+                let mapped_code =
+                  if is_orphan || is_right_truncated_start then space_cell
+                  else if
+                    src.grapheme_store == dst.grapheme_store
+                    || Packed_cell.is_inline code
+                  then code
+                  else copy_cell code
+                in
 
-              let is_reset = mapped_code = space_cell && code <> space_cell in
-              let attrs = if is_reset then 0 else attrs in
-              let link_id = if is_reset then no_link else link_id in
-              let fg_r, fg_g, fg_b, fg_a =
-                if is_reset then (1., 1., 1., 1.) else (fg_r, fg_g, fg_b, fg_a)
-              in
-              let fg_color = if is_reset then default_fg_packed else fg_color in
-
-              let composite_fg_a =
-                foreground_composition_alpha ~code:mapped_code ~color:fg_color
-                  ~alpha:fg_a
-              in
-
-              (* A source framebuffer opts into composition with
-                 [respect_alpha]. Plain framebuffers copy stored alpha values;
-                 alpha-respecting framebuffers composite and fully transparent
-                 cells become holes. *)
-              let compose = (not same_grid) && src.respect_alpha in
-              if compose && composite_fg_a <= 0.001 && bg_a <= 0.001 then ()
-              else
+                let is_reset = mapped_code = space_cell && code <> space_cell in
+                let attrs = if is_reset then 0 else attrs in
+                let link_id = if is_reset then no_link else link_id in
+                let fg_color =
+                  if is_reset then
+                    if blend then apply_opacity dst default_fg_packed
+                    else default_fg_packed
+                  else fg_color
+                in
                 set_cell_internal dst
                   ~idx:((dy * dst.width) + dx)
-                  ~code:mapped_code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b
-                  ~fg_a:composite_fg_a ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link_id
-                  ~blending:compose;
+                  ~code:mapped_code ~fg_color ~bg_color ~attrs ~link_id
+                  ~blending:blend
+              end;
 
               k := !k + x_step
             done;
             i := !i + y_step
           done
         end
+
+let blit_region = transfer_region ~blend:false
+
+let draw_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
+  if width > 0 && height > 0 && dst.opacity_product > 0. then begin
+    let src = if src == dst then copy src else src in
+    transfer_region ~blend:true ~src ~dst ~src_x ~src_y ~width ~height ~dst_x
+      ~dst_y
+  end
 
 (* {1 Scrolling} *)
 
@@ -1042,168 +978,119 @@ let scroll t ~top ~bottom n =
 
 (* {1 Text rendering} *)
 
-let draw_text ?style ?(tab_width = 2) t ~x ~y ~text =
+let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
+  let width_method = Option.value width_method ~default:t.width_method in
   if text = "" || y < 0 || y >= t.height then ()
   else
     let s = Option.value style ~default:Ansi.Style.default in
-    let fg_r, fg_g, fg_b, fg_a =
-      match s.fg with
-      | Some c -> Ansi.Color.to_rgba_f c
-      | None -> (1., 1., 1., 1.)
-    in
     let fg_color =
-      Option.value s.fg ~default:default_fg |> Color_packed.encode
+      Option.value s.fg ~default:default_fg
+      |> Color_packed.encode |> apply_opacity t
     in
-    let explicit_bg =
-      match s.bg with
-      | Some c -> Some (Color_packed.encode c, Ansi.Color.to_rgba_f c)
-      | None -> None
+    let bg_color =
+      Option.value s.bg ~default:default_bg
+      |> Color_packed.encode |> apply_opacity t
     in
-    let attrs = Ansi.Attr.pack s.attrs in
-    let link_id = Links.intern t.link_registry s.link in
-    let cur_x = ref x in
-    let tabw = if tab_width <= 0 then 2 else tab_width in
-    let text =
-      if String.contains text '\t' then (
-        let len = String.length text in
-        let b = Buffer.create (len + (tabw * 4)) in
-        for i = 0 to len - 1 do
-          let c = String.unsafe_get text i in
-          if Char.equal c '\t' then
-            for _ = 1 to tabw do
-              Buffer.add_char b ' '
-            done
-          else Buffer.add_char b c
-        done;
-        Buffer.contents b)
-      else text
-    in
-
-    let scissor = Scissor_stack.current t.scissor_stack in
-    let row_visible =
-      match scissor with
-      | None -> true
-      | Some r -> y >= r.y && y < r.y + r.height
-    in
-    if not row_visible then ()
+    if Color_packed.alpha fg_color = 0 && Color_packed.alpha bg_color = 0 then
+      ()
     else
-      let cell_visible =
-        match scissor with
-        | None -> fun _ -> true
-        | Some r ->
-            let x_min = r.x and x_max = r.x + r.width in
-            fun x -> x >= x_min && x < x_max
+      let attrs = Ansi.Attr.pack s.attrs in
+      let link_id = Links.intern t.link_registry s.link in
+      let cur_x = ref x in
+      let tabw = if tab_width <= 0 then 2 else tab_width in
+      let text =
+        if String.contains text '\t' then (
+          let len = String.length text in
+          let b = Buffer.create (len + (tabw * 4)) in
+          for i = 0 to len - 1 do
+            let c = String.unsafe_get text i in
+            if Char.equal c '\t' then
+              for _ = 1 to tabw do
+                Buffer.add_char b ' '
+              done
+            else Buffer.add_char b c
+          done;
+          Buffer.contents b)
+        else text
       in
-      (* Interning is deferred until the start cell is known to be written:
+
+      let scissor = Scissor_stack.current t.scissor_stack in
+      let row_visible =
+        match scissor with
+        | None -> true
+        | Some r -> y >= r.y && y < r.y + r.height
+      in
+      if not row_visible then ()
+      else
+        let cell_visible =
+          match scissor with
+          | None -> fun _ -> true
+          | Some r ->
+              let x_min = r.x and x_max = r.x + r.width in
+              fun x -> x >= x_min && x < x_max
+        in
+        (* Interning is deferred until the start cell is known to be written:
          clipped or overflowing graphemes must not allocate store slots, or
          each distinct one would leak a refcount-0 entry. *)
-      let writer ~offset ~len ~w =
-        let bounds_ok = !cur_x + w <= t.width && !cur_x >= 0 in
-        let start_visible = cell_visible !cur_x in
+        let writer ~offset ~len ~w =
+          let bounds_ok = !cur_x + w <= t.width && !cur_x >= 0 in
+          let start_visible = cell_visible !cur_x in
 
-        if bounds_ok && start_visible then begin
-          let code =
-            Packed_cell.intern_sub t.grapheme_store ~width_method:t.width_method
-              ~tab_width:tabw text ~pos:offset ~len ~width:w
-          in
-          let w = Packed_cell.cell_width code in
-          begin
-            let idx = (y * t.width) + !cur_x in
-            let br, bg, bb, ba =
-              match explicit_bg with
-              | Some (_, (r, g, b, a)) -> (r, g, b, a)
-              | None ->
-                  let bg = Buf.get t.bg_color idx in
-                  ( Color_packed.red_f bg,
-                    Color_packed.green_f bg,
-                    Color_packed.blue_f bg,
-                    Color_packed.alpha_f bg )
+          if bounds_ok && start_visible then begin
+            let code =
+              Packed_cell.intern_sub t.grapheme_store ~width_method
+                ~tab_width:tabw text ~pos:offset ~len ~width:w
             in
-            let bg_color =
-              match explicit_bg with
-              | Some (color, _) -> color
-              | None -> Buf.get t.bg_color idx
-            in
-            let blending = fg_a < 0.999 || ba < 0.999 || t.respect_alpha in
-            set_cell_internal t ~idx ~code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b
-              ~fg_a ~bg_r:br ~bg_g:bg ~bg_b:bb ~bg_a:ba ~attrs ~link_id
-              ~blending;
-            for i = 1 to w - 1 do
-              let c_x = !cur_x + i in
-              let c_idx = (y * t.width) + c_x in
-              let br_c, bg_c, bb_c, ba_c =
-                match explicit_bg with
-                | Some (_, (r, g, b, a)) -> (r, g, b, a)
-                | None ->
-                    let bg = Buf.get t.bg_color c_idx in
-                    ( Color_packed.red_f bg,
-                      Color_packed.green_f bg,
-                      Color_packed.blue_f bg,
-                      Color_packed.alpha_f bg )
-              in
-              let bg_color_c =
-                match explicit_bg with
-                | Some (color, _) -> color
-                | None -> Buf.get t.bg_color c_idx
-              in
-              let cont =
-                Packed_cell.make_continuation ~code ~left:i ~right:(w - 1 - i)
-              in
-              let blending_c =
-                fg_a < 0.999 || ba_c < 0.999 || t.respect_alpha
-              in
-              set_cell_internal t ~idx:c_idx ~code:cont ~fg_color
-                ~bg_color:bg_color_c ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r:br_c
-                ~bg_g:bg_c ~bg_b:bb_c ~bg_a:ba_c ~attrs ~link_id
-                ~blending:blending_c
-            done
-          end;
-          cur_x := !cur_x + w
-        end
-        else begin
-          if (not bounds_ok) && !cur_x >= 0 && !cur_x < t.width then
-            (* Wide cell overflows: fill remainder with styled spaces *)
-            for x_fill = !cur_x to t.width - 1 do
-              if cell_visible x_fill then
-                let idx = (y * t.width) + x_fill in
-                let br, bg, bb, ba =
-                  match explicit_bg with
-                  | Some (_, (r, g, b, a)) -> (r, g, b, a)
-                  | None ->
-                      let bg = Buf.get t.bg_color idx in
-                      ( Color_packed.red_f bg,
-                        Color_packed.green_f bg,
-                        Color_packed.blue_f bg,
-                        Color_packed.alpha_f bg )
+            let w = Packed_cell.cell_width code in
+            begin
+              let idx = (y * t.width) + !cur_x in
+              set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link_id
+                ~blending:true;
+              for i = 1 to w - 1 do
+                let c_x = !cur_x + i in
+                let c_idx = (y * t.width) + c_x in
+                let cont =
+                  Packed_cell.make_continuation ~code ~left:i ~right:(w - 1 - i)
                 in
-                let bg_color =
-                  match explicit_bg with
-                  | Some (color, _) -> color
-                  | None -> Buf.get t.bg_color idx
-                in
-                set_cell_internal t ~idx ~code:space_cell ~fg_color ~bg_color
-                  ~fg_r ~fg_g ~fg_b ~fg_a ~bg_r:br ~bg_g:bg ~bg_b:bb ~bg_a:ba
-                  ~attrs ~link_id ~blending:false
-            done;
-          cur_x := !cur_x + w
-        end
-      in
+                set_cell_internal t ~idx:c_idx ~code:cont ~fg_color ~bg_color
+                  ~attrs ~link_id ~blending:true
+              done
+            end;
+            cur_x := !cur_x + w
+          end
+          else begin
+            if (not bounds_ok) && !cur_x >= 0 && !cur_x < t.width then
+              (* Wide cell overflows: fill remainder with styled spaces *)
+              for x_fill = !cur_x to t.width - 1 do
+                if cell_visible x_fill then
+                  let idx = (y * t.width) + x_fill in
+                  let bg_color =
+                    match s.bg with
+                    | None -> Buf.get t.bg_color idx
+                    | Some _ -> bg_color
+                  in
+                  set_cell_internal t ~idx ~code:space_cell ~fg_color ~bg_color
+                    ~attrs ~link_id ~blending:false
+              done;
+            cur_x := !cur_x + w
+          end
+        in
 
-      let stop = ref false in
-      try
-        Text.iter_grapheme_info ~width_method:t.width_method ~tab_width:tabw
-          (fun ~offset ~len ~width:w ->
-            if !stop || w <= 0 then ()
-            else
-              let start_x = !cur_x in
-              let end_x = start_x + w in
-              if end_x <= 0 then cur_x := end_x
-              else if start_x >= t.width then (
-                stop := true;
-                raise Exit)
-              else writer ~offset ~len ~w)
-          text
-      with Exit -> ()
+        let stop = ref false in
+        try
+          Text.iter_grapheme_info ~width_method ~tab_width:tabw
+            (fun ~offset ~len ~width:w ->
+              if !stop || w <= 0 then ()
+              else
+                let start_x = !cur_x in
+                let end_x = start_x + w in
+                if end_x <= 0 then cur_x := end_x
+                else if start_x >= t.width then (
+                  stop := true;
+                  raise Exit)
+                else writer ~offset ~len ~w)
+            text
+        with Exit -> ()
 
 (* {1 Box drawing} *)
 
@@ -1226,9 +1113,9 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
         match fill with
         | Some c -> c
         | None -> (
-            match style.bg with Some c -> c | None -> Ansi.Color.default)
+            match style.bg with Some c -> c | None -> Ansi.Color.transparent)
       in
-      let bg_color_packed = Color_packed.encode bg_color in
+      let bg_color_packed = apply_opacity t (Color_packed.encode bg_color) in
       let open Border in
       let has side = List.mem side sides in
       let sx = max 0 x and sy = max 0 y in
@@ -1247,21 +1134,13 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
           fill_rect t ~x:ix ~y:iy ~width:iw ~height:ih ~color:bg_color
       end;
 
-      let b_fg_r, b_fg_g, b_fg_b, b_fg_a =
-        match style.Ansi.Style.fg with
-        | Some c -> Ansi.Color.to_rgba_f c
-        | None -> (1., 1., 1., 1.)
-      in
       let b_fg_color =
         Option.value style.Ansi.Style.fg ~default:default_fg
-        |> Color_packed.encode
+        |> Color_packed.encode |> apply_opacity t
       in
-      let b_bg_r, b_bg_g, b_bg_b, b_bg_a = Ansi.Color.to_rgba_f bg_color in
       let b_attrs = Ansi.Attr.pack style.attrs in
 
-      (* Pack the border character set once: of_uchar allocates a string and
-         measures grapheme width for non-ASCII codepoints, and a full-screen
-         box redraws ~2*(w+h) border cells per frame. *)
+      (* Pack the border characters once per box. *)
       let cell_top_left = Packed_cell.of_uchar border_chars.top_left in
       let cell_top_right = Packed_cell.of_uchar border_chars.top_right in
       let cell_bottom_left = Packed_cell.of_uchar border_chars.bottom_left in
@@ -1277,9 +1156,7 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
           set_cell_internal t
             ~idx:((by * t.width) + bx)
             ~code:cell ~fg_color:b_fg_color ~bg_color:bg_color_packed
-            ~fg_r:b_fg_r ~fg_g:b_fg_g ~fg_b:b_fg_b ~fg_a:b_fg_a ~bg_r:b_bg_r
-            ~bg_g:b_bg_g ~bg_b:b_bg_b ~bg_a:b_bg_a ~attrs:b_attrs
-            ~link_id:no_link ~blending:true
+            ~attrs:b_attrs ~link_id:no_link ~blending:true
       in
 
       (* Horizontal borders *)
@@ -1532,8 +1409,11 @@ let to_text ?(trim = true) t =
     Buffer.contents buf
   end
 
-let to_ansi ?(reset = true) t =
-  let width = t.width and height = t.height in
+let to_ansi ?(reset = true) ?(complete_rows = false) ?rows t =
+  let height = Option.value rows ~default:t.height in
+  if height < 0 || height > t.height then
+    invalid_arg "Matrix_grid.to_ansi: rows must be within grid height";
+  let width = t.width in
   if width <= 0 || height <= 0 then ""
   else
     let store = t.grapheme_store in
@@ -1543,18 +1423,18 @@ let to_ansi ?(reset = true) t =
         let style = Ansi.Sgr_state.create () in
 
         for y = 0 to height - 1 do
-          if y > 0 then Ansi.emit (Ansi.char '\n') w;
+          if y > 0 && not complete_rows then Ansi.emit (Ansi.char '\n') w;
+          if complete_rows then Ansi.emit (Ansi.erase_line ~mode:`All) w;
 
           let x = ref 0 in
           while !x < width do
             let idx = (y * width) + !x in
-            let code = get_cell t idx in
+            let code = Buf.get_cell t.chars idx in
             let cw = Packed_cell.cell_width code in
             let step = if cw <= 0 then 1 else cw in
 
             Ansi.Sgr_state.update style w ~fg:(get_fg t idx) ~bg:(get_bg t idx)
-              ~attrs:(get_attrs t idx)
-              ~link:(hyperlink_url_direct t (get_link t idx));
+              ~attrs:(get_attrs t idx) ~link:(get_link t idx);
 
             begin if
               cw <= 0
@@ -1577,7 +1457,8 @@ let to_ansi ?(reset = true) t =
 
           Ansi.Sgr_state.close_link style w;
           Ansi.emit Ansi.reset w;
-          Ansi.Sgr_state.reset style
+          Ansi.Sgr_state.reset style;
+          if complete_rows then Ansi.emit (Ansi.literal "\r\n") w
         done;
 
         if reset then Ansi.emit Ansi.reset w)

@@ -175,6 +175,5 @@ let%expect_test "colored thumb and track" =
   render_ansi ~width:20 ~height:1
     (Vnode.slider ~value:50. ~viewport_size:10. ~track_color:Ansi.Color.blue
        ~thumb_color:Ansi.Color.red ());
-  [%expect_exact
-    {|
-[0;38;2;255;255;255;48;5;4m         [38;5;1m▐█[38;2;255;255;255m         [0m|}]
+  [%expect_exact {|
+[0;48;5;4m         [38;5;1m▐█[39m         [0m|}]

@@ -304,3 +304,22 @@ let copy ~src ~idx ~gen ~dst =
     else
       let dst_idx = alloc dst (Bytes.unsafe_to_string src.storage) off len in
       Some dst_idx
+
+let equal t1 ~idx1 ~gen1 t2 ~idx2 ~gen2 =
+  if not (valid t1 ~idx:idx1 ~gen:gen1 && valid t2 ~idx:idx2 ~gen:gen2) then
+    false
+  else
+    let len = Array.unsafe_get t1.lengths idx1 in
+    len = Array.unsafe_get t2.lengths idx2
+    &&
+    let off1 = Array.unsafe_get t1.offsets idx1 in
+    let off2 = Array.unsafe_get t2.offsets idx2 in
+    let i = ref 0 in
+    while
+      !i < len
+      && Bytes.unsafe_get t1.storage (off1 + !i)
+         = Bytes.unsafe_get t2.storage (off2 + !i)
+    do
+      incr i
+    done;
+    !i = len

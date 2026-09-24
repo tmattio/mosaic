@@ -93,9 +93,8 @@ type t = {
   mutable e_cells : int;
   mutable e_output_len : int;
   mutable e_presented_height : int;
-  (* The last cursor state given to [set_cursor], pre-normalized, so reads
-     allocate nothing. *)
-  mutable cursor_snapshot : cursor;
+  (* Desired cursor state. The runtime owns terminal cursor emission. *)
+  mutable cursor : cursor;
   (* Buffers. [current] is the last committed terminal state. [next] is the
      frame being built. [scroll_baseline] is scratch space for the
      scroll-adjusted previous state used while emitting a scroll-hinted diff. *)
@@ -106,7 +105,6 @@ type t = {
   mutable hit_current : Hit_grid.t;
   mutable hit_next : Hit_grid.t;
   (* State *)
-  cursor : Cursor_state.t;
   sgr_state : Ansi.Sgr_state.t;
   mutable row_offset : int;
   diff : diff_ctx;
@@ -122,11 +120,6 @@ type t = {
   mutable use_explicit_width : bool;
   mutable use_explicit_cursor_positioning : bool;
   mutable hyperlinks_capable : bool;
-  (* Post-processing *)
-  mutable post_process_fns : (int * (Grid.t -> delta:float -> unit)) list;
-  mutable post_process_cache : (Grid.t -> delta:float -> unit) list;
-  mutable post_process_dirty : bool;
-  mutable next_effect_id : int;
 }
 
 (* --- Constants & Inline Helpers --- *)
@@ -150,9 +143,7 @@ let[@inline] cell_changed (c : diff_ctx) y x idx curr_width =
         else not (Grid.cells_equal c.prev ((y * c.prev_width) + x) c.curr idx)
 
 let[@inline] cell_link (c : diff_ctx) idx =
-  if c.hyperlinks then
-    Grid.hyperlink_url_direct c.curr (Grid.get_link c.curr idx)
-  else ""
+  if c.hyperlinks then Grid.get_link c.curr idx else ""
 
 (* Writes a grid cell's content to the output buffer. For wide graphemes, uses
    explicit_width (OSC 66) when available, otherwise falls back to cursor
@@ -160,11 +151,10 @@ let[@inline] cell_link (c : diff_ctx) idx =
    grapheme widths. Emitters are called saturated so no closures are built. *)
 let write_cell (c : diff_ctx) ~y ~x ~cell_width idx =
   let w = c.out in
-  let cell = Grid.get_cell c.curr idx in
-  if Grid.Cell.is_empty cell || Grid.Cell.is_continuation cell then
-    Ansi.Writer.write_char w ' '
-  else if Grid.Cell.is_inline cell && Grid.Cell.codepoint cell < 128 then
-    Ansi.Writer.write_char w (Char.chr (Grid.Cell.codepoint cell))
+  let cp = Grid.get_codepoint c.curr idx in
+  if cp >= 0 && cp < 128 then
+    Ansi.Writer.write_char w (if cp = 0 then ' ' else Char.chr cp)
+  else if Grid.is_continuation c.curr idx then Ansi.Writer.write_char w ' '
   else
     let len = Grid.cell_text_length c.curr idx in
     if len <= 0 then Ansi.Writer.write_char w ' '
@@ -289,12 +279,6 @@ let clear_unpresented_rows r presented_height =
     Hit_grid.add r.hit_next ~x:0 ~y ~width:(Grid.width r.next) ~height:h
       ~id:Hit_grid.empty_id)
 
-let post_processes r =
-  if r.post_process_dirty then (
-    r.post_process_cache <- List.rev_map ~f:snd r.post_process_fns;
-    r.post_process_dirty <- false);
-  r.post_process_cache
-
 let prepare_frame r =
   let now = r.clock () in
   let prev = r.last_render_time in
@@ -304,8 +288,6 @@ let prepare_frame r =
       let delta = now -. prev in
       if delta <= 0. then 0. else delta
   in
-  let delta_ms = delta_seconds *. 1000. in
-  List.iter ~f:(fun fn -> fn r.next ~delta:delta_ms) (post_processes r);
   r.emit_f.e_now <- now;
   r.emit_f.e_delta_seconds <- delta_seconds
 
@@ -331,7 +313,7 @@ let finalize_frame r =
   r.metrics_f.m_timestamp_s <- r.emit_f.e_now;
   r.m_cells <- r.e_cells;
   r.m_bytes <- r.e_output_len;
-  r.m_cursor_visible <- Cursor_state.is_visible r.cursor
+  r.m_cursor_visible <- r.cursor.visible
 
 let presented_height r height = clamp_height r.next height
 
@@ -474,89 +456,76 @@ let render_to_buffer ?(full = false) ?scroll_hint ?viewport frame buffer =
 
 (* Creation & Management *)
 
-let create ?width_method ?respect_alpha ?(cursor_visible = true)
-    ?(explicit_width = false) ?(clock = Unix.gettimeofday) () =
+let create ?width_method ?(cursor_visible = true) ?(explicit_width = false)
+    ?(clock = Unix.gettimeofday) () =
   let w_method = match width_method with Some m -> m | None -> `Unicode in
-  let r_alpha = match respect_alpha with Some r -> r | None -> false in
 
   (* All buffers share one grapheme store and link registry so the diff can
      compare complex cells and hyperlinks by handle across frames. *)
-  let current =
-    Grid.create ~width:1 ~height:1 ~width_method:w_method ~respect_alpha:r_alpha
-      ()
-  in
+  let current = Grid.create ~width:1 ~height:1 ~width_method:w_method () in
   let sgr_state = Ansi.Sgr_state.create () in
   let render_bytes = Bytes.create initial_render_buffer_size in
   let render_writer = Ansi.Writer.make render_bytes in
-  let t =
-    {
-      clock;
-      stats = { frame_count = 0; total_cells = 0; total_bytes = 0 };
-      metrics_f =
-        {
-          m_frame_time_ms = 0.;
-          m_interval_ms = 0.;
-          m_reset_ms = 0.;
-          m_timestamp_s = 0.;
-        };
-      m_cells = 0;
-      m_bytes = 0;
-      m_cursor_visible = cursor_visible;
-      emit_f = { e_now = 0.; e_delta_seconds = 0.; e_elapsed_ms = 0. };
-      e_cells = 0;
-      e_output_len = 0;
-      e_presented_height = 0;
-      cursor_snapshot =
-        {
-          position = None;
-          style = `Block;
-          blinking = false;
-          color = None;
-          visible = cursor_visible;
-        };
-      current;
-      next = Grid.create_like current ~width:1 ~height:1;
-      next_state = Pristine;
-      scroll_baseline = Grid.create_like current ~width:1 ~height:1;
-      hit_current = Hit_grid.create ~width:0 ~height:0;
-      hit_next = Hit_grid.create ~width:0 ~height:0;
-      cursor = Cursor_state.create ();
-      sgr_state;
-      row_offset = 0;
-      post_process_fns = [];
-      post_process_cache = [];
-      post_process_dirty = false;
-      next_effect_id = 0;
-      prefer_explicit_width = explicit_width;
-      explicit_width_capable = true;
-      use_explicit_width = explicit_width;
-      use_explicit_cursor_positioning = false;
-      hyperlinks_capable = true;
-      diff =
-        {
-          mode = `Diff;
-          prev = current;
-          curr = current;
-          out = render_writer;
-          sgr = sgr_state;
-          (* Large enough for any grapheme. *)
-          scratch = Bytes.create 1024;
-          row_offset = 0;
-          width = 0;
-          height = 0;
-          prev_width = 0;
-          prev_height = 0;
-          explicit_width = false;
-          explicit_cursor_positioning = false;
-          hyperlinks = true;
-        };
-      render_bytes;
-      render_writer;
-      last_render_time = Float.nan;
-    }
-  in
-  Cursor_state.set_visible t.cursor cursor_visible;
-  t
+  {
+    clock;
+    stats = { frame_count = 0; total_cells = 0; total_bytes = 0 };
+    metrics_f =
+      {
+        m_frame_time_ms = 0.;
+        m_interval_ms = 0.;
+        m_reset_ms = 0.;
+        m_timestamp_s = 0.;
+      };
+    m_cells = 0;
+    m_bytes = 0;
+    m_cursor_visible = cursor_visible;
+    emit_f = { e_now = 0.; e_delta_seconds = 0.; e_elapsed_ms = 0. };
+    e_cells = 0;
+    e_output_len = 0;
+    e_presented_height = 0;
+    cursor =
+      {
+        position = None;
+        style = `Block;
+        blinking = false;
+        color = None;
+        visible = cursor_visible;
+      };
+    current;
+    next = Grid.create_like current ~width:1 ~height:1;
+    next_state = Pristine;
+    scroll_baseline = Grid.create_like current ~width:1 ~height:1;
+    hit_current = Hit_grid.create ~width:0 ~height:0;
+    hit_next = Hit_grid.create ~width:0 ~height:0;
+    sgr_state;
+    row_offset = 0;
+    prefer_explicit_width = explicit_width;
+    explicit_width_capable = true;
+    use_explicit_width = explicit_width;
+    use_explicit_cursor_positioning = false;
+    hyperlinks_capable = true;
+    diff =
+      {
+        mode = `Diff;
+        prev = current;
+        curr = current;
+        out = render_writer;
+        sgr = sgr_state;
+        (* Large enough for any grapheme. *)
+        scratch = Bytes.create 1024;
+        row_offset = 0;
+        width = 0;
+        height = 0;
+        prev_width = 0;
+        prev_height = 0;
+        explicit_width = false;
+        explicit_cursor_positioning = false;
+        hyperlinks = true;
+      };
+    render_bytes;
+    render_writer;
+    last_render_time = Float.nan;
+  }
 
 let reset t =
   Grid.clear t.next;
@@ -568,7 +537,6 @@ let reset t =
   t.stats.frame_count <- 0;
   t.stats.total_cells <- 0;
   t.stats.total_bytes <- 0;
-  Cursor_state.reset t.cursor;
   Ansi.Sgr_state.reset t.sgr_state
 
 let resize t ~width ~height =
@@ -582,14 +550,13 @@ let resize t ~width ~height =
     Hit_grid.resize t.hit_current ~width ~height;
     Hit_grid.resize t.hit_next ~width ~height;
     t.next_state <- Pristine;
-    Cursor_state.clamp_to_bounds t.cursor ~max_row:height ~max_col:width;
-    let s = Cursor_state.snapshot t.cursor in
-    t.cursor_snapshot <-
+    t.cursor <-
       {
-        t.cursor_snapshot with
+        t.cursor with
         position =
-          (if s.has_position then Some (max 0 (s.col - 1), max 0 (s.row - 1))
-           else None);
+          Option.map
+            (fun (x, y) -> (min (width - 1) x, min (height - 1) y))
+            t.cursor.position;
       })
 
 (* Each build owns the complete frame: the next grid and hit grid are
@@ -662,27 +629,20 @@ let last_metrics t =
 let clamp_byte v = max 0 (min 255 v)
 
 let set_cursor t cursor =
-  (match cursor.position with
-  | None -> Cursor_state.clear_position t.cursor
-  | Some (x, y) ->
-      Cursor_state.set_position t.cursor ~row:(max 0 y + 1) ~col:(max 0 x + 1));
-  Cursor_state.set_visible t.cursor cursor.visible;
-  Cursor_state.set_style t.cursor ~style:cursor.style ~blinking:cursor.blinking;
   let color =
     Option.map
       (fun (r, g, b) -> (clamp_byte r, clamp_byte g, clamp_byte b))
       cursor.color
   in
-  Cursor_state.set_color t.cursor color;
   (* Store the normalized state so [cursor] reads allocate nothing. *)
   let position =
     match cursor.position with
     | Some (x, y) when x < 0 || y < 0 -> Some (max 0 x, max 0 y)
     | p -> p
   in
-  t.cursor_snapshot <- { cursor with position; color }
+  t.cursor <- { cursor with position; color }
 
-let cursor t = t.cursor_snapshot
+let cursor t = t.cursor
 
 let apply_capabilities r ~explicit_width ~explicit_cursor_positioning
     ~hyperlinks ~color_depth =
@@ -701,25 +661,6 @@ let set_width_method (t : t) (method_ : Matrix_text.width_method) =
   Grid.set_width_method t.current method_;
   Grid.set_width_method t.scroll_baseline method_;
   Grid.set_width_method t.next method_
-
-type effect_id = int
-
-let post_process f frame =
-  let id = frame.next_effect_id in
-  frame.next_effect_id <- id + 1;
-  frame.post_process_fns <- (id, f) :: frame.post_process_fns;
-  frame.post_process_dirty <- true;
-  id
-
-let remove_post_process id frame =
-  frame.post_process_fns <-
-    List.filter ~f:(fun (eid, _) -> eid <> id) frame.post_process_fns;
-  frame.post_process_dirty <- true
-
-let clear_post_processes frame =
-  frame.post_process_fns <- [];
-  frame.post_process_cache <- [];
-  frame.post_process_dirty <- false
 
 let add_hit_region frame ~x ~y ~width ~height ~id =
   ensure_next_fresh frame;

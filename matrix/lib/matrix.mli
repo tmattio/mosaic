@@ -111,7 +111,6 @@ val create :
   ?mode:mode ->
   ?raw_mode:bool ->
   ?target_fps:float option ->
-  ?respect_alpha:bool ->
   ?mouse_enabled:bool ->
   ?mouse:Terminal.mouse_mode option ->
   ?bracketed_paste:bool ->
@@ -149,7 +148,6 @@ val create :
     - [raw_mode] whether to switch the TTY into raw mode. Defaults to [true].
 
     {b Rendering:}
-    - [respect_alpha] whether to honour alpha blending. Defaults to [false].
     - [cursor_visible] initial cursor visibility. Defaults to [true] in [`Alt]
       mode, [false] in [`Primary].
     - [explicit_width] whether to use built-in wcwidth instead of querying the
@@ -478,7 +476,6 @@ val attach :
   ?mode:mode ->
   ?raw_mode:bool ->
   ?target_fps:float option ->
-  ?respect_alpha:bool ->
   ?mouse_enabled:bool ->
   ?mouse:Terminal.mouse_mode option ->
   ?bracketed_paste:bool ->

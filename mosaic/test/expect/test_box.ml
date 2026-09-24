@@ -108,9 +108,9 @@ let%expect_test "background fill" =
   render_ansi ~width:10 ~height:3 (Vnode.box ~background:Ansi.Color.blue []);
   [%expect_exact
     {|
-[0;38;2;255;255;255;48;5;4m          [0m
-[0;38;2;255;255;255;48;5;4m          [0m
-[0;38;2;255;255;255;48;5;4m          [0m|}]
+[0;48;5;4m          [0m
+[0;48;5;4m          [0m
+[0;48;5;4m          [0m|}]
 
 let%expect_test "title left aligned" =
   render ~width:16 ~height:4 (Vnode.box ~border:true ~title:"Hello" []);
@@ -185,7 +185,7 @@ let%expect_test "colored border" =
   [%expect_exact
     {|
 [0;38;5;1m┌────────┐[0m
-[0;38;5;1m│[38;2;255;255;255m        [38;5;1m│[0m
+[0;38;5;1m│[39m        [38;5;1m│[0m
 [0;38;5;1m└────────┘[0m|}]
 
 let%expect_test "box with no content large size" =
@@ -220,7 +220,7 @@ let%expect_test "focused box uses focused border color" =
   [%expect_exact
     {|
 [0;38;5;14m┌────────┐[0m
-[0;38;5;14m│[38;2;255;255;255m        [38;5;14m│[0m
+[0;38;5;14m│[39m        [38;5;14m│[0m
 [0;38;5;14m└────────┘[0m|}]
 
 let%expect_test "unfocused box uses normal border color" =
@@ -230,7 +230,7 @@ let%expect_test "unfocused box uses normal border color" =
   [%expect_exact
     {|
 [0;38;5;7m┌────────┐[0m
-[0;38;5;7m│[38;2;255;255;255m        [38;5;7m│[0m
+[0;38;5;7m│[39m        [38;5;7m│[0m
 [0;38;5;7m└────────┘[0m|}]
 
 let%expect_test "focused box with explicit border color" =
@@ -246,10 +246,10 @@ let%expect_test "focused box with explicit border color" =
   [%expect_exact
     {|
 [0;38;5;1m┌────────┐[0m
-[0;38;5;1m│[38;2;255;255;255m        [38;5;1m│[0m
+[0;38;5;1m│[39m        [38;5;1m│[0m
 [0;38;5;1m└────────┘[0m
 [0;38;5;14m┌────────┐[0m
-[0;38;5;14m│[38;2;255;255;255m        [38;5;14m│[0m
+[0;38;5;14m│[39m        [38;5;14m│[0m
 [0;38;5;14m└────────┘[0m|}]
 
 (* ── Reconciliation ── *)
@@ -347,7 +347,7 @@ let%expect_test "background with border" =
   [%expect_exact
     {|
 [0;38;5;7;48;5;4m┌────────┐[0m
-[0;38;5;7;48;5;4m│[38;2;255;255;255m        [38;5;7m│[0m
+[0;38;5;7;48;5;4m│[39m        [38;5;7m│[0m
 [0;38;5;7;48;5;4m└────────┘[0m|}]
 
 (* ── Fill ── *)
@@ -355,11 +355,10 @@ let%expect_test "background with border" =
 let%expect_test "fill false does not fill interior" =
   render_ansi ~width:10 ~height:3
     (Vnode.box ~background:Ansi.Color.blue ~fill:false []);
-  [%expect_exact
-    {|
-[0;38;2;255;255;255m          [0m
-[0;38;2;255;255;255m          [0m
-[0;38;2;255;255;255m          [0m|}]
+  [%expect_exact {|
+[0m          [0m
+[0m          [0m
+[0m          [0m|}]
 
 (* ── Absolute positioning ── *)
 

@@ -35,8 +35,7 @@ let scroll_seed =
   let contents = Buffer.contents buf in
   String.sub contents 0 target
 
-let make_grid ?(respect_alpha = false) () =
-  Grid.create ~width:grid_width ~height:grid_height ~respect_alpha ()
+let make_grid () = Grid.create ~width:grid_width ~height:grid_height ()
 
 (* Bulk fills: opaque & translucent overlays *)
 
@@ -62,7 +61,7 @@ let fill_rect_opaque_full =
 
 let fill_rect_translucent_overlay =
   Thumper.bench_with_setup
-    ~setup:(fun () -> make_grid ~respect_alpha:true ())
+    ~setup:(fun () -> make_grid ())
     ~teardown:(fun _ -> ())
     "grid.fill_rect/translucent-overlay"
     (fun grid ->
@@ -190,10 +189,28 @@ let partial_update_sparse_cells =
          chrome. *)
       for i = 0 to Array.length update_positions - 1 do
         let x, y = update_positions.(i) in
-        Grid.set_cell grid ~x ~y ~blend:true
-          ~cell:(Grid.Cell.of_uchar (Uchar.of_int (Char.code 'A' + i)))
+        Grid.set_uchar grid ~x ~y ~blend:true
+          ~uchar:(Uchar.of_int (Char.code 'A' + i))
           ~fg:(C.of_rgb 255 255 0) ~bg:(C.of_rgb 0 0 0) ~attrs:Ansi.Attr.empty
           ()
+      done)
+
+(* Independent storage must compare text and URLs without materializing cells. *)
+let independent_storage_equality =
+  Thumper.bench_with_setup
+    ~setup:(fun () ->
+      let a = make_grid () and b = make_grid () in
+      let style = S.make ~link:"https://example.com" () in
+      for row = 0 to grid_height - 1 do
+        Grid.draw_text ~style a ~x:0 ~y:row ~text:emoji_line;
+        Grid.draw_text ~style b ~x:0 ~y:row ~text:emoji_line
+      done;
+      (a, b))
+    ~teardown:(fun _ -> ())
+    "grid.cells_equal/independent-stores"
+    (fun (a, b) ->
+      for i = 0 to (grid_width * grid_height) - 1 do
+        if not (Grid.cells_equal a i b i) then failwith "unequal grid contents"
       done)
 
 (* Group + entry point *)
@@ -211,6 +228,7 @@ let benchmarks =
     (* Fine-grained partial updates *)
     partial_status_line;
     partial_update_sparse_cells;
+    independent_storage_equality;
   ]
   |> Thumper.group "grid"
 

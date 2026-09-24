@@ -52,7 +52,7 @@ module Arrow = struct
     Toffee.Geometry.Size.make width 1.
 
   let create ~parent ~direction ?(fg = Ansi.Color.white)
-      ?(bg = Ansi.Color.default) ~on_click () =
+      ?(bg = Ansi.Color.transparent) ~on_click () =
     let node = Renderable.create ~parent () in
     let t = { node; direction; fg; bg } in
     Renderable.set_render node (render t);
@@ -94,7 +94,7 @@ module Props = struct
 
   let make ?(orientation = `Vertical) ?(show_arrows = false)
       ?(track_color = default_track_color) ?(thumb_color = default_thumb_color)
-      ?(arrow_fg = Ansi.Color.white) ?(arrow_bg = Ansi.Color.default) () =
+      ?(arrow_fg = Ansi.Color.white) ?(arrow_bg = Ansi.Color.transparent) () =
     { orientation; show_arrows; track_color; thumb_color; arrow_fg; arrow_bg }
 
   let default = make ()
@@ -290,8 +290,8 @@ let orientation_style style orientation ~auto_width ~auto_height =
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     ?(orientation = `Vertical) ?(show_arrows = false)
     ?(track_color = default_track_color) ?(thumb_color = default_thumb_color)
-    ?(arrow_fg = Ansi.Color.white) ?(arrow_bg = Ansi.Color.default) ?on_change
-    () =
+    ?(arrow_fg = Ansi.Color.white) ?(arrow_bg = Ansi.Color.transparent)
+    ?on_change () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in

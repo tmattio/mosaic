@@ -513,21 +513,13 @@ let draw ?hits ?(x = 0) ?(y = 0) t grid =
               merge_clip base_clip (shift_clip_opt r.clip ~dx:x ~dy:y)
             in
             let draw () =
-              let prev_width_method = Grid.width_method grid in
-              let restore_width_method () =
-                if prev_width_method <> r.width_method then
-                  Grid.set_width_method grid prev_width_method
-              in
-              if prev_width_method <> r.width_method then
-                Grid.set_width_method grid r.width_method;
-              Fun.protect ~finally:restore_width_method (fun () ->
-                  let len = Array.length r.lines in
-                  for i = 0 to len - 1 do
-                    let line_y = y + r.y + i in
-                    if line_y >= 0 && line_y < grid_height then
-                      Grid.draw_text grid ~x:(x + r.x) ~y:line_y
-                        ~text:r.lines.(i) ~style:r.style
-                  done)
+              for i = 0 to Array.length r.lines - 1 do
+                let line_y = y + r.y + i in
+                if line_y >= 0 && line_y < grid_height then
+                  Grid.draw_text grid ~x:(x + r.x) ~y:line_y
+                    ~width_method:r.width_method ~text:r.lines.(i)
+                    ~style:r.style
+              done
             in
             match clip with
             | None -> draw ()

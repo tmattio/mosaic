@@ -1,19 +1,8 @@
-(* ───── Props ───── *)
-
-module Props = struct
-  type t = { respect_alpha : bool }
-
-  let make ?(respect_alpha = false) () = { respect_alpha }
-  let default = make ()
-  let equal a b = a.respect_alpha = b.respect_alpha
-end
-
 (* ───── Types ───── *)
 
 type t = {
   node : Renderable.t;
   grid : Matrix_grid.t;
-  mutable props : Props.t;
   mutable on_draw : (t -> delta:float -> unit) option;
   mutable on_resize : (t -> unit) option;
 }
@@ -41,8 +30,8 @@ let draw_box t ~x ~y ~width ~height ?border ?sides ?style ?fill ?title
 let draw_line t ~x1 ~y1 ~x2 ~y2 ?style ?symbols ?kind () =
   Matrix_grid.draw_line t.grid ~x1 ~y1 ~x2 ~y2 ?style ?symbols ?kind ()
 
-let set_cell t ~x ~y ~cell ~fg ~bg ~attrs ?link ?blend () =
-  Matrix_grid.set_cell t.grid ~x ~y ~cell ~fg ~bg ~attrs ?link ?blend ()
+let set_uchar t ~x ~y ~uchar ~fg ~bg ~attrs ?link ?blend () =
+  Matrix_grid.set_uchar t.grid ~x ~y ~uchar ~fg ~bg ~attrs ?link ?blend ()
 
 let clear ?color t =
   Matrix_grid.clear ?color t.grid;
@@ -62,29 +51,26 @@ let render t _self parent_grid ~delta =
     end;
     (* on_draw fires after resize so the callback sees up-to-date dimensions. *)
     Option.iter (fun f -> f t ~delta) t.on_draw;
-    Matrix_grid.blit_region ~src:t.grid ~dst:parent_grid ~src_x:0 ~src_y:0
+    Matrix_grid.draw_region ~src:t.grid ~dst:parent_grid ~src_x:0 ~src_y:0
       ~width:w ~height:h ~dst_x:(Renderable.x t.node)
       ~dst_y:(Renderable.y t.node)
   end
 
 (* ───── Construction ───── *)
 
-let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?respect_alpha
-    () =
+let create ~parent ?index ?id ?style ?visible ?z_index ?opacity () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
-  let respect_alpha = Option.value ~default:false respect_alpha in
   (* 1×1 placeholder; resized to match layout on the first render pass. The
      grid follows the screen's width method so drawing lays cells down the
      same way the parent grid does. *)
   let grid =
     Matrix_grid.create ~width:1 ~height:1
       ~width_method:(Renderable.Private.width_method node)
-      ~respect_alpha ()
+      ()
   in
-  let props = Props.make ~respect_alpha () in
-  let t = { node; grid; props; on_draw = None; on_resize = None } in
+  let t = { node; grid; on_draw = None; on_resize = None } in
   Renderable.set_render node (render t);
   t
 
@@ -96,26 +82,6 @@ let set_on_resize t cb = t.on_resize <- cb
 (* ───── Render Control ───── *)
 
 let request_render t = Renderable.request_render t.node
-
-(* ───── Properties ───── *)
-
-let set_respect_alpha t v =
-  if t.props.respect_alpha <> v then begin
-    t.props <- { respect_alpha = v };
-    Matrix_grid.set_respect_alpha t.grid v;
-    Renderable.request_render t.node
-  end
-
-let respect_alpha t = t.props.respect_alpha
-
-(* ───── Apply Props ───── *)
-
-let apply_props t (props : Props.t) =
-  if t.props.respect_alpha <> props.respect_alpha then begin
-    Matrix_grid.set_respect_alpha t.grid props.respect_alpha;
-    Renderable.request_render t.node
-  end;
-  t.props <- props
 
 (* ───── Pretty-printing ───── *)
 

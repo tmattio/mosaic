@@ -249,7 +249,7 @@ let test_null_cell_clear_uses_cell_colors () =
   let green = Ansi.Color.of_rgb 0 200 0 in
   let f2 =
     build_screen r ~width:2 ~height:1 (fun grid _hits ->
-        Grid.set_cell grid ~x:0 ~y:0 ~cell:Grid.Cell.empty ~fg:Ansi.Color.white
+        Grid.set_uchar grid ~x:0 ~y:0 ~uchar:Uchar.min ~fg:Ansi.Color.white
           ~bg:green ~attrs:Ansi.Attr.empty ())
   in
   let output2 = Screen.render f2 in
@@ -433,91 +433,6 @@ let test_cursor_clamped_on_resize () =
     (option (pair int int))
     (Some (1, 0))
     cursor.position
-
-(* 4. Post-Processing Tests *)
-
-let test_post_process_receives_delta () =
-  let r = Screen.create () in
-  let delta_received = ref None in
-
-  let frame1 = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let _id =
-    Screen.post_process
-      (fun _grid ~delta -> delta_received := Some delta)
-      frame1
-  in
-  let _output = Screen.render frame1 in
-
-  is_true ~msg:"delta was received" (Option.is_some !delta_received);
-  let delta = Option.get !delta_received in
-  satisfies ~claim:"non-negative delta" float_exact (fun d -> d >= 0.) delta
-
-let test_post_process_chain () =
-  (* Multiple post-process functions should be applied in order *)
-  let r = Screen.create () in
-  let calls = ref [] in
-
-  let frame = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let _id1 =
-    Screen.post_process (fun _grid ~delta:_ -> calls := "first" :: !calls) frame
-  in
-  let _id2 =
-    Screen.post_process
-      (fun _grid ~delta:_ -> calls := "second" :: !calls)
-      frame
-  in
-  let _output = Screen.render frame in
-
-  (* Should be called in order (reversed because we cons) *)
-  equal ~msg:"call order" (list string) [ "second"; "first" ] !calls
-
-let test_post_process_persists_across_frames () =
-  (* Post-processors persist until explicitly removed *)
-  let r = Screen.create () in
-  let call_count = ref 0 in
-  let effect_ _grid ~delta:_ = incr call_count in
-
-  let frame1 = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let _id = Screen.post_process effect_ frame1 in
-  let _ = Screen.render frame1 in
-
-  let frame2 = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let _ = Screen.render frame2 in
-
-  equal ~msg:"called twice" int 2 !call_count
-
-let test_remove_post_process () =
-  let r = Screen.create () in
-  let call_count = ref 0 in
-  let effect_ _grid ~delta:_ = incr call_count in
-
-  let frame = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let id = Screen.post_process effect_ frame in
-  let _ = Screen.render frame in
-
-  Screen.remove_post_process id frame;
-  let frame2 = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let _ = Screen.render frame2 in
-
-  equal ~msg:"effect removed" int 1 !call_count
-
-let test_clear_post_processes () =
-  let r = Screen.create () in
-  let call_count = ref 0 in
-  let effect1 _grid ~delta:_ = incr call_count in
-  let effect2 _grid ~delta:_ = incr call_count in
-
-  let frame = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let _id1 = Screen.post_process effect1 frame in
-  let _id2 = Screen.post_process effect2 frame in
-  let _ = Screen.render frame in
-  equal ~msg:"both effects ran" int 2 !call_count;
-
-  Screen.clear_post_processes frame;
-  let frame2 = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let _ = Screen.render frame2 in
-
-  equal ~msg:"effects cleared" int 2 !call_count
 
 (* 5. Hit Grid Tests *)
 
@@ -900,7 +815,17 @@ let test_cursor_style_and_color () =
     info.position;
   is_true ~msg:"cursor underline" (info.style = `Underline);
   is_true ~msg:"cursor non-blinking" (not info.blinking);
-  is_true ~msg:"cursor color stored" (info.color = Some (255, 0, 128))
+  is_true ~msg:"cursor color stored" (info.color = Some (255, 0, 128));
+  Screen.set_cursor r
+    { info with position = Some (-2, -3); color = Some (-10, 300, 128) };
+  Screen.reset r;
+  let normalized = Screen.cursor r in
+  equal ~msg:"reset preserves normalized cursor position"
+    (option (pair int int))
+    (Some (0, 0))
+    normalized.position;
+  is_true ~msg:"reset preserves normalized cursor color"
+    (normalized.color = Some (0, 255, 128))
 
 let test_all_cells_changed () =
   (* Worst case: every cell changes *)
@@ -991,18 +916,6 @@ let test_attribute_only_change () =
 
 (* 9. Performance Characteristics Tests *)
 
-let test_zero_allocation_frame_building () =
-  (* This is a semantic test - we can't actually measure allocations, but we can
-     verify the API works as expected *)
-  let r = Screen.create () in
-
-  (* Build and post_process should work without errors *)
-  let f1 = build_screen r ~width:5 ~height:5 (fun _grid _hits -> ()) in
-  let _id = Screen.post_process (fun _grid ~delta:_ -> ()) f1 in
-  let _output = Screen.render f1 in
-  (* If we get here without errors, the zero-allocation API works *)
-  is_true ~msg:"api works" true
-
 let test_double_buffer_reuse () =
   let r = Screen.create () in
   let grids = ref [] in
@@ -1027,35 +940,16 @@ let test_double_buffer_reuse () =
   equal ~msg:"reuses two grid buffers" int 2 (List.length !grids);
   equal ~msg:"reuses two hit grids" int 2 (List.length !hits)
 
-let test_pipeline_composition () =
-  (* Test that pipelines compose correctly *)
-  let r = Screen.create () in
-  let call_order = ref [] in
-
-  let f1 =
-    build_screen r ~width:5 ~height:5 (fun _grid _hits ->
-        call_order := "build" :: !call_order)
-  in
-  let _id1 =
-    Screen.post_process
-      (fun _grid ~delta:_ -> call_order := "post1" :: !call_order)
-      f1
-  in
-  let _id2 =
-    Screen.post_process
-      (fun _grid ~delta:_ -> call_order := "post2" :: !call_order)
-      f1
-  in
-  Screen.add_hit_region f1 ~x:0 ~y:0 ~width:1 ~height:1 ~id:1;
-  let f2 = f1 in
-  let output = Screen.render f2 in
-
-  satisfies ~claim:"pipeline executed (render returns, length >= 0)" int
-    (fun len -> len >= 0)
-    (String.length output);
-  mem ~msg:"build called" string "build" !call_order;
-  mem ~msg:"post1 called" string "post1" !call_order;
-  mem ~msg:"post2 called" string "post2" !call_order
+let test_transform_before_render () =
+  let screen = Screen.create () in
+  Screen.build screen ~width:5 ~height:1 (fun grid _ ->
+      Grid.draw_text grid ~x:0 ~y:0 ~text:"before");
+  let transform grid = Grid.draw_text grid ~x:0 ~y:0 ~text:"after" in
+  transform (Screen.next_grid screen);
+  let output = Screen.render screen in
+  contains ~msg:"render emits transformed contents" ~sub:"after" output;
+  equal ~msg:"transformed contents become the diff baseline" string "after"
+    (Grid.to_text (Screen.current_grid screen))
 
 (* Test Suite *)
 
@@ -1104,15 +998,6 @@ let () =
             test_resize_same_size_preserves_diff_baseline;
           test "Cursor clamped on resize" test_cursor_clamped_on_resize;
         ];
-      group "Post-Processing"
-        [
-          test "Post-process receives delta" test_post_process_receives_delta;
-          test "Post-process chain" test_post_process_chain;
-          test "Post-process persists across frames"
-            test_post_process_persists_across_frames;
-          test "Remove post-process" test_remove_post_process;
-          test "Clear post-processes" test_clear_post_processes;
-        ];
       group "Hit Grid Integration"
         [
           test "Hit grid integration" test_hit_grid_integration;
@@ -1145,9 +1030,7 @@ let () =
         ];
       group "Performance Characteristics"
         [
-          test "Zero-allocation frame building"
-            test_zero_allocation_frame_building;
           test "Double buffer reuse" test_double_buffer_reuse;
-          test "Pipeline composition" test_pipeline_composition;
+          test "Transform before render" test_transform_before_render;
         ];
     ]

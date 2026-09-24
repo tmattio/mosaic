@@ -31,7 +31,7 @@ type kind =
   | Text_input of Text_input.Props.t
   | Select of Select.Props.t
   | Tab_select of Tab_select.Props.t
-  | Canvas of Canvas.Props.t
+  | Canvas
   | Spinner of Spinner.Props.t
   | Progress_bar of Progress_bar.Props.t
   | Scroll_bar of Scroll_bar.Props.t
@@ -547,7 +547,6 @@ val canvas :
   ?on_mouse:(Event.mouse -> 'msg) ->
   ?on_key:(Event.key -> 'msg) ->
   ?on_paste:(Event.paste -> 'msg) ->
-  ?respect_alpha:bool ->
   ?on_draw:(Canvas.t -> delta:float -> unit) ->
   unit ->
   'msg t
@@ -560,8 +559,6 @@ val canvas :
     frames persists; call {!Canvas.clear} first when a full redraw is required.
 
     Canvas-specific attributes:
-    - [respect_alpha] controls whether alpha blending is honoured when drawing.
-      Defaults to [false].
     - [on_draw] is the render-time drawing callback. The [~delta] argument is
       elapsed time in milliseconds since the last frame. Combine with
       [~live:true] for per-frame animation. *)

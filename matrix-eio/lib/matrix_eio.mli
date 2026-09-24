@@ -27,7 +27,6 @@ val create :
   ?mode:Matrix.mode ->
   ?raw_mode:bool ->
   ?target_fps:float option ->
-  ?respect_alpha:bool ->
   ?mouse_enabled:bool ->
   ?mouse:Matrix.Terminal.mouse_mode option ->
   ?bracketed_paste:bool ->

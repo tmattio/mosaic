@@ -60,7 +60,7 @@ scrolling history of input events using `Input.pp` for formatting.
 ### `06-canvas` – Drawing canvas
 
 Mouse-driven paint program with alpha blending support. Features a color
-palette, adjustable brush size, and demonstrates `Grid.set_cell ~blend:true`.
+palette, adjustable brush size, and demonstrates `Grid.set_uchar ~blend:true`.
 
 ### `07-hexagon` – Physics animation
 

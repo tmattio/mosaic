@@ -9,67 +9,17 @@
     grapheme storage. Wide characters span multiple cells: a start cell followed
     by continuation markers.
 
-    When {!respect_alpha} is enabled, colors with alpha < 1.0 are blended with
-    existing cell colors using a perceptual curve. A stack of {e scissor}
-    clipping regions constrains drawing. Wide characters are span-atomic: if the
-    start cell is accepted by a clipping region, continuation cells are written
-    with it to keep the row well-formed. *)
+    Drawing composites colors with source-over alpha blending; copying preserves
+    stored colors. A stack of {e scissor} clipping regions constrains drawing.
+    Wide characters are span-atomic: if the start cell is accepted by a clipping
+    region, continuation cells are written with it to keep the row well-formed.
+*)
 
 (** {1:types Types} *)
 
-module Cell : sig
-  (** Packed terminal cell content.
-
-      [Cell] values describe the character stored in one grid cell. Simple cells
-      store one Unicode scalar directly. Complex cells are opaque references to
-      grid-owned storage and are meaningful only inside the grid that created
-      them. *)
-
-  type t
-  (** The type for packed cell content. *)
-
-  val empty : t
-  (** [empty] is the zero-width empty cell content. *)
-
-  val space : t
-  (** [space] is U+0020. *)
-
-  val of_uchar : Uchar.t -> t
-  (** [of_uchar u] is the single-codepoint cell content for [u], or {!empty}
-      when [u] has zero terminal width. *)
-
-  val is_empty : t -> bool
-  (** [is_empty c] is [true] iff [c] is {!empty}. *)
-
-  val is_inline : t -> bool
-  (** [is_inline c] is [true] iff [c] stores its Unicode scalar directly and
-      needs no grid-owned storage lookup. *)
-
-  val is_start : t -> bool
-  (** [is_start c] is [true] iff [c] is a simple cell or the first cell of a
-      complex grapheme span. *)
-
-  val is_continuation : t -> bool
-  (** [is_continuation c] is [true] iff [c] is a continuation cell in a wide
-      grapheme span. *)
-
-  val is_complex : t -> bool
-  (** [is_complex c] is [true] iff [c] references grid-owned storage. *)
-
-  val grapheme_width : ?tab_width:int -> t -> int
-  (** [grapheme_width c] is the full terminal width represented by [c]. *)
-
-  val cell_width : t -> int
-  (** [cell_width c] is the width contribution of this one grid cell. *)
-
-  val codepoint : t -> int
-  (** [codepoint c] is the Unicode scalar value of an inline cell.
-
-      {b Warning.} The result is unspecified for complex cells. *)
-end
-
 type t
-(** The type for mutable cell grids. *)
+(** Mutable terminal contents. Every mutation preserves complete grapheme spans;
+    stored text and hyperlinks belong to the grid. *)
 
 type region = { x : int; y : int; width : int; height : int }
 (** The type for rectangular areas in cell coordinates. Covers cells satisfying
@@ -79,27 +29,20 @@ type region = { x : int; y : int; width : int; height : int }
 (** {1:constructors Constructors} *)
 
 val create :
-  width:int ->
-  height:int ->
-  ?width_method:Matrix_text.width_method ->
-  ?respect_alpha:bool ->
-  unit ->
-  t
-(** [create ~width ~height ()] is a grid with all cells set to spaces (white
-    foreground, transparent background) with:
+  width:int -> height:int -> ?width_method:Matrix_text.width_method -> unit -> t
+(** [create ~width ~height ()] is a grid with all cells set to spaces
+    (terminal-default foreground, transparent background) with:
     - [width_method] grapheme width method. Defaults to [`Unicode].
-    - [respect_alpha] alpha blending on {!set_cell}. Defaults to [false].
 
     Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
 
 val create_like : t -> width:int -> height:int -> t
 (** [create_like g ~width ~height] is a fresh empty grid that shares [g]'s
-    grapheme and hyperlink storage, width method, and alpha mode.
+    grapheme and hyperlink storage and width method.
 
-    Grids sharing storage address complex graphemes and hyperlinks by the same
-    handles, so {!cells_equal} is sound between them and {!blit} copies cell
-    planes without re-interning content. Use this for double-buffered rendering
-    where frames are diffed against each other.
+    Sharing storage makes {!cells_equal} a direct comparison and lets {!blit}
+    copy cell planes without re-interning content. Use this for double-buffered
+    rendering where frames are diffed against each other.
 
     Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
 
@@ -118,13 +61,6 @@ val set_width_method : t -> Matrix_text.width_method -> unit
 (** [set_width_method g m] changes the width method for subsequent {!draw_text}
     calls. Existing cell widths are not updated. *)
 
-val respect_alpha : t -> bool
-(** [respect_alpha g] is [true] iff alpha blending is enabled for {!set_cell}
-    and when [g] is used as the source of {!blit_region}. *)
-
-val set_respect_alpha : t -> bool -> unit
-(** [set_respect_alpha g b] sets the alpha blending mode. *)
-
 val active_height : t -> int
 (** [active_height g] is the number of rows from the top containing non-blank
     content (character code other than 0 or space). Returns [0] for an empty or
@@ -137,14 +73,15 @@ val active_height : t -> int
 val idx : t -> x:int -> y:int -> int
 (** [idx g ~x ~y] is the flat index for cell [(x, y)]. No bounds checking. *)
 
-val get_cell : t -> int -> Cell.t
-(** [get_cell g idx] is the character content at [idx]. *)
+val get_codepoint : t -> int -> int
+(** [get_codepoint g idx] is the Unicode scalar at [idx], [0] for empty cells,
+    or [-1] for a multi-codepoint grapheme or continuation cell. *)
 
 val get_attrs : t -> int -> int
 (** [get_attrs g idx] is the packed attribute integer at [idx]. *)
 
-val get_link : t -> int -> int
-(** [get_link g idx] is the internal hyperlink ID at [idx]. *)
+val get_link : t -> int -> string
+(** [get_link g idx] is the hyperlink URL at [idx], or [""] for no link. *)
 
 val get_fg : t -> int -> Ansi.Color.t
 (** [get_fg g idx] is the foreground color stored at [idx], including terminal
@@ -170,41 +107,25 @@ val blit_cell_text : t -> int -> bytes -> pos:int -> int
 val get_style : t -> int -> Ansi.Style.t
 (** [get_style g idx] reconstructs the style at [idx]. *)
 
-val get_background : t -> int -> Ansi.Color.t
-(** [get_background g idx] is the background color at [idx]. *)
-
 (** {1:predicates Predicates} *)
 
 val is_empty : t -> int -> bool
 (** [is_empty g idx] is [true] iff the cell is the null/empty sentinel.
-    Different from a blank space cell ({!Cell.space}), which is the default
-    content after {!create} and {!clear}. *)
+    Different from a blank space cell (U+0020), which is the default content
+    after {!create} and {!clear}. *)
 
 val is_continuation : t -> int -> bool
 (** [is_continuation g idx] is [true] iff the cell is the trailing part of a
     wide character. *)
-
-val is_inline : t -> int -> bool
-(** [is_inline g idx] is [true] iff the cell needs no grapheme store lookup. *)
 
 val cell_width : t -> int -> int
 (** [cell_width g idx] is the display width of the cell (0 for
     empty/continuation, 1–2 for start). *)
 
 val cells_equal : t -> int -> t -> int -> bool
-(** [cells_equal g1 idx1 g2 idx2] is [true] iff both cells have identical
-    content and styling. Compares packed representations exactly. Complex
-    grapheme cells and hyperlinks are compared by storage handle, which is
-    meaningful only when [g1] and [g2] are the same grid or share storage (see
-    {!create_like}). *)
-
-val hyperlink_url : t -> int -> string option
-(** [hyperlink_url g id] resolves a link ID (from {!get_link}) to a URL. Returns
-    [None] for the no-link sentinel or unknown IDs. *)
-
-val hyperlink_url_direct : t -> int -> string
-(** [hyperlink_url_direct g id] is like {!hyperlink_url} but returns [""]
-    instead of [None]. *)
+(** [cells_equal g1 idx1 g2 idx2] is [true] iff both cells have identical text,
+    span position, colors, attributes, and hyperlink URLs. Grids need not share
+    storage. Shared storage allows direct comparison without lookup. *)
 
 (** {1:manipulation Manipulation} *)
 
@@ -250,21 +171,35 @@ val blit_region :
     rectangular region from [src] to [dst].
 
     The region is clamped to valid bounds in both grids. Negative coordinates
-    shift the region inward. Respects the scissor on [dst]. Cross-grid alpha
-    blending is source-driven: when [src]'s {!respect_alpha} is [true],
-    semi-transparent source cells are composited over [dst] and fully
-    transparent source cells are skipped; otherwise stored alpha values are
-    copied as-is. Same-grid overlapping regions are handled as copies.
-    Wide-character fragments whose start or continuation is outside the copied
-    region are written as spaces. Never resizes [dst]. *)
+    shift the region inward. Respects the scissor on [dst]. Colors are copied
+    unchanged, independently of the destination opacity. Same-grid overlapping
+    regions are handled as copies. Wide-character fragments whose start or
+    continuation is outside the copied region are written as spaces. Never
+    resizes [dst]. *)
+
+val draw_region :
+  src:t ->
+  dst:t ->
+  src_x:int ->
+  src_y:int ->
+  width:int ->
+  height:int ->
+  dst_x:int ->
+  dst_y:int ->
+  unit
+(** [draw_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y]
+    composites a rectangular region of [src] over [dst]. Bounds, clipping, and
+    grapheme spans follow {!blit_region}. Source colors are multiplied by the
+    destination opacity; fully transparent cells leave the destination
+    unchanged. Self-composition snapshots the source before drawing. *)
 
 val fill_rect :
   t -> x:int -> y:int -> width:int -> height:int -> color:Ansi.Color.t -> unit
 (** [fill_rect g ~x ~y ~width ~height ~color] fills a rectangle:
-    - Transparent (alpha ≈ 0): leaves cells unchanged.
+    - Transparent (alpha = 0): leaves cells unchanged.
     - Semi-transparent: blends over existing background.
-    - Opaque: overwrites entirely (space cell, white foreground, [color]
-      background).
+    - Opaque: overwrites entirely (space cell, terminal-default foreground,
+      [color] background).
 
     Clipped to grid bounds and scissor. *)
 
@@ -280,13 +215,15 @@ val clear_rect :
 val draw_text :
   ?style:Ansi.Style.t ->
   ?tab_width:int ->
+  ?width_method:Matrix_text.width_method ->
   t ->
   x:int ->
   y:int ->
   text:string ->
   unit
-(** [draw_text ~style ~tab_width g ~x ~y ~text] draws single-line text. Text is
-    segmented into grapheme clusters using the current {!width_method}. Wide
+(** [draw_text ~style ~tab_width ~width_method g ~x ~y ~text] draws single-line
+    text. Text is segmented using [width_method], defaulting to the grid's
+    {!width_method}. This override does not change the grid configuration. Wide
     characters occupy multiple cells with continuation markers. Newlines are
     skipped; tabs expand to [tab_width] spaces (default [2]).
 
@@ -363,13 +300,13 @@ val draw_line :
 
     Respects the scissor. *)
 
-(** {1:set_cell Direct cell write} *)
+(** {1:set_uchar Direct cell write} *)
 
-val set_cell :
+val set_uchar :
   t ->
   x:int ->
   y:int ->
-  cell:Cell.t ->
+  uchar:Uchar.t ->
   fg:Ansi.Color.t ->
   bg:Ansi.Color.t ->
   attrs:Ansi.Attr.t ->
@@ -377,13 +314,17 @@ val set_cell :
   ?blend:bool ->
   unit ->
   unit
-(** [set_cell g ~x ~y ~cell ~fg ~bg ~attrs ()] writes a single cell. [blend]
-    defaults to the grid's {!respect_alpha} setting; pass [~blend:true] to force
-    blending.
+(** [set_uchar g ~x ~y ~uchar ~fg ~bg ~attrs ()] draws one Unicode scalar.
+    [blend] defaults to [false], copying colors unchanged. [~blend:true] applies
+    the opacity stack and composites colors over existing cells.
 
-    Cells outside the grid or scissor are skipped. Existing wide graphemes
-    spanning this cell are cleaned up. The caller is responsible for writing
-    continuation cells for multi-column graphemes. *)
+    A start outside the grid or scissor is skipped. Existing overlapping spans
+    are removed and continuation cells are written with the start, even beyond
+    the scissor. A scalar that would cross the right edge writes styled spaces
+    instead. Width is the Unicode scalar width; controls and zero-width scalars
+    write an empty cell without extending the previous grapheme. Use
+    {!draw_text} for multi-codepoint graphemes. Drawn cells do not expose
+    storage handles; use {!blit_region} to copy existing content. *)
 
 (** {1:clipping Clipping} *)
 
@@ -445,6 +386,11 @@ val to_text : ?trim:bool -> t -> string
     spaces. Trailing spaces on each row are dropped when [trim] is [true]
     (default). Styling is discarded; see {!to_ansi} for styled output. *)
 
-val to_ansi : ?reset:bool -> t -> string
-(** [to_ansi ~reset g] renders [g] to a string with full ANSI escape sequences.
-    Appends a reset sequence when [reset] is [true] (default). *)
+val to_ansi : ?reset:bool -> ?complete_rows:bool -> ?rows:int -> t -> string
+(** [to_ansi ~reset ~complete_rows ?rows g] serializes the first [rows] rows of
+    [g] with ANSI styles. [rows] defaults to the grid height; [0] produces an
+    empty string. By default, rows are separated by LF without a final newline.
+    [complete_rows] (default [false]) instead erases each terminal row before
+    writing it and terminates every row with CRLF, including the last row.
+    [reset] (default [true]) adds a final SGR reset. Raises [Invalid_argument]
+    if [rows] is negative or exceeds the grid height. *)

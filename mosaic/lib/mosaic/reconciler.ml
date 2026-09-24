@@ -78,13 +78,12 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
         in
         Text_input.apply_props input spec;
         Text_input_instance input
-    | Vnode.Canvas spec ->
+    | Vnode.Canvas ->
         let canvas =
           Canvas.create ~parent ?id:attrs.id ~style:attrs.style
             ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
             ()
         in
-        Canvas.apply_props canvas spec;
         Canvas_instance canvas
     | Vnode.Select spec ->
         let select =
@@ -317,12 +316,7 @@ let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
               else (
                 Tab_select.apply_props tab_select new_spec;
                 true)
-          | Canvas_instance canvas, Vnode.Canvas old_spec, Vnode.Canvas new_spec
-            ->
-              if Canvas.Props.equal old_spec new_spec then false
-              else (
-                Canvas.apply_props canvas new_spec;
-                true)
+          | Canvas_instance _, Vnode.Canvas, Vnode.Canvas -> false
           | ( Spinner_instance spinner,
               Vnode.Spinner old_spec,
               Vnode.Spinner new_spec ) ->
@@ -478,7 +472,7 @@ let kind_matches (a : Vnode.kind) (b : Vnode.kind) : bool =
   | Vnode.Text_input _, Vnode.Text_input _
   | Vnode.Select _, Vnode.Select _
   | Vnode.Tab_select _, Vnode.Tab_select _
-  | Vnode.Canvas _, Vnode.Canvas _
+  | Vnode.Canvas, Vnode.Canvas
   | Vnode.Spinner _, Vnode.Spinner _
   | Vnode.Progress_bar _, Vnode.Progress_bar _
   | Vnode.Scroll_bar _, Vnode.Scroll_bar _

@@ -533,10 +533,8 @@ let create ?width_method ?clock ?screen ?style () =
     | Some screen ->
         (* Adopted screens come from a host runtime; the renderer requires
            alpha blending on the grids it paints. *)
-        Grid.set_respect_alpha (Screen.next_grid screen) true;
-        Grid.set_respect_alpha (Screen.current_grid screen) true;
         screen
-    | None -> Screen.create ?width_method ?clock ~respect_alpha:true ()
+    | None -> Screen.create ?width_method ?clock ()
   in
   let node_map = Hashtbl.create 256 in
   let toffee_map = Hashtbl.create 256 in
@@ -988,9 +986,3 @@ let remove_frame_callback t f =
   t.frame_callbacks <- List.filter (fun e -> not (e == f)) t.frame_callbacks
 
 let clear_frame_callbacks t = t.frame_callbacks <- []
-
-(* ───── Post-Processing ───── *)
-
-let add_post_process t f = Screen.post_process f t.screen
-let remove_post_process t id = Screen.remove_post_process id t.screen
-let clear_post_processes t = Screen.clear_post_processes t.screen

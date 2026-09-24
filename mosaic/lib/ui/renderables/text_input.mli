@@ -114,10 +114,10 @@ val create :
     - [max_length]: maximum grapheme cluster count. Defaults to [1000].
     - [text_color]: unfocused text color. Defaults to {!Ansi.Color.white}.
     - [background_color]: unfocused background. Defaults to
-      {!Ansi.Color.default}.
+      {!Ansi.Color.transparent}.
     - [focused_text_color]: focused text color. Defaults to {!Ansi.Color.white}.
     - [focused_background_color]: focused background. Defaults to
-      {!Ansi.Color.default}.
+      {!Ansi.Color.transparent}.
     - [placeholder_color]: placeholder text color. Defaults to
       {!Ansi.Color.bright_black}.
     - [selection_color]: selection background. Defaults to {!Ansi.Color.blue}.

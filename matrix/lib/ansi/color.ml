@@ -36,11 +36,14 @@ module Packed = struct
   let[@inline] slot c = (c lsr slot_shift) land 0xFF
   let[@inline] intent_tag c = (c lsr intent_shift) land intent_mask
   let[@inline] rgba c = c land 0xFFFFFFFF
-  let default = make ~intent:intent_default ~slot:0 ~r:0 ~g:0 ~b:0 ~a:0
+  let default_bg = make ~intent:intent_default ~slot:0 ~r:0 ~g:0 ~b:0 ~a:255
+
+  let default_fg =
+    make ~intent:intent_default ~slot:0 ~r:255 ~g:255 ~b:255 ~a:255
 
   let decode bits =
     let bits = bits land full_mask in
-    match intent_tag bits with 0 | 1 | 2 -> bits | _ -> default
+    match intent_tag bits with 0 | 1 | 2 -> bits | _ -> default_bg
 
   let[@inline] encode color = color
   let[@inline] red_f color = float_of_byte (red color)
@@ -55,6 +58,33 @@ module Packed = struct
     let a = byte_of_float a in
     a lor (b lsl blue_shift) lor (g lsl green_shift) lor (r lsl red_shift)
 
+  let[@inline] with_alpha color a = color land lnot 255 lor clamp_byte a
+
+  let[@inline] blend_channel src_weight dst_weight coverage sc dc =
+    ((sc * src_weight) + (dc * dst_weight) + (coverage / 2)) / coverage
+
+  let blend ~src ~dst =
+    let sa = alpha src in
+    if sa = 0 then dst
+    else if sa = 255 then src
+    else
+      let da = alpha dst in
+      let inv = 255 - sa in
+      let src_weight = sa * 255 in
+      let dst_weight = da * inv in
+      let coverage = src_weight + dst_weight in
+      let a = (coverage + 127) / 255 in
+      let r =
+        blend_channel src_weight dst_weight coverage (red src) (red dst)
+      in
+      let g =
+        blend_channel src_weight dst_weight coverage (green src) (green dst)
+      in
+      let b =
+        blend_channel src_weight dst_weight coverage (blue src) (blue dst)
+      in
+      a lor (b lsl blue_shift) lor (g lsl green_shift) lor (r lsl red_shift)
+
   let intent color =
     match intent_tag color with
     | 1 -> Indexed (slot color)
@@ -64,7 +94,9 @@ module Packed = struct
   let indexed_slot color = slot color
 end
 
-let default = Packed.default
+let default_fg = Packed.default_fg
+let default_bg = Packed.default_bg
+let transparent = 0
 
 let[@inline] make_rgb_unchecked r g b =
   255 lor (b lsl Packed.blue_shift) lor (g lsl Packed.green_shift)
@@ -224,29 +256,7 @@ let to_hsl color =
     let h = h *. 60. in
     (h, s, l, af)
 
-let blend ?(mode = `Perceptual) ~src ~dst () =
-  with_rgba_f src (fun sr sg sb sa_f ->
-      with_rgba_f dst (fun dr dg db da_f ->
-          let sa = clamp_channel_f sa_f in
-          if sa >= 0.999 then
-            of_rgb (byte_of_float sr) (byte_of_float sg) (byte_of_float sb)
-          else if sa <= Float.epsilon then dst
-          else
-            let sa_blend =
-              match mode with
-              | `Linear -> sa
-              | `Perceptual ->
-                  if sa >= 0.8 then
-                    let norm = (sa -. 0.8) *. 5. in
-                    0.8 +. (Float.pow norm 0.2 *. 0.2)
-                  else Float.pow sa 0.9
-            in
-            let blend sc dc = (sa_blend *. sc) +. ((1. -. sa_blend) *. dc) in
-            let r = byte_of_float (blend sr dr) in
-            let g = byte_of_float (blend sg dg) in
-            let b = byte_of_float (blend sb db) in
-            let a = byte_of_float (sa +. da_f -. (sa *. da_f)) in
-            if a = 255 then of_rgb r g b else of_rgba r g b a))
+let blend ~src ~dst = Packed.blend ~src ~dst
 
 let emit_indexed_sgr ~bg push idx =
   push (if bg then 48 else 38);

@@ -829,25 +829,6 @@ let run ?matrix
       (match Renderer.take_scroll_hint runtime.renderer with
       | Some hint -> Matrix.set_scroll_hint runtime.matrix_app hint
       | None -> ());
-      let cursor = Matrix.Screen.cursor (Renderer.screen runtime.renderer) in
-      (* Keep the terminal cursor hidden unless the focused renderable exposes
-         an explicit cursor position. *)
-      Matrix.set_cursor
-        ~visible:(cursor.visible && Option.is_some cursor.position)
-        runtime.matrix_app;
-      Matrix.set_cursor_style runtime.matrix_app ~style:cursor.style
-        ~blinking:cursor.blinking;
-      (match cursor.position with
-      | Some (x, y) ->
-          Matrix.set_cursor_position runtime.matrix_app ~row:(y + 1) ~col:(x + 1)
-      | None -> ());
-      (match cursor.color with
-      | Some (r, g, b) ->
-          Matrix.set_cursor_color runtime.matrix_app
-            ~r:(Float.of_int r /. 255.)
-            ~g:(Float.of_int g /. 255.)
-            ~b:(Float.of_int b /. 255.)
-      | None -> ());
       process_pending_focus runtime)
 
 let empty = Vnode.empty
@@ -1048,7 +1029,7 @@ let canvas ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?focusable ?autofocus ?buffered ?live ?ref
-    ?on_mouse ?on_key ?on_paste ?respect_alpha draw =
+    ?on_mouse ?on_key ?on_paste draw =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1060,8 +1041,7 @@ let canvas ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?grid_row ?grid_column ()
   in
   Vnode.canvas ?key ?id ~style ?visible ?z_index ?opacity ?focusable ?autofocus
-    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ?respect_alpha
-    ~on_draw:draw ()
+    ?buffered ?live ?ref ?on_mouse ?on_key ?on_paste ~on_draw:draw ()
 
 let spinner ?key ?id ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

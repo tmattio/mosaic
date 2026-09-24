@@ -148,9 +148,7 @@ let grid_of_vnode ~width ~height vnode =
   Matrix_screen.next_grid (Renderer.screen app.renderer)
 
 let color_to_string color = Format.asprintf "%a" Ansi.Color.pp color
-
-let background_at grid ~x ~y =
-  Cell_grid.get_background grid (Cell_grid.idx grid ~x ~y)
+let background_at grid ~x ~y = Cell_grid.get_bg grid (Cell_grid.idx grid ~x ~y)
 
 let assert_background ~msg grid ~x ~y color =
   let actual = background_at grid ~x ~y in

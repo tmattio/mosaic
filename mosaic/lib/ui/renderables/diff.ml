@@ -196,7 +196,7 @@ module Props = struct
 end
 
 module View = struct
-  let transparent = Ansi.Color.default
+  let transparent = Ansi.Color.transparent
 
   let line_color_of ~theme : Patch.tag -> Line_number.line_color = function
     | Added ->

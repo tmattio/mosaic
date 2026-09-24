@@ -1,9 +1,9 @@
 (* Defaults *)
 
 let default_text_color = Ansi.Color.white
-let default_background_color = Ansi.Color.default
+let default_background_color = Ansi.Color.transparent
 let default_focused_text_color = Ansi.Color.white
-let default_focused_background_color = Ansi.Color.default
+let default_focused_background_color = Ansi.Color.transparent
 let default_placeholder_color = Ansi.Color.bright_black
 let default_selection_color = Ansi.Color.blue
 let default_cursor_style = `Block

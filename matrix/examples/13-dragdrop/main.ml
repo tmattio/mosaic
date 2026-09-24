@@ -91,7 +91,7 @@ let color_with_alpha color alpha =
 
 let draw_cell_alpha grid ~x ~y ~bg ~alpha =
   let bg_with_alpha = color_with_alpha bg alpha in
-  Grid.set_cell grid ~x ~y ~cell:Grid.Cell.space ~fg:Ansi.Color.white
+  Grid.set_uchar grid ~x ~y ~uchar:(Uchar.of_char ' ') ~fg:Ansi.Color.white
     ~bg:bg_with_alpha ~attrs:Ansi.Attr.empty ~blend:true ()
 
 let draw_box grid ~x ~y ~w ~h ~bg ~border_color ~title ~subtitle ~alpha =
@@ -391,8 +391,8 @@ let create_state () =
 
 let () =
   let app =
-    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:true ~respect_alpha:true
-      ~debug_overlay:true ()
+    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:true ~debug_overlay:true
+      ()
   in
   let state = create_state () in
   Matrix.run app

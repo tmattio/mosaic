@@ -82,3 +82,7 @@ val copy : src:t -> idx:int -> gen:int -> dst:t -> int option
     fresh index in [dst] with reference count [0]; callers must pair it with
     [generation dst dst_idx] and acquire ownership with {!incref}. The result is
     [None] if the source handle is stale or invalid. *)
+
+val equal : t -> idx1:int -> gen1:int -> t -> idx2:int -> gen2:int -> bool
+(** [equal s1 ~idx1 ~gen1 s2 ~idx2 ~gen2] compares two live payloads without
+    allocating. Invalid handles compare unequal. *)

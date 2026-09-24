@@ -302,8 +302,8 @@ val set_show_row_separator : t -> bool -> unit
 (** [set_show_row_separator t v] shows ([true]) or hides ([false]) horizontal
     separator lines between rows of [t]. *)
 
-val set_cell_padding : t -> int -> unit
-(** [set_cell_padding t n] sets the horizontal padding per side of each cell in
+val set_uchar_padding : t -> int -> unit
+(** [set_uchar_padding t n] sets the horizontal padding per side of each cell in
     [t] to [n] terminal columns. *)
 
 val set_row_styles : t -> Ansi.Style.t list -> unit

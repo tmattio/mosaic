@@ -21,6 +21,6 @@ dune exec ./matrix/examples/06-canvas/main.exe
 
 ## Highlights
 
-- Demonstrates `respect_alpha` mode for alpha-blended cell rendering.
+- Demonstrates alpha-blended cell drawing.
 - Persistent canvas grid that survives resizes via `Grid.blit_region`.
 - Overlay panels drawn on top of the canvas each frame.

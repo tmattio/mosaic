@@ -520,7 +520,7 @@ let resolve_style (palette : Color.t array) (idx : int ref)
       let i = !idx in
       incr idx;
       let len = Array.length palette in
-      let color = if len = 0 then Color.default else palette.(i mod len) in
+      let color = if len = 0 then Color.transparent else palette.(i mod len) in
       Style.fg color Style.default
 
 let compile ~palette (marks : t list) : t list =

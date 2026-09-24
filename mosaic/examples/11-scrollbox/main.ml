@@ -49,7 +49,7 @@ let view () =
                    (fun i item ->
                      box ~key:(string_of_int i) ~padding:(padding 1)
                        ~background:
-                         (if i mod 2 = 0 then Ansi.Color.default
+                         (if i mod 2 = 0 then Ansi.Color.transparent
                           else Ansi.Color.grayscale ~level:3)
                        [ text item ])
                    items);

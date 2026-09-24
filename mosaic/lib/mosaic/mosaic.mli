@@ -186,11 +186,11 @@ module Canvas : sig
       - [symbols] defaults to standard box-drawing characters.
       - [kind] defaults to [`Line]. Use [`Braille] for Braille dot patterns. *)
 
-  val set_cell :
+  val set_uchar :
     t ->
     x:int ->
     y:int ->
-    cell:Matrix.Grid.Cell.t ->
+    uchar:Uchar.t ->
     fg:Ansi.Color.t ->
     bg:Ansi.Color.t ->
     attrs:Ansi.Attr.t ->
@@ -198,10 +198,9 @@ module Canvas : sig
     ?blend:bool ->
     unit ->
     unit
-  (** [set_cell t ~x ~y ~cell ~fg ~bg ~attrs ()] writes a single cell.
+  (** [set_uchar t ~x ~y ~uchar:cell ~fg ~bg ~attrs ()] writes a single cell.
 
-      [link] defaults to no hyperlink. [blend] defaults to the canvas
-      {!respect_alpha} setting. *)
+      [link] defaults to no hyperlink. [blend] defaults to [false]. *)
 
   val clear : ?color:Ansi.Color.t -> t -> unit
   (** [clear t] clears the canvas grid and schedules a re-render.
@@ -232,15 +231,6 @@ module Canvas : sig
   val request_render : t -> unit
   (** [request_render t] schedules a re-render of [t]. Call this after drawing
       outside of a draw callback. *)
-
-  (** {1:properties Properties} *)
-
-  val set_respect_alpha : t -> bool -> unit
-  (** [set_respect_alpha t v] enables or disables alpha blending within the
-      canvas grid. *)
-
-  val respect_alpha : t -> bool
-  (** [respect_alpha t] is [true] iff alpha blending is enabled. *)
 end
 
 (** {1:geometry Geometry types} *)
@@ -1874,17 +1864,12 @@ val canvas :
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
-  ?respect_alpha:bool ->
   (Canvas.t -> delta:float -> unit) ->
   'msg t
 (** [canvas draw] is a free-form drawing surface. [draw c ~delta] is called on
     every frame with a fresh {!Canvas.t} [c] and the elapsed time [delta] in
     milliseconds since the previous frame. The canvas fills its allocated layout
-    area.
-
-    Canvas-specific optional arguments:
-    - [respect_alpha] -- when [true] the canvas composites with alpha blending.
-      Defaults to [true]. *)
+    area. *)
 
 val spinner :
   ?key:string ->

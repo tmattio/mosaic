@@ -6,11 +6,7 @@
 
     Internal to the Matrix runtime: reachable through
     {!Matrix.set_debug_overlay} and {!Matrix.toggle_debug_overlay}, not exported
-    as a standalone module.
-
-    {b Note.} The default theme uses alpha=200 backgrounds. Set
-    [respect_alpha=true] in {!Matrix.create} for correct transparency; otherwise
-    the overlay renders opaque. *)
+    as a standalone module. *)
 
 (** {1:types Types} *)
 

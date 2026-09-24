@@ -50,9 +50,7 @@ let line_colors_render_in_gutter () =
       ()
   in
   let grid = render renderer in
-  let bg_of y =
-    Matrix_grid.get_background grid (Matrix_grid.idx grid ~x:0 ~y)
-  in
+  let bg_of y = Matrix_grid.get_bg grid (Matrix_grid.idx grid ~x:0 ~y) in
   is_false ~msg:"row 0 uncolored" (Ansi.Color.equal red (bg_of 0));
   is_true ~msg:"row 1 colored" (Ansi.Color.equal red (bg_of 1))
 
@@ -69,9 +67,7 @@ let apply_props_refreshes_line_colors () =
        ~line_colors:[ (2, { Line_number.gutter = blue; content = None }) ]
        ());
   let grid = render renderer in
-  let bg_of y =
-    Matrix_grid.get_background grid (Matrix_grid.idx grid ~x:0 ~y)
-  in
+  let bg_of y = Matrix_grid.get_bg grid (Matrix_grid.idx grid ~x:0 ~y) in
   is_false ~msg:"old row no longer colored" (Ansi.Color.equal red (bg_of 1));
   is_true ~msg:"new row colored" (Ansi.Color.equal blue (bg_of 2))
 

@@ -14,10 +14,10 @@ let text_width_method_is_applied_during_render () =
 
   Image.draw img grid;
 
-  let start0 = Grid.get_cell grid (Grid.idx grid ~x:0 ~y:0) in
-  let start2 = Grid.get_cell grid (Grid.idx grid ~x:2 ~y:0) in
-  is_true ~msg:"first grapheme start written" (start0 <> Grid.Cell.space);
-  is_true ~msg:"second grapheme start written at x=2" (start2 <> Grid.Cell.space);
+  let start0 = Grid.get_text grid (Grid.idx grid ~x:0 ~y:0) in
+  let start2 = Grid.get_text grid (Grid.idx grid ~x:2 ~y:0) in
+  is_true ~msg:"first grapheme start written" (start0 <> " ");
+  is_true ~msg:"second grapheme start written at x=2" (start2 <> " ");
   is_true ~msg:"render restores grid width method"
     (Grid.width_method grid = `Unicode)
 
@@ -35,8 +35,7 @@ let box_without_fill_preserves_background () =
     (let r, g, b, a = read_bg grid 0 0 in
      (r, (g, (b, a))))
 
-let cell_written grid x y =
-  Grid.get_cell grid (Grid.idx grid ~x ~y) <> Grid.Cell.space
+let cell_written grid x y = Grid.get_text grid (Grid.idx grid ~x ~y) <> " "
 
 let hsnap_defaults_to_center () =
   let grid = Grid.create ~width:3 ~height:1 () in

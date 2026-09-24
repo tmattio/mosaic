@@ -608,7 +608,7 @@ let layout ?view ?x ?y t ~width ~height =
 
 let draw ?view ?(x = 0) ?(y = 0) t (grid : G.t) ~width ~height : Layout.t =
   let lay = Layout.compute ?view ~x ~y (to_config t) ~width ~height in
-  let bg = Option.value t.theme.background ~default:Color.default in
+  let bg = Option.value t.theme.background ~default:Color.transparent in
   G.fill_rect grid ~x ~y ~width ~height ~color:bg;
   Render.draw_grid lay grid;
   Render.draw_marks lay grid;

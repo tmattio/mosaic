@@ -1073,7 +1073,7 @@ let ensure_frame_buffer (t : t) ~(parent : Grid.t) : Grid.t option =
     | None ->
         let buf =
           Grid.create ~width:w ~height:h
-            ~width_method:(Grid.width_method parent) ~respect_alpha:true ()
+            ~width_method:(Grid.width_method parent) ()
         in
         t.frame_buffer <- Some buf;
         Some buf
@@ -1084,7 +1084,7 @@ let blit_frame_buffer (t : t) ~(dst : Grid.t) : unit =
   | Some buf ->
       let w = width t and h = height t in
       if w > 0 && h > 0 then
-        Grid.blit_region ~src:buf ~dst ~src_x:0 ~src_y:0 ~width:w ~height:h
+        Grid.draw_region ~src:buf ~dst ~src_x:0 ~src_y:0 ~width:w ~height:h
           ~dst_x:(x t) ~dst_y:(y t)
 
 let render_full (t : t) ~(grid : Grid.t) ~(delta : float) : unit =

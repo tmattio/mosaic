@@ -238,26 +238,3 @@ val clear_frame_callbacks : t -> unit
 (** [clear_frame_callbacks t] removes all registered frame callbacks.
 
     See also {!add_frame_callback}. *)
-
-(** {1:post_process Post-processing} *)
-
-val add_post_process :
-  t -> (Matrix_grid.t -> delta:float -> unit) -> Matrix_screen.effect_id
-(** [add_post_process t f] registers [f] as a persistent post-processing
-    transform on the underlying screen. [f] receives the rendered
-    {!Matrix_grid.t} and the frame delta in milliseconds; it runs after frame
-    building and before diffing. Returns a {!Matrix_screen.effect_id} for later
-    removal.
-
-    See also {!remove_post_process} and {!clear_post_processes}. *)
-
-val remove_post_process : t -> Matrix_screen.effect_id -> unit
-(** [remove_post_process t id] unregisters the post-processor identified by
-    [id].
-
-    See also {!add_post_process}. *)
-
-val clear_post_processes : t -> unit
-(** [clear_post_processes t] removes all registered post-processing functions.
-
-    See also {!add_post_process}. *)

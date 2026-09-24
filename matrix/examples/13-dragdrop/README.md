@@ -18,5 +18,5 @@ dune exec ./matrix/examples/13-dragdrop/main.exe
 ## Highlights
 
 - Full mouse tracking with press, release, and motion events.
-- Alpha-blended tiles and zones using `respect_alpha` mode.
+- Alpha-blended tiles and zones.
 - Demonstrates z-order management by moving dragged items to the front.

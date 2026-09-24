@@ -489,9 +489,7 @@ let selection_can_be_visually_hidden () =
   with_layout tbl ~width:10 ~height:1;
   let grid = make_grid ~width:10 ~height:1 () in
   Renderable.Private.render_full node ~grid ~delta:0.;
-  let background =
-    Matrix_grid.get_background grid (Matrix_grid.idx grid ~x:0 ~y:0)
-  in
+  let background = Matrix_grid.get_bg grid (Matrix_grid.idx grid ~x:0 ~y:0) in
   is_true ~msg:"base background retained"
     (Ansi.Color.equal Ansi.Color.blue background)
 

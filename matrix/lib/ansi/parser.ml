@@ -115,8 +115,8 @@ let parse_sgr_params params colon_mask len =
       | 29 -> loop next (`No_strikethrough :: acc)
       | 54 -> loop next (`No_encircled :: `No_framed :: acc)
       | 55 -> loop next (`No_overline :: acc)
-      | 39 -> loop next (`Fg Color.default :: acc)
-      | 49 -> loop next (`Bg Color.default :: acc)
+      | 39 -> loop next (`Fg Color.default_fg :: acc)
+      | 49 -> loop next (`Bg Color.default_bg :: acc)
       | n when 30 <= n && n <= 37 ->
           loop next (`Fg (Color.of_palette_index (n - 30)) :: acc)
       | n when 90 <= n && n <= 97 ->

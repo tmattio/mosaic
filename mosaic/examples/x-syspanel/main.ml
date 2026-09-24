@@ -295,7 +295,7 @@ let view_per_core_cpu (cpu_per_core : Sysstat.Cpu.stats array) =
                         ~key:(Printf.sprintf "core-%d" i)
                         ~padding:(padding 1)
                         ~background:
-                          (if i mod 2 = 0 then Ansi.Color.default
+                          (if i mod 2 = 0 then Ansi.Color.transparent
                            else Ansi.Color.grayscale ~level:3)
                         ~size:{ width = pct 50; height = auto }
                         [
@@ -338,7 +338,7 @@ let view_cpu_usage (cpu : Sysstat.Cpu.stats)
     (sparkline_cpu : Charts.Sparkline.t) =
   let is_linux = Sys.file_exists "/proc" in
   box ~border:true ~padding:(padding 1) ~title:"CPU Usage"
-    ~background:Ansi.Color.default
+    ~background:Ansi.Color.transparent
     ~size:{ width = pct 100; height = auto }
     [
       box ~flex_direction:Column ~gap:(gap 0)
@@ -499,7 +499,7 @@ let view_top_processes (processes : Sysstat.Proc.Table.stats list) =
                   ~key:(Printf.sprintf "process-%d" proc.pid)
                   ~padding:(padding 1)
                   ~background:
-                    (if i mod 2 = 0 then Ansi.Color.default
+                    (if i mod 2 = 0 then Ansi.Color.transparent
                      else Ansi.Color.grayscale ~level:3)
                   [
                     box ~flex_direction:Row ~justify_content:Space_between
@@ -790,7 +790,7 @@ let view_disk_usage (disk : Sysstat.Fs.t) =
                           ~key:(Printf.sprintf "partition-%d" i)
                           ~padding:(padding 1)
                           ~background:
-                            (if i mod 2 = 0 then Ansi.Color.default
+                            (if i mod 2 = 0 then Ansi.Color.transparent
                              else Ansi.Color.grayscale ~level:3)
                           [
                             box ~flex_direction:Row
@@ -941,7 +941,7 @@ let view model =
                     ];
                   (* Right: Memory, Disk, and Process Column *)
                   box ~flex_direction:Column ~gap:(gap 1) ~flex_grow:1.
-                    ~background:Ansi.Color.default
+                    ~background:Ansi.Color.transparent
                     ~size:{ width = pct 50; height = auto }
                     [
                       view_memory_usage model.memory model.sparkline_memory;

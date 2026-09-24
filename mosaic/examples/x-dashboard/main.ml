@@ -726,7 +726,7 @@ let pill ~label ~color =
 
 let tab_button (m : model) tab =
   let selected = m.tab = tab in
-  let bg = if selected then Ansi.Color.blue else Ansi.Color.default in
+  let bg = if selected then Ansi.Color.blue else Ansi.Color.transparent in
   let fg = if selected then Ansi.Color.white else Ansi.Color.bright_white in
   box ~border:true ~padding:(padding 1) ~background:bg
     ~on_mouse:(fun ev ->
@@ -744,7 +744,7 @@ let tab_button (m : model) tab =
 
 let run_row (m : model) (r : run) =
   let selected = r.id = m.selected_run in
-  let bg = if selected then Ansi.Color.blue else Ansi.Color.default in
+  let bg = if selected then Ansi.Color.blue else Ansi.Color.transparent in
   let fg = if selected then Ansi.Color.white else Ansi.Color.bright_white in
   box ~key:r.id ~padding:(padding 1) ~background:bg
     ~on_mouse:(fun ev ->
@@ -781,7 +781,7 @@ let run_panel (m : model) =
         [
           (* filter input *)
           box ~border:true ~padding:(padding 1)
-            ~background:(if focused then muted_bg else Ansi.Color.default)
+            ~background:(if focused then muted_bg else Ansi.Color.transparent)
             [
               box ~flex_direction:Row ~gap:(gap 1) ~align_items:Center
                 [
@@ -892,7 +892,8 @@ let sys_panel (m : model) =
                    (fun i (name, cpu) ->
                      box ~key:(string_of_int i) ~padding:(padding 1)
                        ~background:
-                         (if i mod 2 = 0 then Ansi.Color.default else muted_bg)
+                         (if i mod 2 = 0 then Ansi.Color.transparent
+                          else muted_bg)
                        [
                          box ~flex_direction:Row ~justify_content:Space_between
                            [
@@ -1177,7 +1178,7 @@ let logs_tab (m : model) (r : run) =
                (fun i line ->
                  box ~key:(string_of_int i) ~padding:(padding 1)
                    ~background:
-                     (if i mod 2 = 0 then Ansi.Color.default else muted_bg)
+                     (if i mod 2 = 0 then Ansi.Color.transparent else muted_bg)
                    [ text ~wrap:`Char line ])
                logs);
         ];

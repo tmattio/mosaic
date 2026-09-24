@@ -107,8 +107,8 @@ val size : t -> int * int
 
 val fill : ?color:Color.t -> width:int -> height:int -> unit -> t
 (** [fill ~width ~height ()] is a solid rectangle of [color]. [color] defaults
-    to black. Note that filling with {!Color.default} is a no-op: the
-    terminal-default color has alpha [0] and leaves cells unchanged. *)
+    to black. Note that filling with {!Color.transparent} is a no-op: the
+    transparent color has alpha [0] and leaves cells unchanged. *)
 
 val text :
   ?style:Style.t -> ?width_method:Matrix_text.width_method -> string -> t

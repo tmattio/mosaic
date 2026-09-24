@@ -35,7 +35,6 @@ type t
 val create :
   ?scrollback:int ->
   ?width_method:Matrix_text.width_method ->
-  ?respect_alpha:bool ->
   ?default_fg:Ansi.Color.t ->
   ?default_bg:Ansi.Color.t ->
   rows:int ->
@@ -48,8 +47,6 @@ val create :
       primary screen.
     - [width_method] is the grapheme width computation method. Defaults to
       [`Unicode].
-    - [respect_alpha] enables alpha blending for semi-transparent colours.
-      Defaults to [false].
     - [default_fg] is the opaque foreground colour used when the current style
       has no explicit foreground. Defaults to {!Ansi.Color.white}.
     - [default_bg] is the opaque background colour used when the current style

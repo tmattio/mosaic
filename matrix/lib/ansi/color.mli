@@ -25,9 +25,17 @@ type intent =
 
 (** {1:constructors Constructors} *)
 
-val default : t
-(** [default] is the terminal-default color. It has alpha [0] for visual
-    composition and emits SGR [39] or [49]. *)
+val default_fg : t
+(** [default_fg] is the opaque terminal-default foreground, with a white RGB
+    snapshot for compositing. Emits SGR [39] in the foreground. *)
+
+val default_bg : t
+(** [default_bg] is the opaque terminal-default background, with a black RGB
+    snapshot for compositing. Emits SGR [49] in the background. *)
+
+val transparent : t
+(** [transparent] is transparent black. Compositing it leaves the destination
+    unchanged. *)
 
 val black : t
 val red : t
@@ -133,9 +141,11 @@ val to_hsl : t -> float * float * float * float
 
 (** {1:operations Operations} *)
 
-val blend : ?mode:[ `Linear | `Perceptual ] -> src:t -> dst:t -> unit -> t
-(** [blend ~mode ~src ~dst ()] alpha-blends [src] over [dst]. Fully opaque
-    results are literal RGB colors. Fully transparent [src] returns [dst]. *)
+val blend : src:t -> dst:t -> t
+(** [blend ~src ~dst] composites [src] over [dst] using source-over alpha
+    blending on the stored RGB snapshots. Transparent [src] returns [dst];
+    opaque [src] returns [src], preserving terminal intent. Other results are
+    literal RGB colors with accumulated alpha. *)
 
 val invert : t -> t
 (** [invert c] maps each RGB component [v] to [255 - v]. The result is an opaque
@@ -169,7 +179,8 @@ module Packed : sig
   (** [encode c] is [c] encoded as an unboxed integer. *)
 
   val decode : int -> color
-  (** [decode bits] decodes [bits]. Invalid intent tags decode to {!default}. *)
+  (** [decode bits] decodes [bits]. Invalid intent tags decode to {!default_bg}.
+  *)
 
   val red : int -> int
   val green : int -> int
@@ -191,6 +202,14 @@ module Packed : sig
   val indexed_slot : int -> int
   (** [indexed_slot bits] is the indexed color slot encoded in [bits]. The value
       is meaningful only when [intent bits] is [Indexed _]. *)
+
+  val with_alpha : int -> int -> int
+  (** [with_alpha color a] replaces the alpha channel, clamped to \[0,255\],
+      preserving RGB channels and terminal intent. *)
+
+  val blend : src:int -> dst:int -> int
+  (** [blend ~src ~dst] composites packed [src] over [dst] with source-over
+      alpha blending, without allocation. *)
 
   val of_rgba_f : float -> float -> float -> float -> int
   (** [of_rgba_f r g b a] is a packed literal RGBA color from normalized

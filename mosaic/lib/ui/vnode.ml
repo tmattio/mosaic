@@ -17,7 +17,7 @@ type kind =
   | Text_input of Text_input.Props.t
   | Select of Select.Props.t
   | Tab_select of Tab_select.Props.t
-  | Canvas of Canvas.Props.t
+  | Canvas
   | Spinner of Spinner.Props.t
   | Progress_bar of Progress_bar.Props.t
   | Scroll_bar of Scroll_bar.Props.t
@@ -316,8 +316,8 @@ let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
 let canvas ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(autofocus = false)
     ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?respect_alpha ?on_draw () =
-  let kind = Canvas (Canvas.Props.make ?respect_alpha ()) in
+    ?on_draw () =
+  let kind = Canvas in
   let attrs =
     {
       id;

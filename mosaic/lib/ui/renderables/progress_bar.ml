@@ -66,10 +66,10 @@ let render_horizontal t grid =
     Matrix_grid.fill_rect grid ~x ~y ~width:full_cells ~height:h
       ~color:t.props.filled_color;
   if has_half && full_cells < w then
-    let cell = Matrix_grid.Cell.of_uchar (Uchar.of_int 0x258C) in
+    let cell = Uchar.of_int 0x258C in
     for row = 0 to h - 1 do
-      Matrix_grid.set_cell ~blend:true grid ~x:(x + full_cells) ~y:(y + row)
-        ~cell ~fg:t.props.filled_color ~bg:t.props.empty_color
+      Matrix_grid.set_uchar ~blend:true grid ~x:(x + full_cells) ~y:(y + row)
+        ~uchar:cell ~fg:t.props.filled_color ~bg:t.props.empty_color
         ~attrs:Ansi.Attr.empty ()
     done
 
@@ -92,11 +92,11 @@ let render_vertical t grid =
       ~width:w ~height:full_cells ~color:t.props.filled_color;
   if has_half && full_cells < h then
     let boundary_y = y + h - full_cells - 1 in
-    let cell = Matrix_grid.Cell.of_uchar (Uchar.of_int 0x2584) in
+    let cell = Uchar.of_int 0x2584 in
     for col = 0 to w - 1 do
-      Matrix_grid.set_cell ~blend:true grid ~x:(x + col) ~y:boundary_y ~cell
-        ~fg:t.props.filled_color ~bg:t.props.empty_color ~attrs:Ansi.Attr.empty
-        ()
+      Matrix_grid.set_uchar ~blend:true grid ~x:(x + col) ~y:boundary_y
+        ~uchar:cell ~fg:t.props.filled_color ~bg:t.props.empty_color
+        ~attrs:Ansi.Attr.empty ()
     done
 
 let render t _self grid ~delta:_ =

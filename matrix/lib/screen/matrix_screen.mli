@@ -2,8 +2,8 @@
 
     [Screen] builds terminal frames by mutating a {e next} buffer, diffs it
     against the {e current} buffer to generate minimal ANSI escape sequences,
-    then swaps the two. Post-processing transforms can run between building and
-    diffing to apply animations or visual filters.
+    then swaps the two. Grid transforms can be applied after building and before
+    rendering.
 
     {2:double_buf Double buffering}
 
@@ -20,13 +20,6 @@
     building to register clickable regions. Query coordinates with {!query_hit}
     after rendering.
 
-    {2:post_proc Post-processing}
-
-    Post-processors are persistent functions registered via {!post_process}.
-    They run after building and before diffing, receiving the grid and the delta
-    time since the last frame. Processors execute in insertion order and persist
-    across frames until removed.
-
     {2:invariants Invariants}
     - The {!Matrix_grid.t} passed to {!build} is the next buffer. After
       {!render} the buffers swap and the now-next buffer is observably cleared:
@@ -34,9 +27,6 @@
       {!next_hit_grid}, {!add_hit_region}, or {!active_height}.
     - Visual and hit buffers swap on {!render}: regions registered via
       {!Hit_grid.add} become queryable only after the following render.
-    - Post-processors always run, even when no cells changed. Their [~delta]
-      argument is milliseconds since the last {!render} ([0.] for the first
-      frame).
     - {!set_cursor} updates cursor intent only; rendering does not emit terminal
       mode changes. *)
 
@@ -45,8 +35,8 @@ module Hit_grid = Hit_grid
 (** {1:types Types} *)
 
 type t
-(** The type for screens. Manages double-buffered grids, hit grids,
-    post-processing pipeline, statistics, and frame rate control. *)
+(** The type for screens. Pairs visual and hit buffers with retained diff state
+    and rendering statistics. *)
 
 type stats = {
   frame_count : int;  (** Frames rendered since creation or {!reset}. *)
@@ -72,24 +62,21 @@ type frame_metrics = {
 
 val create :
   ?width_method:Matrix_text.width_method ->
-  ?respect_alpha:bool ->
   ?cursor_visible:bool ->
   ?explicit_width:bool ->
   ?clock:(unit -> float) ->
   unit ->
   t
-(** [create ~width_method ~respect_alpha ~cursor_visible ~explicit_width ~clock
-     ()] is a screen with:
+(** [create ~width_method ~cursor_visible ~explicit_width ~clock ()] is a screen
+    with:
     - [width_method] is the character width computation method. Defaults to
       [`Unicode].
-    - [respect_alpha] enables alpha blending when drawing cells. Defaults to
-      [false].
     - [cursor_visible] is the initial cursor visibility. Defaults to [true].
     - [explicit_width] enables explicit-width OSC sequences for graphemes.
       Defaults to [false].
-    - [clock] is the time source in seconds used for post-processor deltas and
-      frame metrics. Defaults to [Unix.gettimeofday]. Runtimes with their own
-      clock inject it here so virtual-time runs stay deterministic.
+    - [clock] is the time source in seconds used for frame metrics. Defaults to
+      [Unix.gettimeofday]. Runtimes with their own clock inject it here so
+      virtual-time runs stay deterministic.
 
     Grids start at 1x1 and are resized automatically on the first {!build}. *)
 
@@ -110,29 +97,6 @@ val build :
 
     {b Warning.} The {!Matrix_grid.t} and {!Hit_grid.t} passed to [f] must not
     be mutated after the next {!render} -- they become the diff baseline. *)
-
-(** {1:effects Post-processing} *)
-
-type effect_id = int
-(** The type for post-processing effect identifiers. *)
-
-val post_process : (Matrix_grid.t -> delta:float -> unit) -> t -> effect_id
-(** [post_process f t] registers [f] as a persistent post-processing transform
-    and is its {!effect_id}.
-
-    [f] is called during each {!render} after frame building but before diffing.
-    It receives the next grid and [~delta] (milliseconds since last render, [0.]
-    on the first frame). Processors run in insertion order and persist across
-    frames until removed.
-
-    See also {!remove_post_process}. *)
-
-val remove_post_process : effect_id -> t -> unit
-(** [remove_post_process id t] unregisters the post-processor identified by
-    [id]. *)
-
-val clear_post_processes : t -> unit
-(** [clear_post_processes t] removes all post-processing functions. *)
 
 val add_hit_region :
   t -> x:int -> y:int -> width:int -> height:int -> id:int -> unit
@@ -169,10 +133,10 @@ val render :
 (** [render ~full ~scroll_hint ~viewport t] is the ANSI output for the current
     frame.
 
-    Applies post-processors, diffs next against current (or renders all cells
-    when [full] is [true]), then swaps buffers. Hit regions registered during
-    this frame become queryable via {!query_hit}. Frame timestamps are read from
-    the [clock] given to {!create}.
+    Diffs next against current (or renders all cells when [full] is [true]),
+    then swaps buffers. Hit regions registered during this frame become
+    queryable via {!query_hit}. Frame timestamps are read from the [clock] given
+    to {!create}.
     - [full] renders all cells regardless of changes. Defaults to [false].
     - [scroll_hint] when provided, emits DECSTBM hardware scroll before diffing.
       The hint is a rectangular diff optimization; the caller is responsible for
@@ -264,7 +228,7 @@ val reset : t -> unit
 (** [reset t] clears the next buffer, empties hit grids, zeros statistics, and
     resets frame timing. The current buffer (diff baseline) is left intact so
     the next render can efficiently clear previously rendered content.
-    Post-processors and configuration are preserved. *)
+    Configuration is preserved. *)
 
 (** {1:statistics Statistics} *)
 

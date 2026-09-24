@@ -5,8 +5,8 @@
     dimensions at the start of each render pass. On render the canvas blits its
     grid to the parent at the node's position.
 
-    Use {!draw_text}, {!fill_rect}, {!draw_box}, {!draw_line}, or {!set_cell} to
-    draw into the canvas. Drawing changes persist between frames. To draw at
+    Use {!draw_text}, {!fill_rect}, {!draw_box}, {!draw_line}, or {!set_uchar}
+    to draw into the canvas. Drawing changes persist between frames. To draw at
     render time, register a callback with {!set_on_draw}; the callback fires
     after auto-resize each pass. Combine with [~live:true] on the renderable for
     per-frame animation. For one-shot or event-driven drawing, call
@@ -27,7 +27,6 @@ val create :
   ?visible:bool ->
   ?z_index:int ->
   ?opacity:float ->
-  ?respect_alpha:bool ->
   unit ->
   t
 (** [create ~parent ()] is a canvas node attached to [parent].
@@ -44,9 +43,6 @@ val create :
     - [visible] controls node visibility. Defaults to [true].
     - [z_index] is the stacking order. Defaults to [0].
     - [opacity] is the compositing opacity. Defaults to [1.0].
-    - [respect_alpha] controls alpha blending {e within} the canvas grid.
-      Defaults to [false]. The compositing step to the parent always respects
-      source alpha regardless of this flag.
 
     See also {!set_on_resize} to redraw content when dimensions change. *)
 
@@ -140,11 +136,11 @@ val draw_line :
     - [kind] is the line rendering mode. [`Line] uses box-drawing characters;
       [`Braille] uses Braille dot patterns. Defaults to [`Line]. *)
 
-val set_cell :
+val set_uchar :
   t ->
   x:int ->
   y:int ->
-  cell:Matrix_grid.Cell.t ->
+  uchar:Uchar.t ->
   fg:Ansi.Color.t ->
   bg:Ansi.Color.t ->
   attrs:Ansi.Attr.t ->
@@ -152,15 +148,15 @@ val set_cell :
   ?blend:bool ->
   unit ->
   unit
-(** [set_cell t ~x ~y ~cell ~fg ~bg ~attrs ()] writes a single cell at column
-    [x], row [y].
+(** [set_uchar t ~x ~y ~uchar:cell ~fg ~bg ~attrs ()] writes a single cell at
+    column [x], row [y].
 
-    See {!Matrix_grid.set_cell} for full semantics.
+    See {!Matrix_grid.set_uchar} for full semantics.
 
     Optional parameters:
     - [link] is a hyperlink URI attached to the cell. Defaults to no link.
-    - [blend] controls whether alpha blending is applied. Defaults to the canvas
-      [respect_alpha] setting. *)
+    - [blend] controls whether alpha blending is applied. Defaults to [false].
+*)
 
 val clear : ?color:Ansi.Color.t -> t -> unit
 (** [clear t] clears the canvas grid and schedules a re-render.
@@ -178,33 +174,6 @@ val grid : t -> Matrix_grid.t
     Use this for operations not covered by the canvas drawing functions: scissor
     clipping, cell queries, scrolling, {!Matrix_grid.blit_region}, and similar.
 *)
-
-(** {1:props Props} *)
-
-module Props : sig
-  type t
-  (** The type for declarative property bundles used by the reconciler for
-      diffing. *)
-
-  val make : ?respect_alpha:bool -> unit -> t
-  (** [make ()] is a property set with the same defaults as {!val-create}.
-
-      Optional parameters:
-      - [respect_alpha] controls alpha blending within the canvas grid. Defaults
-        to [false]. *)
-
-  val default : t
-  (** [default] is [make ()]. *)
-
-  val equal : t -> t -> bool
-  (** [equal a b] is [true] iff [a] and [b] describe identical properties. *)
-end
-
-val apply_props : t -> Props.t -> unit
-(** [apply_props t props] applies [props] to [t].
-
-    Updates [respect_alpha] on the underlying grid. Layout dimensions are
-    managed by the layout system and are not affected by this call. *)
 
 (** {1:callbacks Callbacks} *)
 
@@ -239,18 +208,6 @@ val request_render : t -> unit
     changes visible. Not needed after {!clear} (which schedules automatically)
     or inside a {!set_on_draw} callback (which already runs inside a render
     pass). *)
-
-(** {1:properties Properties} *)
-
-val set_respect_alpha : t -> bool -> unit
-(** [set_respect_alpha t v] enables or disables alpha blending within the canvas
-    grid of [t].
-
-    See {!val-create} for semantics. *)
-
-val respect_alpha : t -> bool
-(** [respect_alpha t] is [true] iff alpha blending is enabled within the canvas
-    grid of [t]. *)
 
 (** {1:fmt Formatting and inspecting} *)
 
