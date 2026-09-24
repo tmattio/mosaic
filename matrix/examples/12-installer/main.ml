@@ -189,10 +189,13 @@ let () =
         List.iter
           (fun pkg ->
             let msg =
-              Printf.sprintf "✓ %s %s installed (%dKB)\n" pkg.name pkg.version
+              Printf.sprintf "✓ %s %s installed (%dKB)" pkg.name pkg.version
                 pkg.size
             in
-            Matrix.static_write app ~rows:1 msg)
+            let width, _ = Matrix.full_size app in
+            let grid = Grid.create ~width ~height:1 () in
+            Grid.draw_text grid ~x:0 ~y:0 ~text:msg;
+            Matrix.static_write app grid)
           just_completed;
         last_completed := curr_completed);
       (* Stop when all done after a brief delay *)

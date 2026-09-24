@@ -149,6 +149,7 @@ type app = {
   mutable frame_dump_hits : bool;
   mutable frame_dump_counter : int;
   mutable closed : bool;
+  mutable autowrap_armed : bool;
   mutable loop_active : bool;
   mutable control_state : control_state;
   mutable previous_control_state : control_state;
@@ -438,40 +439,6 @@ let clear_scrollback_seq = Ansi.(to_string (erase_display ~mode:`Scrollback))
 let reset_scroll_region_seq = Ansi.(to_string reset_scrolling_region)
 let reset_cursor_color_seq = Ansi.(to_string reset_cursor_color)
 
-let normalize_newlines s =
-  let len = String.length s in
-  let rec count i acc =
-    if i >= len then acc
-    else
-      let c = String.unsafe_get s i in
-      if Char.equal c '\n' then
-        if i > 0 && Char.equal (String.unsafe_get s (i - 1)) '\r' then
-          count (i + 1) acc
-        else count (i + 1) (acc + 1)
-      else count (i + 1) acc
-  in
-  let extra = count 0 0 in
-  if extra = 0 then s
-  else
-    let bytes = Bytes.create (len + extra) in
-    let rec fill i j =
-      if i >= len then ()
-      else
-        let c = String.unsafe_get s i in
-        if
-          Char.equal c '\n'
-          && not (i > 0 && Char.equal (String.unsafe_get s (i - 1)) '\r')
-        then (
-          Bytes.unsafe_set bytes j '\r';
-          Bytes.unsafe_set bytes (j + 1) '\n';
-          fill (i + 1) (j + 2))
-        else (
-          Bytes.unsafe_set bytes j c;
-          fill (i + 1) (j + 1))
-    in
-    fill 0 0;
-    Bytes.unsafe_to_string bytes
-
 (* Helpers for buffered frame output. All frame content is accumulated into
    a Buffer.t and flushed as a single write in submit. *)
 
@@ -511,28 +478,38 @@ let apply_primary_plan ?(resize_screen = true) t ~buf (plan : Primary.plan) =
 let flush_static_queue ?(resize_screen = true) t ~buf =
   let primary, plan = Primary.flush_static t.primary in
   t.primary <- primary;
-  apply_primary_plan ~resize_screen t ~buf plan
+  if plan.terminal_ops <> [] then (
+    t.autowrap_armed <- true;
+    Buffer.add_string buf "\027[?7l";
+    apply_primary_plan ~resize_screen t ~buf plan;
+    Buffer.add_string buf "\027[?7h")
 
 let effective_size t =
   match t.config.mode with
   | `Alt -> (t.width, t.height)
   | `Primary -> Primary.effective_size t.primary ~width:t.width
 
-let static_write ?(preserve_live_region = false) t ~rows text =
-  if t.config.mode = `Alt || String.length text = 0 then ()
-  else
-    let text = if t.config.raw_mode then normalize_newlines text else text in
-    t.primary <-
-      Primary.enqueue_static t.primary { text; rows; preserve_live_region };
-    request_redraw t
+let static_snapshot t ?rows grid =
+  if Grid.width grid > t.width then
+    invalid_arg "Matrix.static_write: grid is wider than the terminal";
+  let rows = Option.value rows ~default:(Grid.height grid) in
+  let text = Grid.to_ansi ~reset:false ~complete_rows:true ~rows grid in
+  (rows, text)
 
-let static_replace ?(preserve_live_region = false) t ~rows text =
-  if t.config.mode = `Alt then ()
-  else
-    let text = if t.config.raw_mode then normalize_newlines text else text in
+let static_write ?(preserve_live_region = false) ?rows t grid =
+  if t.config.mode <> `Alt then
+    let rows, text = static_snapshot t ?rows grid in
+    if rows > 0 then (
+      t.primary <-
+        Primary.enqueue_static t.primary { text; rows; preserve_live_region };
+      request_redraw t)
+
+let static_replace ?(preserve_live_region = false) ?rows t grid =
+  if t.config.mode <> `Alt then (
+    let rows, text = static_snapshot t ?rows grid in
     t.primary <-
       Primary.replace_static t.primary { text; rows; preserve_live_region };
-    request_redraw t
+    request_redraw t)
 
 (* Immediate action, not part of the frame pipeline: the plan's terminal ops
    are encoded and sent directly, not queued into the frame buffer, so the
@@ -864,6 +841,9 @@ let suspend ?(leave_alt = false) t =
     t.last_cursor_visible <- None;
     t.last_cursor_shape <- None;
     t.last_cursor_color <- None;
+    if t.autowrap_armed then
+      t.backend.protect (fun () ->
+          try Terminal.send t.terminal "\027[?7h" with _ -> ());
     (try Terminal.set_mouse_mode t.terminal `Off with _ -> ());
     (try Terminal.enable_bracketed_paste t.terminal false with _ -> ());
     (try Terminal.enable_focus_reporting t.terminal false with _ -> ());
@@ -1045,6 +1025,8 @@ let close t =
         t.running <- false;
         t.control_state <- `Explicit_stopped;
         update_loop_active t;
+        (if t.autowrap_armed then
+           try Terminal.send t.terminal "\027[?7h" with _ -> ());
         (try
            let is_tty = Terminal.tty t.terminal in
            if t.config.mode = `Primary && is_tty then (
@@ -1219,6 +1201,7 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           frame_dump_hits;
           frame_dump_counter = 0;
           closed = false;
+          autowrap_armed = false;
           loop_active = false;
           control_state =
             (if start_idle then `Idle

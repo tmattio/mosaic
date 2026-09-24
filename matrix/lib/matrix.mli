@@ -385,35 +385,35 @@ val capabilities : app -> Terminal.capabilities
     [`Alt] mode. *)
 
 val static_write :
-  ?preserve_live_region:bool -> app -> rows:int -> string -> unit
-(** [static_write ?preserve_live_region app ~rows s] queues [s] for insertion
-    before the live viewport, using [rows] as the exact number of terminal rows
-    consumed by [s]. The caller is responsible for computing [rows] accurately,
-    for example from {!Grid.active_height} after rendering to a grid.
+  ?preserve_live_region:bool -> ?rows:int -> app -> Grid.t -> unit
+(** [static_write ?preserve_live_region ?rows app grid] queues a snapshot of the
+    first [rows] grid rows before the live viewport. [rows] defaults to the full
+    grid height, including blank or background-only rows. The snapshot is
+    serialized immediately; subsequent grid mutations do not change it. Each row
+    replaces the complete terminal row and ends with CRLF. Rows never wrap if
+    the terminal becomes narrower before the queued output is presented; excess
+    cells overwrite the rightmost column, following terminal margin behavior.
 
-    In raw mode, lone LF bytes in [s] are normalized to CRLF before queuing so
-    terminal row accounting matches the provided [rows]. When
-    [preserve_live_region] is [true], the rows scroll directly into terminal
-    history and the live region keeps its current height. Preservation requires
-    a live region that starts at the top of the terminal — for example after
-    {!static_replace} or {!static_clear} — and that every write queued in the
-    same frame preserves; in any other layout the write falls back to growing
-    the static area, so content is never dropped. *)
+    Raises [Invalid_argument] if the grid is wider than the current terminal, or
+    [rows] is outside the grid height. [rows = 0] queues nothing.
+
+    When [preserve_live_region] is [true], the rows scroll directly into
+    terminal history and the live region keeps its current height. Preservation
+    requires a live region that starts at the top of the terminal — for example
+    after {!static_replace} or {!static_clear} — and that every write queued in
+    the same frame preserves. Otherwise the static area grows normally. *)
 
 val static_replace :
-  ?preserve_live_region:bool -> app -> rows:int -> string -> unit
-(** [static_replace ?preserve_live_region app ~rows s] queues an atomic
-    replacement of all primary static content. The replacement and the next live
-    frame are emitted in one frame transaction; terminal scrollback is cleared
-    before [s] is written.
+  ?preserve_live_region:bool -> ?rows:int -> app -> Grid.t -> unit
+(** [static_replace ?preserve_live_region ?rows app grid] queues an atomic
+    replacement of all primary static content with a snapshot of [grid]. Row
+    selection, snapshot ownership, and validation match {!static_write}.
+    [rows = 0] clears the transcript without inserting rows. The replacement and
+    next live frame are emitted in one transaction.
 
-    {b Warning.} Clearing erases the terminal's {e entire} scrollback, including
-    content that predates the application, such as earlier shell output. Reserve
-    this for applications that own the whole session transcript. Support for the
-    underlying control sequence ([CSI 3 J]) varies across terminals.
-
-    This function is ignored in [`Alt] mode. [preserve_live_region] has the same
-    meaning as for {!static_write}. *)
+    {b Warning.} Replacement clears the terminal's entire scrollback, including
+    shell output from before the application. Support for [CSI 3 J] varies
+    across terminals. This function is ignored in [`Alt] mode. *)
 
 val static_clear : app -> unit
 (** [static_clear app] clears the primary screen immediately, discards pending

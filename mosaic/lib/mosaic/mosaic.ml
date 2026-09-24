@@ -411,21 +411,6 @@ let process_pending_focus runtime =
         pending;
       if !focused then Matrix.request_redraw runtime.matrix_app
 
-let serialize_grid_rows (grid : Matrix.Grid.t) ~rows =
-  if rows <= 0 then ""
-  else
-    let width = Matrix.Grid.width grid in
-    if rows = Matrix.Grid.height grid then Matrix.Grid.to_ansi ~reset:false grid
-    else
-      let cropped =
-        Matrix.Grid.create ~width ~height:rows
-          ~width_method:(Matrix.Grid.width_method grid)
-          ()
-      in
-      Matrix.Grid.blit_region ~src:grid ~dst:cropped ~src_x:0 ~src_y:0 ~width
-        ~height:rows ~dst_x:0 ~dst_y:0;
-      Matrix.Grid.to_ansi ~reset:false cropped
-
 (* Static output renders offscreen with an auto-height root, mirroring the
    primary-screen path: one pass at the terminal height measures the content's
    natural height (layout is independent of the grid), and only when the
@@ -454,7 +439,7 @@ let render_static_view runtime (view : _ t) =
     Renderer.render_frame renderer ~width ~height:required ~delta:0.;
   let grid = Matrix.Screen.next_grid (Renderer.screen renderer) in
   let used_rows = Matrix.Grid.active_height grid in
-  (serialize_grid_rows grid ~rows:used_rows, used_rows)
+  (grid, used_rows)
 
 let rec process_cmd runtime (cmd : _ Cmd.t) =
   match cmd with
@@ -487,8 +472,8 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
         enqueue_focus runtime id;
         Matrix.request_redraw runtime.matrix_app)
   | Cmd.Static_commit view ->
-      let text, rows = render_static_view runtime view in
-      Matrix.static_write runtime.matrix_app ~rows text
+      let grid, rows = render_static_view runtime view in
+      Matrix.static_write ~rows runtime.matrix_app grid
   | Cmd.Static_clear -> Matrix.static_clear runtime.matrix_app
 
 let rec collect_subs runtime (sub : _ Sub.t) =

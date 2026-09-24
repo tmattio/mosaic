@@ -88,42 +88,15 @@ let static_needs_newline t = t.static_needs_newline
 let live_region t = { row_offset = t.render_offset; height = live_height t }
 let size t ~width = (width, live_height t)
 
-let starts_with_newline s =
-  let len = String.length s in
-  if len = 0 then false
-  else if Char.equal (String.unsafe_get s 0) '\n' then true
-  else
-    len > 1
-    && Char.equal (String.unsafe_get s 0) '\r'
-    && Char.equal (String.unsafe_get s 1) '\n'
+type static_step = { base : int; needs_newline : bool; next_offset : int }
 
-let ends_with_newline s =
-  let len = String.length s in
-  len > 0 && Char.equal (String.unsafe_get s (len - 1)) '\n'
-
-type static_step = {
-  base : int;
-  needs_newline : bool;
-  payload_rows : int;
-  next_offset : int;
-  next_static_needs_newline : bool;
-}
-
-let static_step t ~offset ~static_needs_newline ~full_height { text; rows; _ } =
+let static_step t ~offset ~static_needs_newline { rows; _ } =
   let max_offset = max 0 (t.terminal_height - t.min_live_height) in
   let base = if offset = 0 then 1 else offset in
-  let needs_newline = static_needs_newline && not (starts_with_newline text) in
+  let needs_newline = static_needs_newline in
   let payload_rows = rows + if needs_newline then 1 else 0 in
-  let grow_by =
-    if full_height then 0 else min payload_rows (max 0 (max_offset - base))
-  in
-  {
-    base;
-    needs_newline;
-    payload_rows;
-    next_offset = (if full_height then offset else base + grow_by);
-    next_static_needs_newline = not (ends_with_newline text);
-  }
+  let grow_by = min payload_rows (max 0 (max_offset - base)) in
+  { base; needs_newline; next_offset = base + grow_by }
 
 (* Preservation only has a terminal-level encoding on the full-height path:
    the payload is written at the top of the screen and scrolled straight into
@@ -144,14 +117,13 @@ let projected_after_static t =
     if t.replace_pending then (0, false)
     else (t.render_offset, t.static_needs_newline)
   in
-  let full_height = takes_full_height_path t in
-  List.fold_left
-    (fun (offset, static_needs_newline) write ->
-      let step =
-        static_step t ~offset ~static_needs_newline ~full_height write
-      in
-      (step.next_offset, step.next_static_needs_newline))
-    initial (List.rev t.static_queue)
+  if takes_full_height_path t then (fst initial, false)
+  else
+    List.fold_left
+      (fun (offset, static_needs_newline) write ->
+        let step = static_step t ~offset ~static_needs_newline write in
+        (step.next_offset, false))
+      initial (List.rev t.static_queue)
 
 let effective_region t =
   match (t.replace_pending, t.static_queue) with
@@ -200,15 +172,11 @@ let static_ops step text =
 let flush_one t ({ text; _ } as write) =
   let step =
     static_step t ~offset:t.render_offset
-      ~static_needs_newline:t.static_needs_newline ~full_height:false write
+      ~static_needs_newline:t.static_needs_newline write
   in
   let ops = static_ops step text in
   let next =
-    {
-      t with
-      render_offset = step.next_offset;
-      static_needs_newline = step.next_static_needs_newline;
-    }
+    { t with render_offset = step.next_offset; static_needs_newline = false }
   in
   (next, ops)
 
@@ -217,11 +185,9 @@ let flush_pinned_static t queue =
   let ops_rev, offset, static_needs_newline =
     List.fold_left
       (fun (ops_rev, offset, static_needs_newline) ({ text; _ } as write) ->
-        let step =
-          static_step t ~offset ~static_needs_newline ~full_height:false write
-        in
+        let step = static_step t ~offset ~static_needs_newline write in
         let ops_rev = List.rev_append (static_ops step text) ops_rev in
-        (ops_rev, step.next_offset, step.next_static_needs_newline))
+        (ops_rev, step.next_offset, false))
       ([], t.render_offset, t.static_needs_newline)
       queue
   in
@@ -240,29 +206,29 @@ let flush_pinned_static t queue =
       force_full_redraw = true;
     } )
 
-let full_height_static_ops step text =
-  let ops =
-    [ Move_cursor { row = 1; col = 1 }; Reset_sgr; Erase_line; Write text ]
-  in
-  if step.payload_rows > 0 then ops @ [ Scroll_up step.payload_rows ] else ops
+let full_height_static_ops ~terminal_height ~rows text =
+  let ops = [ Move_cursor { row = 1; col = 1 }; Reset_sgr; Write text ] in
+  (* Completed rows already scroll when their trailing CRLF reaches the bottom.
+     Only the rows still visible need an explicit scroll into history. *)
+  let remaining = min rows (terminal_height - 1) in
+  if remaining > 0 then ops @ [ Scroll_up remaining ] else ops
 
 let flush_full_height_static t queue =
-  let ops_rev, static_needs_newline =
+  let ops_rev =
     List.fold_left
-      (fun (ops_rev, static_needs_newline) ({ text; rows; _ } as write) ->
-        let step =
-          static_step t ~offset:0 ~static_needs_newline ~full_height:true write
-        in
-        let step = { step with payload_rows = rows } in
-        let ops_rev =
-          List.rev_append (full_height_static_ops step text) ops_rev
-        in
-        (ops_rev, step.next_static_needs_newline))
-      ([], t.static_needs_newline)
-      queue
+      (fun ops_rev { text; rows; _ } ->
+        List.rev_append
+          (full_height_static_ops ~terminal_height:t.terminal_height ~rows text)
+          ops_rev)
+      [] queue
   in
   let next =
-    { t with render_offset = 0; static_needs_newline; static_queue = [] }
+    {
+      t with
+      render_offset = 0;
+      static_needs_newline = false;
+      static_queue = [];
+    }
   in
   ( next,
     {

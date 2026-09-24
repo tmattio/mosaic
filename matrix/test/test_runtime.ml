@@ -1063,12 +1063,64 @@ let test_primary_required_rows_ignored_in_alt_mode () =
   let _w, h = Matrix.size app in
   equal ~msg:"alt mode size remains full terminal height" int 24 h
 
+let static_grid text =
+  let lines = String.split_on_char '\n' text in
+  let lines =
+    match List.rev lines with "" :: rest -> List.rev rest | _ -> lines
+  in
+  let width =
+    List.fold_left (fun width line -> max width (String.length line)) 1 lines
+  in
+  let grid = Matrix.Grid.create ~width ~height:(max 1 (List.length lines)) () in
+  List.iteri (fun y text -> Matrix.Grid.draw_text grid ~x:0 ~y ~text) lines;
+  grid
+
+let test_static_partial_write_restores_autowrap () =
+  List.iter
+    (fun suspend ->
+      let fail_output = ref false in
+      let bytes = Buffer.create 128 in
+      let cleaned = ref false in
+      let backend =
+        {
+          (inert_backend ()) with
+          write_output =
+            (fun buf off len ->
+              if !fail_output then (
+                let frame = Bytes.sub_string buf off len in
+                contains ~msg:"static transaction disables autowrap"
+                  ~sub:"\027[?7l" frame;
+                let stop = ref 5 in
+                while String.sub frame (!stop - 5) 5 <> "\027[?7l" do
+                  incr stop
+                done;
+                Buffer.add_substring bytes frame 0 !stop;
+                failwith "partial static write")
+              else Buffer.add_subbytes bytes buf off len);
+          cleanup = (fun () -> cleaned := true);
+        }
+      in
+      let app = Matrix.attach ~mode:`Primary ~backend () in
+      Matrix.static_write app (static_grid "row");
+      Buffer.clear bytes;
+      fail_output := true;
+      (match Matrix.submit app with
+      | () -> failf "expected injected partial write failure"
+      | exception Failure message -> equal string "partial static write" message);
+      fail_output := false;
+      if suspend then Matrix.suspend app else Matrix.close app;
+      in_order ~msg:"terminal handoff restores autowrap after partial output"
+        ~subs:[ "\027[?7l"; "\027[?7h" ] (Buffer.contents bytes);
+      Matrix.close app;
+      is_true ~msg:"backend cleanup still runs" !cleaned)
+    [ false; true ]
+
 let test_primary_effective_size_tracks_pending_static () =
   let app, _state =
     make_app ~mode:`Primary ~target_fps:None ~input_timeout:(Some 0.) ()
   in
   equal ~msg:"initial primary height" int 24 (snd (Matrix.size app));
-  Matrix.static_write app ~rows:2 "alpha\nbeta\n";
+  Matrix.static_write app (static_grid "alpha\nbeta\n");
   let effective = Matrix.effective_size app in
   equal ~msg:"pending static write reduces effective height" (pair int int)
     (80, 21) effective;
@@ -1080,7 +1132,7 @@ let test_prepare_uses_pending_static_effective_region () =
   let app, state =
     make_app ~mode:`Primary ~target_fps:None ~input_timeout:(Some 0.) ()
   in
-  Matrix.static_write app ~rows:2 "alpha\nbeta\n";
+  Matrix.static_write app (static_grid "alpha\nbeta\n");
   let _, effective_height = Matrix.effective_size app in
   Matrix.prepare app;
   let grid = Matrix.grid app in
@@ -1097,65 +1149,24 @@ let test_static_writes_are_flushed_fifo () =
   let app, state =
     make_app ~mode:`Primary ~target_fps:None ~input_timeout:(Some 0.) ()
   in
-  Matrix.static_write app ~rows:1 "first\n";
-  Matrix.static_write app ~rows:1 "second\n";
+  Matrix.static_write app (static_grid "first\n");
+  Matrix.static_write app (static_grid "second\n");
   Matrix.submit app;
   let output = output state in
   in_order ~msg:"first static write appears before second"
     ~subs:[ "first"; "second" ] output
 
-let test_static_write_normalizes_lf_in_raw_mode () =
-  let app, state =
-    make_app ~mode:`Primary ~raw_mode:true ~target_fps:None
-      ~input_timeout:(Some 0.) ()
-  in
-  Matrix.static_write app ~rows:1 "raw\n";
+let test_static_write_snapshots_selected_rows () =
+  let app, state = make_app ~mode:`Primary ~target_fps:None () in
+  let grid = static_grid "first\nsecond\nignored" in
+  Matrix.static_write ~rows:2 app grid;
+  Matrix.Grid.clear grid;
   Matrix.submit app;
   let output = output state in
-  contains ~msg:"raw mode normalizes lone LF to CRLF" ~sub:"raw\r\n" output;
-  not_contains ~msg:"raw mode does not emit lone LF" ~sub:"raw\n" output
-
-let test_static_write_preserves_lf_outside_raw_mode () =
-  let app, state =
-    make_app ~mode:`Primary ~raw_mode:false ~target_fps:None
-      ~input_timeout:(Some 0.) ()
-  in
-  Matrix.static_write app ~rows:1 "plain\n";
-  Matrix.submit app;
-  let output = output state in
-  contains ~msg:"non-raw mode preserves LF" ~sub:"plain\n" output;
-  not_contains ~msg:"non-raw mode does not normalize LF to CRLF"
-    ~sub:"plain\r\n" output
-
-let test_static_write_tracks_mid_line_continuation () =
-  let app, state =
-    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
-      ~target_fps:None ~input_timeout:(Some 0.) ()
-  in
-  Matrix.submit app;
-  Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "first";
-  Matrix.submit app;
-  Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "second\n";
-  Matrix.submit app;
-  contains ~msg:"mid-line static output anchors next write on a fresh row"
-    ~sub:"\r\nsecond" (output state);
-
-  let app, state =
-    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
-      ~target_fps:None ~input_timeout:(Some 0.) ()
-  in
-  Matrix.submit app;
-  Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "first\n";
-  Matrix.submit app;
-  Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "second\n";
-  Matrix.submit app;
-  not_contains
-    ~msg:"line-ended static output does not add an extra leading CRLF"
-    ~sub:"\r\nsecond" (output state)
+  in_order ~msg:"snapshot preserves selected rows and CRLF separation"
+    ~subs:[ "first"; "\r\n"; "second"; "\r\n" ]
+    output;
+  not_contains ~msg:"unselected rows are excluded" ~sub:"ignored" output
 
 let test_static_clear_is_immediate_and_forces_full_repaint () =
   let app, state =
@@ -1185,7 +1196,7 @@ let test_pinned_static_write_uses_bounded_scroll_region () =
   in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "pinned\n";
+  Matrix.static_write app (static_grid "pinned\n");
   Matrix.submit app;
   let output = output state in
   contains ~msg:"pinned append sets upper-pane scroll region" ~sub:"\027[1;23r"
@@ -1205,7 +1216,7 @@ let test_pinned_static_write_resets_scroll_region_before_live_render () =
   in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "pinned\n";
+  Matrix.static_write app (static_grid "pinned\n");
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
@@ -1224,7 +1235,7 @@ let test_pinned_static_write_repaints_unchanged_live_view () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"prompt";
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "static\n";
+  Matrix.static_write app (static_grid "static\n");
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"prompt";
   Matrix.submit app;
@@ -1241,7 +1252,7 @@ let test_multiline_static_write_uses_scroll_region_when_it_reaches_pin () =
   in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:2 "line-a\nline-b\n";
+  Matrix.static_write app (static_grid "line-a\nline-b\n");
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
@@ -1264,15 +1275,15 @@ let test_unpinned_static_write_settles_without_scroll_region () =
   in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "settle\n";
+  Matrix.static_write app (static_grid "settle\n");
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
   let output = output state in
   (* The startup cursor row belongs to the shell. Its separating newline and
      the static line consume two rows before the live viewport. *)
-  contains ~msg:"static output preserves the startup cursor row"
-    ~sub:"\r\nsettle" output;
+  in_order ~msg:"static output preserves the startup cursor row"
+    ~subs:[ "\r\n"; "settle" ] output;
   equal ~msg:"static output moves live region downward" (pair int int) (80, 21)
     (Matrix.size app);
   in_order ~msg:"static payload appears before live repaint"
@@ -1290,7 +1301,7 @@ let test_static_write_and_live_repaint_share_sync_frame () =
   set_sync_capable app;
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "pinned\n";
+  Matrix.static_write app (static_grid "pinned\n");
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
@@ -1312,7 +1323,7 @@ let test_pinned_static_write_keeps_live_size () =
   in
   Matrix.submit app;
   let before = Matrix.size app in
-  Matrix.static_write app ~rows:3 "a\nb\nc\n";
+  Matrix.static_write app (static_grid "a\nb\nc\n");
   equal ~msg:"pinned pending output keeps effective live size" (pair int int)
     before
     (Matrix.effective_size app);
@@ -1327,15 +1338,15 @@ let test_primary_required_rows_apply_before_static_flush () =
   in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "prompt\n";
+  Matrix.static_write app (static_grid "prompt\n");
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app ~primary_required_rows:20;
   let output = output state in
   (* Growth reserves twenty rows, then the shell-row separator and prompt
      consume two of them. *)
-  contains ~msg:"prompt preserves the shell-owned startup row" ~sub:"\r\nprompt"
-    output;
+  in_order ~msg:"prompt preserves the shell-owned startup row"
+    ~subs:[ "\r\n"; "prompt" ] output;
   equal ~msg:"static output settles against the expanded primary region"
     (pair int int) (80, 18) (Matrix.size app);
   in_order ~msg:"primary growth happens before static output is flushed"
@@ -1351,7 +1362,7 @@ let test_full_height_static_write_scrolls_into_scrollback () =
     (pair int int) (80, 24) before;
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:2 "INSERTED00\nINSERTED01\n";
+  Matrix.static_write app (static_grid "INSERTED00\nINSERTED01\n");
   Matrix.prepare app;
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app;
@@ -1371,18 +1382,84 @@ let test_full_height_static_write_scrolls_into_scrollback () =
   equal ~msg:"full-height static write keeps live size" (pair int int) before
     (Matrix.size app)
 
+let test_static_snapshots_scroll_exactly_once_per_row () =
+  List.iter
+    (fun rows ->
+      let app, state =
+        make_app ~mode:`Primary ~width:6 ~height:3 ~min_tui_height:3
+          ~target_fps:None ()
+      in
+      let lines = List.init rows (fun i -> Printf.sprintf "R%02d" i) in
+      Matrix.static_write app (static_grid (String.concat "\n" lines));
+      Matrix.prepare app;
+      Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
+      Matrix.submit app;
+      let terminal = Vte.create ~rows:3 ~cols:6 ~scrollback:32 () in
+      Vte.feed_string terminal (output state);
+      equal
+        ~msg:(Printf.sprintf "%d snapshot rows reach history once" rows)
+        (list string) lines
+        (Vte.scrollback_lines terminal);
+      contains ~msg:"live view remains visible after transcript insertion"
+        ~sub:"live" (Vte.to_string terminal);
+      Matrix.close app)
+    [ 1; 3; 4; 8 ]
+
+let test_static_snapshot_clears_suffixes_and_keeps_blank_rows () =
+  let app, state =
+    make_app ~mode:`Primary ~width:3 ~height:3 ~min_tui_height:3
+      ~target_fps:None ()
+  in
+  Matrix.static_write app (static_grid "A\n\nB");
+  Matrix.submit app;
+  (* A terminal widened after enqueue has stale cells beyond the old width. *)
+  let terminal = Vte.create ~rows:3 ~cols:6 ~scrollback:16 () in
+  Vte.feed_string terminal "STALE!\r\nSTALE!\r\nSTALE!";
+  Vte.feed_string terminal (output state);
+  equal ~msg:"complete rows clear suffixes and preserve intentional blanks"
+    (list string) [ "A"; ""; "B" ]
+    (Vte.scrollback_lines terminal);
+  Matrix.close app
+
+let test_queued_static_snapshot_keeps_row_count_after_resize () =
+  let app, state =
+    make_app ~mode:`Primary ~width:6 ~height:3 ~min_tui_height:3
+      ~target_fps:None
+      ~events:[ Matrix.Input.Focus; Matrix.Input.Resize (3, 3) ]
+      ~stop_after_reads:2 ()
+  in
+  Matrix.run app
+    ~on_input:(fun app -> function
+      | Matrix.Input.Focus ->
+          Buffer.clear state.output;
+          Matrix.static_write app (static_grid "ABCDEF\nGHIJKL")
+      | _ -> ())
+    ~on_render:ignore;
+  equal ~msg:"resize applies before the queued static frame" (pair int int)
+    (3, 3) (Matrix.full_size app);
+  let terminal = Vte.create ~rows:3 ~cols:3 ~scrollback:16 () in
+  Vte.feed_string terminal "old\r\nold\r\nold";
+  Vte.feed_string terminal (output state);
+  let history = Vte.scrollback_lines terminal in
+  equal ~msg:"narrowing a queued snapshot does not add transcript rows" int 2
+    (List.length history);
+  List.iter
+    (fun row ->
+      not_contains ~msg:"snapshot replaces stale row content" ~sub:"old" row)
+    history
+
 let test_primary_column_one_anchor_preserves_current_row () =
   let app, state =
     make_app ~mode:`Primary ~terminal_tty:true ~target_fps:None
       ~input_timeout:(Some 0.) ~startup_cursor:(1, 1) ()
   in
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "HEADER\n";
+  Matrix.static_write app (static_grid "HEADER\n");
   Matrix.submit app;
   let output = output state in
   contains ~msg:"static payload is emitted" ~sub:"HEADER" output;
-  contains ~msg:"column-one anchor preserves the shell-owned row"
-    ~sub:"\r\nHEADER" output
+  in_order ~msg:"column-one anchor preserves the shell-owned row"
+    ~subs:[ "\r\n"; "HEADER" ] output
 
 let test_preserved_static_write_keeps_live_region () =
   let app, state =
@@ -1392,8 +1469,8 @@ let test_preserved_static_write_keeps_live_region () =
   let before = Matrix.size app in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write ~preserve_live_region:true app ~rows:2
-    "PRESERVED00\nPRESERVED01\n";
+  Matrix.static_write ~preserve_live_region:true app
+    (static_grid "PRESERVED00\nPRESERVED01\n");
   equal ~msg:"pending preserved write keeps effective live size" (pair int int)
     before
     (Matrix.effective_size app);
@@ -1411,7 +1488,8 @@ let test_preserved_static_write_grows_after_static_rows () =
   in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write ~preserve_live_region:true app ~rows:2 "AAAA\nBBBB\n";
+  Matrix.static_write ~preserve_live_region:true app
+    (static_grid "AAAA\nBBBB\n");
   (* Three preceding rows, the shell-row separator, and two static rows
      leave eighteen rows for the live region. *)
   equal ~msg:"pending preserved write projects the grown live size"
@@ -1419,7 +1497,9 @@ let test_preserved_static_write_grows_after_static_rows () =
     (Matrix.effective_size app);
   Matrix.submit app;
   let output = output state in
-  contains ~msg:"content is written, not dropped" ~sub:"\r\nAAAA\r\nBBBB" output;
+  in_order ~msg:"content is written, not dropped"
+    ~subs:[ "\r\n"; "AAAA"; "\r\n"; "BBBB" ]
+    output;
   not_contains ~msg:"partial layout does not scroll into history" ~sub:"\027[2S"
     output;
   equal ~msg:"write grows the static area instead" (pair int int) (80, 18)
@@ -1432,8 +1512,8 @@ let test_mixed_static_writes_fall_back_to_growth () =
   in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write ~preserve_live_region:true app ~rows:1 "KEEP\n";
-  Matrix.static_write app ~rows:1 "GROW\n";
+  Matrix.static_write ~preserve_live_region:true app (static_grid "KEEP\n");
+  Matrix.static_write app (static_grid "GROW\n");
   Matrix.submit app;
   let output = output state in
   in_order ~msg:"first write is not overwritten" ~subs:[ "KEEP"; "GROW" ] output;
@@ -1458,8 +1538,8 @@ let test_full_height_consecutive_static_writes_scroll_once_per_row () =
   in
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_write app ~rows:1 "first";
-  Matrix.static_write app ~rows:1 "second\n";
+  Matrix.static_write app (static_grid "first");
+  Matrix.static_write app (static_grid "second\n");
   Matrix.submit app;
   let output = output state in
   in_order ~msg:"consecutive full-height writes stay ordered"
@@ -1471,7 +1551,7 @@ let test_static_write_ignored_in_alt_mode () =
   let app, state =
     make_app ~mode:`Alt ~target_fps:None ~input_timeout:(Some 0.) ()
   in
-  Matrix.static_write app ~rows:2 "ignored\n";
+  Matrix.static_write app (static_grid "ignored\n");
   equal ~msg:"alt effective size unchanged" (pair int int) (80, 24)
     (Matrix.effective_size app);
   Matrix.submit app;
@@ -1485,7 +1565,7 @@ let test_static_clear_resets_primary_layout () =
   in
   equal ~msg:"attached primary starts below transcript" (pair int int) (80, 14)
     (Matrix.size app);
-  Matrix.static_write app ~rows:1 "pending\n";
+  Matrix.static_write app (static_grid "pending\n");
   (* Pending output reserves the shell-owned cursor row and its own line. *)
   equal ~msg:"pending output affects effective size" (pair int int) (80, 12)
     (Matrix.effective_size app);
@@ -1516,7 +1596,7 @@ let test_static_replace_replays_inside_next_frame () =
   set_sync_capable app;
   Matrix.submit app;
   Buffer.clear state.output;
-  Matrix.static_replace app ~rows:2 "replacement-a\nreplacement-b\n";
+  Matrix.static_replace app (static_grid "replacement-a\nreplacement-b\n");
   equal ~msg:"static replacement is deferred until the next frame" string ""
     (Buffer.contents state.output);
   Matrix.prepare app;
@@ -1840,14 +1920,10 @@ let () =
         [
           test "static writes are flushed FIFO"
             test_static_writes_are_flushed_fifo;
-          test "static write normalizes LF in raw mode"
-            test_static_write_normalizes_lf_in_raw_mode;
-          test "static write preserves LF outside raw mode"
-            test_static_write_preserves_lf_outside_raw_mode;
+          test "static write snapshots selected complete rows"
+            test_static_write_snapshots_selected_rows;
           test "column-one anchor preserves current row"
             test_primary_column_one_anchor_preserves_current_row;
-          test "static write tracks mid-line continuation"
-            test_static_write_tracks_mid_line_continuation;
           test "static_clear is immediate and forces a full repaint"
             test_static_clear_is_immediate_and_forces_full_repaint;
           test "pinned static write uses bounded scroll region"
@@ -1868,6 +1944,14 @@ let () =
             test_primary_required_rows_apply_before_static_flush;
           test "full-height static write scrolls into scrollback"
             test_full_height_static_write_scrolls_into_scrollback;
+          test "static partial write restores autowrap"
+            test_static_partial_write_restores_autowrap;
+          test "queued snapshot keeps row count after resize"
+            test_queued_static_snapshot_keeps_row_count_after_resize;
+          test "static snapshots scroll exactly once per row"
+            test_static_snapshots_scroll_exactly_once_per_row;
+          test "static snapshots clear suffixes and preserve blank rows"
+            test_static_snapshot_clears_suffixes_and_keeps_blank_rows;
           test "preserved static write keeps live region"
             test_preserved_static_write_keeps_live_region;
           test "preserved static write grows after static rows"

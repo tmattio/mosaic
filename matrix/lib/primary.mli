@@ -55,12 +55,12 @@ type region = { row_offset : int; height : int }
 type static_write = { text : string; rows : int; preserve_live_region : bool }
 (** A pending static write.
 
-    [rows] is the exact number of terminal rows consumed by [text]. The caller
-    is responsible for computing it. When [preserve_live_region] is [true], the
-    write scrolls directly into history without shrinking the live region.
-    Preservation is honored only when no static rows sit above the live region
-    and every write queued in the same flush preserves; any other layout grows
-    the static area as usual so content is never dropped. *)
+    [text] is a serialized snapshot of [rows] complete grid rows, each ending in
+    CRLF. Matrix derives both from the same grid. When [preserve_live_region] is
+    [true], the write scrolls directly into history without shrinking the live
+    region. Preservation is honored only when no static rows sit above the live
+    region and every write queued in the same flush preserves; any other layout
+    grows the static area as usual so content is never dropped. *)
 
 type cursor_anchor = {
   render_offset : int;
@@ -99,7 +99,7 @@ val render_offset : t -> int
 
 val static_needs_newline : t -> bool
 (** [static_needs_newline t] is [true] iff the next static write must first move
-    to a fresh row to avoid continuing a prior mid-line write. *)
+    to a fresh row to preserve the shell-owned row at the startup anchor. *)
 
 val live_region : t -> region
 (** [live_region t] is the current live viewport region. *)
