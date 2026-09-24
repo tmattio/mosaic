@@ -61,7 +61,11 @@ let max_csi_params = 8
 let max_sub_params = 4
 
 type t = {
-  input_buffer : Buffer.t;
+  mutable input_buffer : bytes;
+  mutable input_length : int;
+  (* Resume from this offset relative to the pending ESC, without rescanning. *)
+  mutable scan_pos : int;
+  mutable scan_has_semi : bool;
   mutable paste_buffer : bytes;
   mutable paste_len : int;
   mutable paste_match : int;
@@ -193,7 +197,10 @@ let create ?(max_paste_bytes = default_max_paste_bytes)
        positive";
   let max_paste_buffer = max_paste_bytes + br_paste_end_len in
   {
-    input_buffer = Buffer.create 128;
+    input_buffer = Bytes.create 128;
+    input_length = 0;
+    scan_pos = 0;
+    scan_has_semi = false;
     paste_buffer = Bytes.create (min 128 max_paste_buffer);
     paste_len = 0;
     paste_match = 0;
@@ -419,7 +426,26 @@ let should_defer_pending parser pending =
     || is_deferred_pixel_resolution context body
     || is_deferred_private_capability context body
 
-let pending_string parser = Buffer.contents parser.input_buffer
+let pending_string parser =
+  Bytes.sub_string parser.input_buffer 0 parser.input_length
+
+let clear_pending parser =
+  parser.input_length <- 0;
+  parser.scan_pos <- 0;
+  parser.scan_has_semi <- false
+
+let append_pending parser bytes off len =
+  let pos = parser.input_length in
+  if pos + len > Bytes.length parser.input_buffer then begin
+    let buffer =
+      Bytes.create (max (pos + len) (2 * Bytes.length parser.input_buffer))
+    in
+    Bytes.blit parser.input_buffer 0 buffer 0 pos;
+    parser.input_buffer <- buffer
+  end;
+  if bytes != parser.input_buffer || off <> pos then
+    Bytes.blit bytes off parser.input_buffer pos len;
+  parser.input_length <- pos + len
 
 let wake_deferred parser =
   if parser.deferred_timeout then parser.flush_deadline <- Some 0.
@@ -465,19 +491,6 @@ let capability_event_of_sequence seq =
   else No_match
 
 (* OSC helpers *)
-
-type osc_terminator = Bel of int | St of int
-
-let find_osc_terminator s start stop =
-  let rec loop i =
-    if i >= stop then None
-    else
-      match s.[i] with
-      | '\x07' -> Some (Bel i)
-      | '\x1b' when i + 1 < stop && s.[i + 1] = '\\' -> Some (St i)
-      | _ -> loop (i + 1)
-  in
-  loop start
 
 let find_char s c =
   let len = String.length s in
@@ -562,17 +575,15 @@ let response_of_osc parser payload =
   in
   if code = 52 then parse_osc_52 parser data else Response.Osc (code, data)
 
-let parse_osc_sequence parser s start length =
-  match find_osc_terminator s (start + 2) (start + length) with
-  | None -> (None, 0)
-  | Some terminator ->
-      let payload_stop, consumed =
-        match terminator with
-        | Bel i -> (i, i - start + 1)
-        | St i -> (i, i - start + 2)
-      in
-      let payload = String.sub s (start + 2) (payload_stop - start - 2) in
-      (Some (`Response (response_of_osc parser payload)), consumed)
+let parse_osc_sequence parser s =
+  let len = String.length s in
+  let stop =
+    if len > 2 && s.[len - 1] = '\x07' then len - 1
+    else if len > 3 && s.[len - 2] = esc && s.[len - 1] = '\\' then len - 2
+    else 0
+  in
+  if stop < 2 then None
+  else Some (`Response (response_of_osc parser (String.sub s 2 (stop - 2))))
 
 type csi_mod = { code : int option; mods : int option; event : int option }
 
@@ -666,7 +677,7 @@ let parse_x10_normal_mouse_string s start =
           in
           mouse_event ~x ~y ~modifier (Down { button })
       in
-      Some (ev, 3)
+      Some ev
   else None
 
 (* Generic helper for mouse events used by SGR/URXVT-style encodings *)
@@ -1344,15 +1355,16 @@ let parse_csi parser s start end_ : parsed option =
 
 (* ESC parsing *)
 
-let parse_escape_sequence parser s start length : parsed option * int =
-  if length <= 0 then (None, 0)
-  else if length = 1 then (Some (`User (make_key_event Escape)), 1)
+let parse_escape_sequence parser s : parsed option =
+  let length = String.length s in
+  if length <= 0 then None
+  else if length = 1 then Some (`User (make_key_event Escape))
   else
-    let esc2 = s.[start + 1] in
+    let esc2 = s.[1] in
     if esc2 = '[' then
-      if length = 4 && s.[start + 2] = '[' then
+      if length = 4 && s.[2] = '[' then
         let key =
-          match s.[start + 3] with
+          match s.[3] with
           | 'A' -> Some (Key.F 1)
           | 'B' -> Some (Key.F 2)
           | 'C' -> Some (Key.F 3)
@@ -1361,17 +1373,14 @@ let parse_escape_sequence parser s start length : parsed option * int =
           | _ -> None
         in
         match key with
-        | Some key -> (Some (`User (make_key_event key)), length)
-        | None -> (None, 0)
-      else
-        match parse_csi parser s (start + 2) (start + length) with
-        | Some event -> (Some event, length)
-        | None -> (None, 0)
+        | Some key -> Some (`User (make_key_event key))
+        | None -> None
+      else parse_csi parser s 2 length
     else if esc2 = 'O' && length >= 3 then
       (* SS3 sequences - used by terminals for arrows, home/end, function
          keys *)
       let event_opt =
-        match s.[start + 2] with
+        match s.[2] with
         | 'A' -> Some (make_key_event Up)
         | 'B' -> Some (make_key_event Down)
         | 'C' -> Some (make_key_event Right)
@@ -1394,11 +1403,11 @@ let parse_escape_sequence parser s start length : parsed option * int =
         | 'X' -> Some (make_char_event '=') (* keypad = *)
         | _ -> None
       in
-      (Option.map (fun e -> `User e) event_opt, 3)
-    else if esc2 = ']' then parse_osc_sequence parser s start length
+      Option.map (fun e -> `User e) event_opt
+    else if esc2 = ']' then parse_osc_sequence parser s
     else if length >= 2 then
       (* Alt (ESC-prefix) combinations and ESC+control handling *)
-      let c = s.[start + 1] in
+      let c = s.[1] in
       (* ESC + control-char -> Alt+Ctrl letter (or space for NUL) *)
       if c >= '\x00' && c <= '\x1f' then
         let key, modifier =
@@ -1411,30 +1420,25 @@ let parse_escape_sequence parser s start length : parsed option * int =
             | None ->
                 (Char (Uchar.of_int (Char.code c)), mk_modifier ~alt:true ())
         in
-        (Some (`User (make_key_event ~modifier key)), 2)
+        Some (`User (make_key_event ~modifier key))
       else if c = '\x7f' || c = '\b' then
-        ( Some
-            (`User
-               (make_key_event ~modifier:(mk_modifier ~alt:true ()) Backspace)),
-          2 )
+        Some
+          (`User (make_key_event ~modifier:(mk_modifier ~alt:true ()) Backspace))
       else if c = ' ' then
-        ( Some
-            (`User
-               (make_key_event ~modifier:(mk_modifier ~alt:true ())
-                  (Char (Uchar.of_int 32)))),
-          2 )
+        Some
+          (`User
+             (make_key_event ~modifier:(mk_modifier ~alt:true ())
+                (Char (Uchar.of_int 32))))
       else if c >= '!' && c <= '~' then
         let is_upper = c >= 'A' && c <= 'Z' in
         let modifier =
           if is_upper then mk_modifier ~alt:true ~shift:true ()
           else mk_modifier ~alt:true ()
         in
-        ( Some
-            (`User
-               (make_key_event ~modifier (Char (Uchar.of_int (Char.code c))))),
-          2 )
-      else (None, 0)
-    else (None, 0)
+        Some
+          (`User (make_key_event ~modifier (Char (Uchar.of_int (Char.code c)))))
+      else None
+    else None
 
 (* Char decoding *)
 
@@ -1499,9 +1503,9 @@ let emit_legacy_high_byte parser byte emit =
     Bytes.unsafe_set bytes 0 esc;
     Bytes.unsafe_set bytes 1 (Char.unsafe_chr legacy);
     let seq = Bytes.unsafe_to_string bytes in
-    match parse_escape_sequence parser seq 0 2 with
-    | Some (`User event), _ -> emit event
-    | Some (`Response _), _ | None, _ -> ())
+    match parse_escape_sequence parser seq with
+    | Some (`User event) -> emit event
+    | Some (`Response _) | None -> ())
 
 (* Flush every buffered UTF-8 byte through the legacy Meta path. Used when a
    buffered sequence is invalidated, completes to an invalid scalar value, or
@@ -1630,12 +1634,10 @@ let process_sequence_token parser seq ~on_event ~on_response =
           if seq_len >= 3 && seq.[0] = '\x1b' && seq.[1] = '[' && seq.[2] = 'M'
           then
             match parse_x10_normal_mouse_string seq 3 with
-            | Some (e, _) -> Some (`User e)
+            | Some e -> Some (`User e)
             | None -> None
           else if seq = "\x1b\x1b" then Some (`User alt_escape_event)
-          else
-            let ev, _ = parse_escape_sequence parser seq 0 seq_len in
-            ev
+          else parse_escape_sequence parser seq
         in
         match ev_opt with
         | Some (`User e) -> on_event e
@@ -1645,18 +1647,11 @@ let process_sequence_token parser seq ~on_event ~on_response =
 let schedule_flush parser now =
   parser.deferred_timeout <- false;
   parser.sgr_grace_used <- false;
-  if parser.scanner_mode <> `Normal || Buffer.length parser.input_buffer = 0
-  then parser.flush_deadline <- None
-  else
-    let len = Buffer.length parser.input_buffer in
-    let delay =
-      if len = 1 && Buffer.nth parser.input_buffer 0 = esc then
-        ambiguity_timeout
-      else if len >= 2 && Buffer.nth parser.input_buffer 0 = esc then
-        incomplete_seq_timeout
-      else ambiguity_timeout
-    in
-    parser.flush_deadline <- Some (now +. delay)
+  let delay =
+    if parser.input_length = 1 then ambiguity_timeout
+    else incomplete_seq_timeout
+  in
+  parser.flush_deadline <- Some (now +. delay)
 
 let has_subbytes_at bytes ~sub ~pos ~stop =
   let sub_len = String.length sub in
@@ -1799,7 +1794,12 @@ let find_x10_end_bytes bytes start stop =
     | r -> r
   else find_esc (start + 3)
 
-let find_sequence_end_bytes bytes start stop =
+let incomplete_sequence parser start pos =
+  parser.scan_pos <- pos - start;
+  Incomplete
+
+let find_sequence_end_bytes parser bytes start stop =
+  let resume = max (start + 2) (start + parser.scan_pos) in
   if start + 1 >= stop then Incomplete
   else
     match Bytes.unsafe_get bytes (start + 1) with
@@ -1825,46 +1825,33 @@ let find_sequence_end_bytes bytes start stop =
              while rxvt keys never do, so classify on the body seen so far.
              This keeps tokenization independent of chunk boundaries. *)
           let rec loop i has_semi =
-            if i >= stop then Incomplete
+            if i >= stop then (
+              parser.scan_has_semi <- has_semi;
+              incomplete_sequence parser start i)
             else
               let c = Bytes.unsafe_get bytes i in
               if c = esc then Restart i
               else if c = '$' then
                 if Bytes.unsafe_get bytes (start + 2) = '?' || has_semi then
-                  if i + 1 >= stop then Incomplete else loop (i + 1) has_semi
+                  loop (i + 1) has_semi
                 else End (i + 1)
               else if is_csi_final c then End (i + 1)
               else loop (i + 1) (has_semi || c = ';')
           in
-          loop (start + 2) false
-    | ']' ->
-        (* An ESC as the last available byte may be the start of an ST
-           terminator (ESC \): wait for the next byte instead of aborting
-           the sequence. *)
+          loop resume parser.scan_has_semi
+    | (']' | 'P' | '_') as kind ->
         let rec loop i =
-          if i >= stop then Incomplete
+          if i >= stop then incomplete_sequence parser start i
           else
             let c = Bytes.unsafe_get bytes i in
-            if c = '\x07' then End (i + 1)
+            if c = '\x07' && kind = ']' then End (i + 1)
             else if c = esc then
-              if i + 1 >= stop then Incomplete
+              if i + 1 >= stop then incomplete_sequence parser start i
               else if Bytes.unsafe_get bytes (i + 1) = '\\' then End (i + 2)
               else Restart i
             else loop (i + 1)
         in
-        loop (start + 2)
-    | 'P' | '_' ->
-        let rec loop i =
-          if i >= stop then Incomplete
-          else
-            let c = Bytes.unsafe_get bytes i in
-            if c = esc then
-              if i + 1 >= stop then Incomplete
-              else if Bytes.unsafe_get bytes (i + 1) = '\\' then End (i + 2)
-              else Restart i
-            else loop (i + 1)
-        in
-        loop (start + 2)
+        loop resume
     | 'O' ->
         if start + 2 >= stop then Incomplete
         else if Bytes.unsafe_get bytes (start + 2) = esc then Restart (start + 2)
@@ -1899,6 +1886,7 @@ let rec scan_normal_bytes parser bytes pos stop now ~on_event ~on_response =
         emit_legacy_utf8_buffer parser on_event;
         parser.flush_deadline <- None);
       if has_subbytes_at bytes ~sub:br_paste_start ~pos ~stop then (
+        clear_pending parser;
         reset_paste_state parser;
         parser.scanner_mode <- `Paste;
         let after_start = pos + br_paste_start_len in
@@ -1906,19 +1894,22 @@ let rec scan_normal_bytes parser bytes pos stop now ~on_event ~on_response =
         scan_paste_bytes parser bytes after_start stop now ~on_event
           ~on_response)
       else
-        match find_sequence_end_bytes bytes pos stop with
+        match find_sequence_end_bytes parser bytes pos stop with
         | Incomplete ->
             let rem_len = stop - pos in
             if rem_len > max_sequence_len then (
+              clear_pending parser;
               text_events_iter parser bytes pos rem_len now on_event;
               parser.flush_deadline <- None)
             else (
-              Buffer.add_subbytes parser.input_buffer bytes pos rem_len;
+              append_pending parser bytes pos rem_len;
               schedule_flush parser now)
         | Restart restart ->
+            clear_pending parser;
             scan_normal_bytes parser bytes restart stop now ~on_event
               ~on_response
         | End end_pos ->
+            clear_pending parser;
             let seq = Bytes.sub_string bytes pos (end_pos - pos) in
             process_sequence_token parser seq ~on_event ~on_response;
             scan_normal_bytes parser bytes end_pos stop now ~on_event
@@ -1950,15 +1941,14 @@ let feed parser bytes offset length ~now ~on_event ~on_response =
   let stop = offset + length in
   if parser.scanner_mode <> `Normal then
     scan_paste_bytes parser bytes offset stop now ~on_event ~on_response
-  else if Buffer.length parser.input_buffer = 0 then
+  else if parser.input_length = 0 then
     scan_normal_bytes parser bytes offset stop now ~on_event ~on_response
   else (
-    Buffer.add_subbytes parser.input_buffer bytes offset length;
-    let pending = Buffer.contents parser.input_buffer in
-    Buffer.clear parser.input_buffer;
-    let pending_bytes = Bytes.unsafe_of_string pending in
-    scan_normal_bytes parser pending_bytes 0 (String.length pending) now
-      ~on_event ~on_response)
+    append_pending parser bytes offset length;
+    let pending_length = parser.input_length in
+    parser.input_length <- 0;
+    scan_normal_bytes parser parser.input_buffer 0 pending_length now ~on_event
+      ~on_response)
 
 let drain parser ~now ~on_event ~on_response =
   (match parser.scanner_mode with
@@ -1990,10 +1980,9 @@ let drain parser ~now ~on_event ~on_response =
       | None -> false )
   with
   | true, true, _ | true, false, true ->
-      if Buffer.length parser.input_buffer = 0 then
-        parser.deferred_timeout <- false
+      if parser.input_length = 0 then parser.deferred_timeout <- false
       else
-        let pending = Buffer.contents parser.input_buffer in
+        let pending = pending_string parser in
         if should_defer_pending parser pending then (
           parser.flush_deadline <- None;
           parser.deferred_timeout <- true)
@@ -2005,7 +1994,7 @@ let drain parser ~now ~on_event ~on_response =
           parser.deferred_timeout <- false;
           parser.flush_deadline <- Some (now +. incomplete_seq_timeout))
         else (
-          Buffer.clear parser.input_buffer;
+          clear_pending parser;
           parser.flush_deadline <- None;
           parser.deferred_timeout <- false;
           process_sequence_token parser pending ~on_event ~on_response)
@@ -2022,10 +2011,10 @@ let deadline parser =
           parser.flush_deadline <- deadline;
           deadline)
 
-let pending parser = Bytes.of_string (pending_string parser)
+let pending parser = Bytes.sub parser.input_buffer 0 parser.input_length
 
 let reset parser =
-  Buffer.clear parser.input_buffer;
+  clear_pending parser;
   parser.paste_len <- 0;
   parser.paste_match <- 0;
   parser.flush_deadline <- None;

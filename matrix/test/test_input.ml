@@ -1469,6 +1469,44 @@ let test_all_splits s expected_event_count desc =
       int expected_event_count total
   done
 
+let test_fragmented_long_sequences () =
+  let payload = String.make 2048 'x' in
+  let sequences =
+    [
+      "pre\x1b]10;" ^ payload ^ "\x1b\\z";
+      "\x1b]10;" ^ payload ^ "\x07z";
+      "\x1bP>|" ^ payload ^ "\x1b\\z";
+      "\x1b]10;" ^ payload ^ "\x1b[Az";
+      "\x1b[1;1$y\x1b[?2027;1$y\x1b[2$z";
+      "\x1b[[A\x1b[M !!\x1b[200~paste\x1b[201~z";
+    ]
+  in
+  List.iter
+    (fun sequence ->
+      let expected_events, expected_responses = parse_single sequence in
+      List.iter
+        (fun chunk_size ->
+          let parser = Input.Parser.create () in
+          let bytes = Bytes.of_string ("prefix" ^ sequence ^ "suffix") in
+          let events = ref [] and responses = ref [] in
+          let pos = ref 6 in
+          let stop = 6 + String.length sequence in
+          while !pos < stop do
+            let len = min chunk_size (stop - !pos) in
+            Input.Parser.feed parser bytes !pos len ~now:0.
+              ~on_event:(fun event -> events := event :: !events)
+              ~on_response:(fun response -> responses := response :: !responses);
+            pos := !pos + len
+          done;
+          equal ~msg:"fragmentation preserves user events" (list event_testable)
+            expected_events (List.rev !events);
+          equal ~msg:"fragmentation preserves terminal replies"
+            (list response_testable) expected_responses (List.rev !responses);
+          equal ~msg:"complete sequences leave no pending bytes" string ""
+            (Bytes.to_string (Input.Parser.pending parser)))
+        [ 1; 7; 31 ])
+    sequences
+
 let test_csi_split_boundaries () =
   (* CSI sequence for Up arrow: ESC [ A *)
   test_all_splits "\x1b[A" 1 "CSI Up";
@@ -1697,6 +1735,7 @@ let tests =
     test "kitty keyboard queries" test_kitty_keyboard_queries;
     slow "parsing efficiency" test_parsing_efficiency;
     test "CSI split boundaries" test_csi_split_boundaries;
+    test "fragmented long sequences" test_fragmented_long_sequences;
     test "OSC split boundaries" test_osc_split_boundaries;
     test "string terminator split" test_string_terminator_split_regression;
     test "UTF-8 split boundaries" test_utf8_split_boundaries;

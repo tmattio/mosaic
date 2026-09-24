@@ -281,6 +281,31 @@ let rec feed_chunks parser bytes chunk_size offset ~on_event ~on_response =
     feed_chunks parser bytes chunk_size (offset + chunk) ~on_event ~on_response
   end
 
+(* Fragmentation must not repeatedly copy or scan an accumulating sequence.
+   Keep inputs and callbacks outside the measured body. The size series makes
+   growth visible independently of normal keyboard throughput. *)
+let fragmented_sequence name bytes chunk_size =
+  let parser = I.Parser.create () in
+  let count = ref 0 in
+  let on_event _ = incr count in
+  let on_response _ = incr count in
+  bench name (fun () ->
+      I.Parser.reset parser;
+      count := 0;
+      feed_chunks parser bytes chunk_size 0 ~on_event ~on_response;
+      ignore (Sys.opaque_identity !count))
+
+let fragmented_osc size chunk_size =
+  fragmented_sequence
+    (Printf.sprintf "fragmented/osc-%d-bytes-chunk-%d" size chunk_size)
+    (Bytes.of_string ("\x1b]10;" ^ String.make size 'x' ^ "\x1b\\"))
+    chunk_size
+
+let fragmented_keyboard =
+  fragmented_sequence "fragmented/keyboard-bytewise"
+    (Bytes.of_string legacy_keyboard_stream)
+    1
+
 let paste_ci_log =
   let parser = I.Parser.create () in
   let bytes = Bytes.of_string bracketed_paste_stream in
@@ -374,6 +399,11 @@ let benchmarks =
         (* Keyboard hot paths: legacy + Kitty protocol *)
         keyboard_legacy_hot;
         keyboard_kitty_hot;
+        fragmented_keyboard;
+        fragmented_osc 256 1;
+        fragmented_osc 1024 1;
+        fragmented_osc 3072 1;
+        fragmented_osc 3072 32;
         (* Pointer-heavy TUI / terminal apps *)
         mouse_mixed_hot;
         (* CI logs pasted into a TUI, with ANSI stripping *)
