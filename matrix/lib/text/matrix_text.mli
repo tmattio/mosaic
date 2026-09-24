@@ -86,12 +86,22 @@ val iter_wrap_breaks :
   unit
 (** [iter_wrap_breaks f s] calls
     [f ~break_byte_offset ~next_byte_offset ~grapheme_offset] for each word-wrap
-    break opportunity in [s], in order.
+    break opportunity in [s], in order. Adjacent CJK graphemes allow line
+    breaks, except before Kana combining marks and punctuation U+30A0 and
+    U+30FB. No intercharacter break follows a zero-width grapheme.
 
-    [break_byte_offset] is the byte position of the grapheme containing the
-    break character. [next_byte_offset] is the byte position where scanning
-    resumes. [grapheme_offset] is the zero-based grapheme index of the break
-    grapheme. *)
+    [break_byte_offset] is the byte position of the grapheme immediately before
+    the break. [next_byte_offset] is the byte position where scanning resumes.
+    [grapheme_offset] is the zero-based index of that preceding grapheme. *)
+
+val iter_word_breaks :
+  (break_byte_offset:int -> next_byte_offset:int -> grapheme_offset:int -> unit) ->
+  string ->
+  unit
+(** [iter_word_breaks f s] is {!iter_wrap_breaks} without CJK intercharacter
+    opportunities. Use it for editor word movement and deletion: CJK runs remain
+    words, with breaks at ASCII/CJK transitions, whitespace, and supported
+    punctuation. Offsets follow the same convention as {!iter_wrap_breaks}. *)
 
 val iter_line_breaks :
   (pos:int -> kind:line_break_kind -> unit) -> string -> unit

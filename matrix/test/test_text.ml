@@ -400,17 +400,17 @@ let wrap_breaks_mixed_cjk_ascii_transitions () =
   let cjk_ascii = "日本語abc" in
   let cjk_points = wrap_break_points cjk_ascii in
   let cjk_resumes = wrap_breaks cjk_ascii in
-  equal ~msg:"CJK->ASCII one break" int 1 (Array.length cjk_points);
+  equal ~msg:"CJK->ASCII breaks" int 3 (Array.length cjk_points);
   equal ~msg:"CJK->ASCII point" wrap_break_testable
     { byte_offset = 6; grapheme_offset = 2 }
-    cjk_points.(0);
+    cjk_points.(2);
   equal ~msg:"CJK->ASCII resume" wrap_break_testable
     { byte_offset = 9; grapheme_offset = 2 }
-    cjk_resumes.(0);
+    cjk_resumes.(2);
   let ascii_cjk = "abc日本語" in
   let ascii_points = wrap_break_points ascii_cjk in
   let ascii_resumes = wrap_breaks ascii_cjk in
-  equal ~msg:"ASCII->CJK one break" int 1 (Array.length ascii_points);
+  equal ~msg:"ASCII->CJK breaks" int 3 (Array.length ascii_points);
   equal ~msg:"ASCII->CJK point" wrap_break_testable
     { byte_offset = 2; grapheme_offset = 2 }
     ascii_points.(0);
@@ -422,13 +422,13 @@ let wrap_breaks_fullwidth_cjk_punctuation () =
   let ideographic_full_stop = "日本語。abc" in
   let points = wrap_break_points ideographic_full_stop in
   let resumes = wrap_breaks ideographic_full_stop in
-  equal ~msg:"CJK punctuation one break" int 1 (Array.length points);
+  equal ~msg:"CJK punctuation breaks" int 3 (Array.length points);
   equal ~msg:"CJK punctuation point" wrap_break_testable
     { byte_offset = 9; grapheme_offset = 3 }
-    points.(0);
+    points.(2);
   equal ~msg:"CJK punctuation resume" wrap_break_testable
     { byte_offset = 12; grapheme_offset = 3 }
-    resumes.(0);
+    resumes.(2);
   let check_one label cp =
     let s = "a" ^ uchar_to_utf8 cp ^ "b" in
     equal ~msg:label int 1 (Array.length (wrap_breaks s))
@@ -436,6 +436,59 @@ let wrap_breaks_fullwidth_cjk_punctuation () =
   check_one "ideographic comma" 0x3001;
   check_one "fullwidth exclamation" 0xFF01;
   check_one "fullwidth question" 0xFF1F
+
+let cjk_break_cases =
+  [
+    ("Han", "中文", [ 3 ], []);
+    ("script transition", "中文A", [ 3; 6 ], [ 6 ]);
+    ("ideographic punctuation", "字。", [ 6 ], [ 6 ]);
+    ("Kana middle dot", "カ・ナ", [ 6 ], []);
+    ("Kana double hyphen", "カ゠ナ", [ 6 ], []);
+    ("Kana combining mark", "か\u{3099}く", [ 6 ], []);
+    ("isolated combining mark", "\u{3099}く", [], []);
+    ("Hangul", "테스트", [ 3; 6 ], []);
+    ("halfwidth Kana", "ｶﾀｶﾅ", [ 3; 6; 9 ], []);
+    ("supplementary Han", "𠀀𠀁", [ 4 ], []);
+  ]
+
+let cjk_breaks (_, text, line_breaks, word_breaks) =
+  let collect iter =
+    let breaks = ref [] in
+    iter
+      (fun ~break_byte_offset:_ ~next_byte_offset ~grapheme_offset:_ ->
+        breaks := next_byte_offset :: !breaks)
+      text;
+    List.rev !breaks
+  in
+  equal ~msg:"line opportunities" (list int) line_breaks
+    (collect iter_wrap_breaks);
+  equal ~msg:"editor words" (list int) word_breaks (collect iter_word_breaks)
+
+let cjk_layout_cases =
+  [
+    ("mixed", "AB 测试文字", 6, [ "AB 测"; "试文字" ]);
+    ("punctuation", "测试。文字", 4, [ "测"; "试。"; "文字" ]);
+    ("Kana punctuation", "カ・ナ", 4, [ "カ・"; "ナ" ]);
+    ("Kana combining mark", "か\u{3099}くけ", 4, [ "か\u{3099}く"; "け" ]);
+  ]
+
+let cjk_layout (_, text, width, expected) =
+  List.iter
+    (fun width_method ->
+      let source = Layout.Source.of_string text in
+      let layout = Layout.create ~width_method source ~width ~wrap:`Word in
+      let rows =
+        List.init (Layout.row_count layout) (fun row ->
+            Layout.Source.slice source
+              ~first:(Layout.row_start layout row)
+              ~last:(Layout.row_end layout row))
+      in
+      equal ~msg:"wrapped rows" (list string) expected rows;
+      equal ~msg:"source preserved" string text (String.concat "" rows);
+      equal ~msg:"measurement agrees" (pair int int)
+        (Layout.row_count layout, Layout.max_width layout)
+        (Layout.measure ~width_method source ~width ~wrap:`Word))
+    [ `Unicode; `Unicode_wide; `Wcwidth ]
 
 let line_breaks_lf () =
   let breaks = line_breaks_to_list "a\nb\nc" in
@@ -917,6 +970,12 @@ let () =
         ];
       group "Wrap Breaks"
         [
+          cases "CJK opportunities" cjk_break_cases
+            ~name:(fun (name, _, _, _) -> name)
+            cjk_breaks;
+          cases "CJK rows" cjk_layout_cases
+            ~name:(fun (name, _, _, _) -> name)
+            cjk_layout;
           test "ASCII spaces" wrap_breaks_ascii_spaces;
           test "ASCII punctuation" wrap_breaks_ascii_punctuation;
           test "periods stay inside tokens"

@@ -644,6 +644,35 @@ let styled_cluster_paints_as_one () =
   equal string "👩‍💻" (Matrix_grid.get_text grid 1);
   equal string "x" (Matrix_grid.get_text grid 3)
 
+let cjk_wrap_across_styles () =
+  let s = make_surface ~width:6 ~wrap:`Word () in
+  let red = Ansi.Style.make ~fg:Ansi.Color.red () in
+  Text_buffer.set_styled_text (Text_surface.buffer s)
+    [
+      { Text_buffer.text = "AB 测"; style = red };
+      { Text_buffer.text = "试文"; style = Ansi.Style.default };
+      { Text_buffer.text = "字"; style = red };
+    ];
+  let layout = Text_surface.layout s in
+  equal int 2 (Layout.row_count layout);
+  equal string "AB 测" (row_text layout 0);
+  equal string "试文字" (row_text layout 1);
+  let grid = make_grid ~width:6 ~height:2 () in
+  Renderable.Private.render (Text_surface.node s) grid ~delta:0.;
+  List.iter
+    (fun (x, y, text, color) ->
+      let cell = Matrix_grid.idx grid ~x ~y in
+      equal string text (Matrix_grid.get_text grid cell);
+      is_true (Ansi.Color.equal color (Matrix_grid.get_fg grid cell)))
+    [
+      (3, 0, "测", Ansi.Color.red);
+      (0, 1, "试", Ansi.Color.default_fg);
+      (2, 1, "文", Ansi.Color.default_fg);
+      (4, 1, "字", Ansi.Color.red);
+    ];
+  ignore (Text_surface.set_selection s ~start:3 ~end_:7);
+  equal string "测试文字" (Text_surface.selected_text s)
+
 let clipped_text_uses_absolute_source_rows () =
   let s =
     make_surface ~width:10 ~height:10000 ~content:"zero\none\ntwo\nthree" ()
@@ -712,6 +741,7 @@ let () =
         ];
       group "Wrapping — Word"
         [
+          test "CJK wraps across styles" cjk_wrap_across_styles;
           test "breaks at word boundary" wrap_word_at_boundary;
           test "preserves line sources" wrap_word_preserves_sources;
         ];

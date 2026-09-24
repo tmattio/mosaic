@@ -687,7 +687,7 @@ let[@inline] first_codepoint s off =
   let d = Stdlib.String.get_utf_8_uchar s off in
   Uchar.to_int (Uchar.utf_decode_uchar d)
 
-let iter_wrap_breaks f s =
+let iter_breaks ~intercharacter f s =
   let len = Stdlib.String.length s in
   let seg = Uuseg_grapheme_cluster.create () in
   let rec has_break i limit =
@@ -707,8 +707,16 @@ let iter_wrap_breaks f s =
     if byte_off >= len then ()
     else
       let next = next_boundary seg s byte_off len in
-      let curr_class = classify_word (first_codepoint s byte_off) in
-      if prev_byte_off >= 0 && is_cjk_ascii_transition prev_class curr_class
+      let cp = first_codepoint s byte_off in
+      let curr_class = classify_word cp in
+      if
+        prev_byte_off >= 0
+        && (is_cjk_ascii_transition prev_class curr_class
+           || intercharacter && prev_class = Cjk_word && curr_class = Cjk_word
+              && cp <> 0x3099 && cp <> 0x309A && cp <> 0x30A0 && cp <> 0x30FB
+              && cluster_width ~method_:`Unicode ~tab_width:2 s prev_byte_off
+                   (byte_off - prev_byte_off)
+                 > 0)
       then
         f ~break_byte_offset:prev_byte_off ~next_byte_offset:byte_off
           ~grapheme_offset:prev_g_off;
@@ -718,6 +726,9 @@ let iter_wrap_breaks f s =
       loop next (g_off + 1) byte_off g_off curr_class
   in
   loop 0 0 (-1) (-1) Other
+
+let iter_wrap_breaks f s = iter_breaks ~intercharacter:true f s
+let iter_word_breaks f s = iter_breaks ~intercharacter:false f s
 
 let iter_line_breaks f s =
   let len = Stdlib.String.length s in

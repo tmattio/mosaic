@@ -358,7 +358,7 @@ let grapheme_contains_line_break t c i =
 let word_break_set t =
   let c = ensure_cache t in
   let s = Hashtbl.create 16 in
-  Matrix.Text.iter_wrap_breaks
+  Matrix.Text.iter_word_breaks
     (fun ~break_byte_offset ~next_byte_offset ~grapheme_offset ->
       ignore break_byte_offset;
       ignore next_byte_offset;

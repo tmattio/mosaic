@@ -491,6 +491,28 @@ let move_right_with_selection () =
   equal ~msg:"cursor at selection end" int 3 (Edit_buffer.cursor buf);
   is_false ~msg:"selection cleared" (Edit_buffer.has_selection buf)
 
+let cjk_words_stay_grouped () =
+  List.iter
+    (fun text ->
+      let buf = Edit_buffer.create text in
+      let length = Edit_buffer.length buf in
+      Edit_buffer.set_cursor buf 0;
+      is_true (Edit_buffer.move_word_forward ~select:true buf);
+      equal ~msg:"forward through the run" int length (Edit_buffer.cursor buf);
+      equal ~msg:"select the entire word" sel_testable
+        (Some (0, length))
+        (Edit_buffer.selection buf);
+      Edit_buffer.set_cursor buf length;
+      is_true (Edit_buffer.move_word_backward buf);
+      equal ~msg:"backward through the run" int 0 (Edit_buffer.cursor buf);
+      is_true (Edit_buffer.delete_word_forward buf);
+      equal ~msg:"delete the whole run" string "" (Edit_buffer.text buf);
+      is_true (Edit_buffer.undo buf);
+      Edit_buffer.set_cursor buf length;
+      is_true (Edit_buffer.delete_word_backward buf);
+      equal ~msg:"backspace the whole run" string "" (Edit_buffer.text buf))
+    [ "日本語文字"; "테스트"; "カ・ナ"; "か\u{3099}く" ]
+
 let move_word_forward_basic () =
   let buf = Edit_buffer.create "hello world" in
   Edit_buffer.set_cursor buf 0;
@@ -1463,6 +1485,7 @@ let () =
           test "move_right increments" move_right_increments;
           test "move_right at end" move_right_at_end;
           test "move_right with selection" move_right_with_selection;
+          test "CJK words stay grouped" cjk_words_stay_grouped;
           test "move_word_forward basic" move_word_forward_basic;
           test "move_word_forward crosses newline"
             move_word_forward_crosses_newline;
