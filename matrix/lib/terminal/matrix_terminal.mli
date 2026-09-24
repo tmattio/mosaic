@@ -350,6 +350,22 @@ val cursor_color : t -> float * float * float * float
 val reset_cursor_color : t -> unit
 (** [reset_cursor_color t] restores the terminal's default cursor colour. *)
 
+val write_cursor_style : t -> shape:Ansi.cursor_shape -> Ansi.Writer.t -> unit
+(** [write_cursor_style t ~shape writer] appends the cursor shape sequence to
+    [writer] and arms its restoration by {!reset_state}. *)
+
+val write_cursor_color : t -> (int * int * int) option -> Ansi.Writer.t -> unit
+(** [write_cursor_color t color writer] appends the cursor colour sequence for
+    [color], with RGB components clamped to [0..255]. [None] appends the default
+    colour reset, including its OSC 12 fallback.
+
+    These writer functions support batched output: they append even for non-TTY
+    handles and do not call [output] or change the immediate cursor metadata.
+    Restoration is armed before appending a custom appearance. A queued reset
+    leaves restoration armed, since writing the batch can fail partway through.
+    {!reset_cursor_color} and {!reset_state} clear colour restoration after
+    successful output. *)
+
 val set_title : t -> string -> unit
 (** [set_title t s] sets the terminal window title to [s] (OSC 0). *)
 
@@ -372,20 +388,6 @@ val query_color_scheme : t -> unit
     scheme ([CSI ? 996 n]). Supporting terminals reply [CSI ? 997 ; value n];
     the reply arrives asynchronously as an {!Matrix_input.Response.Color_scheme}
     capability event. *)
-
-val note_appearance_emitted :
-  t -> [ `Cursor_color | `Cursor_style | `Title ] -> unit
-(** [note_appearance_emitted t what] records that an appearance sequence for
-    [what] reached the terminal without going through [t]'s output callback —
-    runtimes batch DECSCUSR, OSC 12, and title writes into frame buffers of
-    their own. {!reset_state} and {!close} then restore [what] exactly as if it
-    had been set through the handle. *)
-
-val note_appearance_reset :
-  t -> [ `Cursor_color | `Cursor_style | `Title ] -> unit
-(** [note_appearance_reset t what] records that [what] was restored to its
-    terminal default without going through [t] (e.g. a frame buffer carried OSC
-    112). {!reset_state} and {!close} then leave [what] alone. *)
 
 val query_pixel_resolution : t -> unit
 (** [query_pixel_resolution t] sends a pixel resolution query (CSI 14 t) through

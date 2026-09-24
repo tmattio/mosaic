@@ -35,6 +35,9 @@ let test_non_tty_no_escape_sequences () =
   T.enable_focus_reporting term true;
   T.enter_alternate_screen term;
   T.set_title term "Test";
+  T.set_cursor_style term `Line ~blinking:true;
+  T.set_cursor_color term ~r:1. ~g:0. ~b:0. ~a:1.;
+  T.reset_cursor_color term;
 
   is_true ~msg:"no escape sequences on non-TTY" (Buffer.length buf = 0);
 
@@ -956,6 +959,83 @@ let test_reset_state_restores_touched_appearance () =
   contains ~msg:"touched cursor style is reset" ~sub:"\027[0 q" out;
   contains ~msg:"touched cursor color is reset" ~sub:"\027]112" out
 
+let test_cursor_batch_matches_immediate_output () =
+  with_tty_terminal @@ fun term output ->
+  T.set_cursor_style term `Line ~blinking:true;
+  Buffer.clear output;
+  T.set_cursor_color term ~r:2.5 ~g:Float.nan ~b:0.5 ~a:0.25;
+  let writer = Ansi.Writer.create 128 in
+  T.write_cursor_color term (Some (255, 0, 128)) writer;
+  T.write_cursor_style term ~shape:`Blinking_bar writer;
+  equal ~msg:"immediate and batched cursor output agree" string
+    (Buffer.contents output)
+    (Ansi.Writer.contents writer);
+  Ansi.Writer.reset_pos writer;
+  T.write_cursor_color term None writer;
+  Buffer.clear output;
+  T.reset_cursor_color term;
+  equal ~msg:"both reset paths include the fallback" string
+    "\027]12;default\007\027]112\007"
+    (Ansi.Writer.contents writer);
+  equal ~msg:"immediate and batched resets agree" string
+    (Buffer.contents output)
+    (Ansi.Writer.contents writer);
+  Buffer.clear output;
+  T.reset_state term;
+  not_contains ~msg:"successful immediate reset clears restoration"
+    ~sub:"\027]112" (Buffer.contents output)
+
+let test_cursor_reset_survives_partial_output () =
+  List.iter
+    (fun batched ->
+      List.iter
+        (fun cut ->
+          let output = Buffer.create 128 in
+          let fail_output = ref false in
+          let term =
+            T.make ~tty:true
+              ~output:(fun bytes ->
+                if !fail_output then (
+                  Buffer.add_substring output bytes 0
+                    (min cut (String.length bytes));
+                  failwith "partial cursor reset")
+                else Buffer.add_string output bytes)
+              ()
+          in
+          T.set_cursor_color term ~r:1. ~g:0. ~b:0. ~a:1.;
+          fail_output := true;
+          raises_match
+            (function
+              | Failure message -> String.equal message "partial cursor reset"
+              | _ -> false)
+            (fun () ->
+              if batched then (
+                let writer = Ansi.Writer.create 128 in
+                T.write_cursor_color term None writer;
+                T.send term (Ansi.Writer.contents writer))
+              else T.reset_cursor_color term);
+          fail_output := false;
+          Buffer.clear output;
+          T.reset_state term;
+          contains ~msg:"cleanup retries a reset whose output failed"
+            ~sub:"\027]12;default\007\027]112\007" (Buffer.contents output))
+        [ 0; 7; 14 ])
+    [ false; true ]
+
+let test_hidden_cursor_visuals_remain_deferred () =
+  with_tty_terminal @@ fun term output ->
+  T.set_cursor_visible term false;
+  Buffer.clear output;
+  T.set_cursor_style term `Line ~blinking:true;
+  T.set_cursor_color term ~r:1. ~g:0. ~b:0. ~a:1.;
+  let bytes = Buffer.contents output in
+  not_contains ~msg:"hidden cursor does not emit style" ~sub:" q" bytes;
+  not_contains ~msg:"hidden cursor does not emit color" ~sub:"\027]12;" bytes;
+  Buffer.clear output;
+  T.reset_state term;
+  not_contains ~msg:"deferred visuals need no restoration" ~sub:"\027]112"
+    (Buffer.contents output)
+
 let test_reset_state_resets_cursor_metadata () =
   with_terminal @@ fun term _buf ->
   T.set_cursor_visible term false;
@@ -1180,6 +1260,12 @@ let () =
             test_reset_state_skips_untouched_appearance;
           test "reset state restores touched appearance"
             test_reset_state_restores_touched_appearance;
+          test "cursor batch matches immediate output"
+            test_cursor_batch_matches_immediate_output;
+          test "cursor reset survives partial output"
+            test_cursor_reset_survives_partial_output;
+          test "hidden cursor visuals remain deferred"
+            test_hidden_cursor_visuals_remain_deferred;
           test "reset state resets cursor metadata"
             test_reset_state_resets_cursor_metadata;
         ];

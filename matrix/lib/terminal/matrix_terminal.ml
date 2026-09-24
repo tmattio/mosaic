@@ -106,8 +106,12 @@ let unicode_off = "\027[?2027l"
 let reset_sgr = "\027[0m"
 let erase_below = "\027[J"
 let cursor_default = "\027[0 q"
-let reset_cursor_color_fallback_seq = "\027]12;default\007"
-let reset_cursor_color_seq = "\027]112\007"
+
+let reset_cursor_color_seq =
+  Ansi.to_string (fun writer ->
+      Ansi.reset_cursor_color_fallback writer;
+      Ansi.reset_cursor_color writer)
+
 let mouse_x10 = "\027[?9h"
 let mouse_tracking = "\027[?1000h"
 let mouse_button = "\027[?1002h"
@@ -121,8 +125,6 @@ let sgr_button_seq = "\027[?1006h\027[?1000h\027[?1002h"
 let sgr_any_seq = "\027[?1006h\027[?1000h\027[?1002h\027[?1003h"
 
 (* Helpers *)
-
-let make_osc payload = Ansi.(to_string (osc ~terminator:`Bel ~payload))
 
 let clamp_color_component x =
   let x = if Float.is_nan x then 0. else x in
@@ -376,25 +378,38 @@ let move_cursor ?(visible = true) t ~row ~col =
 let cursor_style_state t = (t.cursor.style, t.cursor.blinking)
 let cursor_color t = t.cursor.color
 
-let cursor_color_osc r g b =
-  let r = clamp_color_component r in
-  let g = clamp_color_component g in
-  let b = clamp_color_component b in
-  make_osc (Printf.sprintf "12;#%02X%02X%02X" r g b)
+let write_cursor_style t ~shape writer =
+  t.cursor_style_sent <- true;
+  Ansi.cursor_style ~shape writer
 
-let cursor_style_seq style blinking =
-  Ansi.(
-    to_string (cursor_style ~shape:(cursor_shape_of_style ~style ~blinking)))
+let write_cursor_color t color writer =
+  match color with
+  | Some (r, g, b) ->
+      t.cursor_color_sent <- true;
+      Ansi.cursor_color ~r ~g ~b writer
+  | None ->
+      (* A queued reset may never reach the terminal. Keep restoration armed
+         until [reset_cursor_color] confirms the output succeeded. *)
+      Ansi.Writer.write_string writer reset_cursor_color_seq
 
 let set_cursor_visuals t =
   if not t.tty then ()
-  else if t.cursor.visible then (
+  else if t.cursor.visible then
     let r, g, b, _ = t.cursor.color in
-    (* Marked before sending so a partial write still gets reset. *)
-    t.cursor_color_sent <- true;
-    t.cursor_style_sent <- true;
-    send t (cursor_color_osc r g b);
-    send t (cursor_style_seq t.cursor.style t.cursor.blinking))
+    let color =
+      Some
+        ( clamp_color_component r,
+          clamp_color_component g,
+          clamp_color_component b )
+    in
+    let shape =
+      Ansi.cursor_shape_of_style ~style:t.cursor.style
+        ~blinking:t.cursor.blinking
+    in
+    send t
+      (Ansi.to_string (fun writer ->
+           write_cursor_color t color writer;
+           write_cursor_style t ~shape writer))
   else send t cursor_hide
 
 let set_cursor_style t style ~blinking =
@@ -408,7 +423,6 @@ let set_cursor_color t ~r ~g ~b ~a =
 
 let reset_cursor_color t =
   t.cursor.color <- (1., 1., 1., 1.);
-  send t reset_cursor_color_fallback_seq;
   send t reset_cursor_color_seq;
   t.cursor_color_sent <- false
 
@@ -449,21 +463,6 @@ let notify t ~title ~body =
 
 let bell t = send t Ansi.(to_string bell)
 let query_color_scheme t = send t Ansi.(to_string (query Color_scheme_report))
-
-(* Out-of-band appearance tracking: runtimes batch DECSCUSR / OSC 12 / title
-   writes into frame buffers that bypass [send]; these calls keep the handle
-   the single authority over what [reset_state] must restore. *)
-
-let note_appearance_emitted t = function
-  | `Cursor_style -> t.cursor_style_sent <- true
-  | `Cursor_color -> t.cursor_color_sent <- true
-  | `Title -> t.title_sent <- true
-
-let note_appearance_reset t = function
-  | `Cursor_style -> t.cursor_style_sent <- false
-  | `Cursor_color -> t.cursor_color_sent <- false
-  | `Title -> t.title_sent <- false
-
 let query_pixel_resolution t = send t Ansi.(to_string (query Pixel_size))
 
 (* Mode restoration *)
@@ -490,10 +489,7 @@ let restore_modes ?(skip_focus = false) t =
 let reset_state t =
   send t cursor_show;
   send t reset_sgr;
-  if t.cursor_color_sent then (
-    send t reset_cursor_color_fallback_seq;
-    send t reset_cursor_color_seq;
-    t.cursor_color_sent <- false);
+  if t.cursor_color_sent then reset_cursor_color t;
   if t.cursor_style_sent then (
     send t cursor_default;
     t.cursor_style_sent <- false);

@@ -433,7 +433,6 @@ let erase_below_seq = Ansi.(to_string erase_below_cursor)
 let clear_and_home_seq = Ansi.(to_string clear_and_home)
 let clear_scrollback_seq = Ansi.(to_string (erase_display ~mode:`Scrollback))
 let reset_scroll_region_seq = Ansi.(to_string reset_scrolling_region)
-let reset_cursor_color_seq = Ansi.(to_string reset_cursor_color)
 
 (* Helpers for buffered frame output. All frame content is accumulated into
    an ANSI writer and flushed as a single write in submit. *)
@@ -645,18 +644,11 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~position =
   if cursor.visible then begin
     let shape = cursor_shape cursor in
     if shape_dirty t shape then begin
-      Ansi.cursor_style ~shape buf;
-      Terminal.note_appearance_emitted t.terminal `Cursor_style;
+      Terminal.write_cursor_style t.terminal ~shape buf;
       t.last_cursor_shape <- Some shape
     end;
     if color_dirty t cursor.color then begin
-      (match cursor.color with
-      | Some (r, g, b) ->
-          Ansi.cursor_color ~r ~g ~b buf;
-          Terminal.note_appearance_emitted t.terminal `Cursor_color
-      | None ->
-          Ansi.Writer.write_string buf reset_cursor_color_seq;
-          Terminal.note_appearance_reset t.terminal `Cursor_color);
+      Terminal.write_cursor_color t.terminal cursor.color buf;
       t.last_cursor_color <- Some cursor.color
     end
   end
