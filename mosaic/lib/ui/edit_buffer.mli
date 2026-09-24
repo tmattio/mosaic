@@ -121,8 +121,11 @@ val insert : t -> string -> bool
 (** [insert t s] is [true] iff inserting [s] changed the text of [t].
 
     If a selection is active it is deleted first. Then [s] is inserted at the
-    cursor position. The result is truncated to {!max_length} [t] grapheme
-    clusters. An undo point is saved before any modification. *)
+    cursor position. The result is resegmented, allowing combining characters to
+    join adjacent clusters even at {!max_length} [t]. If the full insertion
+    exceeds the limit, only an insertion prefix fitting the available grapheme
+    capacity is admitted; existing unselected text is preserved. An undo point
+    is saved before any modification. *)
 
 val delete_backward : t -> bool
 (** [delete_backward t] is [true] iff a deletion changed the text of [t].
@@ -286,3 +289,15 @@ val byte_offset : t -> grapheme:int -> int
 (** [byte_offset t ~grapheme] is the byte offset of grapheme cluster [grapheme]
     in the buffer's content string. Returns [String.length (text t)] when
     [grapheme >= length t]. *)
+
+val source : t -> Matrix.Text.Layout.Source.t
+(** [source t] is the indexed current content. It is shared with display
+    geometry; edits install a new source while existing source values remain
+    valid. *)
+
+val caret : t -> Matrix.Text.Layout.caret
+(** [caret t] is the current grapheme boundary and soft-wrap affinity. *)
+
+val set_caret : ?select:bool -> t -> Matrix.Text.Layout.caret -> unit
+(** [set_caret t caret] sets the clamped cursor and its affinity. [select],
+    default [false], extends selection as in {!set_cursor_offset}. *)

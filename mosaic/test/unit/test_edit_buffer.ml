@@ -275,6 +275,16 @@ let insert_full_buffer_no_room () =
   is_false ~msg:"returns false" changed;
   equal ~msg:"text unchanged" string "abcde" (Edit_buffer.text buf)
 
+let insert_at_limit_preserves_suffix () =
+  let b = Edit_buffer.create ~max_length:5 "abcde" in
+  Edit_buffer.set_cursor b 2;
+  is_false (Edit_buffer.insert b "x");
+  equal string "abcde" (Edit_buffer.text b);
+  Edit_buffer.set_text b "abde";
+  Edit_buffer.set_cursor b 2;
+  is_true (Edit_buffer.insert b "XYZ");
+  equal string "abXde" (Edit_buffer.text b)
+
 let insert_saves_undo () =
   let buf = Edit_buffer.create "hello" in
   let _ = Edit_buffer.insert buf " world" in
@@ -1248,12 +1258,7 @@ let commands =
       (Gen.pair gen_offset Gen.bool)
       ~next:(fun m (pos, select) -> move_to m ~select (clamp m pos))
       (fun _ (pos, select) buf -> Edit_buffer.set_cursor_offset ~select buf pos);
-    (* Empty-buffer select_all is excluded, not because the model cannot
-       express it, but because it is the one state where the buffer is
-       wrong — see the "select_all on an empty buffer" xfail below. Leaving
-       it in would make this suite assert the bug. *)
     call "select_all"
-      ~pre:(fun m -> m.text <> "")
       ~next:(fun m ->
         let cursor = model_length m in
         { m with cursor; anchor = anchor_of ~cursor (Some 0) })
@@ -1322,9 +1327,42 @@ let model_invariant m buf =
 
 (* ── Runner ── *)
 
+let resegment_inserted_combining_mark () =
+  let b = Edit_buffer.create ~max_length:1 "e" in
+  is_true (Edit_buffer.insert b "\204\129");
+  equal string "e\204\129" (Edit_buffer.text b);
+  equal int 1 (Edit_buffer.cursor b);
+  equal int 1 (Edit_buffer.length b);
+  is_true (Edit_buffer.undo b);
+  equal string "e" (Edit_buffer.text b)
+
+let resegment_deleted_separator () =
+  let b = Edit_buffer.create "🇦 🇧" in
+  Edit_buffer.set_cursor b 1;
+  is_true (Edit_buffer.delete_forward b);
+  equal string "🇦🇧" (Edit_buffer.text b);
+  equal int 1 (Edit_buffer.length b);
+  equal int 1 (Edit_buffer.cursor b)
+
+let invisible_clusters_count_towards_limit () =
+  let b = Edit_buffer.create ~max_length:2 "a\226\128\139b" in
+  equal string "a\226\128\139" (Edit_buffer.text b);
+  equal int 2 (Edit_buffer.length b)
+
 let () =
   run "mosaic.edit-buffer"
     [
+      group "Shared source index"
+        [
+          test "length-limited insertion preserves the suffix"
+            insert_at_limit_preserves_suffix;
+          test "insertion merges a combining mark at the length limit"
+            resegment_inserted_combining_mark;
+          test "deletion rebases a merged flag cluster"
+            resegment_deleted_separator;
+          test "length limits retain invisible clusters"
+            invisible_clusters_count_towards_limit;
+        ];
       group "Construction"
         [
           test "create empty" create_empty;
@@ -1372,13 +1410,8 @@ let () =
           test "selection normalized" selection_normalized;
           test "select then move clears" select_then_move_clears;
           test "select_all on empty" select_all_empty;
-          xfail
-            ~reason:
-              "Edit_buffer bug: select_all on an empty buffer leaves an anchor \
-               at 0, so the first character typed afterwards comes back \
-               selected and the second replaces it"
-            (test "select_all on empty leaves no phantom selection"
-               select_all_on_empty_leaves_no_phantom_selection);
+          test "select_all on empty leaves no phantom selection"
+            select_all_on_empty_leaves_no_phantom_selection;
         ];
       group "Editing — Insert"
         [

@@ -1,3 +1,6 @@
+module Layout = Matrix.Text.Layout
+module Source = Layout.Source
+
 (* ───── Helpers ───── *)
 
 let strip_newlines s =
@@ -19,119 +22,47 @@ let strip_newlines s =
   done;
   if Buffer.length buf = len then s else Buffer.contents buf
 
-let truncate_graphemes ~width_method ~tab_width s max_graphemes =
-  if
-    (max_graphemes <= 0)
-    [@mutate
-      off
-        "both call sites pass a value already clamped to Int.max 0, so the \
-         guard never sees a negative and `< 0` can only disagree at 0 — where \
-         the else branch admits no grapheme either, leaving result_end at 0, \
-         so a non-empty s truncates to \"\" and an empty one is returned as \
-         itself"]
-  then ""
-  else
-    let result_end = ref 0 in
-    let idx = ref 0 in
-    let truncated = ref false in
-    Matrix.Text.iter_grapheme_info ~width_method ~tab_width
-      (fun ~offset:_ ~len ~width:_ ->
-        if !idx < max_graphemes then result_end := !result_end + len
-        else truncated := true;
-        incr idx)
-      s;
-    if !truncated then String.sub s 0 !result_end else s
+let truncate_graphemes s max_graphemes =
+  let source = Source.of_string s in
+  if Source.length source <= max_graphemes then s
+  else Source.slice source ~first:0 ~last:max_graphemes
 
 (* ───── Types ───── *)
 
 type snapshot = {
   content : string;
   cursor_pos : int;
+  affinity : Layout.affinity;
   selection_anchor : int option;
-}
-
-type cache = {
-  offsets : int array;
-  widths : int array;
-  count : int;
-  total_width : int;
-  line_starts : int array;
-  line_count : int;
 }
 
 type t = {
   mutable content : string;
   mutable cursor_pos : int;
+  mutable affinity : Layout.affinity;
   mutable selection_anchor : int option;
   mutable max_length : int;
   mutable undo_stack : snapshot list;
   mutable redo_stack : snapshot list;
-  mutable cache : cache option;
+  mutable cache : Source.t option;
   tab_width : int;
   width_method : Matrix.Text.width_method;
 }
 
 (* ───── Cache ───── *)
 
-let build_cache ~width_method ~tab_width content =
-  let n = Matrix.Text.grapheme_count content in
-  let offsets = Array.make n 0 in
-  let widths = Array.make n 0 in
-  let idx = ref 0 in
-  let total_width = ref 0 in
-  let line_starts_rev = ref [ 0 ] in
-  Matrix.Text.iter_graphemes
-    (fun ~offset ~len:grapheme_len ->
-      let i = !idx in
-      offsets.(i) <- offset;
-      let w =
-        Matrix.Text.width_at ~width_method ~tab_width content
-          ~byte_offset:offset
-      in
-      widths.(i) <- w;
-      total_width := !total_width + w;
-      let c = String.unsafe_get content offset in
-      if grapheme_len > 0 && (c = '\n' || c = '\r') then
-        line_starts_rev := (i + 1) :: !line_starts_rev;
-      incr idx)
-    content;
-  let line_starts = Array.of_list (List.rev !line_starts_rev) in
-  let line_count = Array.length line_starts in
-  {
-    offsets;
-    widths;
-    count = n;
-    total_width = !total_width;
-    line_starts;
-    line_count;
-  }
-
 let ensure_cache t =
   match t.cache with
   | Some c -> c
   | None ->
-      let c =
-        build_cache ~width_method:t.width_method ~tab_width:t.tab_width
-          t.content
-      in
+      let c = Source.of_string t.content in
       t.cache <- Some c;
       c
 
+let source = ensure_cache
 let invalidate_cache t = t.cache <- None
-
-let find_line cache pos =
-  let lo = ref 0 in
-  let hi = ref (cache.line_count - 1) in
-  while !lo < !hi do
-    let mid = !lo + ((!hi - !lo + 1) / 2) in
-    if cache.line_starts.(mid) <= pos then lo := mid else hi := mid - 1
-  done;
-  !lo
-
-(* ───── Byte offset helpers ───── *)
-
-let byte_offset_of_grapheme_in_content t cache i =
-  if i >= cache.count then String.length t.content else cache.offsets.(i)
+let find_line = Source.line_of_offset
+let byte_offset_of_grapheme_in_content c i = Source.byte_offset c i
 
 (* ───── Construction ───── *)
 
@@ -139,13 +70,12 @@ let create ?(max_length = 1000) ?(width_method = `Unicode) ?(tab_width = 2)
     initial =
   let max_length = Int.max 0 max_length in
   let tab_width = Int.max 1 tab_width in
-  let content =
-    truncate_graphemes ~width_method ~tab_width initial max_length
-  in
+  let content = truncate_graphemes initial max_length in
   let t =
     {
       content;
       cursor_pos = 0;
+      affinity = Layout.Downstream;
       selection_anchor = None;
       max_length;
       undo_stack = [];
@@ -156,7 +86,7 @@ let create ?(max_length = 1000) ?(width_method = `Unicode) ?(tab_width = 2)
     }
   in
   let c = ensure_cache t in
-  t.cursor_pos <- c.count;
+  t.cursor_pos <- Source.length c;
   t
 
 (* ───── Content ───── *)
@@ -164,23 +94,22 @@ let create ?(max_length = 1000) ?(width_method = `Unicode) ?(tab_width = 2)
 let text t = t.content
 
 let set_text t s =
-  let content =
-    truncate_graphemes ~width_method:t.width_method ~tab_width:t.tab_width s
-      t.max_length
-  in
+  t.affinity <- Layout.Downstream;
+  let content = truncate_graphemes s t.max_length in
   t.content <- content;
   invalidate_cache t;
   let c = ensure_cache t in
-  t.cursor_pos <- c.count;
+  t.cursor_pos <- Source.length c;
   t.selection_anchor <- None
 
 let length t =
   let c = ensure_cache t in
-  c.count
+  Source.length c
 
 let display_width t =
   let c = ensure_cache t in
-  c.total_width
+  Source.columns ~width_method:t.width_method ~tab_width:t.tab_width c ~first:0
+    ~last:(Source.length c)
 
 let is_empty t = String.length t.content = 0
 
@@ -188,7 +117,7 @@ let is_empty t = String.length t.content = 0
 
 let line_count t =
   let c = ensure_cache t in
-  c.line_count
+  Source.line_count c
 
 let cursor_line t =
   let c = ensure_cache t in
@@ -197,24 +126,23 @@ let cursor_line t =
 let cursor_col t =
   let c = ensure_cache t in
   let line = find_line c t.cursor_pos in
-  t.cursor_pos - c.line_starts.(line)
+  t.cursor_pos - Source.line_start c line
 
 (* ───── Cursor ───── *)
 
 let cursor t = t.cursor_pos
 
 let set_cursor t pos =
+  t.affinity <- Layout.Downstream;
   let c = ensure_cache t in
-  t.cursor_pos <- Int.max 0 (Int.min pos c.count);
+  t.cursor_pos <- Int.max 0 (Int.min pos (Source.length c));
   t.selection_anchor <- None
 
+let caret t = Layout.{ grapheme = t.cursor_pos; affinity = t.affinity }
+
 let cursor_display_offset t =
-  let c = ensure_cache t in
-  let w = ref 0 in
-  for i = 0 to t.cursor_pos - 1 do
-    if i < c.count then w := !w + c.widths.(i)
-  done;
-  !w
+  Source.columns ~width_method:t.width_method ~tab_width:t.tab_width
+    (ensure_cache t) ~first:0 ~last:t.cursor_pos
 
 (* ───── Selection ───── *)
 
@@ -233,16 +161,17 @@ let selected_text t =
   | None -> ""
   | Some (lo, hi) ->
       let c = ensure_cache t in
-      let byte_lo = byte_offset_of_grapheme_in_content t c lo in
-      let byte_hi = byte_offset_of_grapheme_in_content t c hi in
+      let byte_lo = byte_offset_of_grapheme_in_content c lo in
+      let byte_hi = byte_offset_of_grapheme_in_content c hi in
       String.sub t.content byte_lo (byte_hi - byte_lo)
 
 let clear_selection t = t.selection_anchor <- None
 
 let select_all t =
+  t.affinity <- Layout.Downstream;
   let c = ensure_cache t in
   t.selection_anchor <- Some 0;
-  t.cursor_pos <- c.count
+  t.cursor_pos <- Source.length c
 
 (* ───── Undo / Redo ───── *)
 
@@ -271,6 +200,7 @@ let save_undo t =
     {
       content = t.content;
       cursor_pos = t.cursor_pos;
+      affinity = t.affinity;
       selection_anchor = t.selection_anchor;
     }
     :: stack;
@@ -285,12 +215,14 @@ let undo t =
         {
           content = t.content;
           cursor_pos = t.cursor_pos;
+          affinity = t.affinity;
           selection_anchor = t.selection_anchor;
         }
         :: t.redo_stack;
       t.undo_stack <- rest;
       t.content <- snap.content;
       t.cursor_pos <- snap.cursor_pos;
+      t.affinity <- snap.affinity;
       t.selection_anchor <- snap.selection_anchor;
       invalidate_cache t;
       not (String.equal old_content snap.content)
@@ -304,12 +236,14 @@ let redo t =
         {
           content = t.content;
           cursor_pos = t.cursor_pos;
+          affinity = t.affinity;
           selection_anchor = t.selection_anchor;
         }
         :: t.undo_stack;
       t.redo_stack <- rest;
       t.content <- snap.content;
       t.cursor_pos <- snap.cursor_pos;
+      t.affinity <- snap.affinity;
       t.selection_anchor <- snap.selection_anchor;
       invalidate_cache t;
       not (String.equal old_content snap.content)
@@ -318,15 +252,17 @@ let redo t =
 
 let delete_grapheme_range t lo hi =
   let c = ensure_cache t in
-  let byte_lo = byte_offset_of_grapheme_in_content t c lo in
-  let byte_hi = byte_offset_of_grapheme_in_content t c hi in
+  let byte_lo = byte_offset_of_grapheme_in_content c lo in
+  let byte_hi = byte_offset_of_grapheme_in_content c hi in
   let total_len = String.length t.content in
   t.content <-
     String.sub t.content 0 byte_lo
     ^ String.sub t.content byte_hi (total_len - byte_hi);
-  t.cursor_pos <- lo;
   t.selection_anchor <- None;
-  invalidate_cache t
+  invalidate_cache t;
+  t.cursor_pos <-
+    Source.grapheme_of_byte (ensure_cache t) ~affinity:Downstream byte_lo;
+  t.affinity <- Layout.Downstream
 
 let delete_selection t =
   match selection t with
@@ -344,8 +280,8 @@ let set_max_length t n =
   let n = Int.max 0 n in
   t.max_length <- n;
   let c = ensure_cache t in
-  if c.count > n then begin
-    let byte_end = byte_offset_of_grapheme_in_content t c n in
+  if Source.length c > n then begin
+    let byte_end = byte_offset_of_grapheme_in_content c n in
     t.content <- String.sub t.content 0 byte_end;
     invalidate_cache t;
     let new_len = n in
@@ -353,61 +289,41 @@ let set_max_length t n =
     t.selection_anchor <- None
   end
 
-(* ───── Input Truncation ───── *)
-
-let truncate_to_fit t s =
-  let c = ensure_cache t in
-  let remaining = t.max_length - c.count in
-  if remaining <= 0 then ""
-  else
-    let input_count = Matrix.Text.grapheme_count s in
-    if input_count <= remaining then s
-    else begin
-      let result_end = ref 0 in
-      let idx = ref 0 in
-      Matrix.Text.iter_grapheme_info ~width_method:t.width_method
-        ~tab_width:t.tab_width
-        (fun ~offset:_ ~len ~width:_ ->
-          if !idx < remaining then begin
-            result_end := !result_end + len;
-            incr idx
-          end)
-        s;
-      String.sub s 0 !result_end
-    end
-
 (* ───── Editing ───── *)
 
-let splice_at_cursor t s =
-  let c = ensure_cache t in
-  let byte_pos = byte_offset_of_grapheme_in_content t c t.cursor_pos in
-  let total_len = String.length t.content in
-  t.content <-
-    String.sub t.content 0 byte_pos
-    ^ s
-    ^ String.sub t.content byte_pos (total_len - byte_pos);
-  t.cursor_pos <- t.cursor_pos + Matrix.Text.grapheme_count s;
-  invalidate_cache t
-
-let insert t s =
-  match selection t with
-  | Some (lo, hi) ->
-      save_undo t;
-      delete_grapheme_range t lo hi;
-      (if String.length s > 0 then
-         let s = truncate_to_fit t s in
-         if String.length s > 0 then splice_at_cursor t s);
-      true
-  | None ->
-      if String.length s = 0 then false
-      else
-        let s = truncate_to_fit t s in
-        if String.length s = 0 then false
-        else begin
-          save_undo t;
-          splice_at_cursor t s;
-          true
-        end
+let insert t inserted =
+  let old = ensure_cache t in
+  let first, last =
+    match selection t with
+    | Some range -> range
+    | None -> (t.cursor_pos, t.cursor_pos)
+  in
+  let a = Source.byte_offset old first and b = Source.byte_offset old last in
+  let prefix = String.sub t.content 0 a in
+  let suffix = String.sub t.content b (String.length t.content - b) in
+  let candidate = Source.of_string (prefix ^ inserted ^ suffix) in
+  let candidate, inserted_bytes =
+    if Source.length candidate <= t.max_length then
+      (candidate, String.length inserted)
+    else
+      let available =
+        max 0 (t.max_length - (Source.length old - (last - first)))
+      in
+      let admitted = truncate_graphemes inserted available in
+      (Source.of_string (prefix ^ admitted ^ suffix), String.length admitted)
+  in
+  let content = Source.text candidate in
+  if String.equal content t.content then false
+  else begin
+    save_undo t;
+    t.content <- content;
+    t.cache <- Some candidate;
+    t.cursor_pos <-
+      Source.grapheme_of_byte candidate ~affinity:Downstream (a + inserted_bytes);
+    t.affinity <- Layout.Downstream;
+    t.selection_anchor <- None;
+    true
+  end
 
 let delete_backward t =
   if has_selection t then delete_selection t
@@ -422,7 +338,7 @@ let delete_forward t =
   if has_selection t then delete_selection t
   else
     let c = ensure_cache t in
-    if t.cursor_pos >= c.count then false
+    if t.cursor_pos >= Source.length c then false
     else begin
       save_undo t;
       delete_grapheme_range t t.cursor_pos (t.cursor_pos + 1);
@@ -432,8 +348,8 @@ let delete_forward t =
 (* ───── Word boundaries ───── *)
 
 let grapheme_contains_line_break t c i =
-  let start = byte_offset_of_grapheme_in_content t c i in
-  let stop = byte_offset_of_grapheme_in_content t c (i + 1) in
+  let start = byte_offset_of_grapheme_in_content c i in
+  let stop = byte_offset_of_grapheme_in_content c (i + 1) in
   let rec loop byte_offset =
     byte_offset < stop
     &&
@@ -452,7 +368,7 @@ let word_break_set t =
       ignore next_byte_offset;
       Hashtbl.replace s grapheme_offset ())
     t.content;
-  for i = 0 to c.count - 1 do
+  for i = 0 to Source.length c - 1 do
     if grapheme_contains_line_break t c i then Hashtbl.replace s i ()
   done;
   s
@@ -461,10 +377,10 @@ let next_word_boundary t =
   let c = ensure_cache t in
   let breaks = word_break_set t in
   let pos = ref t.cursor_pos in
-  while !pos < c.count && not (Hashtbl.mem breaks !pos) do
+  while !pos < Source.length c && not (Hashtbl.mem breaks !pos) do
     incr pos
   done;
-  while !pos < c.count && Hashtbl.mem breaks !pos do
+  while !pos < Source.length c && Hashtbl.mem breaks !pos do
     incr pos
   done;
   !pos
@@ -496,7 +412,7 @@ let delete_word_forward t =
   if has_selection t then delete_selection t
   else
     let c = ensure_cache t in
-    if t.cursor_pos >= c.count then false
+    if t.cursor_pos >= Source.length c then false
     else begin
       let pos = next_word_boundary t in
       save_undo t;
@@ -509,7 +425,7 @@ let delete_to_line_start t =
   else
     let c = ensure_cache t in
     let line = find_line c t.cursor_pos in
-    let line_start = c.line_starts.(line) in
+    let line_start = Source.line_start c line in
     if t.cursor_pos <= line_start then false
     else begin
       save_undo t;
@@ -523,7 +439,8 @@ let delete_to_line_end t =
     let c = ensure_cache t in
     let line = find_line c t.cursor_pos in
     let line_end =
-      if line + 1 < c.line_count then c.line_starts.(line + 1) - 1 else c.count
+      if line + 1 < Source.line_count c then Source.line_start c (line + 1) - 1
+      else Source.length c
     in
     if t.cursor_pos >= line_end then false
     else begin
@@ -545,24 +462,24 @@ let delete_to_end t =
   if has_selection t then delete_selection t
   else
     let c = ensure_cache t in
-    if t.cursor_pos >= c.count then false
+    if t.cursor_pos >= Source.length c then false
     else begin
       save_undo t;
-      delete_grapheme_range t t.cursor_pos c.count;
+      delete_grapheme_range t t.cursor_pos (Source.length c);
       true
     end
 
 let delete_line t =
   let c = ensure_cache t in
-  if c.count = 0 then false
+  if Source.length c = 0 then false
   else begin
     save_undo t;
     let line = find_line c t.cursor_pos in
     let start, stop =
-      if c.line_count = 1 then (0, c.count)
-      else if line + 1 < c.line_count then
-        (c.line_starts.(line), c.line_starts.(line + 1))
-      else (c.line_starts.(line) - 1, c.count)
+      if Source.line_count c = 1 then (0, Source.length c)
+      else if line + 1 < Source.line_count c then
+        (Source.line_start c line, Source.line_start c (line + 1))
+      else (Source.line_start c line - 1, Source.length c)
     in
     delete_grapheme_range t start stop;
     true
@@ -571,6 +488,7 @@ let delete_line t =
 (* ───── Cursor movement ───── *)
 
 let update_cursor_with_selection t ~select new_pos =
+  t.affinity <- Layout.Downstream;
   let old_pos = t.cursor_pos in
   if select then begin
     (match t.selection_anchor with
@@ -593,6 +511,7 @@ let move_left ?(select = false) t =
     let lo, _ = Option.get (selection t) in
     t.cursor_pos <- lo;
     t.selection_anchor <- None;
+    t.affinity <- Layout.Downstream;
     true
   end
   else if t.cursor_pos = 0 then false
@@ -604,9 +523,10 @@ let move_right ?(select = false) t =
     let _, hi = Option.get (selection t) in
     t.cursor_pos <- hi;
     t.selection_anchor <- None;
+    t.affinity <- Layout.Downstream;
     true
   end
-  else if t.cursor_pos >= c.count then false
+  else if t.cursor_pos >= Source.length c then false
   else update_cursor_with_selection t ~select (t.cursor_pos + 1)
 
 let move_word_forward ?(select = false) t =
@@ -615,9 +535,10 @@ let move_word_forward ?(select = false) t =
     let _, hi = Option.get (selection t) in
     t.cursor_pos <- hi;
     t.selection_anchor <- None;
+    t.affinity <- Layout.Downstream;
     true
   end
-  else if t.cursor_pos >= c.count then false
+  else if t.cursor_pos >= Source.length c then false
   else
     let target = next_word_boundary t in
     update_cursor_with_selection t ~select target
@@ -627,6 +548,7 @@ let move_word_backward ?(select = false) t =
     let lo, _ = Option.get (selection t) in
     t.cursor_pos <- lo;
     t.selection_anchor <- None;
+    t.affinity <- Layout.Downstream;
     true
   end
   else if t.cursor_pos = 0 then false
@@ -638,6 +560,7 @@ let move_home ?(select = false) t =
   if (not select) && has_selection t then begin
     t.cursor_pos <- 0;
     t.selection_anchor <- None;
+    t.affinity <- Layout.Downstream;
     true
   end
   else if t.cursor_pos = 0 then false
@@ -646,20 +569,22 @@ let move_home ?(select = false) t =
 let move_end ?(select = false) t =
   let c = ensure_cache t in
   if (not select) && has_selection t then begin
-    t.cursor_pos <- c.count;
+    t.cursor_pos <- Source.length c;
     t.selection_anchor <- None;
+    t.affinity <- Layout.Downstream;
     true
   end
-  else if t.cursor_pos >= c.count then false
-  else update_cursor_with_selection t ~select c.count
+  else if t.cursor_pos >= Source.length c then false
+  else update_cursor_with_selection t ~select (Source.length c)
 
 let move_line_start ?(select = false) t =
   let c = ensure_cache t in
   let line = find_line c t.cursor_pos in
-  let target = c.line_starts.(line) in
+  let target = Source.line_start c line in
   if (not select) && has_selection t then begin
     t.cursor_pos <- target;
     t.selection_anchor <- None;
+    t.affinity <- Layout.Downstream;
     true
   end
   else if t.cursor_pos = target then false
@@ -669,11 +594,13 @@ let move_line_end ?(select = false) t =
   let c = ensure_cache t in
   let line = find_line c t.cursor_pos in
   let target =
-    if line + 1 < c.line_count then c.line_starts.(line + 1) - 1 else c.count
+    if line + 1 < Source.line_count c then Source.line_start c (line + 1) - 1
+    else Source.length c
   in
   if (not select) && has_selection t then begin
     t.cursor_pos <- target;
     t.selection_anchor <- None;
+    t.affinity <- Layout.Downstream;
     true
   end
   else if t.cursor_pos >= target then false
@@ -681,32 +608,37 @@ let move_line_end ?(select = false) t =
 
 let set_cursor_offset ?(select = false) t pos =
   let c = ensure_cache t in
-  let pos = Int.max 0 (Int.min pos c.count) in
+  let pos = Int.max 0 (Int.min pos (Source.length c)) in
   ignore (update_cursor_with_selection t ~select pos : bool)
 
 (* ───── Offset conversions ───── *)
 
 let line_of_offset t pos =
   let c = ensure_cache t in
-  let pos = Int.max 0 (Int.min pos c.count) in
+  let pos = Int.max 0 (Int.min pos (Source.length c)) in
   find_line c pos
 
 let col_of_offset t pos =
   let c = ensure_cache t in
-  let pos = Int.max 0 (Int.min pos c.count) in
+  let pos = Int.max 0 (Int.min pos (Source.length c)) in
   let line = find_line c pos in
-  pos - c.line_starts.(line)
+  pos - Source.line_start c line
 
 let line_start t line =
   let c = ensure_cache t in
-  let line = Int.max 0 (Int.min line (c.line_count - 1)) in
-  c.line_starts.(line)
+  let line = Int.max 0 (Int.min line (Source.line_count c - 1)) in
+  Source.line_start c line
 
 let line_end t line =
   let c = ensure_cache t in
-  let line = Int.max 0 (Int.min line (c.line_count - 1)) in
-  if line + 1 < c.line_count then c.line_starts.(line + 1) - 1 else c.count
+  let line = Int.max 0 (Int.min line (Source.line_count c - 1)) in
+  if line + 1 < Source.line_count c then Source.line_start c (line + 1) - 1
+  else Source.length c
 
 let byte_offset t ~grapheme =
   let c = ensure_cache t in
-  byte_offset_of_grapheme_in_content t c grapheme
+  byte_offset_of_grapheme_in_content c grapheme
+
+let set_caret ?(select = false) t (caret : Layout.caret) =
+  set_cursor_offset ~select t caret.grapheme;
+  t.affinity <- caret.affinity
