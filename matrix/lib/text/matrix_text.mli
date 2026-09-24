@@ -52,7 +52,9 @@ val measure_sub :
   int
 (** [measure_sub ~width_method ~tab_width s ~pos ~len] is like {!measure} but
     operates on [s.[pos] .. s.[pos + len - 1]] without allocating. The result is
-    [0] when [len <= 0].
+    [0] when [len <= 0]. UTF-8 decoding is bounded by the slice: a codepoint cut
+    by either boundary is treated as malformed, just as for {!measure} on the
+    corresponding substring.
 
     Raises [Invalid_argument] if [len > 0] and [pos] and [len] do not designate
     a valid substring of [s]. *)

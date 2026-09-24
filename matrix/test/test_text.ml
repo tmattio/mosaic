@@ -154,6 +154,24 @@ let measure_sub_validation () =
       ignore
         (measure_sub ~width_method:`Unicode ~tab_width:2 "abc" ~pos:1 ~len:3))
 
+let measure_sub_matches_slice () =
+  let samples = [ "a中é👨‍💻z"; "\xF0\x9F\x80x\xC3\x80\xFF" ] in
+  List.iter
+    (fun width_method ->
+      List.iter
+        (fun text ->
+          for pos = 0 to String.length text do
+            for len = 0 to String.length text - pos do
+              equal
+                ~msg:(Printf.sprintf "slice %d+%d" pos len)
+                int
+                (measure ~width_method ~tab_width:2 (String.sub text pos len))
+                (measure_sub ~width_method ~tab_width:2 text ~pos ~len)
+            done
+          done)
+        samples)
+    [ `Unicode; `Wcwidth ]
+
 let grapheme_iteration () =
   let zwj_seq = "👩\u{200D}🚀" in
   let count_default = ref 0 in
@@ -491,6 +509,66 @@ let wcwidth_position_semantics () =
     (Some { byte_offset = 7; byte_length = 4; width = 2 })
     (prev_grapheme ~width_method:`Wcwidth ~tab_width:4 zwj ~byte_offset:11)
 
+let malformed_wcwidth_positions () =
+  let text = "\xF0\x9F" in
+  equal ~msg:"position uses the measurement replacement policy"
+    position_testable
+    { byte_offset = 2; grapheme_count = 1; columns_used = 1 }
+    (find_pos ~width_method:`Wcwidth ~tab_width:2 text ~columns:2);
+  equal ~msg:"previous codepoint uses the same invalid prefix"
+    (option grapheme_testable)
+    (Some { byte_offset = 0; byte_length = 2; width = 1 })
+    (prev_grapheme ~width_method:`Wcwidth ~tab_width:2 text ~byte_offset:2)
+
+let wcwidth_decoder_matches_stdlib () =
+  let check text =
+    let offset = ref 0 in
+    let count = ref 0 in
+    while !offset < String.length text do
+      let decoded = String.get_utf_8_uchar text !offset in
+      offset := !offset + Uchar.utf_decode_length decoded;
+      incr count
+    done;
+    let actual =
+      find_pos ~width_method:`Wcwidth ~tab_width:2 text ~columns:max_int
+    in
+    equal ~msg:"maximal-subpart count" int !count actual.grapheme_count;
+    equal ~msg:"measurement agrees" int
+      (measure ~width_method:`Wcwidth ~tab_width:2 text)
+      actual.columns_used
+  in
+  let bytes = Bytes.create 2 in
+  for first = 0 to 255 do
+    Bytes.set bytes 0 (Char.chr first);
+    check (Bytes.sub_string bytes 0 1);
+    for second = 0 to 255 do
+      Bytes.set bytes 1 (Char.chr second);
+      check (Bytes.unsafe_to_string bytes)
+    done
+  done;
+  let boundaries = [ 0x7F; 0x80; 0x8F; 0x90; 0x9F; 0xA0; 0xBF; 0xC0 ] in
+  List.iter
+    (fun first ->
+      List.iter
+        (fun second ->
+          List.iter
+            (fun third ->
+              List.iter
+                (fun fourth ->
+                  let text =
+                    String.init 4 (function
+                      | 0 -> Char.chr first
+                      | 1 -> Char.chr second
+                      | 2 -> Char.chr third
+                      | _ -> Char.chr fourth)
+                  in
+                  check (String.sub text 0 3);
+                  check text)
+                boundaries)
+            boundaries)
+        boundaries)
+    [ 0xE0; 0xE1; 0xED; 0xEF; 0xF0; 0xF1; 0xF4; 0xF5 ]
+
 let unicode_position_semantics () =
   let input = "A🌍B世C" in
   equal ~msg:"find_pos after ASCII" position_testable
@@ -634,6 +712,10 @@ let () =
           test "multi-grapheme regression" measure_multi_grapheme_regression;
           test "malformed UTF-8" malformed_utf8_measurement;
           test "measure_sub validation" measure_sub_validation;
+          test "measure_sub matches independent slices"
+            measure_sub_matches_slice;
+          test "malformed wcwidth positions" malformed_wcwidth_positions;
+          test "wcwidth decoder matches Stdlib" wcwidth_decoder_matches_stdlib;
         ];
       group "Graphemes"
         [

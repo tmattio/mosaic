@@ -253,15 +253,31 @@ let iter_grapheme_info ~width_method ~tab_width f str =
 
 let zero_position = { byte_offset = 0; grapheme_count = 0; columns_used = 0 }
 
-(* Codepoint decoding for the [`Wcwidth] hot paths. The tuple return looks
-   like an allocation to eliminate, but measurement says otherwise: both an
-   int-packed (cp, len) return and [String.get_utf_8_uchar] benchmarked ~60%
-   slower than this shape on Apple M1 (position/*-wcwidth cases in
-   matrix/bench/bench_text.ml), while the tuples are minor-heap-only and die
-   immediately. Keep the tuple unless a re-measurement says otherwise.
-   Malformed input yields U+FFFD with length [1]. *)
+(* The position/*-wcwidth benchmarks in matrix/bench/bench_text.ml are about
+   60% slower with direct standard decoding. Even a cold decoder call spills
+   loop state on valid input. Keep this inline decoder and test its malformed
+   prefix consumption against the standard decoder. *)
 let[@inline] is_cont_byte b = b land 0xC0 = 0x80
-let replacement = (0xFFFD, 1)
+let replacement_1 = (0xFFFD, 1)
+let replacement_2 = (0xFFFD, 2)
+let replacement_3 = (0xFFFD, 3)
+
+let[@inline] decode_malformed str pos b0 =
+  let len = Stdlib.String.length str in
+  if b0 < 0xE0 || b0 > 0xF4 || pos + 1 >= len then replacement_1
+  else
+    let b1 = Char.code (String.unsafe_get str (pos + 1)) in
+    if
+      (not (is_cont_byte b1))
+      || (b0 = 0xE0 && b1 < 0xA0)
+      || (b0 = 0xED && b1 >= 0xA0)
+      || (b0 = 0xF0 && b1 < 0x90)
+      || (b0 = 0xF4 && b1 >= 0x90)
+    then replacement_1
+    else if b0 < 0xF0 || pos + 2 >= len then replacement_2
+    else if is_cont_byte (Char.code (String.unsafe_get str (pos + 2))) then
+      replacement_3
+    else replacement_2
 
 let[@inline] decode_codepoint str pos =
   let len = Stdlib.String.length str in
@@ -272,9 +288,9 @@ let[@inline] decode_codepoint str pos =
       let b1 = Char.code (String.unsafe_get str (pos + 1)) in
       if is_cont_byte b1 then
         let cp = ((b0 land 0x1F) lsl 6) lor (b1 land 0x3F) in
-        if cp >= 0x80 then (cp, 2) else replacement
-      else replacement
-    else replacement
+        if cp >= 0x80 then (cp, 2) else decode_malformed str pos b0
+      else decode_malformed str pos b0
+    else decode_malformed str pos b0
   else if b0 land 0xF0 = 0xE0 then
     if pos + 2 < len then
       let b1 = Char.code (String.unsafe_get str (pos + 1)) in
@@ -284,9 +300,9 @@ let[@inline] decode_codepoint str pos =
           ((b0 land 0x0F) lsl 12) lor ((b1 land 0x3F) lsl 6) lor (b2 land 0x3F)
         in
         if cp >= 0x800 && (cp < 0xD800 || cp > 0xDFFF) then (cp, 3)
-        else replacement
-      else replacement
-    else replacement
+        else decode_malformed str pos b0
+      else decode_malformed str pos b0
+    else decode_malformed str pos b0
   else if b0 land 0xF8 = 0xF0 then
     if pos + 3 < len then
       let b1 = Char.code (String.unsafe_get str (pos + 1)) in
@@ -299,10 +315,11 @@ let[@inline] decode_codepoint str pos =
           lor ((b2 land 0x3F) lsl 6)
           lor (b3 land 0x3F)
         in
-        if cp >= 0x10000 && cp <= 0x10FFFF then (cp, 4) else replacement
-      else replacement
-    else replacement
-  else replacement
+        if cp >= 0x10000 && cp <= 0x10FFFF then (cp, 4)
+        else decode_malformed str pos b0
+      else decode_malformed str pos b0
+    else decode_malformed str pos b0
+  else decode_malformed str pos b0
 
 (* Top-level loops share fitting and positioning without allocating a closure
    for each query. *)
@@ -421,8 +438,9 @@ let width_at ~width_method ~tab_width str ~byte_offset =
     else
       match width_method with
       | `Wcwidth ->
-          let cp, _ = decode_codepoint str byte_offset in
-          codepoint_width_wcwidth ~tab_width cp
+          let decoded = Stdlib.String.get_utf_8_uchar str byte_offset in
+          codepoint_width_wcwidth ~tab_width
+            (Uchar.to_int (Uchar.utf_decode_uchar decoded))
       | `Unicode ->
           let seg = Uuseg_grapheme_cluster.create () in
           let end_pos = next_boundary seg str byte_offset len in
@@ -519,10 +537,16 @@ let rec measure_ascii str len tab_width i total =
     measure_ascii str len tab_width (i + 4) (total + w0 + w1 + w2 + w3)
   else measure_ascii_tail str len tab_width i total
 
+let[@inline] decode_bounded str pos limit =
+  let decoded = Stdlib.String.get_utf_8_uchar str pos in
+  let remaining = limit - pos in
+  if Uchar.utf_decode_length decoded <= remaining then decoded
+  else Uchar.utf_decode_invalid remaining
+
 let rec measure_wcwidth str len tab_width i total =
   if i >= len then total
   else
-    let d = Stdlib.String.get_utf_8_uchar str i in
+    let d = decode_bounded str i len in
     let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
     let w = codepoint_width_wcwidth ~tab_width cp in
     measure_wcwidth str len tab_width (i + Uchar.utf_decode_length d) (total + w)
@@ -533,7 +557,7 @@ let rec measure_wcwidth str len tab_width i total =
 let rec measure_segmented seg str len tab_width i total state =
   if i >= len then total + ws_width state
   else
-    let d = Stdlib.String.get_utf_8_uchar str i in
+    let d = decode_bounded str i len in
     let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
     let next = i + Uchar.utf_decode_length d in
     (* Single property lookup yields both boundary decision and width. *)
