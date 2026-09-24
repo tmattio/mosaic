@@ -149,7 +149,7 @@ type app = {
   mutable frame_dump_hits : bool;
   mutable frame_dump_counter : int;
   mutable closed : bool;
-  mutable autowrap_armed : bool;
+  mutable frame_modes_armed : bool;
   mutable loop_active : bool;
   mutable control_state : control_state;
   mutable previous_control_state : control_state;
@@ -479,7 +479,6 @@ let flush_static_queue ?(resize_screen = true) t ~buf =
   let primary, plan = Primary.flush_static t.primary in
   t.primary <- primary;
   if plan.terminal_ops <> [] then (
-    t.autowrap_armed <- true;
     Buffer.add_string buf "\027[?7l";
     apply_primary_plan ~resize_screen t ~buf plan;
     Buffer.add_string buf "\027[?7h")
@@ -775,6 +774,7 @@ let submit ?primary_required_rows t =
         t.submit_scratch <-
           Bytes.create (max len (2 * Bytes.length t.submit_scratch));
       Buffer.blit buf 0 t.submit_scratch 0 len;
+      t.frame_modes_armed <- true;
       t.backend.write_output t.submit_scratch 0 len
     end;
 
@@ -823,6 +823,14 @@ let pause t =
   t.control_state <- `Explicit_paused;
   update_loop_active t
 
+(* Frame writes bypass the terminal handle and may stop between mode changes.
+   Attempt every reset independently, before handing the terminal back. *)
+let restore_frame_modes t =
+  if t.frame_modes_armed then (
+    (try Terminal.send t.terminal sync_output_off with _ -> ());
+    (try Terminal.send t.terminal reset_scroll_region_seq with _ -> ());
+    try Terminal.send t.terminal "\027[?7h" with _ -> ())
+
 let suspend ?(leave_alt = false) t =
   (* A second suspend must be a no-op: it would overwrite
      [previous_control_state] with [`Explicit_suspended], after which every
@@ -841,9 +849,7 @@ let suspend ?(leave_alt = false) t =
     t.last_cursor_visible <- None;
     t.last_cursor_shape <- None;
     t.last_cursor_color <- None;
-    if t.autowrap_armed then
-      t.backend.protect (fun () ->
-          try Terminal.send t.terminal "\027[?7h" with _ -> ());
+    t.backend.protect (fun () -> restore_frame_modes t);
     (try Terminal.set_mouse_mode t.terminal `Off with _ -> ());
     (try Terminal.enable_bracketed_paste t.terminal false with _ -> ());
     (try Terminal.enable_focus_reporting t.terminal false with _ -> ());
@@ -1025,8 +1031,7 @@ let close t =
         t.running <- false;
         t.control_state <- `Explicit_stopped;
         update_loop_active t;
-        (if t.autowrap_armed then
-           try Terminal.send t.terminal "\027[?7h" with _ -> ());
+        restore_frame_modes t;
         (try
            let is_tty = Terminal.tty t.terminal in
            if t.config.mode = `Primary && is_tty then (
@@ -1201,7 +1206,7 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           frame_dump_hits;
           frame_dump_counter = 0;
           closed = false;
-          autowrap_armed = false;
+          frame_modes_armed = false;
           loop_active = false;
           control_state =
             (if start_idle then `Idle

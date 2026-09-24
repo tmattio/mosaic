@@ -1075,45 +1075,74 @@ let static_grid text =
   List.iteri (fun y text -> Matrix.Grid.draw_text grid ~x:0 ~y ~text) lines;
   grid
 
-let test_static_partial_write_restores_autowrap () =
+let test_partial_frame_restores_transient_modes () =
   List.iter
-    (fun suspend ->
-      let fail_output = ref false in
-      let bytes = Buffer.create 128 in
-      let cleaned = ref false in
-      let backend =
-        {
-          (inert_backend ()) with
-          write_output =
-            (fun buf off len ->
-              if !fail_output then (
-                let frame = Bytes.sub_string buf off len in
-                contains ~msg:"static transaction disables autowrap"
-                  ~sub:"\027[?7l" frame;
-                let stop = ref 5 in
-                while String.sub frame (!stop - 5) 5 <> "\027[?7l" do
-                  incr stop
-                done;
-                Buffer.add_substring bytes frame 0 !stop;
-                failwith "partial static write")
-              else Buffer.add_subbytes bytes buf off len);
-          cleanup = (fun () -> cleaned := true);
-        }
-      in
-      let app = Matrix.attach ~mode:`Primary ~backend () in
-      Matrix.static_write app (static_grid "row");
-      Buffer.clear bytes;
-      fail_output := true;
-      (match Matrix.submit app with
-      | () -> failf "expected injected partial write failure"
-      | exception Failure message -> equal string "partial static write" message);
-      fail_output := false;
-      if suspend then Matrix.suspend app else Matrix.close app;
-      in_order ~msg:"terminal handoff restores autowrap after partial output"
-        ~subs:[ "\027[?7l"; "\027[?7h" ] (Buffer.contents bytes);
-      Matrix.close app;
-      is_true ~msg:"backend cleanup still runs" !cleaned)
-    [ false; true ]
+    (fun (cut, fail_restore) ->
+      List.iter
+        (fun suspend ->
+          let fail_output = ref false in
+          let bytes = Buffer.create 128 in
+          let cleaned = ref false in
+          let protected = ref false in
+          let restore_failed = ref false in
+          let backend =
+            {
+              (inert_backend ()) with
+              protect =
+                (fun f ->
+                  protected := true;
+                  Fun.protect f ~finally:(fun () -> protected := false));
+              write_output =
+                (fun buf off len ->
+                  let frame = Bytes.sub_string buf off len in
+                  if !fail_output then (
+                    contains ~msg:"frame reaches the injected failure point"
+                      ~sub:cut frame;
+                    let stop = ref (String.length cut) in
+                    while
+                      String.sub frame
+                        (!stop - String.length cut)
+                        (String.length cut)
+                      <> cut
+                    do
+                      incr stop
+                    done;
+                    Buffer.add_substring bytes frame 0 !stop;
+                    failwith "partial frame write")
+                  else (
+                    Buffer.add_string bytes frame;
+                    if
+                      frame = "\027[?2026l" || frame = "\027[r"
+                      || frame = "\027[?7h"
+                    then
+                      is_true ~msg:"frame mode recovery is protected" !protected;
+                    if fail_restore && frame = "\027[?2026l" then (
+                      restore_failed := true;
+                      failwith "failed synchronized output reset")));
+              cleanup = (fun () -> cleaned := true);
+            }
+          in
+          let app = Matrix.attach ~mode:`Primary ~backend () in
+          set_sync_capable app;
+          Matrix.static_write app
+            (static_grid (String.concat "\n" (List.init 24 (fun _ -> "row"))));
+          Buffer.clear bytes;
+          fail_output := true;
+          (match Matrix.submit app with
+          | () -> failf "expected injected partial write failure"
+          | exception Failure message ->
+              equal string "partial frame write" message);
+          fail_output := false;
+          if suspend then Matrix.suspend app else Matrix.close app;
+          in_order ~msg:"terminal handoff attempts every transient mode reset"
+            ~subs:[ cut; "\027[?2026l"; "\027[r"; "\027[?7h" ]
+            (Buffer.contents bytes);
+          equal ~msg:"reset failure case is exercised" bool fail_restore
+            !restore_failed;
+          Matrix.close app;
+          is_true ~msg:"backend cleanup still runs" !cleaned)
+        [ false; true ])
+    [ ("\027[?2026h", false); ("\027[?7l", false); ("\027[1;23r", true) ]
 
 let test_primary_effective_size_tracks_pending_static () =
   let app, _state =
@@ -1944,8 +1973,8 @@ let () =
             test_primary_required_rows_apply_before_static_flush;
           test "full-height static write scrolls into scrollback"
             test_full_height_static_write_scrolls_into_scrollback;
-          test "static partial write restores autowrap"
-            test_static_partial_write_restores_autowrap;
+          test "partial frame restores transient modes"
+            test_partial_frame_restores_transient_modes;
           test "queued snapshot keeps row count after resize"
             test_queued_static_snapshot_keeps_row_count_after_resize;
           test "static snapshots scroll exactly once per row"
