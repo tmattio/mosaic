@@ -48,3 +48,27 @@
   (progn
    (run %{exe:bench_markdown.exe} --wait-quiet 60)
    (diff? markdown.thumper markdown.thumper.corrected))))
+
+(executable
+ (name bench_text_layout)
+ (modules bench_text_layout)
+ (libraries thumper mosaic.ui matrix.ansi matrix.text matrix.grid))
+
+(rule
+ (alias runtest)
+ (locks /bench)
+ (action
+  (progn
+   (run %{exe:bench_text_layout.exe} --quick)
+   (diff? text_layout.thumper text_layout.thumper.corrected))))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{exe:bench_text_layout.exe} memory)))
+
+(rule
+ (alias runtest)
+ (locks /bench)
+ (action
+  (run %{exe:bench_text_layout.exe} history)))
