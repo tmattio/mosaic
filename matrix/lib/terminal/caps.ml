@@ -522,18 +522,6 @@ let build_tmux_pending_probe_payload term =
   in
   String.concat "" [ wrap_for_tmux decrqm_queries; graphics ]
 
-(* The probe payload writes a test glyph at the home position before each of
-   its two cursor-position requests: a report on row 1 with the cursor
-   advanced past column 1 is the answer to the explicit-width query (col >= 2)
-   or the scaled-text query (col >= 3). This inference is only valid for CPRs
-   received while the probe is in flight, so it lives here rather than in
-   [apply_event]. *)
-let apply_probe_cpr caps ~row ~col =
-  let caps =
-    if row = 1 && col >= 2 then { caps with explicit_width = true } else caps
-  in
-  if row = 1 && col >= 3 then { caps with scaled_text = true } else caps
-
 let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
     ~read_into ~wait_readable ~send ~parser ~caps ~info () =
   let payload = build_probe_payload caps.term in
@@ -548,6 +536,17 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
     }
   in
   let run_probe () =
+    let reports_pending = ref 2 in
+    (* CPR has no request ID. Match the two ordered query slots and exact
+       expected columns, as OpenTUI does, then ignore further reports. *)
+    let apply_probe_cpr caps ~row ~col =
+      let slot = !reports_pending in
+      if slot > 0 then decr reports_pending;
+      match (slot, row, col) with
+      | 2, 1, 2 -> { caps with explicit_width = true }
+      | 1, 1, 3 -> { caps with explicit_width = true; scaled_text = true }
+      | _ -> caps
+    in
     send payload;
     let buffer = Bytes.create 4096 in
     let tmux_pending_sent = ref (is_tmux ~term:caps.term) in
@@ -562,13 +561,9 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
      explicit width/scaled text, XTVersion, etc.) should arrive shortly after.
      We use a short grace period instead of waiting the full timeout. *)
     let da_grace = 0.05 in
-    let rec loop caps info got_explicit got_scaled got_da da_time =
+    let rec loop caps info got_da da_time =
       let time = now () in
-      let complete =
-        (got_explicit || caps.explicit_width)
-        && (got_scaled || caps.scaled_text)
-        && got_da
-      in
+      let complete = !reports_pending = 0 && got_da in
       let effective_deadline =
         match da_time with
         | Some t -> Float.min deadline (t +. da_grace)
@@ -579,12 +574,11 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
         let remaining = effective_deadline -. time in
         let select_timeout = Float.min remaining 0.05 in
         let ready = wait_readable ~timeout:select_timeout in
-        if not ready then loop caps info got_explicit got_scaled got_da da_time
+        if not ready then loop caps info got_da da_time
         else
           let read = read_into buffer 0 (Bytes.length buffer) in
           if read = 0 then (caps, info)
-          else if read < 0 then
-            loop caps info got_explicit got_scaled got_da da_time
+          else if read < 0 then loop caps info got_da da_time
           else
             let now = now () in
             let caps_ref = ref caps in
@@ -616,13 +610,9 @@ let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
             let info = !info_ref in
             let has_da = got_da || !found_da in
             let da_time = if has_da && not got_da then Some now else da_time in
-            let got_explicit = got_explicit || caps.explicit_width in
-            let got_scaled = got_scaled || caps.scaled_text in
-            loop caps info got_explicit got_scaled has_da da_time
+            loop caps info has_da da_time
     in
-    let caps, info =
-      loop caps info caps.explicit_width caps.scaled_text false None
-    in
+    let caps, info = loop caps info false None in
     let caps_ref = ref caps in
     let info_ref = ref info in
     let now = now () in

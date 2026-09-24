@@ -307,8 +307,24 @@ let test_cpr_outside_probe_does_not_flip_capabilities () =
     (T.capabilities term).scaled_text;
   T.close term
 
-(* The probe still interprets CPR replies as width-query answers. *)
-let test_probe_cpr_sets_width_capabilities () =
+let probe_cpr_cases =
+  [
+    ("ordered replies", [ "\027[1;2R\027[1;3R" ], (true, true));
+    ("split replies", [ "\027[1;"; "2R\027[1;"; "3R" ], (true, true));
+    ("explicit width only", [ "\027[1;2R\027[1;1R" ], (true, false));
+    ( "scaled reply implies explicit width",
+      [ "\027[1;1R\027[1;3R" ],
+      (true, true) );
+    ("wrong slots", [ "\027[1;3R\027[1;2R" ], (false, false));
+    ("unrelated row-one reports", [ "\027[1;20R\027[1;30R" ], (false, false));
+    ("wrong row", [ "\027[2;2R\027[2;3R" ], (false, false));
+    ("extra reports", [ "\027[1;1R\027[1;1R\027[1;2R\027[1;3R" ], (false, false));
+    ("missing replies", [], (false, false));
+    ("missing second reply", [ "\027[1;2R" ], (true, false));
+    ("scaled reply without first reply", [ "\027[1;3R" ], (false, false));
+  ]
+
+let test_probe_cpr_slots ?(initial_width = false) (name, chunks, expected) =
   let caps =
     {
       T.term = "xterm";
@@ -320,9 +336,9 @@ let test_probe_cpr_sets_width_capabilities () =
       unicode_width = `Wcwidth;
       sgr_pixels = false;
       color_scheme_updates = false;
-      explicit_width = false;
+      explicit_width = initial_width;
       explicit_cursor_positioning = false;
-      scaled_text = false;
+      scaled_text = initial_width;
       sixel = false;
       sync = false;
       hyperlinks = false;
@@ -330,22 +346,34 @@ let test_probe_cpr_sets_width_capabilities () =
   in
   with_tty_terminal ~initial_caps:caps @@ fun term _buf ->
   let parser = Input.Parser.create () in
-  let input = Bytes.of_string "\027[1;3R\027[?62;4c" in
-  let consumed = ref false in
-  T.probe ~now:Unix.gettimeofday ~timeout:0.1
-    ~on_event:(fun _ -> ())
+  let chunks = ref (chunks @ [ "\027[?62;4c" ]) in
+  let time = ref 0. in
+  T.probe
+    ~now:(fun () -> !time)
+    ~timeout:0.1
+    ~on_event:(fun event -> failf "unexpected input: %a" Input.pp event)
     ~read_into:(fun buf off len ->
-      if !consumed then 0
+      match !chunks with
+      | [] -> 0
+      | chunk :: rest ->
+          let n = String.length chunk in
+          is_true ~msg:"reply fits read buffer" (n <= len);
+          chunks := rest;
+          Bytes.blit_string chunk 0 buf off n;
+          n)
+    ~wait_readable:(fun ~timeout ->
+      if !chunks <> [] then true
       else (
-        consumed := true;
-        let n = min len (Bytes.length input) in
-        Bytes.blit input 0 buf off n;
-        n))
-    ~wait_readable:(fun ~timeout:_ -> not !consumed)
+        time := !time +. timeout;
+        false))
     ~parser term;
-  is_true ~msg:"probe CPR enables explicit width"
-    (T.capabilities term).explicit_width;
-  is_true ~msg:"probe CPR enables scaled text" (T.capabilities term).scaled_text;
+  let caps = T.capabilities term in
+  equal ~msg:name (pair bool bool) expected
+    (caps.explicit_width, caps.scaled_text);
+  satisfies ~msg:"probe consumes supplied cursor reports"
+    ~claim:"only the trailing DA sentinel may remain" (list string)
+    (function [] | [ "\027[?62;4c" ] -> true | _ -> false)
+    !chunks;
   T.close term
 
 (* Regression: startup probe uses DECRQM 2031 and avoids CSI ?996n. *)
@@ -908,8 +936,14 @@ let () =
           test "DCS kitty identification" test_dcs_kitty_identification;
           test "CPR outside probe does not flip capabilities"
             test_cpr_outside_probe_does_not_flip_capabilities;
-          test "probe CPR sets width capabilities"
-            test_probe_cpr_sets_width_capabilities;
+          cases "probe CPR slots" probe_cpr_cases
+            ~name:(fun (name, _, _) -> name)
+            (test_probe_cpr_slots ~initial_width:false);
+          test "known width capabilities still consume probe replies" (fun () ->
+              test_probe_cpr_slots ~initial_width:true
+                ( "known capabilities",
+                  [ "\027[?62;4c"; "\027[1;2R"; "\027[1;3R" ],
+                  (true, true) ));
           test "probe color scheme mode" test_probe_payload_color_scheme_mode;
           test "screen probe not tmux wrapped"
             test_probe_payload_screen_is_not_tmux_wrapped;

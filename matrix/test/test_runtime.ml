@@ -380,6 +380,23 @@ let test_stray_cpr_does_not_flip_capabilities () =
   is_false ~msg:"stray CPR does not enable explicit width" caps.explicit_width;
   is_false ~msg:"stray CPR does not enable scaled text" caps.scaled_text
 
+let test_startup_and_late_cpr_do_not_enable_width () =
+  let app, state =
+    make_app ~mode:`Primary ~startup_cursor:(1, 3)
+      ~startup_input:[ "\027[1;1R\027[1;1R\027[?62;4c" ]
+      ~input_chunks:[ "\027[1;2R"; "\027[1;3R" ]
+      ~stop_after_reads:3 ()
+  in
+  let check_width phase =
+    let caps = Matrix.capabilities app in
+    equal ~msg:phase (pair bool bool) (false, false)
+      (caps.explicit_width, caps.scaled_text)
+  in
+  check_width "startup cursor report is not width evidence";
+  Matrix.run app ~on_render:(fun _app -> ());
+  check_width "late reports cannot reopen completed probes";
+  equal ~msg:"late input was read" int 3 state.read_calls
+
 let input_event = Testable.make ~pp:Matrix.Input.pp ~equal:Matrix.Input.equal
 
 let test_escape_expires_without_more_input () =
@@ -1965,6 +1982,8 @@ let () =
             test_late_capability_response_requests_redraw;
           test "stray CPR does not flip capabilities"
             test_stray_cpr_does_not_flip_capabilities;
+          test "startup and late CPR do not enable width"
+            test_startup_and_late_cpr_do_not_enable_width;
           test "startup capability window defers split response"
             test_startup_capability_window_defers_split_response;
           test "resume reanchors primary from bottom cursor"
