@@ -44,15 +44,15 @@ width/width-complex-wcwidth	wall_time	batch=1024	n=20	7.412e-06	7.198e-06 7.255e
 # host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
 # ocaml: 5.4.1+relocatable · 64-bit · release
 
-position/position-find_pos-ascii	alloc_words	exact	13
+position/position-find_pos-ascii	alloc_words	exact	4
 position/position-find_pos-ascii	wall_time	batch=8192	n=20	1.138e-06	1.125e-06 1.127e-06 1.127e-06 1.128e-06 1.129e-06 1.129e-06 1.130e-06 1.130e-06 1.130e-06 1.135e-06 1.140e-06 1.141e-06 1.142e-06 1.145e-06 1.147e-06 1.150e-06 1.163e-06 1.167e-06 1.174e-06 1.183e-06
-position/position-find_pos-mixed	alloc_words	exact	20
+position/position-find_pos-mixed	alloc_words	exact	9
 position/position-find_pos-mixed	wall_time	batch=512	n=20	1.103e-05	1.054e-05 1.055e-05 1.059e-05 1.066e-05 1.068e-05 1.071e-05 1.075e-05 1.077e-05 1.090e-05 1.101e-05 1.104e-05 1.127e-05 1.148e-05 1.175e-05 1.175e-05 1.346e-05 1.351e-05 1.489e-05 2.118e-05 8.352e-05
 position/position-find_pos-wcwidth	alloc_words	exact	895
 position/position-find_pos-wcwidth	wall_time	batch=4096	n=20	1.465e-06	1.347e-06 1.356e-06 1.363e-06 1.411e-06 1.417e-06 1.420e-06 1.422e-06 1.425e-06 1.456e-06 1.465e-06 1.465e-06 1.472e-06 1.497e-06 1.507e-06 1.512e-06 1.518e-06 1.532e-06 1.546e-06 1.569e-06 1.843e-06
-position/position-find_wrap_pos-ascii	alloc_words	exact	12
+position/position-find_wrap_pos-ascii	alloc_words	exact	4
 position/position-find_wrap_pos-ascii	wall_time	batch=8192	n=20	1.138e-06	1.125e-06 1.127e-06 1.128e-06 1.129e-06 1.131e-06 1.133e-06 1.133e-06 1.136e-06 1.136e-06 1.136e-06 1.141e-06 1.141e-06 1.143e-06 1.143e-06 1.146e-06 1.147e-06 1.147e-06 1.148e-06 1.151e-06 1.152e-06
-position/position-find_wrap_pos-mixed	alloc_words	exact	19
+position/position-find_wrap_pos-mixed	alloc_words	exact	9
 position/position-find_wrap_pos-mixed	wall_time	batch=512	n=20	1.046e-05	1.010e-05 1.023e-05 1.028e-05 1.030e-05 1.031e-05 1.039e-05 1.041e-05 1.041e-05 1.042e-05 1.042e-05 1.049e-05 1.049e-05 1.049e-05 1.052e-05 1.056e-05 1.057e-05 1.060e-05 1.062e-05 1.065e-05 1.073e-05
 position/position-find_wrap_pos-wcwidth	alloc_words	exact	894
 position/position-find_wrap_pos-wcwidth	wall_time	batch=4096	n=20	1.422e-06	1.320e-06 1.369e-06 1.378e-06 1.387e-06 1.387e-06 1.389e-06 1.401e-06 1.404e-06 1.417e-06 1.420e-06 1.424e-06 1.431e-06 1.432e-06 1.441e-06 1.447e-06 1.459e-06 1.469e-06 1.481e-06 1.497e-06 1.522e-06
