@@ -960,6 +960,25 @@ let scroll_uses_transparent_background () =
   equal ~msg:"transparent bg" rgba (0, (0, (0, 0))) (r, (g, (b, a)));
   equal ~msg:"space char" int (Char.code ' ') (read_char grid 0 1)
 
+let scroll_single_row_clears_only_that_row () =
+  List.iter
+    (fun amount ->
+      let grid = Grid.create ~width:4 ~height:3 () in
+      for y = 0 to 2 do
+        Grid.draw_text grid ~x:0 ~y ~text:"keep"
+      done;
+      Grid.draw_text
+        ~style:(Ansi.Style.make ~link:"https://example.com" ())
+        grid ~x:0 ~y:1 ~text:"🇫🇷";
+      Grid.scroll grid ~top:1 ~bottom:1 amount;
+      equal ~msg:"one-row scroll clears its row in either direction" string
+        "keep\n\nkeep" (Grid.to_text grid);
+      equal ~msg:"scrolled row releases its hyperlink" string ""
+        (Grid.get_link grid 4);
+      equal ~msg:"scrolled row releases its grapheme" int 0
+        (fst (Grid.grapheme_stats grid)))
+    [ -1; 1 ]
+
 let draw_text_overwrite_clears_span () =
   let grid = Grid.create ~width:4 ~height:1 () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"中";
@@ -1468,6 +1487,8 @@ let tests =
     test "fill rect transparent is noop" fill_rect_transparent_is_noop;
     test "clear_rect resets background" clear_rect_resets_background;
     test "scroll uses transparent background" scroll_uses_transparent_background;
+    test "single-row scroll clears only that row"
+      scroll_single_row_clears_only_that_row;
     test "draw text overwrites grapheme span" draw_text_overwrite_clears_span;
     test "draw text overflow clears row tail" draw_text_overflow_clears_row_tail;
     test "blit region skips partial spans" blit_region_skips_partial_span;
