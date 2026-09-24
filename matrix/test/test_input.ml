@@ -326,6 +326,35 @@ let test_sgr_mouse_state_regressions () =
     [ Input.mouse_move 13 4 ]
     (feed_user parser (Bytes.of_string "\x1b[<32;14;5M") 0 11)
 
+let test_sgr_mouse_independent_buttons () =
+  let buttons = [ (0, Input.Mouse.Left); (1, Middle); (2, Right) ] in
+  List.iter
+    (fun (held_code, held) ->
+      List.iter
+        (fun (released_code, released) ->
+          if held_code <> released_code then begin
+            let sequence =
+              Printf.sprintf
+                "\027[<%d;10;5M\027[<%d;10;5M\027[<%d;10;5m\027[<%d;12;5M\027[<%d;12;5m\027[<35;14;5M"
+                held_code released_code released_code (32 + held_code) held_code
+            in
+            equal
+              ~msg:
+                (Printf.sprintf "hold %d, release %d" held_code released_code)
+              (list event_testable)
+              [
+                Input.mouse_press 9 4 held;
+                Input.mouse_press 9 4 released;
+                Input.mouse_release 9 4 (Some released);
+                Input.mouse_drag 11 4 held;
+                Input.mouse_release 11 4 (Some held);
+                Input.mouse_move 13 4;
+              ]
+              (parse_user sequence)
+          end)
+        buttons)
+    buttons
+
 let test_sgr_mouse_partial_timeout_regression () =
   let parser = Input.Parser.create () in
   equal ~msg:"partial SGR mouse is pending" (list event_testable) []
@@ -1665,6 +1694,8 @@ let tests =
     test "CSI sub params event type" test_csi_sub_params_with_event_type;
     test "parse mouse SGR" test_parse_mouse_sgr;
     test "SGR mouse state regressions" test_sgr_mouse_state_regressions;
+    test "SGR mouse buttons release independently"
+      test_sgr_mouse_independent_buttons;
     test "SGR mouse partial timeout regression"
       test_sgr_mouse_partial_timeout_regression;
     test "SGR mouse partial deferral is bounded"

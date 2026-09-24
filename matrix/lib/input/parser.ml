@@ -763,7 +763,7 @@ let parse_sgr_mouse parser s start end_ =
                           in
                           mouse_event ~x:(x - 1) ~y:(y - 1) ~modifier kind
                         else if is_release then (
-                          clear_mouse_pressed parser;
+                          set_mouse_pressed parser button false;
                           mouse_event_of_codes ~button_code ~x:(x - 1)
                             ~y:(y - 1) ~is_release ~is_motion ~modifier ())
                         else (

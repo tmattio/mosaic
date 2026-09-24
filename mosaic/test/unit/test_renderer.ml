@@ -1467,6 +1467,40 @@ let release_finishes_selection () =
   | Some sel -> is_false ~msg:"not dragging" (Selection.is_dragging sel)
   | None -> fail "expected selection"
 
+let unrelated_button_release_preserves_selection_drag () =
+  let t = make_renderer () in
+  let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
+  Renderable.set_selection child
+    ~should_start:(fun ~x:_ ~y:_ -> true)
+    ~on_change:(fun _ -> true)
+    ~clear:(fun () -> ())
+    ~get_text:(fun () -> "");
+  do_frame t;
+  let parser = Matrix_input.Parser.create () in
+  let feed sequence =
+    let bytes = Bytes.of_string sequence in
+    Matrix_input.Parser.feed parser bytes 0 (Bytes.length bytes) ~now:0.
+      ~on_event:(function
+        | Matrix_input.Mouse mouse -> dispatch_mouse t mouse
+        | event -> failf "unexpected input: %a" Matrix_input.pp event)
+      ~on_response:(fun response ->
+        failf "unexpected response: %a" Matrix_input.Response.pp response)
+  in
+  feed "\027[<0;8;8M\027[<32;10;8M\027[<2;10;8M\027[<2;10;8m";
+  let sel =
+    match Renderer.selection t with
+    | Some sel -> sel
+    | None -> fail "right-button click cleared the selection"
+  in
+  is_true ~msg:"right-button release leaves selection dragging"
+    (Selection.is_dragging sel);
+  feed "\027[<32;13;9M";
+  equal ~msg:"left drag continues after right release" (pair int int) (12, 8)
+    ((Selection.focus sel).x, (Selection.focus sel).y);
+  feed "\027[<0;13;9m";
+  is_false ~msg:"left-button release finishes selection"
+    (Selection.is_dragging sel)
+
 let clear_selection_resets () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
@@ -1823,6 +1857,8 @@ let () =
             click_on_selectable_starts_selection;
           test "drag updates selection focus" drag_updates_selection_focus;
           test "release finishes selection" release_finishes_selection;
+          test "unrelated button release preserves selection drag"
+            unrelated_button_release_preserves_selection_drag;
           test "clear selection resets" clear_selection_resets;
           test "selection drag auto-scrolls scroll box"
             selection_drag_auto_scrolls_scroll_box;
