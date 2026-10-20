@@ -1022,6 +1022,23 @@ let unicode_malformed_utf8 () =
   equal ~msg:"malformed UTF-8" string "A\239\191\189\239\191\189BC"
     (String.trim output)
 
+let character_sets () =
+  let line s =
+    let vte = Vte.create ~rows:1 ~cols:6 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"DEC Special Graphics in G0" string
+    "\xe2\x94\x8c\xe2\x94\x80\xe2\x94\x90\xe2\x94\x82q "
+    (line "\x1b(0lqkx\x1b(Bq");
+  equal ~msg:"SO and SI" string "a\xe2\x94\x80q   " (line "\x1b)0a\x0eq\x0fq");
+  equal ~msg:"LS2" string "\xe2\x94\x80     " (line "\x1b*0\x1bnq");
+  equal ~msg:"British" string "a\xc2\xa3    " (line "\x1b(Aa#");
+  equal ~msg:"German" string "\xc3\x84\xc3\x9c\xc3\xa4\xc3\xbc  "
+    (line "\x1b(K[]{}");
+  equal ~msg:"DECRC restores the designations" string "\xe2\x94\x80     "
+    (line "\x1b(0\x1b7\x1b(B\x1b8q")
+
 (** {1 Test Suite} *)
 
 let tests =
@@ -1123,6 +1140,7 @@ let tests =
     test "unicode combining mark across writes"
       unicode_combining_mark_across_writes;
     test "unicode malformed utf8" unicode_malformed_utf8;
+    test "character sets" character_sets;
   ]
 
 let () = run "matrix.vte" [ group "vte" tests ]

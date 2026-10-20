@@ -9,6 +9,8 @@ type saved_cursor = {
   saved_col : int;
   saved_style : Ansi.Style.t;
   saved_origin : bool;
+  saved_charsets : char array;
+  saved_gl : int;
 }
 (* What DECSC saves. Visibility is not part of it, as in xterm. *)
 
@@ -19,6 +21,8 @@ let home_cursor =
     saved_col = 0;
     saved_style = Ansi.Style.default;
     saved_origin = false;
+    saved_charsets = Array.make 4 'B';
+    saved_gl = 0;
   }
 
 (* Style run for compressed scrollback - represents contiguous bytes with same
@@ -220,6 +224,10 @@ type t = {
   mutable auto_wrap_mode : bool;
   mutable cursor_key_mode : bool;
   mutable insert_mode : bool;
+  (* Character sets: the designations of G0 to G3, and the one invoked into
+     GL *)
+  charsets : char array;
+  mutable gl : int;
   mutable bracketed_paste : bool;
   default_fg : Ansi.Color.t;
   default_bg : Ansi.Color.t;
@@ -274,6 +282,8 @@ let create ?(scrollback = 10000) ?width_method ?(respect_alpha = false)
     auto_wrap_mode = true;
     cursor_key_mode = false;
     insert_mode = false;
+    charsets = Array.make 4 'B';
+    gl = 0;
     bracketed_paste = false;
     default_fg;
     default_bg;
@@ -420,6 +430,77 @@ let set_cursor_visible t visible =
   if t.cursor.visible <> visible then (
     t.cursor.visible <- visible;
     mark_cursor_dirty t)
+
+(* DEC Special Graphics ([ESC ( 0]), the line drawing set. *)
+let dec_graphics = function
+  | '`' -> Some "\u{25c6}"
+  | 'a' -> Some "\u{2592}"
+  | 'b' -> Some "\u{2409}"
+  | 'c' -> Some "\u{240c}"
+  | 'd' -> Some "\u{240d}"
+  | 'e' -> Some "\u{240a}"
+  | 'f' -> Some "\u{00b0}"
+  | 'g' -> Some "\u{00b1}"
+  | 'h' -> Some "\u{2424}"
+  | 'i' -> Some "\u{240b}"
+  | 'j' -> Some "\u{2518}"
+  | 'k' -> Some "\u{2510}"
+  | 'l' -> Some "\u{250c}"
+  | 'm' -> Some "\u{2514}"
+  | 'n' -> Some "\u{253c}"
+  | 'o' -> Some "\u{23ba}"
+  | 'p' -> Some "\u{23bb}"
+  | 'q' -> Some "\u{2500}"
+  | 'r' -> Some "\u{23bc}"
+  | 's' -> Some "\u{23bd}"
+  | 't' -> Some "\u{251c}"
+  | 'u' -> Some "\u{2524}"
+  | 'v' -> Some "\u{2534}"
+  | 'w' -> Some "\u{252c}"
+  | 'x' -> Some "\u{2502}"
+  | 'y' -> Some "\u{2264}"
+  | 'z' -> Some "\u{2265}"
+  | '{' -> Some "\u{03c0}"
+  | '|' -> Some "\u{2260}"
+  | '}' -> Some "\u{00a3}"
+  | '~' -> Some "\u{00b7}"
+  | _ -> None
+
+(* The national replacement sets for British ([ESC ( A]) and German
+   ([ESC ( K]). *)
+let british = function '#' -> Some "\u{00a3}" | _ -> None
+
+let german = function
+  | '@' -> Some "\u{00a7}"
+  | '[' -> Some "\u{00c4}"
+  | '\\' -> Some "\u{00d6}"
+  | ']' -> Some "\u{00dc}"
+  | '{' -> Some "\u{00e4}"
+  | '|' -> Some "\u{00f6}"
+  | '}' -> Some "\u{00fc}"
+  | '~' -> Some "\u{00df}"
+  | _ -> None
+
+(* Map text through the set invoked into GL; any other set is ASCII. *)
+let translate_charset t text =
+  let map =
+    match t.charsets.(t.gl) with
+    | '0' -> Some dec_graphics
+    | 'A' -> Some british
+    | 'K' -> Some german
+    | _ -> None
+  in
+  match map with
+  | None -> text
+  | Some map ->
+      let buf = Buffer.create (String.length text * 3) in
+      String.iter
+        (fun c ->
+          match map c with
+          | Some s -> Buffer.add_string buf s
+          | None -> Buffer.add_char buf c)
+        text;
+      Buffer.contents buf
 
 let scrollback_capacity t =
   match t.scrollback with None -> 0 | Some sb -> sb.capacity
@@ -575,6 +656,7 @@ let row_down t n =
    string into pieces that fit in the current line, using an ASCII fast path and
    falling back to grapheme segmentation for complex text. *)
 let put_text t text =
+  let text = translate_charset t text in
   let resolve_color ~default color =
     match Ansi.Color.intent color with
     | Default -> default
@@ -818,7 +900,8 @@ let handle_control_char t code =
       clear_pending_wrap t;
       advance_row t
   | 0x0D -> (* CR *) set_cursor_pos t ~row:t.cursor.row ~col:0
-  | 0x0E | 0x0F -> () (* SO, SI *)
+  | 0x0E -> (* SO *) t.gl <- 1
+  | 0x0F -> (* SI *) t.gl <- 0
   | _ -> ()
 
 let handle_text t text =
@@ -896,6 +979,8 @@ let decsc t =
       saved_col = t.cursor.col;
       saved_style = t.style;
       saved_origin = t.origin_mode;
+      saved_charsets = Array.copy t.charsets;
+      saved_gl = t.gl;
     }
   in
   if t.active_grid == t.alternate then t.saved_alternate <- saved
@@ -906,6 +991,8 @@ let decrc t =
     if t.active_grid == t.alternate then t.saved_alternate else t.saved_primary
   in
   t.origin_mode <- saved.saved_origin;
+  Array.blit saved.saved_charsets 0 t.charsets 0 4;
+  t.gl <- saved.saved_gl;
   let row =
     if t.origin_mode then
       max t.scroll_region.top (min t.scroll_region.bottom saved.saved_row)
@@ -1157,6 +1244,8 @@ let handle_control t ctrl =
       | Some (_, url) -> t.style <- Ansi.Style.hyperlink url t.style)
   | Ansi.Parser.DECSC -> decsc t
   | Ansi.Parser.DECRC -> decrc t
+  | Ansi.Parser.SCS (g, c) -> t.charsets.(g) <- c
+  | Ansi.Parser.LS g -> t.gl <- g
   | Ansi.Parser.RI ->
       if t.cursor.row = t.scroll_region.top then scroll_down t 1
       else set_cursor_pos t ~row:(t.cursor.row - 1) ~col:t.cursor.col
@@ -1213,6 +1302,8 @@ let reset t =
   t.auto_wrap_mode <- true;
   t.cursor_key_mode <- false;
   t.insert_mode <- false;
+  Array.fill t.charsets 0 4 'B';
+  t.gl <- 0;
   t.bracketed_paste <- false;
   t.tabs <- default_tabs t.cols;
   mark_rows_dirty t 0 (t.rows - 1)
