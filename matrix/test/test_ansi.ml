@@ -532,6 +532,22 @@ let parser_chunked_escape () =
       equal ~msg:"parsed split csi" check_color Color.red c
   | _ -> fail "Failed to reconstruct split CSI"
 
+let parser_controls_inside_csi () =
+  (* As in xterm, a C0 control inside a CSI sequence runs without ending it,
+     DEL is ignored, ESC starts a new sequence, and CAN and SUB cancel it. *)
+  (match Parser.parse "\x1b[1\b\x7fC" with
+  | [ Parser.Text "\b"; Parser.Control (Parser.CUF 1) ] -> ()
+  | _ -> fail "BS inside CSI should run, then CUF 1");
+  (match Parser.parse "\x1b[2\x1b[3C" with
+  | [ Parser.Control (Parser.CUF 3) ] -> ()
+  | _ -> fail "ESC inside CSI should start CUF 3");
+  List.iter
+    (fun s ->
+      match Parser.parse s with
+      | [ Parser.Text "b" ] -> ()
+      | _ -> failf "%S should cancel the sequence" s)
+    [ "\x1b[2\x18b"; "\x1b[2\x1ab" ]
+
 let parser_malformed_input () =
   (* 1. Lone ESC at end of string *)
   let t1 = Parser.parse "foo\x1b" in
@@ -1171,6 +1187,7 @@ let tests =
         test "chunked utf8 same buffer slice"
           parser_chunked_utf8_same_buffer_slice;
         test "chunked escape" parser_chunked_escape;
+        test "controls inside csi" parser_controls_inside_csi;
         test "malformed inputs" parser_malformed_input;
         test "invalid utf8 lead bytes" parser_invalid_utf8_lead_bytes;
         test "overflow protection" parser_max_length_overflow;
