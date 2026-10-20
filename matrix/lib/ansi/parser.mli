@@ -45,6 +45,10 @@ type control =
           [Some (params, url)] opens one, where [params] are key=value pairs
           from the parameter string. *)
   | Reset  (** RIS — reset to initial state ([ESC c]). *)
+  | DA  (** Primary device attributes query ([CSI c]). *)
+  | DA2  (** Secondary device attributes query ([CSI > c]). *)
+  | DSR of int  (** Device status report query ([CSI Ps n]). *)
+  | DECXCPR  (** Extended cursor position report query ([CSI ? 6 n]). *)
   | DECSC  (** Save cursor position ([ESC 7]). *)
   | DECRC  (** Restore cursor position ([ESC 8]). *)
   | RI  (** Reverse index ([ESC M]). *)

@@ -112,6 +112,10 @@ type t = {
   parser : Ansi.Parser.t;
   (* Terminal state *)
   mutable title : string;
+  (* Bytes owed to the application, and the device attributes it is told *)
+  replies : Buffer.t;
+  da1 : string;
+  da2 : string;
   dirty_state : dirty_state;
   (* Scrollback *)
   scrollback : scrollback option;
@@ -129,7 +133,8 @@ type t = {
 (* VTE instance *)
 
 let create ?(scrollback = 10000) ?width_method ?(default_fg = Ansi.Color.white)
-    ?(default_bg = Ansi.Color.black) ~rows ~cols () =
+    ?(default_bg = Ansi.Color.black) ?(da1 = "\027[?1;2c")
+    ?(da2 = "\027[>0;0;0c") ~rows ~cols () =
   let rows = max 1 rows in
   let cols = max 1 cols in
   let primary = Grid.create ~width:cols ~height:rows ?width_method () in
@@ -154,6 +159,9 @@ let create ?(scrollback = 10000) ?width_method ?(default_fg = Ansi.Color.white)
     saved_style = None;
     parser = Ansi.Parser.create ();
     title = "";
+    replies = Buffer.create 16;
+    da1;
+    da2;
     dirty_state =
       { dirty = false; dirty_rows = Int_set.empty; dirty_cursor = false };
     scrollback = scrollback_buffer;
@@ -254,6 +262,12 @@ let resize t ~rows ~cols =
 
 let grid t = t.active_grid
 let title t = t.title
+
+let take_replies t =
+  let s = Buffer.contents t.replies in
+  Buffer.clear t.replies;
+  s
+
 let is_dirty t = t.dirty_state.dirty
 
 let clear_dirty t =
@@ -709,6 +723,12 @@ let set_dec_mode t mode set =
   | 2004 -> t.bracketed_paste <- set
   | _ -> ()
 
+(* The 1-based cursor position CPR reports: a pending wrap reports the last
+   column, and origin mode counts rows from the top margin, as in xterm. *)
+let cursor_report t =
+  let top = if t.origin_mode then t.scroll_region.top else 0 in
+  (t.cursor.row - top + 1, min t.cursor.col (t.cols - 1) + 1)
+
 let handle_control t ctrl =
   (match ctrl with
   | Ansi.Parser.(
@@ -868,6 +888,16 @@ let handle_control t ctrl =
   | Ansi.Parser.DCS _ | Ansi.Parser.APC _ | Ansi.Parser.PM _ | Ansi.Parser.SOS _
     ->
       ()
+  | Ansi.Parser.DA -> Buffer.add_string t.replies t.da1
+  | Ansi.Parser.DA2 -> Buffer.add_string t.replies t.da2
+  | Ansi.Parser.DSR 5 -> Buffer.add_string t.replies "\027[0n"
+  | Ansi.Parser.DSR 6 ->
+      let row, col = cursor_report t in
+      Printf.bprintf t.replies "\027[%d;%dR" row col
+  | Ansi.Parser.DECXCPR ->
+      let row, col = cursor_report t in
+      Printf.bprintf t.replies "\027[?%d;%d;1R" row col
+  | Ansi.Parser.DSR _ -> ()
   | Ansi.Parser.Hyperlink payload -> (
       match payload with
       | None -> t.style <- Ansi.Style.unlink t.style
