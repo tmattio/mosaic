@@ -339,6 +339,13 @@ let grapheme_start_and_width grid row col =
     let w = max 1 (Grid.cell_width grid start_idx) in
     (start_col, w)
 
+(* DCH and ICH act from the cursor cell. On the right half of a wide
+   character, blank the character first, as xterm does. *)
+let edit_start t row =
+  let start, w = grapheme_start_and_width t.active_grid row t.cursor.col in
+  if start < t.cursor.col then erase_region t ~x:start ~y:row ~width:w ~height:1;
+  t.cursor.col
+
 let rows t = t.rows
 let cols t = t.cols
 
@@ -1136,9 +1143,7 @@ let handle_control t ctrl =
       if n > 0 then
         let row = t.cursor.row in
         if row >= 0 && row < t.rows then
-          let start_col, _ =
-            grapheme_start_and_width t.active_grid row t.cursor.col
-          in
+          let start_col = edit_start t row in
           if start_col < t.cols then
             let delete_span =
               let rec loop col remaining acc =
@@ -1170,9 +1175,7 @@ let handle_control t ctrl =
       if n > 0 then
         let row = t.cursor.row in
         if row >= 0 && row < t.rows then
-          let start_col, _ =
-            grapheme_start_and_width t.active_grid row t.cursor.col
-          in
+          let start_col = edit_start t row in
           if start_col < t.cols then
             let insert_span = min n (t.cols - start_col) in
             if insert_span > 0 then (

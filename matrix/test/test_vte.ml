@@ -406,6 +406,17 @@ let insert_characters_wide_boundary () =
   is_false ~msg:"last cell not continuation"
     (Grid.is_continuation grid last_idx)
 
+let edit_on_wide_right_half () =
+  (* With the cursor on the right half of a wide character, DCH and ICH act
+     from that cell and blank the half left behind. *)
+  let screen s =
+    let vte = Vte.create ~rows:1 ~cols:6 () in
+    Vte.feed_string vte ("a\xe4\xb8\xadb\x1b[1;3H" ^ s);
+    Vte.to_string vte
+  in
+  equal ~msg:"DCH" string "a b   " (screen "\x1b[P");
+  equal ~msg:"ICH" string "a   b " (screen "\x1b[@")
+
 (* DECAWM off: printing at the right margin overwrites the last column and
    the cursor stays pinned; the run must not be dropped. Found by the split
    invariance property (seed 496960259): a dropped base made a later chunk's
@@ -1086,6 +1097,7 @@ let tests =
     test "pending wrap cleared by controls" pending_wrap_cleared_by_controls;
     test "delete characters wide grapheme" delete_characters_wide;
     test "insert characters wide boundary" insert_characters_wide_boundary;
+    test "edit on wide right half" edit_on_wide_right_half;
     test "SGR bold" sgr_bold;
     test "SGR italic" sgr_italic;
     test "SGR underline" sgr_underline;
