@@ -39,6 +39,7 @@ type control =
   | DSR of int
   | DECXCPR
   | DECSC
+  | DECSTR
   | DECRC
   | SCS of int * char
   | LS of int
@@ -315,6 +316,7 @@ let parse_csi ~params body final : token option =
       Some (Control DA2)
   | Some ('?', "") when final = 'n' && body = "?6" -> Some (Control DECXCPR)
   | Some ('\000', "") -> parse_plain_csi ~params body final
+  | Some ('\000', "!") when final = 'p' -> Some (Control DECSTR)
   | Some ('?', "") when String.contains "hlJK" final ->
       parse_plain_csi ~params body final
   | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))

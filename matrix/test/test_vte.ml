@@ -866,6 +866,30 @@ let reset_clears_state () =
   equal ~msg:"scrollback cleared" int 0 (Vte.scrollback_size vte);
   is_true ~msg:"auto wrap reset" (Vte.auto_wrap_mode vte)
 
+let ris_and_decstr () =
+  let run s =
+    let vte = Vte.create ~rows:2 ~cols:10 () in
+    Vte.feed_string vte s;
+    vte
+  in
+  let screen s = Vte.to_string (run s) in
+  equal ~msg:"RIS turns auto-wrap back on" string "0123456789\nq         "
+    (screen "\x1b[?7l\x1bc0123456789q");
+  is_true ~msg:"RIS shows the cursor"
+    (Vte.cursor_visible (run "\x1b[?25l\x1bc"));
+  equal ~msg:"RIS resets the tab stops" string "        X \n          "
+    (screen "\x1b[3g\x1bc\tX");
+  equal ~msg:"DECSTR resets insert mode and auto-wrap" string
+    "Xb        \n          "
+    (screen "\x1b[4h\x1b[?7l\x1b[!pab\rX");
+  equal ~msg:"DECSTR keeps the cursor and resets the saved one" string
+    "X Y       \n          "
+    (screen "\x1b[2;5H\x1b7\x1b[1;3H\x1b[!pY\x1b8X");
+  let vte = run "\x1b[?25l\x1b[1m\x1b[!pX" in
+  is_true ~msg:"DECSTR shows the cursor" (Vte.cursor_visible vte);
+  is_true ~msg:"DECSTR resets SGR"
+    (Ansi.Attr.is_empty (Ansi.Attr.unpack (Grid.get_attrs (Vte.grid vte) 0)))
+
 (** {1 Dirty Tracking} *)
 
 let dirty_flag_on_text () =
@@ -1248,6 +1272,7 @@ let tests =
     test "resize preserves content" resize_preserves_content;
     test "resize clamps cursor" resize_clamps_cursor;
     test "reset clears state" reset_clears_state;
+    test "RIS and DECSTR" ris_and_decstr;
     test "dirty flag on text" dirty_flag_on_text;
     test "dirty flag on cursor move" dirty_flag_on_cursor_move;
     test "dirty flag on style change" dirty_flag_on_style_change;

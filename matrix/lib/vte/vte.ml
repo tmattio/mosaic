@@ -905,6 +905,50 @@ let switch_to_primary t restore_cursor =
     if restore_cursor then decrc t;
     mark_rows_dirty t 0 (t.rows - 1))
 
+(* RIS: everything but the parser, which [reset] also resets. *)
+let hard_reset t =
+  if t.active_grid == t.alternate then switch_to_primary t false;
+  Grid.clear ~color:t.default_bg t.primary;
+  Grid.clear ~color:t.default_bg t.alternate;
+  set_cursor_pos t ~row:0 ~col:0;
+  set_cursor_visible t true;
+  t.style <- Ansi.Style.default;
+  t.saved_primary <- home_cursor;
+  t.saved_alternate <- home_cursor;
+  t.title <- "";
+
+  (* Clear scrollback *)
+  clear_scrollback t;
+
+  t.scroll_region.top <- 0;
+  t.scroll_region.bottom <- t.rows - 1;
+  t.origin_mode <- false;
+  t.auto_wrap_mode <- true;
+  t.cursor_key_mode <- false;
+  t.insert_mode <- false;
+  Array.fill t.charsets 0 4 'B';
+  t.gl <- 0;
+  t.bracketed_paste <- false;
+  t.tabs <- default_tabs t.cols;
+  mark_rows_dirty t 0 (t.rows - 1)
+
+(* DECSTR, as xterm's soft reset: the modes, SGR, the margins, the character
+   sets and the saved cursor return to their defaults, and the screen and the
+   cursor position stay. *)
+let soft_reset t =
+  set_cursor_visible t true;
+  t.insert_mode <- false;
+  t.origin_mode <- false;
+  t.auto_wrap_mode <- true;
+  t.cursor_key_mode <- false;
+  t.style <- Ansi.Style.default;
+  t.scroll_region.top <- 0;
+  t.scroll_region.bottom <- t.rows - 1;
+  Array.fill t.charsets 0 4 'B';
+  t.gl <- 0;
+  if t.active_grid == t.alternate then t.saved_alternate <- home_cursor
+  else t.saved_primary <- home_cursor
+
 (* ANSI modes ([CSI Pm h/l]). *)
 let set_ansi_mode t mode set =
   match mode with 4 -> t.insert_mode <- set | _ -> ()
@@ -1134,11 +1178,8 @@ let handle_control t ctrl =
   | Ansi.Parser.RI ->
       if t.cursor.row = t.scroll_region.top then scroll_down t 1
       else set_cursor_pos t ~row:(t.cursor.row - 1) ~col:t.cursor.col
-  | Ansi.Parser.Reset ->
-      t.style <- Ansi.Style.default;
-      Grid.clear ~color:t.default_bg t.active_grid;
-      set_cursor_pos t ~row:0 ~col:0;
-      mark_rows_dirty t 0 (t.rows - 1)
+  | Ansi.Parser.Reset -> hard_reset t
+  | Ansi.Parser.DECSTR -> soft_reset t
   | Ansi.Parser.SM modes -> List.iter (fun m -> set_ansi_mode t m true) modes
   | Ansi.Parser.RM modes -> List.iter (fun m -> set_ansi_mode t m false) modes
   | Ansi.Parser.DECSET modes -> List.iter (fun m -> set_dec_mode t m true) modes
@@ -1168,30 +1209,8 @@ let feed_string t str =
   feed t bytes 0 (String.length str)
 
 let reset t =
-  if t.active_grid == t.alternate then switch_to_primary t false;
-  Grid.clear ~color:t.default_bg t.primary;
-  Grid.clear ~color:t.default_bg t.alternate;
-  set_cursor_pos t ~row:0 ~col:0;
-  t.style <- Ansi.Style.default;
-  t.saved_primary <- home_cursor;
-  t.saved_alternate <- home_cursor;
-  Ansi.Parser.reset t.parser;
-  t.title <- "";
-
-  (* Clear scrollback *)
-  clear_scrollback t;
-
-  t.scroll_region.top <- 0;
-  t.scroll_region.bottom <- t.rows - 1;
-  t.origin_mode <- false;
-  t.auto_wrap_mode <- true;
-  t.cursor_key_mode <- false;
-  t.insert_mode <- false;
-  Array.fill t.charsets 0 4 'B';
-  t.gl <- 0;
-  t.bracketed_paste <- false;
-  t.tabs <- default_tabs t.cols;
-  mark_rows_dirty t 0 (t.rows - 1)
+  hard_reset t;
+  Ansi.Parser.reset t.parser
 
 let to_string t =
   let grid = t.active_grid in
