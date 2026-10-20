@@ -58,6 +58,12 @@ type control =
   | DECXCPR  (** Extended cursor position report query ([CSI ? 6 n]). *)
   | DECSC  (** Save cursor position ([ESC 7]). *)
   | DECRC  (** Restore cursor position ([ESC 8]). *)
+  | SCS of int * char
+      (** [SCS (g, c)] designates the 94-character set with final byte [c] as
+          G[g] ([ESC ( c] for G0 to [ESC + c] for G3). *)
+  | LS of int
+      (** [LS g] invokes G[g] into GL: LS2 ([ESC n]) and LS3 ([ESC o]). SO and
+          SI, which invoke G1 and G0, are C0 controls left in {!Text}. *)
   | RI  (** Reverse index ([ESC M]). *)
   | IND  (** Index ([ESC D]): down one line, scrolling at the bottom margin. *)
   | NEL  (** Next line ([ESC E]): {!IND} then carriage return. *)

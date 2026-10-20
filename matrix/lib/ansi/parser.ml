@@ -40,6 +40,8 @@ type control =
   | DECXCPR
   | DECSC
   | DECRC
+  | SCS of int * char
+  | LS of int
   | RI
   | IND
   | NEL
@@ -691,10 +693,16 @@ let feed p src ~off ~len emit =
               p.state <- Normal;
               emit (Control RI);
               loop (pos + 1)
+          | 'n' | 'o' ->
+              p.state <- Normal;
+              emit (Control (LS (if c = 'n' then 2 else 3)));
+              loop (pos + 1)
           | '%' | '(' | ')' | '*' | '+' ->
               (* Character set selection: the next byte picks the charset. A
                  dedicated state survives feed boundaries — rewinding to the
                  ESC is unsound once it lives in a previous chunk. *)
+              Buffer.clear p.csi_buf;
+              Buffer.add_char p.csi_buf c;
               p.state <- Escape_charset;
               loop (pos + 1)
           | ' ' .. '/' ->
@@ -713,8 +721,13 @@ let feed p src ~off ~len emit =
               p.state <- Normal;
               loop (if pos = !c1_at then pos + 1 else pos))
       | Escape_charset ->
-          (* Consume and ignore the charset designation byte. *)
+          (* The final byte of a designation, after the intermediate in
+             [csi_buf]; ESC % selects a coding system, which is ignored. *)
           p.state <- Normal;
+          (match String.index_opt "()*+" (Buffer.nth p.csi_buf 0) with
+          | Some g ->
+              emit (Control (SCS (g, Bytes.get input (input_off + pos))))
+          | None -> ());
           loop (pos + 1)
       | Csi ->
           let c = Bytes.get input (input_off + pos) in
