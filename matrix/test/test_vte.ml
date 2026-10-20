@@ -643,6 +643,24 @@ let scroll_on_bottom_line () =
   equal ~msg:"first line scrolled off" string "L2" (get_line (Vte.grid vte) 0);
   equal ~msg:"new line at bottom" string "L4" (get_line (Vte.grid vte) 2)
 
+let alignment_and_column_edits () =
+  let screen s =
+    let vte = Vte.create ~rows:2 ~cols:6 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"DECALN" string "EEEEEE\nEEEEEE" (screen "ab\x1b#8");
+  equal ~msg:"SL" string "bcdef \nhijkl " (screen "abcdef\r\nghijkl\x1b[1 @");
+  equal ~msg:"SR" string " abcde\n ghijk" (screen "abcdef\r\nghijkl\x1b[1 A");
+  equal ~msg:"DECIC" string "ab cde\ngh ijk"
+    (screen "abcdef\r\nghijkl\x1b[1;3H\x1b[1'}");
+  equal ~msg:"DECDC" string "abdef \nghjkl "
+    (screen "abcdef\r\nghijkl\x1b[1;3H\x1b[1'~");
+  let vte = Vte.create ~rows:3 ~cols:6 () in
+  Vte.feed_string vte "abcdef\r\nghijkl\r\nmnopqr\x1b[1;2r\x1b[3;1H\x1b[1 @";
+  equal ~msg:"SL from outside the region" string "abcdef\nghijkl\nmnopqr"
+    (Vte.to_string vte)
+
 let reverse_index_moves_cursor_up () =
   let vte = Vte.create ~rows:5 ~cols:10 () in
   Vte.feed_string vte "\x1b[3;4H\x1bM";
@@ -1139,6 +1157,7 @@ let tests =
     test "scroll down basic" scroll_down_basic;
     test "CSI scroll sequences" csi_scroll_sequences;
     test "scroll on bottom line" scroll_on_bottom_line;
+    test "alignment and column edits" alignment_and_column_edits;
     test "reverse index moves cursor up" reverse_index_moves_cursor_up;
     test "reverse index scrolls region down" reverse_index_scrolls_region_down;
     test "index and next line" index_and_next_line;

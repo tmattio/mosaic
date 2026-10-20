@@ -635,6 +635,42 @@ let scroll_down t n =
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
 
+(* Blank the wide character whose right half is at [col], so a column shift
+   that cuts it leaves no half behind. *)
+let blank_cut_wide t row col =
+  if
+    col > 0 && col < t.cols
+    && Grid.is_continuation t.active_grid ((row * t.cols) + col)
+  then
+    let start, w = grapheme_start_and_width t.active_grid row col in
+    erase_region t ~x:start ~y:row ~width:w ~height:1
+
+(* Delete [n] cells (n > 0) or insert [-n] blank cells (n < 0) at column [x]
+   of every row of the scroll region, for SL, SR, DECIC and DECDC. Like IL and
+   DL, these act only on a cursor inside the region. *)
+let shift_columns t ~x n =
+  let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
+  let span = min (abs n) (t.cols - x) in
+  if t.cursor.row >= top && t.cursor.row <= bottom && span > 0 then (
+    for row = top to bottom do
+      blank_cut_wide t row x;
+      let keep = t.cols - x - span in
+      if n > 0 then (
+        blank_cut_wide t row (x + span);
+        if keep > 0 then
+          Grid.blit_region ~src:t.active_grid ~dst:t.active_grid
+            ~src_x:(x + span) ~src_y:row ~width:keep ~height:1 ~dst_x:x
+            ~dst_y:row;
+        erase_region t ~x:(t.cols - span) ~y:row ~width:span ~height:1)
+      else (
+        blank_cut_wide t row (t.cols - span);
+        if keep > 0 then
+          Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x:x
+            ~src_y:row ~width:keep ~height:1 ~dst_x:(x + span) ~dst_y:row;
+        erase_region t ~x ~y:row ~width:span ~height:1)
+    done;
+    mark_rows_dirty t top bottom)
+
 (* Move down one row for LF/auto-wrap: scroll only when the cursor sits on the
    region bottom; below the region (legal via CUP after DECSTBM) advance toward
    the screen bottom without touching the region. Preserves the column. *)
@@ -1246,6 +1282,29 @@ let handle_control t ctrl =
         t.scroll_region.bottom <- bottom - 1;
         set_cursor_pos t ~row:(origin_row t 0) ~col:0)
   | Ansi.Parser.SU n -> scroll_up t n
+  | Ansi.Parser.DECALN ->
+      (* As xterm: reset the margins, fill with E in the default rendition,
+         and home the cursor. *)
+      t.scroll_region.top <- 0;
+      t.scroll_region.bottom <- t.rows - 1;
+      let style =
+        Ansi.Style.default |> Ansi.Style.fg t.default_fg
+        |> Ansi.Style.bg t.default_bg
+      in
+      let line = String.make t.cols 'E' in
+      for row = 0 to t.rows - 1 do
+        Grid.draw_text t.active_grid ~x:0 ~y:row ~text:line ~style
+      done;
+      mark_rows_dirty t 0 (t.rows - 1);
+      set_cursor_pos t ~row:0 ~col:0
+  | Ansi.Parser.SL n -> shift_columns t ~x:0 n
+  | Ansi.Parser.SR n -> shift_columns t ~x:0 (-n)
+  | Ansi.Parser.DECIC n ->
+      clear_pending_wrap t;
+      shift_columns t ~x:t.cursor.col (-n)
+  | Ansi.Parser.DECDC n ->
+      clear_pending_wrap t;
+      shift_columns t ~x:t.cursor.col n
   | Ansi.Parser.SD n -> scroll_down t n
   | Ansi.Parser.VPR n ->
       clear_pending_wrap t;

@@ -23,6 +23,11 @@ type control =
   | DL of int
   | DCH of int
   | ICH of int
+  | DECALN
+  | SL of int
+  | SR of int
+  | DECIC of int
+  | DECDC of int
   | DECSTBM of int * int
   | SU of int
   | SD of int
@@ -308,6 +313,13 @@ let csi_form body =
     if params_end = len then Some (prefix, "")
     else Some (prefix, String.sub body params_end (len - params_end))
 
+(* The first parameter of [body] as a count: 1 when missing or 0. *)
+let csi_count ~params body =
+  let count, _ =
+    parse_csi_params body (String.length body) params max_csi_params
+  in
+  if count > 0 then max 1 params.(0) else 1
+
 (* The final byte names a function only together with the prefix and the
    intermediates; xterm ignores the combinations it does not implement. *)
 let parse_csi ~params body final : token option =
@@ -319,6 +331,14 @@ let parse_csi ~params body final : token option =
   | Some ('\000', "!") when final = 'p' -> Some (Control DECSTR)
   | Some ('?', "") when String.contains "hlJK" final ->
       parse_plain_csi ~params body final
+  | Some ('\000', " ") when final = '@' ->
+      Some (Control (SL (csi_count ~params body)))
+  | Some ('\000', " ") when final = 'A' ->
+      Some (Control (SR (csi_count ~params body)))
+  | Some ('\000', "'") when final = '}' ->
+      Some (Control (DECIC (csi_count ~params body)))
+  | Some ('\000', "'") when final = '~' ->
+      Some (Control (DECDC (csi_count ~params body)))
   | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
 
 (* Parse OSC 8 hyperlink parameters and URL *)
@@ -770,6 +790,10 @@ let feed p src ~off ~len emit =
           | ' ' .. '/' ->
               if Buffer.length p.csi_buf < max_escape_length then
                 Buffer.add_char p.csi_buf c;
+              loop (pos + 1)
+          | '8' when Buffer.contents p.csi_buf = "#" ->
+              p.state <- Normal;
+              emit (Control DECALN);
               loop (pos + 1)
           | '0' .. '~' ->
               p.state <- Normal;

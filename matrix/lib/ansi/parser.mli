@@ -37,6 +37,11 @@ type control =
   | DL of int  (** Delete [n] Lines. *)
   | DCH of int  (** Delete [n] Characters. *)
   | ICH of int  (** Insert [n] blank Characters. *)
+  | DECALN  (** Screen alignment test: fill the screen with [E] ([ESC # 8]). *)
+  | SL of int  (** Scroll Left by [n] columns ([CSI n SP @]). *)
+  | SR of int  (** Scroll Right by [n] columns ([CSI n SP A]). *)
+  | DECIC of int  (** Insert [n] blank columns at the cursor ([CSI n ' }]). *)
+  | DECDC of int  (** Delete [n] columns at the cursor ([CSI n ' ~]). *)
   | DECSTBM of int * int
       (** Set top and bottom scrolling margins ([CSI top ; bottom r]). *)
   | SU of int  (** Scroll Up by [n] lines. *)
