@@ -840,8 +840,7 @@ let handle_control t ctrl =
       set_cursor_pos t ~row:(t.cursor.row - n) ~col:t.cursor.col
   | Ansi.Parser.CUD n ->
       set_cursor_pos t ~row:(t.cursor.row + n) ~col:t.cursor.col
-  | Ansi.Parser.CUF n ->
-      set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col + n)
+  | Ansi.Parser.CUF n -> move_cursor t ~row:t.cursor.row ~col:(t.cursor.col + n)
   | Ansi.Parser.CUB n ->
       set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col - n)
   | Ansi.Parser.CNL n -> set_cursor_pos t ~row:(t.cursor.row + n) ~col:0

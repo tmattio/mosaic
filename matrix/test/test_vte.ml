@@ -314,7 +314,12 @@ let pending_wrap_cleared_by_controls () =
     (get_line (Vte.grid vte) 0);
   Vte.feed_string vte "\r\x1b[9GY";
   equal ~msg:"CHA clamps to the last column" string "    Y"
-    (get_line (Vte.grid vte) 0)
+    (get_line (Vte.grid vte) 0);
+  let vte = Vte.create ~rows:3 ~cols:5 () in
+  Vte.feed_string vte "ab\x1b[9CX";
+  equal ~msg:"CUF stops at the last column" string "ab  X"
+    (get_line (Vte.grid vte) 0);
+  equal ~msg:"CUF does not wrap" string "" (get_line (Vte.grid vte) 1)
 
 let wrap_below_scroll_region () =
   let vte = Vte.create ~rows:5 ~cols:3 () in
