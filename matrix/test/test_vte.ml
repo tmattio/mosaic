@@ -147,6 +147,28 @@ let cursor_previous_line () =
   equal ~msg:"previous line moves up and to column 0" (pair int int) (0, 1)
     (Vte.cursor_pos vte)
 
+let vertical_moves_stop_at_margins () =
+  (* Region rows 2..3 (1-based): a move that starts inside it stops at its
+     margin; one that starts outside stops at the screen edge. *)
+  let pos s =
+    let vte = Vte.create ~rows:4 ~cols:3 () in
+    Vte.feed_string vte ("\x1b[2;3r" ^ s);
+    Vte.cursor_pos vte
+  in
+  equal ~msg:"CUU stops at the top margin" (pair int int) (1, 0)
+    (pos "\x1b[3;1H\x1b[5A");
+  equal ~msg:"CPL stops at the top margin" (pair int int) (1, 0)
+    (pos "\x1b[3;2H\x1b[5F");
+  equal ~msg:"CUD stops at the bottom margin" (pair int int) (2, 0)
+    (pos "\x1b[2;1H\x1b[5B");
+  equal ~msg:"CUD from above the region" (pair int int) (2, 0) (pos "\x1b[5B");
+  equal ~msg:"CNL stops at the bottom margin" (pair int int) (2, 0)
+    (pos "\x1b[2;2H\x1b[5E");
+  equal ~msg:"CUU from above the region" (pair int int) (0, 0)
+    (pos "\x1b[1;1H\x1b[5A");
+  equal ~msg:"CUD from below the region" (pair int int) (3, 0)
+    (pos "\x1b[4;1H\x1b[5B")
+
 (** {1 Screen Manipulation} *)
 
 let erase_display_to_end () =
@@ -918,6 +940,7 @@ let tests =
     test "ECMA-48 position forms" ecma48_position_forms;
     test "cursor next line" cursor_next_line;
     test "cursor previous line" cursor_previous_line;
+    test "vertical moves stop at margins" vertical_moves_stop_at_margins;
     test "erase display to end" erase_display_to_end;
     test "erase display to beginning" erase_display_to_beginning;
     test "erase display all" erase_display_all;
