@@ -251,6 +251,31 @@ let delete_lines () =
   equal ~msg:"third line moved up" string "Line3" (get_line (Vte.grid vte) 1);
   equal ~msg:"bottom line empty" string "" (get_line (Vte.grid vte) 2)
 
+let insert_delete_lines_in_region () =
+  (* Rows 1 to 4 with the region on rows 2 and 3: IL and DL act only from
+     inside the region, and return the cursor to the first column. *)
+  let run s =
+    let vte = Vte.create ~rows:4 ~cols:3 () in
+    Vte.feed_string vte ("1\r\n2\r\n3\r\n4\x1b[2;3r" ^ s);
+    (Vte.to_string vte, Vte.cursor_pos vte)
+  in
+  equal ~msg:"IL"
+    (pair string (pair int int))
+    ("1  \n   \n2  \n4  ", (1, 0))
+    (run "\x1b[2;3H\x1b[L");
+  equal ~msg:"DL"
+    (pair string (pair int int))
+    ("1  \n3  \n   \n4  ", (1, 0))
+    (run "\x1b[2;3H\x1b[M");
+  equal ~msg:"IL above the region"
+    (pair string (pair int int))
+    ("1  \n2  \n3  \n4  ", (0, 1))
+    (run "\x1b[1;2H\x1b[L");
+  equal ~msg:"DL below the region"
+    (pair string (pair int int))
+    ("1  \n2  \n3  \n4  ", (3, 1))
+    (run "\x1b[4;2H\x1b[M")
+
 let insert_characters () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.feed_string vte "Hello\r\x1b[3C\x1b[2@XX";
@@ -1062,6 +1087,7 @@ let tests =
       default_background_spaces_overwrite_text;
     test "insert lines" insert_lines;
     test "delete lines" delete_lines;
+    test "insert and delete lines in region" insert_delete_lines_in_region;
     test "insert characters" insert_characters;
     test "delete characters" delete_characters;
     test "repeat preceding character" repeat_preceding_character;
