@@ -534,6 +534,25 @@ let cursor_save_restore_style () =
   let r, _, _ = Grid.get_fg (Vte.grid vte) 0 |> Ansi.Color.to_rgb in
   equal ~msg:"DECRC restores saved SGR" int 128 r
 
+let saved_cursor_per_screen () =
+  let run s =
+    let vte = Vte.create ~rows:3 ~cols:5 () in
+    Vte.feed_string vte s;
+    vte
+  in
+  is_false ~msg:"DECRC keeps the cursor hidden"
+    (Vte.cursor_visible (run "\x1b7\x1b[?25l\x1b8"));
+  is_false ~msg:"leaving 1049 keeps the cursor hidden"
+    (Vte.cursor_visible (run "\x1b[?1049h\x1b[?25l\x1b[?1049l"));
+  let vte = run "\x1b[2;3H\x1b7\x1b[?47h\x1b[3;5H\x1b7\x1b[?47l\x1b8X" in
+  equal ~msg:"each screen keeps its saved cursor" string "     \n  X  \n     "
+    (Vte.to_string vte);
+  let vte = run "\x1b[31mab\x1b8X" in
+  equal ~msg:"DECRC with nothing saved goes home" string "Xb   \n     \n     "
+    (Vte.to_string vte);
+  is_true ~msg:"and resets SGR"
+    (Ansi.Color.equal (Grid.get_fg (Vte.grid vte) 0) Ansi.Color.white)
+
 let alternate_screen_restores_style () =
   (* Leaving the alternate screen (DECRST 1049) restores the SGR state saved
      on entry, so a full-screen app can't leak its last style. *)
@@ -1036,6 +1055,7 @@ let tests =
     test "set cursor visible" set_cursor_visible_programmatic;
     test "cursor save/restore" cursor_save_restore;
     test "cursor save/restore style" cursor_save_restore_style;
+    test "saved cursor per screen" saved_cursor_per_screen;
     test "alternate screen restores style" alternate_screen_restores_style;
     test "alternate screen keeps cursor" alternate_screen_keeps_cursor;
     test "scroll up basic" scroll_up_basic;

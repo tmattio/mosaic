@@ -4,6 +4,17 @@ module Text = Matrix_text
 type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
 (* Internal cursor state *)
 
+type saved_cursor = {
+  saved_row : int;
+  saved_col : int;
+  saved_style : Ansi.Style.t;
+}
+(* What DECSC saves. Visibility is not part of it, as in xterm. *)
+
+(* What DECRC restores when nothing was saved. *)
+let home_cursor =
+  { saved_row = 0; saved_col = 0; saved_style = Ansi.Style.default }
+
 (* Style run for compressed scrollback - represents contiguous bytes with same
    style *)
 type style_run = {
@@ -178,10 +189,11 @@ type t = {
   mutable tabs : bool array;
   (* Cursor state *)
   cursor : cursor;
-  mutable saved_cursor : (int * int * bool) option;
+  (* One saved cursor per screen *)
+  mutable saved_primary : saved_cursor;
+  mutable saved_alternate : saved_cursor;
   (* Graphics state *)
   mutable style : Ansi.Style.t;
-  mutable saved_style : Ansi.Style.t option;
   (* Parser *)
   parser : Ansi.Parser.t;
   (* Text was the last thing printed, so REP has a character to repeat *)
@@ -239,9 +251,9 @@ let create ?(scrollback = 10000) ?width_method ?(respect_alpha = false)
     cols;
     tabs = default_tabs cols;
     cursor = { row = 0; col = 0; visible = true };
-    saved_cursor = None;
+    saved_primary = home_cursor;
+    saved_alternate = home_cursor;
     style = Ansi.Style.default;
-    saved_style = None;
     parser = Ansi.Parser.create ();
     repeatable = false;
     title = "";
@@ -862,11 +874,28 @@ let apply_sgr_attr style attr =
   | `Fg color -> Ansi.Style.fg color style
   | `Bg color -> Ansi.Style.bg color style
 
+(* DECSC and DECRC act on the saved cursor of the active screen. *)
+let decsc t =
+  let saved =
+    {
+      saved_row = t.cursor.row;
+      saved_col = t.cursor.col;
+      saved_style = t.style;
+    }
+  in
+  if t.active_grid == t.alternate then t.saved_alternate <- saved
+  else t.saved_primary <- saved
+
+let decrc t =
+  let saved =
+    if t.active_grid == t.alternate then t.saved_alternate else t.saved_primary
+  in
+  set_cursor_pos t ~row:saved.saved_row ~col:saved.saved_col;
+  t.style <- saved.saved_style
+
 let switch_to_alternate t save_cursor =
   if t.active_grid != t.alternate then (
-    if save_cursor then (
-      t.saved_cursor <- Some (t.cursor.row, t.cursor.col, t.cursor.visible);
-      t.saved_style <- Some t.style);
+    if save_cursor then decsc t;
     t.active_grid <- t.alternate;
     Grid.clear ~color:t.default_bg t.active_grid;
     t.scroll_region.top <- 0;
@@ -876,15 +905,7 @@ let switch_to_alternate t save_cursor =
 let switch_to_primary t restore_cursor =
   if t.active_grid == t.alternate then (
     t.active_grid <- t.primary;
-    if restore_cursor then (
-      (match t.saved_cursor with
-      | Some (row, col, visible) ->
-          t.cursor.row <- row;
-          t.cursor.col <- col;
-          t.cursor.visible <- visible;
-          mark_cursor_dirty t
-      | None -> ());
-      match t.saved_style with Some style -> t.style <- style | None -> ());
+    if restore_cursor then decrc t;
     mark_rows_dirty t 0 (t.rows - 1))
 
 (* ANSI modes ([CSI Pm h/l]). *)
@@ -1108,17 +1129,8 @@ let handle_control t ctrl =
       match payload with
       | None -> t.style <- Ansi.Style.unlink t.style
       | Some (_, url) -> t.style <- Ansi.Style.hyperlink url t.style)
-  | Ansi.Parser.DECSC ->
-      t.saved_cursor <- Some (t.cursor.row, t.cursor.col, t.cursor.visible);
-      t.saved_style <- Some t.style
-  | Ansi.Parser.DECRC -> (
-      (* DECRC restores the cursor AND the SGR state saved by DECSC. *)
-      (match t.saved_cursor with
-      | Some (row, col, visible) ->
-          set_cursor_pos t ~row ~col;
-          set_cursor_visible t visible
-      | None -> ());
-      match t.saved_style with Some style -> t.style <- style | None -> ())
+  | Ansi.Parser.DECSC -> decsc t
+  | Ansi.Parser.DECRC -> decrc t
   | Ansi.Parser.RI ->
       if t.cursor.row = t.scroll_region.top then scroll_down t 1
       else set_cursor_pos t ~row:(t.cursor.row - 1) ~col:t.cursor.col
@@ -1161,8 +1173,8 @@ let reset t =
   Grid.clear ~color:t.default_bg t.alternate;
   set_cursor_pos t ~row:0 ~col:0;
   t.style <- Ansi.Style.default;
-  t.saved_cursor <- None;
-  t.saved_style <- None;
+  t.saved_primary <- home_cursor;
+  t.saved_alternate <- home_cursor;
   Ansi.Parser.reset t.parser;
   t.title <- "";
 
