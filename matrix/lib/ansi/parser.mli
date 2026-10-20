@@ -46,6 +46,8 @@ type control =
   | DECSC  (** Save cursor position ([ESC 7]). *)
   | DECRC  (** Restore cursor position ([ESC 8]). *)
   | RI  (** Reverse index ([ESC M]). *)
+  | IND  (** Index ([ESC D]): down one line, scrolling at the bottom margin. *)
+  | NEL  (** Next line ([ESC E]): {!IND} then carriage return. *)
   | SM of int list  (** Set Mode ([CSI Pm h]). *)
   | RM of int list  (** Reset Mode ([CSI Pm l]). *)
   | DECSET of int list  (** DEC private mode set ([CSI ? Pm h]). *)

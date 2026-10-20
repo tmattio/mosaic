@@ -476,6 +476,20 @@ let reverse_index_scrolls_region_down () =
   equal ~msg:"cursor remains at top margin" (pair int int) (1, 0)
     (Vte.cursor_pos vte)
 
+let index_and_next_line () =
+  let vte = Vte.create ~rows:3 ~cols:5 () in
+  Vte.feed_string vte "ab\x1bDcd";
+  equal ~msg:"IND moves down a row" string "ab   \n  cd \n     "
+    (Vte.to_string vte);
+  let vte = Vte.create ~rows:3 ~cols:5 () in
+  Vte.feed_string vte "ab\x1bEcd";
+  equal ~msg:"NEL moves to the start of the next row" string
+    "ab   \ncd   \n     " (Vte.to_string vte);
+  let vte = Vte.create ~rows:2 ~cols:5 () in
+  Vte.feed_string vte "a\r\nb\x1bDc\x1bEd";
+  equal ~msg:"IND and NEL scroll at the bottom margin" string " c   \nd    "
+    (Vte.to_string vte)
+
 (** {1 Scrollback} *)
 
 let scrollback_accumulates () =
@@ -982,6 +996,7 @@ let tests =
     test "scroll on bottom line" scroll_on_bottom_line;
     test "reverse index moves cursor up" reverse_index_moves_cursor_up;
     test "reverse index scrolls region down" reverse_index_scrolls_region_down;
+    test "index and next line" index_and_next_line;
     test "scrollback accumulates" scrollback_accumulates;
     test "erase scrollback sequence" erase_scrollback_sequence;
     test "scrollback ring buffer" scrollback_ring_buffer;

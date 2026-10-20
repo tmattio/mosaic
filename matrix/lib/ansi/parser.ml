@@ -30,6 +30,8 @@ type control =
   | DECSC
   | DECRC
   | RI
+  | IND
+  | NEL
   | SM of int list
   | RM of int list
   | DECSET of int list
@@ -640,6 +642,14 @@ let feed p src ~off ~len emit =
           | 'c' ->
               p.state <- Normal;
               emit (Control Reset);
+              loop (pos + 1)
+          | 'D' ->
+              p.state <- Normal;
+              emit (Control IND);
+              loop (pos + 1)
+          | 'E' ->
+              p.state <- Normal;
+              emit (Control NEL);
               loop (pos + 1)
           | '7' ->
               p.state <- Normal;
