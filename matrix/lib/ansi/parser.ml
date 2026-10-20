@@ -10,6 +10,7 @@ type control =
   | CPL of int
   | CHA of int
   | VPA of int
+  | VPR of int
   | CUP of int * int
   | ED of int
   | EL of int
@@ -218,11 +219,14 @@ let parse_plain_csi ~params body final : token option =
   match final with
   | 'A' -> Some (Control (CUU (get 0 1)))
   | 'B' -> Some (Control (CUD (get 0 1)))
+  | 'e' -> Some (Control (VPR (get 0 1)))
   | 'C' -> Some (Control (CUF (get 0 1)))
+  | 'a' -> Some (Control (CUF (get 0 1)))
   | 'D' -> Some (Control (CUB (get 0 1)))
   | 'E' -> Some (Control (CNL (get 0 1)))
   | 'F' -> Some (Control (CPL (get 0 1)))
   | 'G' -> Some (Control (CHA (get 0 1)))
+  | '`' -> Some (Control (CHA (get 0 1)))
   | 'd' -> Some (Control (VPA (get 0 1)))
   | 'H' | 'f' -> Some (Control (CUP (get 0 1, get 1 1)))
   | 'J' -> Some (Control (ED (get 0 0)))

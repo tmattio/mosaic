@@ -16,12 +16,14 @@
 type control =
   | CUU of int  (** Cursor Up by [n] lines. *)
   | CUD of int  (** Cursor Down by [n] lines. *)
-  | CUF of int  (** Cursor Forward by [n] columns. *)
+  | CUF of int  (** Cursor Forward by [n] columns (also HPR). *)
   | CUB of int  (** Cursor Backward by [n] columns. *)
   | CNL of int  (** Cursor Next Line (down [n], column 1). *)
   | CPL of int  (** Cursor Previous Line (up [n], column 1). *)
-  | CHA of int  (** Cursor Horizontal Absolute to column [n]. *)
+  | CHA of int  (** Cursor Horizontal Absolute to column [n] (also HPA). *)
   | VPA of int  (** Vertical Position Absolute to row [n]. *)
+  | VPR of int
+      (** Vertical Position Relative: down [n] rows, ignoring the margins. *)
   | CUP of int * int  (** Cursor Position to [(row, col)]. *)
   | ED of int  (** Erase in Display. *)
   | EL of int  (** Erase in Line. *)
