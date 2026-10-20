@@ -669,6 +669,38 @@ let parser_charset_selection_split () =
     "\xF0\x9F\x98\x80";
   check_all_cuts "designation followed by spaces" "\x1b(   " "  "
 
+let parser_unknown_escape_sequences () =
+  (* An escape sequence runs from ESC through any intermediates (0x20-0x2F) to
+     its final byte (0x30-0x7E); xterm drops the ones it does not implement.
+     DECKPAM and DECKPNM, sent by smkx and rmkx, used to print "=" and ">". *)
+  let decode feeds =
+    let p = Parser.create () in
+    let acc = ref [] in
+    List.iter
+      (fun s ->
+        Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s)
+          (fun tok -> acc := tok :: !acc))
+      feeds;
+    List.rev !acc
+    |> List.concat_map (function Parser.Text s -> [ s ] | _ -> [])
+    |> String.concat ""
+  in
+  equal ~msg:"DECKPAM and DECKPNM" string "abc" (decode [ "a\x1b=b\x1b>c" ]);
+  (match Parser.parse "\x1b#3" with
+  | [ Parser.Control (Parser.Unknown "ESC#3") ] -> ()
+  | _ -> fail "ESC # 3 should be one unknown control");
+  let input = "a\x1b Fb\x1b#3c" in
+  for cut = 0 to String.length input do
+    equal
+      ~msg:(Printf.sprintf "intermediates cut at %d" cut)
+      string "abc"
+      (decode
+         [
+           String.sub input 0 cut;
+           String.sub input cut (String.length input - cut);
+         ])
+  done
+
 let parser_sgr_colon_subparameters () =
   (* Underline style sub-parameters (emitted by neovim/kitty for undercurl):
      curly degrades to plain underline, 4:0 disables, 4:2 is double. *)
@@ -1034,6 +1066,7 @@ let tests =
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
         test "utf8 split invariance" parser_utf8_split_invariance;
         test "charset selection split" parser_charset_selection_split;
+        test "unknown escape sequences" parser_unknown_escape_sequences;
         test "sgr colon subparameters" parser_sgr_colon_subparameters;
         test "mode sequences" parser_mode_sequences;
       ];
