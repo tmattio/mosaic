@@ -751,7 +751,6 @@ let switch_to_alternate t save_cursor =
       t.saved_style <- Some t.style);
     t.active_grid <- t.alternate;
     Grid.clear ~color:t.default_bg t.active_grid;
-    set_cursor_pos t ~row:0 ~col:0;
     t.scroll_region.top <- 0;
     t.scroll_region.bottom <- t.rows - 1;
     mark_rows_dirty t 0 (t.rows - 1))

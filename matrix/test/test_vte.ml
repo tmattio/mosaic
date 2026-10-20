@@ -543,6 +543,20 @@ let alternate_screen_restores_style () =
   let r, _, _ = Grid.get_fg (Vte.grid vte) 0 |> Ansi.Color.to_rgb in
   equal ~msg:"1049 exit restores saved SGR" int 128 r
 
+let alternate_screen_keeps_cursor () =
+  (* Switching screens leaves the cursor where it is; only 1049 restores the
+     cursor saved on entry. *)
+  let screen s =
+    let vte = Vte.create ~rows:1 ~cols:8 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"47" string "abc   X " (screen "abc\x1b[?47hALT\x1b[?47lX");
+  equal ~msg:"1047" string "abc   X " (screen "abc\x1b[?1047hALT\x1b[?1047lX");
+  equal ~msg:"1049 entry" string "   X    " (screen "abc\x1b[?1049hX");
+  equal ~msg:"1049 exit" string "abcX    "
+    (screen "abc\x1b[?1049hALT\x1b[?1049lX")
+
 (** {1 Scrolling} *)
 
 let scroll_up_basic () =
@@ -1133,6 +1147,7 @@ let tests =
     test "cursor save/restore" cursor_save_restore;
     test "cursor save/restore style" cursor_save_restore_style;
     test "alternate screen restores style" alternate_screen_restores_style;
+    test "alternate screen keeps cursor" alternate_screen_keeps_cursor;
     test "scroll up basic" scroll_up_basic;
     test "scroll down basic" scroll_down_basic;
     test "CSI scroll sequences" csi_scroll_sequences;
