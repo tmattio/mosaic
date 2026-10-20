@@ -644,6 +644,42 @@ let parser_utf8_split_invariance () =
   check_all_cuts "truncated at eof" "X\xF0\x9F\x9A";
   check_all_cuts "csi then pending lead" "\x1b[100;100A\xC3\nX"
 
+let parser_c1_controls () =
+  (* In UTF-8 the code points U+0080 to U+009F are the C1 controls, each the
+     same as ESC followed by the code minus 0x40, not text. *)
+  let show feeds =
+    let p = Parser.create () in
+    let b = Buffer.create 16 in
+    List.iter
+      (fun s ->
+        Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s)
+          (function
+          | Parser.Text s -> Buffer.add_string b s
+          | Parser.Control (Parser.CUF n) -> Printf.bprintf b "<CUF %d>" n
+          | Parser.Control (Parser.OSC (n, s)) ->
+              Printf.bprintf b "<OSC %d %s>" n s
+          | Parser.Control Parser.RI -> Buffer.add_string b "<RI>"
+          | _ -> Buffer.add_string b "<?>"))
+      feeds;
+    Buffer.contents b
+  in
+  let check input expected =
+    for cut = 0 to String.length input do
+      equal
+        ~msg:(Printf.sprintf "%S cut at %d" input cut)
+        string expected
+        (show
+           [
+             String.sub input 0 cut;
+             String.sub input cut (String.length input - cut);
+           ])
+    done
+  in
+  check "a\xc2\x9b2Cb" "a<CUF 2>b";
+  check "a\xc2\x9d0;t\xc3\xa9\xc2\x9cb" "a<OSC 0 t\xc3\xa9>b";
+  check "a\xc2\x8db" "a<RI>b";
+  check "\xc2\xa0\xc2\x9b1C" "\xc2\xa0<CUF 1>"
+
 let parser_charset_selection_split () =
   (* ESC %()*+ charset designations are consumed silently under any chunking.
      A lone designation byte arriving after a chunk that ended on the ESC used
@@ -1102,6 +1138,7 @@ let tests =
           parser_protocol_string_controls_chunked;
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
         test "utf8 split invariance" parser_utf8_split_invariance;
+        test "c1 controls" parser_c1_controls;
         test "charset selection split" parser_charset_selection_split;
         test "unknown escape sequences" parser_unknown_escape_sequences;
         test "sgr colon subparameters" parser_sgr_colon_subparameters;

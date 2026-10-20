@@ -364,8 +364,10 @@ type state =
   | Escape_intermediate
   | Osc
   | Osc_escape
+  | Osc_c1
   | String_control of string_control
   | String_control_escape of string_control
+  | String_control_c1 of string_control
 
 let control_of_string_control kind body =
   match kind with
@@ -425,6 +427,9 @@ let[@inline] utf8_sequence_len b =
   else 0
 
 let[@inline] is_utf8_continuation b = b land 0xC0 = 0x80
+
+(* The second byte of the UTF-8 encoding of a C1 control, after 0xC2. *)
+let[@inline] is_c1 c = c >= '\x80' && c <= '\x9f'
 
 let[@inline] emit_utf8_decode buf bytes off =
   let d = Bytes.get_utf_8_uchar bytes off in
@@ -553,10 +558,25 @@ let feed p src ~off ~len emit =
       p.pending_len <- p.pending_len + len;
       (p.pending_buf, 0, p.pending_len)
   in
-  let rec loop pos =
+  (* A C1 control is ESC followed by its code minus 0x40: the Escape state
+     reads that byte in place of the second byte of its UTF-8 encoding. *)
+  let c1_at = ref (-1) and c1_final = ref '\000' in
+  let rec c1 pos =
+    c1_at := pos;
+    c1_final := Char.chr (Char.code (Bytes.get input (input_off + pos)) - 0x40);
+    p.state <- Escape;
+    loop pos
+  and loop pos =
     if pos >= input_len then pos
     else
       match p.state with
+      | Normal
+        when p.utf8_len = 1
+             && Bytes.get p.utf8_buf 0 = '\xc2'
+             && is_c1 (Bytes.get input (input_off + pos)) ->
+          (* A C1 control split across feeds. *)
+          p.utf8_len <- 0;
+          c1 pos
       | Normal ->
           (* Scan for ESC, accumulating text *)
           let rec scan_text start i =
@@ -571,14 +591,27 @@ let feed p src ~off ~len emit =
                 (* Decode text up to ESC *)
                 if i > start then
                   decode_utf8 p input (input_off + start) (i - start);
+                flush_utf8 p;
                 emit_text_cb p emit;
                 p.state <- Escape;
                 loop (i + 1))
+              else if
+                c = '\xc2'
+                && i + 1 < input_len
+                && is_c1 (Bytes.get input (input_off + i + 1))
+              then (
+                if i > start then
+                  decode_utf8 p input (input_off + start) (i - start);
+                flush_utf8 p;
+                emit_text_cb p emit;
+                c1 (i + 1))
               else scan_text start (i + 1)
           in
           scan_text pos pos
       | Escape -> (
-          let c = Bytes.get input (input_off + pos) in
+          let c =
+            if pos = !c1_at then !c1_final else Bytes.get input (input_off + pos)
+          in
           match c with
           | '[' ->
               Buffer.clear p.csi_buf;
@@ -640,7 +673,7 @@ let feed p src ~off ~len emit =
                  byte. *)
               Buffer.add_char p.text_buf '\x1b';
               p.state <- Normal;
-              loop pos)
+              loop (if pos = !c1_at then pos + 1 else pos))
       | Escape_charset ->
           (* Consume and ignore the charset designation byte. *)
           p.state <- Normal;
@@ -708,6 +741,9 @@ let feed p src ~off ~len emit =
             (* Potential ST terminator *)
             p.state <- Osc_escape;
             loop (pos + 1))
+          else if c = '\xc2' then (
+            p.state <- Osc_c1;
+            loop (pos + 1))
           else if Buffer.length p.osc_buf >= max_osc_length then (
             (* Overflow - emit unknown and reset *)
             p.state <- Normal;
@@ -731,10 +767,24 @@ let feed p src ~off ~len emit =
             Buffer.add_char p.osc_buf '\x1b';
             p.state <- Osc;
             loop pos)
+      | Osc_c1 ->
+          if Bytes.get input (input_off + pos) = '\x9c' then (
+            (* ST as a C1 control *)
+            let tok = parse_osc (Buffer.contents p.osc_buf) in
+            p.state <- Normal;
+            emit tok;
+            loop (pos + 1))
+          else (
+            Buffer.add_char p.osc_buf '\xc2';
+            p.state <- Osc;
+            loop pos)
       | String_control kind ->
           let c = Bytes.get input (input_off + pos) in
           if c = '\x1b' then (
             p.state <- String_control_escape kind;
+            loop (pos + 1))
+          else if c = '\xc2' then (
+            p.state <- String_control_c1 kind;
             loop (pos + 1))
           else if Buffer.length p.string_control_buf >= max_osc_length then (
             p.state <- Normal;
@@ -753,6 +803,16 @@ let feed p src ~off ~len emit =
             loop (pos + 1))
           else (
             Buffer.add_char p.string_control_buf '\x1b';
+            p.state <- String_control kind;
+            loop pos)
+      | String_control_c1 kind ->
+          if Bytes.get input (input_off + pos) = '\x9c' then (
+            let body = Buffer.contents p.string_control_buf in
+            p.state <- Normal;
+            emit (Control (control_of_string_control kind body));
+            loop (pos + 1))
+          else (
+            Buffer.add_char p.string_control_buf '\xc2';
             p.state <- String_control kind;
             loop pos)
   in
