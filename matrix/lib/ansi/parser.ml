@@ -14,6 +14,7 @@ type control =
   | CUP of int * int
   | ED of int
   | EL of int
+  | ECH of int
   | IL of int
   | DL of int
   | DCH of int
@@ -236,6 +237,7 @@ let parse_plain_csi ~params body final : token option =
   | 'H' | 'f' -> Some (Control (CUP (get 0 1, get 1 1)))
   | 'J' -> Some (Control (ED (get 0 0)))
   | 'K' -> Some (Control (EL (get 0 0)))
+  | 'X' -> Some (Control (ECH (get 0 1)))
   | 'L' -> Some (Control (IL (get 0 1)))
   | 'M' -> Some (Control (DL (get 0 1)))
   | 'P' -> Some (Control (DCH (get 0 1)))

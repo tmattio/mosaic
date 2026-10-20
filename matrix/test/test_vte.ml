@@ -191,6 +191,19 @@ let erase_line_all () =
   Vte.feed_string vte "Hello World\r\x1b[5C\x1b[2K";
   equal ~msg:"entire line erased" string "" (get_line (Vte.grid vte) 0)
 
+let erase_characters () =
+  let screen s =
+    let vte = Vte.create ~rows:1 ~cols:6 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"ECH erases from the cursor" string "a  def"
+    (screen "abcdef\x1b[1;2H\x1b[2X");
+  equal ~msg:"ECH stops at the end of the line" string "abcd  "
+    (screen "abcdef\x1b[1;5H\x1b[99X");
+  equal ~msg:"ECH blanks a wide character it cuts" string "a  b  "
+    (screen "a\xe4\xb8\xadb\x1b[1;3H\x1b[X")
+
 let default_background_spaces_overwrite_text () =
   let vte = Vte.create ~rows:3 ~cols:30 () in
   let replacement = " 1 + let status" in
@@ -911,6 +924,7 @@ let tests =
     test "erase line to end" erase_line_to_end;
     test "erase line to beginning" erase_line_to_beginning;
     test "erase line all" erase_line_all;
+    test "erase characters" erase_characters;
     test "default background spaces overwrite text"
       default_background_spaces_overwrite_text;
     test "insert lines" insert_lines;
