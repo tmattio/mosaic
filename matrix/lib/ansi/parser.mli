@@ -35,6 +35,7 @@ type control =
       (** Set top and bottom scrolling margins ([CSI top ; bottom r]). *)
   | SU of int  (** Scroll Up by [n] lines. *)
   | SD of int  (** Scroll Down by [n] lines. *)
+  | REP of int  (** Repeat the preceding graphic character [n] times. *)
   | OSC of int * string  (** Generic OSC with code and payload. *)
   | DCS of string  (** Device Control String payload. *)
   | APC of string  (** Application Program Command payload. *)

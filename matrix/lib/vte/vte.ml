@@ -183,6 +183,8 @@ type t = {
   mutable saved_style : Ansi.Style.t option;
   (* Parser *)
   parser : Ansi.Parser.t;
+  (* Text was the last thing printed, so REP has a character to repeat *)
+  mutable repeatable : bool;
   (* Terminal state *)
   mutable title : string;
   (* Bytes owed to the application, and the device attributes it is told *)
@@ -236,6 +238,7 @@ let create ?(scrollback = 10000) ?width_method ?(respect_alpha = false)
     style = Ansi.Style.default;
     saved_style = None;
     parser = Ansi.Parser.create ();
+    repeatable = false;
     title = "";
     replies = Buffer.create 16;
     da1;
@@ -757,8 +760,9 @@ let handle_text t text =
   let text_start = ref 0 in
 
   let flush_text i =
-    if i > !text_start then
+    if i > !text_start then (
       put_text t (String.sub text !text_start (i - !text_start));
+      t.repeatable <- true);
     text_start := i + 1
   in
 
@@ -766,9 +770,28 @@ let handle_text t text =
     let code = Char.code text.[i] in
     if code < 0x20 || code = 0x7F then (
       flush_text i;
+      t.repeatable <- false;
       handle_control_char t code)
   done;
   flush_text len
+
+(* REP prints the whole cell before the cursor again, combining marks
+   included, as xterm does. *)
+let repeat_preceding t n =
+  let row = t.cursor.row in
+  let x = ref (min t.cursor.col t.cols - 1) in
+  while !x > 0 && Grid.is_continuation t.active_grid ((row * t.cols) + !x) do
+    decr x
+  done;
+  if t.repeatable && !x >= 0 then
+    let cell = Grid.get_text t.active_grid ((row * t.cols) + !x) in
+    if cell <> "" then (
+      let n = min n (t.rows * t.cols) in
+      let buf = Buffer.create (n * String.length cell) in
+      for _ = 1 to n do
+        Buffer.add_string buf cell
+      done;
+      put_text t (Buffer.contents buf))
 
 let apply_sgr_attr style attr =
   match attr with
@@ -1044,17 +1067,21 @@ let handle_control t ctrl =
   | Ansi.Parser.DECSET modes -> List.iter (fun m -> set_dec_mode t m true) modes
   | Ansi.Parser.DECRST modes ->
       List.iter (fun m -> set_dec_mode t m false) modes
-  | Ansi.Parser.Unknown _ -> ()
+  | Ansi.Parser.REP _ | Ansi.Parser.Unknown _ -> ()
 
 let handle_token t token =
   match token with
   | Ansi.Parser.Text s -> handle_text t s
   | Ansi.Parser.SGR attrs ->
+      t.repeatable <- false;
       let new_style = List.fold_left apply_sgr_attr t.style attrs in
       if new_style <> t.style then (
         t.style <- new_style;
         mark_dirty t)
-  | Ansi.Parser.Control ctrl -> handle_control t ctrl
+  | Ansi.Parser.Control (Ansi.Parser.REP n) -> repeat_preceding t n
+  | Ansi.Parser.Control ctrl ->
+      t.repeatable <- false;
+      handle_control t ctrl
 
 let feed t bytes ofs len =
   Ansi.Parser.feed t.parser bytes ~off:ofs ~len (handle_token t)
