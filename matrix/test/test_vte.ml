@@ -230,6 +230,20 @@ let delete_characters () =
   Vte.feed_string vte "Hello World\r\x1b[7C\x1b[5P";
   equal ~msg:"characters deleted" string "Hello W" (get_line (Vte.grid vte) 0)
 
+let repeat_preceding_character () =
+  let screen s =
+    let vte = Vte.create ~rows:2 ~cols:5 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"REP" string "abbbb\n     " (screen "ab\x1b[3b");
+  equal ~msg:"REP wraps" string "abbbb\nbb   " (screen "ab\x1b[5b");
+  equal ~msg:"REP copies the combining marks" string
+    "e\xcc\x81e\xcc\x81e\xcc\x81e\xcc\x81 \n     "
+    (screen "e\xcc\x81\x1b[3b");
+  equal ~msg:"REP after a control repeats nothing" string "a    \n     "
+    (screen "a\r\x1b[3b")
+
 let backspace_moves_without_erasing () =
   let vte = Vte.create ~rows:1 ~cols:5 () in
   Vte.feed_string vte "ABC";
@@ -1013,6 +1027,7 @@ let tests =
     test "delete lines" delete_lines;
     test "insert characters" insert_characters;
     test "delete characters" delete_characters;
+    test "repeat preceding character" repeat_preceding_character;
     test "backspace moves without erasing" backspace_moves_without_erasing;
     test "line feed preserves column" line_feed_preserves_column;
     test "line feed scroll region" line_feed_scroll_region;
