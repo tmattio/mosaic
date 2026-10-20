@@ -8,12 +8,18 @@ type saved_cursor = {
   saved_row : int;
   saved_col : int;
   saved_style : Ansi.Style.t;
+  saved_origin : bool;
 }
 (* What DECSC saves. Visibility is not part of it, as in xterm. *)
 
 (* What DECRC restores when nothing was saved. *)
 let home_cursor =
-  { saved_row = 0; saved_col = 0; saved_style = Ansi.Style.default }
+  {
+    saved_row = 0;
+    saved_col = 0;
+    saved_style = Ansi.Style.default;
+    saved_origin = false;
+  }
 
 type style_run = { start_byte : int; style : Ansi.Style.t }
 type scrollback_line = { text : string; styles : style_run array }
@@ -323,6 +329,14 @@ let clear_pending_wrap t =
 (* Explicit motion stops at the last column: only printing can leave the
    cursor in the pending-wrap position. *)
 let move_cursor t ~row ~col = set_cursor_pos t ~row ~col:(min col (t.cols - 1))
+
+(* In origin mode (DECOM) CUP and VPA rows count from the top margin and stay
+   inside the scroll region. *)
+let origin_row t row =
+  if t.origin_mode then
+    max t.scroll_region.top
+      (min t.scroll_region.bottom (t.scroll_region.top + row))
+  else row
 
 let set_cursor_visible t visible =
   if t.cursor.visible <> visible then (
@@ -763,6 +777,7 @@ let decsc t =
       saved_row = t.cursor.row;
       saved_col = t.cursor.col;
       saved_style = t.style;
+      saved_origin = t.origin_mode;
     }
   in
   if t.active_grid == t.alternate then t.saved_alternate <- saved
@@ -772,7 +787,13 @@ let decrc t =
   let saved =
     if t.active_grid == t.alternate then t.saved_alternate else t.saved_primary
   in
-  set_cursor_pos t ~row:saved.saved_row ~col:saved.saved_col;
+  t.origin_mode <- saved.saved_origin;
+  let row =
+    if t.origin_mode then
+      max t.scroll_region.top (min t.scroll_region.bottom saved.saved_row)
+    else saved.saved_row
+  in
+  set_cursor_pos t ~row ~col:saved.saved_col;
   t.style <- saved.saved_style
 
 let switch_to_alternate t save_cursor =
@@ -798,6 +819,9 @@ let set_ansi_mode t mode set =
 let set_dec_mode t mode set =
   match mode with
   | 1 -> t.cursor_key_mode <- set
+  | 6 ->
+      t.origin_mode <- set;
+      set_cursor_pos t ~row:(origin_row t 0) ~col:0
   | 7 -> t.auto_wrap_mode <- set
   | 25 -> set_cursor_visible t set
   | 47 | 1047 | 1049 ->
@@ -828,8 +852,10 @@ let handle_control t ctrl =
   | Ansi.Parser.CNL n -> set_cursor_pos t ~row:(row_down t n) ~col:0
   | Ansi.Parser.CPL n -> set_cursor_pos t ~row:(row_up t n) ~col:0
   | Ansi.Parser.CHA n -> move_cursor t ~row:t.cursor.row ~col:(n - 1)
-  | Ansi.Parser.VPA n -> set_cursor_pos t ~row:(n - 1) ~col:t.cursor.col
-  | Ansi.Parser.CUP (r, c) -> move_cursor t ~row:(r - 1) ~col:(c - 1)
+  | Ansi.Parser.VPA n ->
+      set_cursor_pos t ~row:(origin_row t (n - 1)) ~col:t.cursor.col
+  | Ansi.Parser.CUP (r, c) ->
+      move_cursor t ~row:(origin_row t (r - 1)) ~col:(c - 1)
   | Ansi.Parser.ED n -> (
       match n with
       | 0 ->
@@ -966,7 +992,7 @@ let handle_control t ctrl =
       if top < bottom then (
         t.scroll_region.top <- top - 1;
         t.scroll_region.bottom <- bottom - 1;
-        set_cursor_pos t ~row:0 ~col:0)
+        set_cursor_pos t ~row:(origin_row t 0) ~col:0)
   | Ansi.Parser.SU n -> scroll_up t n
   | Ansi.Parser.SD n -> scroll_down t n
   | Ansi.Parser.VPR n ->
