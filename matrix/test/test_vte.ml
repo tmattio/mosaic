@@ -283,6 +283,39 @@ let margin_overwrite_with_wrap_off () =
     (Vte.to_string split);
   equal ~msg:"final overwrite is a space" string " " (Vte.to_string whole)
 
+(* After a write to the last column the cursor waits to wrap. Cursor motion,
+   LF and erases act from the last column and cancel the wrap, as in xterm;
+   explicit motion never reaches the pending-wrap position. *)
+let pending_wrap_cleared_by_controls () =
+  let after_last_column s =
+    let vte = Vte.create ~rows:3 ~cols:5 () in
+    Vte.feed_string vte ("abcde" ^ s);
+    vte
+  in
+  let vte = after_last_column "\x1b[DX" in
+  equal ~msg:"CUB from the last column" string "abcXe"
+    (get_line (Vte.grid vte) 0);
+  let vte = after_last_column "\bX" in
+  equal ~msg:"BS from the last column" string "abcXe"
+    (get_line (Vte.grid vte) 0);
+  let vte = after_last_column "\nX" in
+  equal ~msg:"LF keeps the last column" string "    X"
+    (get_line (Vte.grid vte) 1);
+  equal ~msg:"LF does not wrap" string "" (get_line (Vte.grid vte) 2);
+  let vte = after_last_column "\x1b[AX" in
+  equal ~msg:"CUU at the top overwrites the last column" string "abcdX"
+    (get_line (Vte.grid vte) 0);
+  let vte = after_last_column "\x1b[K" in
+  equal ~msg:"EL erases the last column" string "abcd"
+    (get_line (Vte.grid vte) 0);
+  let vte = Vte.create ~rows:3 ~cols:5 () in
+  Vte.feed_string vte "\x1b[1;9HX";
+  equal ~msg:"CUP clamps to the last column" string "    X"
+    (get_line (Vte.grid vte) 0);
+  Vte.feed_string vte "\r\x1b[9GY";
+  equal ~msg:"CHA clamps to the last column" string "    Y"
+    (get_line (Vte.grid vte) 0)
+
 let wrap_below_scroll_region () =
   let vte = Vte.create ~rows:5 ~cols:3 () in
   Vte.feed_string vte "A\r\nB\r\nC\r\nD\r\nE";
@@ -814,6 +847,7 @@ let tests =
     test "line feed preserves column" line_feed_preserves_column;
     test "line feed scroll region" line_feed_scroll_region;
     test "wrap below scroll region" wrap_below_scroll_region;
+    test "pending wrap cleared by controls" pending_wrap_cleared_by_controls;
     test "delete characters wide grapheme" delete_characters_wide;
     test "insert characters wide boundary" insert_characters_wide_boundary;
     test "SGR bold" sgr_bold;
