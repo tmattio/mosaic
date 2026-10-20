@@ -793,6 +793,12 @@ let handle_control t ctrl =
           mark_rows_dirty t 0 (t.rows - 1)
       | 3 -> clear_scrollback t
       | _ -> ())
+  | Ansi.Parser.ECH n ->
+      clear_pending_wrap t;
+      erase_region t ~x:t.cursor.col ~y:t.cursor.row
+        ~width:(min (max n 1) (t.cols - t.cursor.col))
+        ~height:1;
+      mark_row_dirty t t.cursor.row
   | Ansi.Parser.EL n ->
       (match n with
       | 0 ->

@@ -27,6 +27,7 @@ type control =
   | CUP of int * int  (** Cursor Position to [(row, col)]. *)
   | ED of int  (** Erase in Display. *)
   | EL of int  (** Erase in Line. *)
+  | ECH of int  (** Erase [n] Characters from the cursor. *)
   | IL of int  (** Insert [n] blank Lines. *)
   | DL of int  (** Delete [n] Lines. *)
   | DCH of int  (** Delete [n] Characters. *)
