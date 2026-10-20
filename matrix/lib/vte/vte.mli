@@ -221,10 +221,8 @@ val bracketed_paste_mode : t -> bool
 
 val origin_mode : t -> bool
 (** [origin_mode t] is [true] iff origin mode (DECOM) is active. In origin mode,
-    CUP/HVP coordinates are relative to the scroll region.
-
-    {b Note.} DECOM handling is not wired yet; this accessor always returns
-    [false] in the current release. *)
+    CUP/HVP and VPA rows are relative to the scroll region and clamped to it.
+    Controlled via CSI ?6h/l. Defaults to [false]. *)
 
 (** {1:scrolling Scrolling} *)
 

@@ -132,6 +132,29 @@ let cursor_position () =
   Vte.feed_string vte "\x1b[3;5HX";
   equal ~msg:"positioned character" char 'X' (get_char_at (Vte.grid vte) 2 4)
 
+let origin_mode_positions () =
+  (* Region rows 2..3 (1-based): in origin mode CUP and VPA count from the top
+     margin and stay inside the region, and setting the mode homes the
+     cursor there. *)
+  let pos s =
+    let vte = Vte.create ~rows:4 ~cols:3 () in
+    Vte.feed_string vte ("\x1b[2;3r\x1b[?6h" ^ s);
+    Vte.cursor_pos vte
+  in
+  let vte = Vte.create ~rows:4 ~cols:3 () in
+  Vte.feed_string vte "\x1b[?6h";
+  is_true ~msg:"DECOM is reported" (Vte.origin_mode vte);
+  equal ~msg:"DECOM homes to the top margin" (pair int int) (1, 0) (pos "");
+  equal ~msg:"CUP is relative" (pair int int) (1, 0) (pos "\x1b[1;1H");
+  equal ~msg:"CUP is clamped" (pair int int) (2, 0) (pos "\x1b[9;1H");
+  equal ~msg:"VPA is relative" (pair int int) (2, 0) (pos "\x1b[2d");
+  equal ~msg:"DECSTBM homes to the top margin" (pair int int) (2, 0)
+    (pos "\x1b[3;4r");
+  equal ~msg:"DECRC restores the mode" (pair int int) (0, 0)
+    (pos "\x1b[?6l\x1b7\x1b[?6h\x1b8\x1b[1;1H");
+  equal ~msg:"leaving DECOM homes the cursor" (pair int int) (0, 0)
+    (pos "\x1b[2;2H\x1b[?6l")
+
 let cursor_horizontal_absolute () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.feed_string vte "Hello\x1b[10GX";
@@ -1018,6 +1041,7 @@ let tests =
     test "cursor forward" cursor_forward;
     test "cursor backward" cursor_backward;
     test "cursor position" cursor_position;
+    test "origin mode positions" origin_mode_positions;
     test "cursor horizontal absolute" cursor_horizontal_absolute;
     test "ECMA-48 position forms" ecma48_position_forms;
     test "cursor next line" cursor_next_line;
