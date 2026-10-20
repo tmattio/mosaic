@@ -663,6 +663,18 @@ let feed p src ~off ~len emit =
             p.state <- Normal;
             emit tok;
             loop (pos + 1))
+          else if c = '\x1b' then (
+            p.state <- Escape;
+            loop (pos + 1))
+          else if c = '\x18' || c = '\x1a' then (
+            (* CAN and SUB cancel the sequence. *)
+            p.state <- Normal;
+            loop (pos + 1))
+          else if c < ' ' then (
+            (* Other C0 controls run without ending the sequence. *)
+            emit (Text (String.make 1 c));
+            loop (pos + 1))
+          else if c = '\x7f' then loop (pos + 1)
           else (
             Buffer.add_char p.csi_buf c;
             loop (pos + 1))
