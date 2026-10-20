@@ -25,6 +25,11 @@ type control =
   | VPR of int
       (** Vertical Position Relative: down [n] rows, ignoring the margins. *)
   | CUP of int * int  (** Cursor Position to [(row, col)]. *)
+  | CHT of int  (** Cursor forward [n] tab stops. *)
+  | CBT of int  (** Cursor backward [n] tab stops. *)
+  | HTS  (** Set a tab stop at the cursor column ([ESC H]). *)
+  | TBC of int
+      (** Tab Clear: [0] the stop at the cursor column, [3] every stop. *)
   | ED of int  (** Erase in Display. *)
   | EL of int  (** Erase in Line. *)
   | ECH of int  (** Erase [n] Characters from the cursor. *)

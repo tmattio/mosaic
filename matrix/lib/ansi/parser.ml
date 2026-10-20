@@ -12,6 +12,10 @@ type control =
   | VPA of int
   | VPR of int
   | CUP of int * int
+  | CHT of int
+  | CBT of int
+  | HTS
+  | TBC of int
   | ED of int
   | EL of int
   | ECH of int
@@ -235,6 +239,9 @@ let parse_plain_csi ~params body final : token option =
   | '`' -> Some (Control (CHA (get 0 1)))
   | 'd' -> Some (Control (VPA (get 0 1)))
   | 'H' | 'f' -> Some (Control (CUP (get 0 1, get 1 1)))
+  | 'I' -> Some (Control (CHT (get 0 1)))
+  | 'Z' -> Some (Control (CBT (get 0 1)))
+  | 'g' -> Some (Control (TBC (get 0 0)))
   | 'J' -> Some (Control (ED (get 0 0)))
   | 'K' -> Some (Control (EL (get 0 0)))
   | 'X' -> Some (Control (ECH (get 0 1)))
@@ -675,6 +682,10 @@ let feed p src ~off ~len emit =
           | '8' ->
               p.state <- Normal;
               emit (Control DECRC);
+              loop (pos + 1)
+          | 'H' ->
+              p.state <- Normal;
+              emit (Control HTS);
               loop (pos + 1)
           | 'M' ->
               p.state <- Normal;
