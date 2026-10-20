@@ -355,6 +355,17 @@ let set_cursor_pos t ~row ~col =
     t.cursor.col <- col;
     mark_cursor_dirty t)
 
+(* A cursor at column [cols] is the pending wrap left by a write to the last
+   column. Cursor motion, line feeds and edits act from the last column and
+   leave it there, as xterm resets its wrap flag. *)
+let clear_pending_wrap t =
+  if t.cursor.col >= t.cols then
+    set_cursor_pos t ~row:t.cursor.row ~col:(t.cols - 1)
+
+(* Explicit motion stops at the last column: only printing can leave the
+   cursor in the pending-wrap position. *)
+let move_cursor t ~row ~col = set_cursor_pos t ~row ~col:(min col (t.cols - 1))
+
 let set_cursor_visible t visible =
   if t.cursor.visible <> visible then (
     t.cursor.visible <- visible;
@@ -711,6 +722,7 @@ let handle_control_char t code =
   | 0x08 ->
       (* BS: pure cursor movement, one column left. Never erases — overstrike
          sequences (nroff bold "c\bc") rely on the cell surviving. *)
+      clear_pending_wrap t;
       if t.cursor.col > 0 then
         set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col - 1)
   | 0x09 ->
@@ -721,6 +733,7 @@ let handle_control_char t code =
       (* LF, VT, FF: down one row, same column (VT100). ONLCR translation is
          the tty driver's job; curses cursor-motion optimizations depend on
          bare LF not implying CR. *)
+      clear_pending_wrap t;
       advance_row t
   | 0x0D -> (* CR *) set_cursor_pos t ~row:t.cursor.row ~col:0
   | 0x0E | 0x0F -> () (* SO, SI *)
@@ -816,6 +829,12 @@ let set_dec_mode t mode set =
   | _ -> ()
 
 let handle_control t ctrl =
+  (match ctrl with
+  | Ansi.Parser.(
+      ( CUU _ | CUD _ | CUF _ | CUB _ | VPA _ | ED _ | EL _ | IL _ | DL _
+      | DCH _ | ICH _ | RI )) ->
+      clear_pending_wrap t
+  | _ -> ());
   match ctrl with
   | Ansi.Parser.CUU n ->
       set_cursor_pos t ~row:(t.cursor.row - n) ~col:t.cursor.col
@@ -827,9 +846,9 @@ let handle_control t ctrl =
       set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col - n)
   | Ansi.Parser.CNL n -> set_cursor_pos t ~row:(t.cursor.row + n) ~col:0
   | Ansi.Parser.CPL n -> set_cursor_pos t ~row:(t.cursor.row - n) ~col:0
-  | Ansi.Parser.CHA n -> set_cursor_pos t ~row:t.cursor.row ~col:(n - 1)
+  | Ansi.Parser.CHA n -> move_cursor t ~row:t.cursor.row ~col:(n - 1)
   | Ansi.Parser.VPA n -> set_cursor_pos t ~row:(n - 1) ~col:t.cursor.col
-  | Ansi.Parser.CUP (r, c) -> set_cursor_pos t ~row:(r - 1) ~col:(c - 1)
+  | Ansi.Parser.CUP (r, c) -> move_cursor t ~row:(r - 1) ~col:(c - 1)
   | Ansi.Parser.ED n -> (
       match n with
       | 0 ->
