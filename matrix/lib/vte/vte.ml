@@ -450,6 +450,22 @@ let advance_row t =
   else if t.cursor.row < t.rows - 1 then
     set_cursor_pos t ~row:(t.cursor.row + 1) ~col:t.cursor.col
 
+(* The row [n] up or down for CUU, CUD, CPL and CNL. Moving up stops at the
+   top margin from at or below it, moving down at the bottom margin from at or
+   above it, and otherwise at the screen edge. *)
+let row_up t n =
+  let top =
+    if t.cursor.row >= t.scroll_region.top then t.scroll_region.top else 0
+  in
+  max top (t.cursor.row - n)
+
+let row_down t n =
+  let bottom =
+    if t.cursor.row <= t.scroll_region.bottom then t.scroll_region.bottom
+    else t.rows - 1
+  in
+  min bottom (t.cursor.row + n)
+
 (* Write printable text using Grid and Text APIs. We manually segment the input
    string into pieces that fit in the current line, using an ASCII fast path and
    falling back to grapheme segmentation for complex text. *)
@@ -760,15 +776,13 @@ let handle_control t ctrl =
       clear_pending_wrap t
   | _ -> ());
   match ctrl with
-  | Ansi.Parser.CUU n ->
-      set_cursor_pos t ~row:(t.cursor.row - n) ~col:t.cursor.col
-  | Ansi.Parser.CUD n ->
-      set_cursor_pos t ~row:(t.cursor.row + n) ~col:t.cursor.col
+  | Ansi.Parser.CUU n -> set_cursor_pos t ~row:(row_up t n) ~col:t.cursor.col
+  | Ansi.Parser.CUD n -> set_cursor_pos t ~row:(row_down t n) ~col:t.cursor.col
   | Ansi.Parser.CUF n -> move_cursor t ~row:t.cursor.row ~col:(t.cursor.col + n)
   | Ansi.Parser.CUB n ->
       set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col - n)
-  | Ansi.Parser.CNL n -> set_cursor_pos t ~row:(t.cursor.row + n) ~col:0
-  | Ansi.Parser.CPL n -> set_cursor_pos t ~row:(t.cursor.row - n) ~col:0
+  | Ansi.Parser.CNL n -> set_cursor_pos t ~row:(row_down t n) ~col:0
+  | Ansi.Parser.CPL n -> set_cursor_pos t ~row:(row_up t n) ~col:0
   | Ansi.Parser.CHA n -> move_cursor t ~row:t.cursor.row ~col:(n - 1)
   | Ansi.Parser.VPA n -> set_cursor_pos t ~row:(n - 1) ~col:t.cursor.col
   | Ansi.Parser.CUP (r, c) -> move_cursor t ~row:(r - 1) ~col:(c - 1)
