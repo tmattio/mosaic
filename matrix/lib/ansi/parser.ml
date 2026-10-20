@@ -334,6 +334,7 @@ type state =
   | Escape
   | Escape_charset
   | Csi
+  | Escape_intermediate
   | Osc
   | Osc_escape
   | String_control of string_control
@@ -598,8 +599,18 @@ let feed p src ~off ~len emit =
                  ESC is unsound once it lives in a previous chunk. *)
               p.state <- Escape_charset;
               loop (pos + 1)
+          | ' ' .. '/' ->
+              Buffer.clear p.csi_buf;
+              Buffer.add_char p.csi_buf c;
+              p.state <- Escape_intermediate;
+              loop (pos + 1)
+          | '0' .. '~' ->
+              p.state <- Normal;
+              emit (Control (Unknown (Printf.sprintf "ESC%c" c)));
+              loop (pos + 1)
           | _ ->
-              (* Unknown escape, emit ESC as text and reprocess current char *)
+              (* Not an escape sequence: emit ESC as text and reprocess the
+                 byte. *)
               Buffer.add_char p.text_buf '\x1b';
               p.state <- Normal;
               loop pos)
@@ -628,6 +639,23 @@ let feed p src ~off ~len emit =
           else (
             Buffer.add_char p.csi_buf c;
             loop (pos + 1))
+      | Escape_intermediate -> (
+          let c = Bytes.get input (input_off + pos) in
+          match c with
+          | ' ' .. '/' ->
+              if Buffer.length p.csi_buf < max_escape_length then
+                Buffer.add_char p.csi_buf c;
+              loop (pos + 1)
+          | '0' .. '~' ->
+              p.state <- Normal;
+              emit
+                (Control
+                   (Unknown
+                      (Printf.sprintf "ESC%s%c" (Buffer.contents p.csi_buf) c)));
+              loop (pos + 1)
+          | _ ->
+              p.state <- Normal;
+              loop pos)
       | Osc ->
           let c = Bytes.get input (input_off + pos) in
           if c = '\x07' then (
