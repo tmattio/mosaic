@@ -228,14 +228,15 @@ val scroll_up : t -> int -> unit
 (** [scroll_up t n] scrolls the current scroll region up by [n] lines. Lines
     leaving the top enter scrollback only when the primary screen is active,
     scrollback is enabled, and the region starts at row 0. Newly exposed rows
-    are cleared with the default transparent background. No effect if [n <= 0].
+    are cleared with the current SGR background if one is set, and with the
+    default transparent background otherwise. No effect if [n <= 0].
 
     Marks all rows in the scroll region dirty. *)
 
 val scroll_down : t -> int -> unit
 (** [scroll_down t n] scrolls the current scroll region down by [n] lines. Blank
-    rows are inserted at the top; lines leaving the bottom are discarded (never
-    saved to scrollback). No effect if [n <= 0].
+    rows, cleared as by {!scroll_up}, are inserted at the top; lines leaving the
+    bottom are discarded (never saved to scrollback). No effect if [n <= 0].
 
     Marks all rows in the scroll region dirty.
 

@@ -212,8 +212,8 @@ let create ?(scrollback = 10000) ?width_method ?(default_fg = Ansi.Color.white)
   }
 
 (* Efficient destructive erase using the new Grid API: replace region with
-   spaces, with BG matching current style (or default), using an opaque
-   background color to avoid alpha blending quirks. *)
+   spaces, with BG matching current style (or default). The colour keeps its
+   palette index, so a theme can recolour the fill as it does text. *)
 let erase_region t ~x ~y ~width ~height =
   if width <= 0 || height <= 0 then ()
   else
@@ -225,9 +225,7 @@ let erase_region t ~x ~y ~width ~height =
       | Default -> t.default_bg
       | Indexed _ | Rgb -> base_bg
     in
-    let r, g, b, a = Ansi.Color.to_rgba base_bg in
-    let bg_color = Ansi.Color.of_rgba r g b a in
-    Grid.fill_rect t.active_grid ~x ~y ~width ~height ~color:bg_color
+    Grid.fill_rect t.active_grid ~x ~y ~width ~height ~color:base_bg
 
 (* Dirty tracking helpers *)
 let mark_dirty t = t.dirty_state.dirty <- true
@@ -539,6 +537,14 @@ let clear_scrollback t =
       sb.head <- 0;
       sb.count <- 0
 
+(* Lines a scroll brings in take the current background when the style sets
+   one (bce), as erased cells do. *)
+let fill_scrolled_in t ~y ~height =
+  match t.style.Ansi.Style.bg with
+  | Some c when Ansi.Color.intent c <> Default ->
+      erase_region t ~x:0 ~y ~width:t.cols ~height
+  | Some _ | None -> ()
+
 let scroll_up t n =
   if n <= 0 then ()
   else
@@ -554,6 +560,7 @@ let scroll_up t n =
     (* Use Grid's optimized scroll operation *)
     Grid.scroll t.active_grid ~top:t.scroll_region.top
       ~bottom:t.scroll_region.bottom n;
+    fill_scrolled_in t ~y:(t.scroll_region.bottom - n + 1) ~height:n;
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
 
@@ -565,6 +572,7 @@ let scroll_down t n =
     (* Use Grid's optimized scroll operation *)
     Grid.scroll t.active_grid ~top:t.scroll_region.top
       ~bottom:t.scroll_region.bottom (-n);
+    fill_scrolled_in t ~y:t.scroll_region.top ~height:n;
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
 

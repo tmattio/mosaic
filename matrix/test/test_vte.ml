@@ -527,6 +527,21 @@ let sgr_background_color () =
   (* Standard ANSI green fallback = (0, 128, 0) *)
   equal ~msg:"green background" int 128 g
 
+let erase_keeps_background_index () =
+  (* Erased cells and the lines a scroll brings in take the current
+     background, palette index included (bce). *)
+  let bg s row =
+    let vte = Vte.create ~rows:2 ~cols:3 () in
+    Vte.feed_string vte s;
+    match Ansi.Color.intent (Grid.get_bg (Vte.grid vte) (row * 3)) with
+    | Indexed i -> Some i
+    | Default | Rgb -> None
+  in
+  equal ~msg:"ED" (option int) (Some 1) (bg "\x1b[41m\x1b[2J" 0);
+  equal ~msg:"EL" (option int) (Some 1) (bg "\x1b[41m\x1b[K" 0);
+  equal ~msg:"LF scroll" (option int) (Some 1) (bg "\x1b[41m\n\n" 1);
+  equal ~msg:"RI scroll" (option int) (Some 1) (bg "\x1b[41m\x1bM" 0)
+
 let sgr_reset () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.feed_string vte "\x1b[1;31mBold Red\x1b[0mNormal";
@@ -1255,6 +1270,7 @@ let tests =
     test "SGR underline" sgr_underline;
     test "SGR foreground color" sgr_foreground_color;
     test "SGR background color" sgr_background_color;
+    test "erase keeps background index" erase_keeps_background_index;
     test "SGR reset" sgr_reset;
     test "cursor hide/show" cursor_hide_show;
     test "set cursor visible" set_cursor_visible_programmatic;
