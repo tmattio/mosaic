@@ -461,6 +461,10 @@ let auto_wrap_mode t = t.auto_wrap_mode
 let bracketed_paste_mode t = t.bracketed_paste
 let origin_mode t = t.origin_mode
 
+(* IL and DL act only on a cursor inside the scroll region. *)
+let in_scroll_region t =
+  t.cursor.row >= t.scroll_region.top && t.cursor.row <= t.scroll_region.bottom
+
 (* Save a row to scrollback *)
 let push_to_scrollback t row =
   match t.scrollback with
@@ -950,7 +954,7 @@ let handle_control t ctrl =
       set_cursor_pos t ~row:t.cursor.row ~col:0
   | Ansi.Parser.IL n ->
       (* Insert lines *)
-      if n > 0 && t.cursor.row <= t.scroll_region.bottom then (
+      if n > 0 && in_scroll_region t then (
         let insert_count = min n (t.scroll_region.bottom - t.cursor.row + 1) in
         for row = t.scroll_region.bottom downto t.cursor.row + insert_count do
           Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x:0
@@ -958,10 +962,11 @@ let handle_control t ctrl =
             ~dst_y:row
         done;
         erase_region t ~x:0 ~y:t.cursor.row ~width:t.cols ~height:insert_count;
-        mark_rows_dirty t t.cursor.row t.scroll_region.bottom)
+        mark_rows_dirty t t.cursor.row t.scroll_region.bottom;
+        set_cursor_pos t ~row:t.cursor.row ~col:0)
   | Ansi.Parser.DL n ->
       (* Delete lines *)
-      if n > 0 && t.cursor.row <= t.scroll_region.bottom then (
+      if n > 0 && in_scroll_region t then (
         let delete_count = min n (t.scroll_region.bottom - t.cursor.row + 1) in
         for row = t.cursor.row to t.scroll_region.bottom - delete_count do
           Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x:0
@@ -971,7 +976,8 @@ let handle_control t ctrl =
         erase_region t ~x:0
           ~y:(t.scroll_region.bottom - delete_count + 1)
           ~width:t.cols ~height:delete_count;
-        mark_rows_dirty t t.cursor.row t.scroll_region.bottom)
+        mark_rows_dirty t t.cursor.row t.scroll_region.bottom;
+        set_cursor_pos t ~row:t.cursor.row ~col:0)
   | Ansi.Parser.DCH n ->
       (* Delete characters *)
       if n > 0 then
