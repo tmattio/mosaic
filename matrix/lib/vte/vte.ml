@@ -979,6 +979,9 @@ let handle_control t ctrl =
         set_cursor_pos t ~row:0 ~col:0)
   | Ansi.Parser.SU n -> scroll_up t n
   | Ansi.Parser.SD n -> scroll_down t n
+  | Ansi.Parser.VPR n ->
+      clear_pending_wrap t;
+      set_cursor_pos t ~row:(t.cursor.row + n) ~col:t.cursor.col
   | Ansi.Parser.OSC (0, title) | Ansi.Parser.OSC (2, title) -> t.title <- title
   | Ansi.Parser.OSC _ -> () (* Ignore other OSC *)
   | Ansi.Parser.DCS _ | Ansi.Parser.APC _ | Ansi.Parser.PM _ | Ansi.Parser.SOS _

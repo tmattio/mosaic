@@ -114,6 +114,27 @@ let cursor_horizontal_absolute () =
   Vte.feed_string vte "Hello\x1b[10GX";
   equal ~msg:"horizontal absolute" char 'X' (get_char_at (Vte.grid vte) 0 9)
 
+let ecma48_position_forms () =
+  let screen s =
+    let vte = Vte.create ~rows:4 ~cols:6 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  let blank = "      " in
+  equal ~msg:"HPA" string
+    (String.concat "\n" [ "aXc   "; blank; blank; blank ])
+    (screen "abc\x1b[2`X");
+  equal ~msg:"HPR" string
+    (String.concat "\n" [ "abc  X"; blank; blank; blank ])
+    (screen "abc\x1b[2aX");
+  equal ~msg:"VPR" string
+    (String.concat "\n" [ "ab    "; blank; "  X   "; blank ])
+    (screen "ab\x1b[2eX");
+  (* Unlike CUD, VPR is not stopped by the bottom margin. *)
+  equal ~msg:"VPR crosses the bottom margin" string
+    (String.concat "\n" [ blank; blank; blank; "X     " ])
+    (screen "\x1b[1;2r\x1b[3eX")
+
 let cursor_next_line () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.feed_string vte "Hello\x1b[EX";
@@ -848,6 +869,7 @@ let tests =
     test "cursor backward" cursor_backward;
     test "cursor position" cursor_position;
     test "cursor horizontal absolute" cursor_horizontal_absolute;
+    test "ECMA-48 position forms" ecma48_position_forms;
     test "cursor next line" cursor_next_line;
     test "cursor previous line" cursor_previous_line;
     test "erase display to end" erase_display_to_end;
