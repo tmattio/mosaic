@@ -818,6 +818,26 @@ let parser_mode_sequences () =
   | [ Parser.Control (Parser.RM [ 20 ]) ] -> ()
   | _ -> fail "expected RM [20]"
 
+let parser_csi_private_and_intermediates () =
+  (* The prefix and intermediates select the function along with the final
+     byte: XTMODKEYS (CSI > 4 ; 1 m) is not SGR, CSI = 5 u is not a cursor
+     restore, and SL (CSI 1 SP @) is not ICH. *)
+  List.iter
+    (fun s ->
+      match Parser.parse s with
+      | [ Parser.Control (Parser.Unknown _) ] -> ()
+      | _ -> failf "%S should be an unknown control" s)
+    [ "\x1b[>4;1m"; "\x1b[=5u"; "\x1b[>1u"; "\x1b[?5r"; "\x1b[1?A" ];
+  (match Parser.parse "\x1b[1 @" with
+  | [ Parser.Control (Parser.ICH _) ] -> fail "SL should not be ICH"
+  | _ -> ());
+  (match Parser.parse "\x1b[1 A" with
+  | [ Parser.Control (Parser.CUU _) ] -> fail "SR should not be CUU"
+  | _ -> ());
+  match Parser.parse "\x1b[?2J" with
+  | [ Parser.Control (Parser.ED 2) ] -> ()
+  | _ -> fail "DECSED should erase as ED"
+
 (* --- 5. Writer & Low-Level Escape --- *)
 
 let writer_utf8_encoding () =
@@ -1165,6 +1185,8 @@ let tests =
         test "unknown escape sequences" parser_unknown_escape_sequences;
         test "sgr colon subparameters" parser_sgr_colon_subparameters;
         test "mode sequences" parser_mode_sequences;
+        test "csi private and intermediates"
+          parser_csi_private_and_intermediates;
       ];
     group "Writer & Seq"
       [

@@ -196,7 +196,7 @@ let parse_csi_params body body_len params max_params =
   in
   if body_len > 0 then parse 0 0 false 0 0 else (0, 0)
 
-let parse_csi ~params body final : token option =
+let parse_plain_csi ~params body final : token option =
   let body_len = String.length body in
   let param_count, colon_mask =
     parse_csi_params body body_len params max_csi_params
@@ -262,6 +262,33 @@ let parse_csi ~params body final : token option =
       | '0' .. '9' | ';' ->
           Some (Control (if set then SM (modes ()) else RM (modes ())))
       | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final))))
+  | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
+
+(* A CSI body is an optional private prefix (0x3C-0x3F), parameter bytes
+   (0x30-0x3B) and intermediate bytes (0x20-0x2F), in that order (ECMA-48
+   5.4). Returns the prefix ('\000' if none) and the intermediates, or [None]
+   for a malformed body. *)
+let csi_form body =
+  let len = String.length body in
+  let rec skip lo hi i =
+    if i < len && body.[i] >= lo && body.[i] <= hi then skip lo hi (i + 1)
+    else i
+  in
+  let start = if len > 0 && body.[0] >= '<' && body.[0] <= '?' then 1 else 0 in
+  let params_end = skip '0' ';' start in
+  if skip ' ' '/' params_end < len then None
+  else
+    let prefix = if start = 1 then body.[0] else '\000' in
+    if params_end = len then Some (prefix, "")
+    else Some (prefix, String.sub body params_end (len - params_end))
+
+(* The final byte names a function only together with the prefix and the
+   intermediates; xterm ignores the combinations it does not implement. *)
+let parse_csi ~params body final : token option =
+  match csi_form body with
+  | Some ('\000', "") -> parse_plain_csi ~params body final
+  | Some ('?', "") when String.contains "hlJK" final ->
+      parse_plain_csi ~params body final
   | _ -> Some (Control (Unknown (Printf.sprintf "CSI[%s%c" body final)))
 
 (* Parse OSC 8 hyperlink parameters and URL *)
