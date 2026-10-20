@@ -57,6 +57,7 @@ type control =
   | DSR of int  (** Device status report query ([CSI Ps n]). *)
   | DECXCPR  (** Extended cursor position report query ([CSI ? 6 n]). *)
   | DECSC  (** Save cursor position ([ESC 7]). *)
+  | DECSTR  (** Soft terminal reset ([CSI ! p]). *)
   | DECRC  (** Restore cursor position ([ESC 8]). *)
   | SCS of int * char
       (** [SCS (g, c)] designates the 94-character set with final byte [c] as
