@@ -880,6 +880,12 @@ let handle_control t ctrl =
       | 2 -> erase_region t ~x:0 ~y:t.cursor.row ~width:t.cols ~height:1
       | _ -> ());
       mark_row_dirty t t.cursor.row
+  | Ansi.Parser.IND ->
+      clear_pending_wrap t;
+      advance_row t
+  | Ansi.Parser.NEL ->
+      advance_row t;
+      set_cursor_pos t ~row:t.cursor.row ~col:0
   | Ansi.Parser.IL n ->
       (* Insert lines *)
       if n > 0 && t.cursor.row <= t.scroll_region.bottom then (
