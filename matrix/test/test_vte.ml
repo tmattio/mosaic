@@ -73,6 +73,29 @@ let feed_tab () =
   equal ~msg:"after first tab" char 'B' (get_char_at (Vte.grid vte) 0 8);
   equal ~msg:"after second tab" char 'C' (get_char_at (Vte.grid vte) 0 16)
 
+let tab_stops () =
+  let line ?(cols = 20) s =
+    let vte = Vte.create ~rows:2 ~cols () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  let row0 s = s ^ "\n" ^ String.make 20 ' ' in
+  equal ~msg:"HTS sets a stop" string
+    (row0 "   Y                ")
+    (line "\x1b[1;4H\x1bH\r\tY");
+  equal ~msg:"TBC 0 clears the stop at the cursor" string
+    (row0 "                Y   ")
+    (line "\x1b[1;9H\x1b[g\r\tY");
+  equal ~msg:"TBC 3 clears every stop" string
+    (row0 "                   Y")
+    (line "\x1b[3g\tY");
+  equal ~msg:"CHT" string (row0 "                Y   ") (line "\x1b[2IY");
+  equal ~msg:"CBT" string
+    (row0 "        Y           ")
+    (line "\x1b[1;15H\x1b[ZY");
+  equal ~msg:"HT keeps a pending wrap" string "0123456789\nX         "
+    (line ~cols:10 "0123456789\tX")
+
 let feed_backspace () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.feed_string vte "Hello\bX";
@@ -1065,6 +1088,7 @@ let tests =
     test "feed multiline text" feed_multiline_text;
     test "feed carriage return" feed_carriage_return;
     test "feed tab" feed_tab;
+    test "tab stops" tab_stops;
     test "feed backspace" feed_backspace;
     test "cursor up" cursor_up;
     test "cursor down" cursor_down;

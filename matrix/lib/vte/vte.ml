@@ -102,6 +102,7 @@ type t = {
   (* Dimensions *)
   mutable rows : int;
   mutable cols : int;
+  mutable tabs : bool array;
   (* Cursor state *)
   cursor : cursor;
   mutable saved_cursor : (int * int * bool) option;
@@ -134,6 +135,9 @@ type t = {
 }
 (* VTE instance *)
 
+(* Tab stops every eight columns, as at power-up. *)
+let default_tabs cols = Array.init cols (fun i -> i > 0 && i mod 8 = 0)
+
 let create ?(scrollback = 10000) ?width_method ?(default_fg = Ansi.Color.white)
     ?(default_bg = Ansi.Color.black) ?(da1 = "\027[?1;2c")
     ?(da2 = "\027[>0;0;0c") ~rows ~cols () =
@@ -155,6 +159,7 @@ let create ?(scrollback = 10000) ?width_method ?(default_fg = Ansi.Color.white)
     active_grid = primary;
     rows;
     cols;
+    tabs = default_tabs cols;
     cursor = { row = 0; col = 0; visible = true };
     saved_cursor = None;
     style = Ansi.Style.default;
@@ -252,6 +257,9 @@ let resize t ~rows ~cols =
 
     t.rows <- rows;
     t.cols <- cols;
+    let tabs = default_tabs cols in
+    Array.blit t.tabs 0 tabs 0 (min cols (Array.length t.tabs));
+    t.tabs <- tabs;
 
     (* Clamp cursor *)
     if t.cursor.row >= rows then t.cursor.row <- rows - 1;
@@ -633,6 +641,18 @@ let put_text t text =
         done);
     flush ()
 
+(* The next tab stop after [col], or the last column. *)
+let next_tab t col =
+  let rec go x =
+    if x >= t.cols - 1 then t.cols - 1 else if t.tabs.(x) then x else go (x + 1)
+  in
+  go (col + 1)
+
+(* The previous tab stop before [col], or the first column. *)
+let prev_tab t col =
+  let rec go x = if x <= 0 then 0 else if t.tabs.(x) then x else go (x - 1) in
+  go (col - 1)
+
 (* Handle control characters *)
 let handle_control_char t code =
   match code with
@@ -644,9 +664,9 @@ let handle_control_char t code =
       if t.cursor.col > 0 then
         set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col - 1)
   | 0x09 ->
-      (* HT *)
-      let next_tab = ((t.cursor.col / 8) + 1) * 8 in
-      set_cursor_pos t ~row:t.cursor.row ~col:(min next_tab (t.cols - 1))
+      (* HT: a pending wrap stays pending, as in xterm. *)
+      if t.cursor.col < t.cols then
+        set_cursor_pos t ~row:t.cursor.row ~col:(next_tab t t.cursor.col)
   | 0x0A | 0x0B | 0x0C ->
       (* LF, VT, FF: down one row, same column (VT100). ONLCR translation is
          the tty driver's job; curses cursor-motion optimizations depend on
@@ -934,6 +954,26 @@ let handle_control t ctrl =
       set_cursor_pos t ~row:(t.cursor.row + n) ~col:t.cursor.col
   | Ansi.Parser.OSC (0, title) | Ansi.Parser.OSC (2, title) -> t.title <- title
   | Ansi.Parser.OSC _ -> () (* Ignore other OSC *)
+  | Ansi.Parser.CHT n ->
+      if t.cursor.col < t.cols then (
+        let col = ref t.cursor.col in
+        for _ = 1 to min n t.cols do
+          col := next_tab t !col
+        done;
+        set_cursor_pos t ~row:t.cursor.row ~col:!col)
+  | Ansi.Parser.CBT n ->
+      if t.cursor.col < t.cols then (
+        let col = ref t.cursor.col in
+        for _ = 1 to min n t.cols do
+          col := prev_tab t !col
+        done;
+        set_cursor_pos t ~row:t.cursor.row ~col:!col)
+  | Ansi.Parser.HTS ->
+      if t.cursor.col < t.cols then t.tabs.(t.cursor.col) <- true
+  | Ansi.Parser.TBC 0 ->
+      if t.cursor.col < t.cols then t.tabs.(t.cursor.col) <- false
+  | Ansi.Parser.TBC 3 -> Array.fill t.tabs 0 t.cols false
+  | Ansi.Parser.TBC _ -> ()
   | Ansi.Parser.DCS _ | Ansi.Parser.APC _ | Ansi.Parser.PM _ | Ansi.Parser.SOS _
     ->
       ()
@@ -1019,6 +1059,7 @@ let reset t =
   t.cursor_key_mode <- false;
   t.insert_mode <- false;
   t.bracketed_paste <- false;
+  t.tabs <- default_tabs t.cols;
   mark_rows_dirty t 0 (t.rows - 1)
 
 let to_string t =
