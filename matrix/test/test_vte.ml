@@ -648,6 +648,25 @@ let osc_set_title () =
   Vte.feed_string vte "\x1b]2;New Title\x07";
   equal ~msg:"title set via OSC 2" string "New Title" (Vte.title vte)
 
+let query_replies () =
+  let vte = Vte.create ~rows:3 ~cols:5 () in
+  equal ~msg:"nothing owed" string "" (Vte.take_replies vte);
+  Vte.feed_string vte "\x1b[c\x1b[>c\x1b[5n";
+  equal ~msg:"DA1, DA2 and DSR 5" string "\x1b[?1;2c\x1b[>0;0;0c\x1b[0n"
+    (Vte.take_replies vte);
+  equal ~msg:"replies are taken once" string "" (Vte.take_replies vte);
+  Vte.feed_string vte "ab\r\n\x1b[6n\x1b[?6n";
+  equal ~msg:"CPR and DECXCPR" string "\x1b[2;1R\x1b[?2;1;1R"
+    (Vte.take_replies vte);
+  Vte.feed_string vte "abcde\x1b[6n";
+  equal ~msg:"CPR at a pending wrap" string "\x1b[2;5R" (Vte.take_replies vte);
+  let vte =
+    Vte.create ~da1:"\x1b[?62c" ~da2:"\x1b[>1;2;0c" ~rows:1 ~cols:5 ()
+  in
+  Vte.feed_string vte "\x1b[0c\x1b[>0c";
+  equal ~msg:"identity from the caller" string "\x1b[?62c\x1b[>1;2;0c"
+    (Vte.take_replies vte)
+
 (** {1 Resize} *)
 
 let resize_preserves_content () =
@@ -925,6 +944,7 @@ let tests =
     test "bracketed paste mode" bracketed_paste_mode;
     test "combined mode sequence" combined_mode_sequence;
     test "OSC set title" osc_set_title;
+    test "query replies" query_replies;
     test "resize preserves content" resize_preserves_content;
     test "resize clamps cursor" resize_clamps_cursor;
     test "reset clears state" reset_clears_state;

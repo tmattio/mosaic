@@ -28,6 +28,10 @@ type control =
   | SOS of string
   | Hyperlink of ((string * string) list * string) option
   | Reset
+  | DA
+  | DA2
+  | DSR of int
+  | DECXCPR
   | DECSC
   | DECRC
   | RI
@@ -249,6 +253,8 @@ let parse_plain_csi ~params body final : token option =
         end
       in
       Some (SGR attrs)
+  | 'c' when get 0 0 = 0 -> Some (Control DA)
+  | 'n' -> Some (Control (DSR (get 0 0)))
   | 's' -> Some (Control DECSC) (* CSI s - save cursor position *)
   | 'u' -> Some (Control DECRC) (* CSI u - restore cursor position *)
   | ('h' | 'l') when body_len > 0 -> (
@@ -292,6 +298,9 @@ let csi_form body =
    intermediates; xterm ignores the combinations it does not implement. *)
 let parse_csi ~params body final : token option =
   match csi_form body with
+  | Some ('>', "") when final = 'c' && (body = ">" || body = ">0") ->
+      Some (Control DA2)
+  | Some ('?', "") when final = 'n' && body = "?6" -> Some (Control DECXCPR)
   | Some ('\000', "") -> parse_plain_csi ~params body final
   | Some ('?', "") when String.contains "hlJK" final ->
       parse_plain_csi ~params body final

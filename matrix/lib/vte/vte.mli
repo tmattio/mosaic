@@ -38,6 +38,8 @@ val create :
   ?respect_alpha:bool ->
   ?default_fg:Ansi.Color.t ->
   ?default_bg:Ansi.Color.t ->
+  ?da1:string ->
+  ?da2:string ->
   rows:int ->
   cols:int ->
   unit ->
@@ -55,6 +57,9 @@ val create :
     - [default_bg] is the opaque background colour used when the current style
       has no explicit background, and for clearing grids on resize or reset.
       Defaults to {!Ansi.Color.black}.
+    - [da1] and [da2] are the replies to the primary and secondary device
+      attributes queries ([CSI c] and [CSI > c]). Default to ["\027\[?1;2c"] (a
+      VT100 with advanced video) and ["\027\[>0;0;0c"].
 
     [rows] and [cols] are clamped to a minimum of [1]. The returned VTE has both
     screens cleared with [default_bg], cursor at [(0, 0)] and visible, auto-wrap
@@ -105,6 +110,12 @@ val grid : t -> Matrix_grid.t
 
 val title : t -> string
 (** [title t] is the terminal title set via OSC 0 or OSC 2 sequences. *)
+
+val take_replies : t -> string
+(** [take_replies t] is the bytes [t] owes the application since the last call,
+    in order: the replies to device attributes (DA1, DA2), device status (DSR 5)
+    and cursor position (CPR, DECXCPR) queries. Write them to the application's
+    input. *)
 
 val is_alternate_screen : t -> bool
 (** [is_alternate_screen t] is [true] iff the alternate screen is active.
