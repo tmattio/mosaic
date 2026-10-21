@@ -916,6 +916,14 @@ let scroll_uses_transparent_background () =
   equal ~msg:"transparent bg" rgba (0, (0, (0, 0))) (r, (g, (b, a)));
   equal ~msg:"space char" int (Char.code ' ') (read_char grid 0 1)
 
+let scroll_one_row_region () =
+  let grid = Grid.create ~width:2 ~height:2 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"AA";
+  Grid.draw_text grid ~x:0 ~y:1 ~text:"BB";
+  Grid.scroll grid ~top:1 ~bottom:1 1;
+  equal ~msg:"row cleared" string "  " (row_to_string grid 1);
+  equal ~msg:"other row kept" string "AA" (row_to_string grid 0)
+
 let scroll_keeps_multi_codepoint_graphemes () =
   let grid = Grid.create ~width:4 ~height:3 () in
   Grid.draw_text grid ~x:0 ~y:1 ~text:"e\u{301}";
@@ -1438,6 +1446,7 @@ let tests =
     test "fill rect transparent is noop" fill_rect_transparent_is_noop;
     test "clear_rect resets background" clear_rect_resets_background;
     test "scroll uses transparent background" scroll_uses_transparent_background;
+    test "scroll one-row region" scroll_one_row_region;
     test "scroll keeps multi-codepoint graphemes"
       scroll_keeps_multi_codepoint_graphemes;
     test "draw text overwrites grapheme span" draw_text_overwrite_clears_span;

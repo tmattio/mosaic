@@ -1047,7 +1047,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
 (* {1 Scrolling} *)
 
 let scroll t ~top ~bottom n =
-  if n = 0 || top >= bottom then ()
+  if n = 0 || top > bottom then ()
   else
     let region_h = bottom - top + 1 in
     let abs_n = abs n in
