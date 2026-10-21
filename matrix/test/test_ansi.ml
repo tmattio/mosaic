@@ -577,6 +577,16 @@ let parser_protocol_string_controls_chunked () =
   | [ Parser.Control (Parser.DCS ">|kitty(0.40.1)") ] -> ()
   | _ -> fail "split DCS terminator not reconstructed"
 
+let parser_esc_ends_string_controls () =
+  (* ESC ends a control string, and starts a sequence unless it is ST. *)
+  List.iter
+    (fun intro ->
+      match Parser.parse ("\x1b" ^ intro ^ "0;q\x1b[Cb") with
+      | [ Parser.Control _; Parser.Control (Parser.CUF 1); Parser.Text "b" ] ->
+          ()
+      | _ -> fail ("ESC does not end ESC " ^ intro))
+    [ "P"; "X"; "^"; "_"; "]" ]
+
 let parser_csi_empty_parameter_defaults () =
   (match Parser.parse "\x1b[;5H" with
   | [ Parser.Control (Parser.CUP (1, 5)) ] -> ()
@@ -1136,6 +1146,7 @@ let tests =
         test "protocol string controls" parser_protocol_string_controls;
         test "chunked protocol string controls"
           parser_protocol_string_controls_chunked;
+        test "esc ends string controls" parser_esc_ends_string_controls;
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
         test "utf8 split invariance" parser_utf8_split_invariance;
         test "c1 controls" parser_c1_controls;

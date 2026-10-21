@@ -831,18 +831,14 @@ let feed p src ~off ~len emit =
             Buffer.add_char p.osc_buf c;
             loop (pos + 1))
       | Osc_escape ->
+          (* ESC ends the string, and starts a sequence unless it is ST. *)
           let c = Bytes.get input (input_off + pos) in
+          emit (parse_osc (Buffer.contents p.osc_buf));
           if c = '\\' then (
-            (* ST terminator complete *)
-            let body = Buffer.contents p.osc_buf in
-            let tok = parse_osc body in
             p.state <- Normal;
-            emit tok;
             loop (pos + 1))
           else (
-            (* Not ST - add ESC to buffer and reprocess *)
-            Buffer.add_char p.osc_buf '\x1b';
-            p.state <- Osc;
+            p.state <- Escape;
             loop pos)
       | Osc_c1 ->
           if Bytes.get input (input_off + pos) = '\x9c' then (
@@ -873,14 +869,13 @@ let feed p src ~off ~len emit =
             loop (pos + 1))
       | String_control_escape kind ->
           let c = Bytes.get input (input_off + pos) in
+          let body = Buffer.contents p.string_control_buf in
+          emit (Control (control_of_string_control kind body));
           if c = '\\' then (
-            let body = Buffer.contents p.string_control_buf in
             p.state <- Normal;
-            emit (Control (control_of_string_control kind body));
             loop (pos + 1))
           else (
-            Buffer.add_char p.string_control_buf '\x1b';
-            p.state <- String_control kind;
+            p.state <- Escape;
             loop pos)
       | String_control_c1 kind ->
           if Bytes.get input (input_off + pos) = '\x9c' then (
