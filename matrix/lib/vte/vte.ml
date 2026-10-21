@@ -11,6 +11,7 @@ type saved_cursor = {
   saved_origin : bool;
   saved_charsets : char array;
   saved_gl : int;
+  saved_protect : bool;
 }
 (* What DECSC saves. Visibility is not part of it, as in xterm. *)
 
@@ -23,6 +24,7 @@ let home_cursor =
     saved_origin = false;
     saved_charsets = Array.make 4 'B';
     saved_gl = 0;
+    saved_protect = false;
   }
 
 (* Style run for compressed scrollback - represents contiguous bytes with same
@@ -231,6 +233,15 @@ type t = {
      GL *)
   charsets : char array;
   mutable gl : int;
+  (* DECSCA: the characters written next are protected *)
+  mutable protect : bool;
+  (* Selective erasures spare protected cells, from a DECSCA to a reset *)
+  mutable selective : bool;
+  (* The protected cells of each screen, a byte a cell, kept from the first
+     DECSCA 1 to RIS *)
+  mutable tracked : bool;
+  mutable protected_primary : Bytes.t;
+  mutable protected_alternate : Bytes.t;
   mutable bracketed_paste : bool;
   default_fg : Ansi.Color.t;
   default_bg : Ansi.Color.t;
@@ -288,17 +299,47 @@ let create ?(scrollback = 10000) ?width_method ?(respect_alpha = false)
     insert_mode = false;
     charsets = Array.make 4 'B';
     gl = 0;
+    protect = false;
+    selective = false;
+    tracked = false;
+    protected_primary = Bytes.make (rows * cols) '\000';
+    protected_alternate = Bytes.make (rows * cols) '\000';
     bracketed_paste = false;
     default_fg;
     default_bg;
   }
 
+let protected_cells t =
+  if t.active_grid == t.alternate then t.protected_alternate
+  else t.protected_primary
+
+(* Mark [width] cells from [x] on row [y] protected or not. *)
+let set_protected t ~x ~y ~width p =
+  let x = max 0 x in
+  let width = min width (t.cols - x) in
+  if t.tracked && width > 0 && y >= 0 && y < t.rows then
+    Bytes.fill (protected_cells t)
+      ((y * t.cols) + x)
+      width
+      (if p then '\001' else '\000')
+
+(* Copy [width] cells, with their protection. *)
+let copy_cells t ~src_x ~src_y ~dst_x ~dst_y ~width =
+  Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x ~src_y ~width
+    ~height:1 ~dst_x ~dst_y;
+  if t.tracked then
+    let cells = protected_cells t in
+    Bytes.blit cells
+      ((src_y * t.cols) + src_x)
+      cells
+      ((dst_y * t.cols) + dst_x)
+      width
+
 (* Efficient destructive erase using the new Grid API: replace region with
    spaces, with BG matching current style (or default). The colour keeps its
    palette index, so a theme can recolour the fill as it does text. *)
 let erase_region t ~x ~y ~width ~height =
-  if width <= 0 || height <= 0 then ()
-  else
+  if width > 0 && height > 0 then (
     let base_bg =
       match t.style.Ansi.Style.bg with Some c -> c | None -> t.default_bg
     in
@@ -307,7 +348,32 @@ let erase_region t ~x ~y ~width ~height =
       | Default -> t.default_bg
       | Indexed _ | Rgb -> base_bg
     in
-    Grid.clear_rect t.active_grid ~x ~y ~width ~height ~color:base_bg
+    Grid.clear_rect t.active_grid ~x ~y ~width ~height ~color:base_bg;
+    for row = y to y + height - 1 do
+      set_protected t ~x ~y:row ~width false
+    done)
+
+(* Erase as [erase_region]. A selective erasure (DECSED, DECSEL) spares the
+   cells DECSCA protects, as xterm does from a DECSCA to the next reset. *)
+let erase_cells t ~selective ~x ~y ~width ~height =
+  if not (selective && t.selective && t.tracked) then
+    erase_region t ~x ~y ~width ~height
+  else
+    let cells = protected_cells t in
+    for row = y to y + height - 1 do
+      let base = row * t.cols in
+      let col = ref x in
+      while !col < x + width do
+        let start = !col in
+        while !col < x + width && Bytes.get cells (base + !col) = '\000' do
+          incr col
+        done;
+        erase_region t ~x:start ~y:row ~width:(!col - start) ~height:1;
+        while !col < x + width && Bytes.get cells (base + !col) <> '\000' do
+          incr col
+        done
+      done
+    done
 
 (* Dirty tracking helpers *)
 let mark_dirty t = t.dirty_state.dirty <- true
@@ -372,6 +438,8 @@ let resize t ~rows ~cols =
 
     t.rows <- rows;
     t.cols <- cols;
+    t.protected_primary <- Bytes.make (rows * cols) '\000';
+    t.protected_alternate <- Bytes.make (rows * cols) '\000';
     let tabs = default_tabs cols in
     Array.blit t.tabs 0 tabs 0 (min cols (Array.length t.tabs));
     t.tabs <- tabs;
@@ -616,6 +684,21 @@ let clear_scrollback t =
       sb.head <- 0;
       sb.count <- 0
 
+(* Move the protection of the scroll region's rows by [n] rows, up for [n > 0]
+   and down for [n < 0], as Grid.scroll moves the cells. *)
+let scroll_protected t n =
+  if t.tracked then
+    let cells = protected_cells t and cols = t.cols in
+    let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
+    let k = abs n in
+    let keep = (bottom - top + 1 - k) * cols in
+    if n > 0 then (
+      Bytes.blit cells ((top + k) * cols) cells (top * cols) keep;
+      Bytes.fill cells ((bottom - k + 1) * cols) (k * cols) '\000')
+    else (
+      Bytes.blit cells (top * cols) cells ((top + k) * cols) keep;
+      Bytes.fill cells (top * cols) (k * cols) '\000')
+
 (* Lines a scroll brings in take the current background when the style sets
    one (bce), as erased cells do. *)
 let fill_scrolled_in t ~y ~height =
@@ -639,6 +722,7 @@ let scroll_up t n =
     (* Use Grid's optimized scroll operation *)
     Grid.scroll t.active_grid ~top:t.scroll_region.top
       ~bottom:t.scroll_region.bottom n;
+    scroll_protected t n;
     fill_scrolled_in t ~y:(t.scroll_region.bottom - n + 1) ~height:n;
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
@@ -651,6 +735,7 @@ let scroll_down t n =
     (* Use Grid's optimized scroll operation *)
     Grid.scroll t.active_grid ~top:t.scroll_region.top
       ~bottom:t.scroll_region.bottom (-n);
+    scroll_protected t (-n);
     fill_scrolled_in t ~y:t.scroll_region.top ~height:n;
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
@@ -678,15 +763,14 @@ let shift_columns t ~x n =
       if n > 0 then (
         blank_cut_wide t row (x + span);
         if keep > 0 then
-          Grid.blit_region ~src:t.active_grid ~dst:t.active_grid
-            ~src_x:(x + span) ~src_y:row ~width:keep ~height:1 ~dst_x:x
+          copy_cells t ~src_x:(x + span) ~src_y:row ~width:keep ~dst_x:x
             ~dst_y:row;
         erase_region t ~x:(t.cols - span) ~y:row ~width:span ~height:1)
       else (
         blank_cut_wide t row (t.cols - span);
         if keep > 0 then
-          Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x:x
-            ~src_y:row ~width:keep ~height:1 ~dst_x:(x + span) ~dst_y:row;
+          copy_cells t ~src_x:x ~src_y:row ~width:keep ~dst_x:(x + span)
+            ~dst_y:row;
         erase_region t ~x ~y:row ~width:span ~height:1)
     done;
     mark_rows_dirty t top bottom)
@@ -765,7 +849,11 @@ let put_text t text =
       Grid.clear_rect t.active_grid ~color:bg ~x ~y
         ~width:(Text.measure ~width_method ~tab_width:2 text)
         ~height:1;
-    Grid.draw_text t.active_grid ~x ~y ~text ~style
+    Grid.draw_text t.active_grid ~x ~y ~text ~style;
+    if t.tracked then
+      set_protected t ~x ~y
+        ~width:(Text.measure ~width_method ~tab_width:2 text)
+        t.protect
   in
   (* A run beginning with zero-width graphemes continues the grapheme drawn
      by an earlier write (its base sits in the preceding cell): merge the
@@ -822,8 +910,7 @@ let put_text t text =
           if insert_w > 0 then (
             let keep = line_width - t.cursor.col - insert_w in
             if keep > 0 then
-              Grid.blit_region ~src:t.active_grid ~dst:t.active_grid
-                ~src_x:t.cursor.col ~src_y:row ~width:keep ~height:1
+              copy_cells t ~src_x:t.cursor.col ~src_y:row ~width:keep
                 ~dst_x:(t.cursor.col + insert_w) ~dst_y:row;
 
             (* Clear the newly opened gap and draw the cluster. *)
@@ -831,6 +918,7 @@ let put_text t text =
             let cluster = String.sub text off l in
             Grid.draw_text t.active_grid ~x:t.cursor.col ~y:row ~text:cluster
               ~style;
+            set_protected t ~x:t.cursor.col ~y:row ~width:insert_w t.protect;
             mark_row_dirty t row;
             set_cursor_pos t ~row
               ~col:(min line_width (t.cursor.col + insert_w)))
@@ -1028,6 +1116,7 @@ let decsc t =
       saved_origin = t.origin_mode;
       saved_charsets = Array.copy t.charsets;
       saved_gl = t.gl;
+      saved_protect = t.protect;
     }
   in
   if t.active_grid == t.alternate then t.saved_alternate <- saved
@@ -1040,6 +1129,7 @@ let decrc t =
   t.origin_mode <- saved.saved_origin;
   Array.blit saved.saved_charsets 0 t.charsets 0 4;
   t.gl <- saved.saved_gl;
+  t.protect <- saved.saved_protect;
   let row =
     if t.origin_mode then
       max t.scroll_region.top (min t.scroll_region.bottom saved.saved_row)
@@ -1053,6 +1143,9 @@ let switch_to_alternate t save_cursor =
     if save_cursor then decsc t;
     t.active_grid <- t.alternate;
     Grid.clear ~color:t.default_bg t.active_grid;
+    Bytes.fill t.protected_alternate 0
+      (Bytes.length t.protected_alternate)
+      '\000';
     t.scroll_region.top <- 0;
     t.scroll_region.bottom <- t.rows - 1;
     mark_rows_dirty t 0 (t.rows - 1))
@@ -1086,6 +1179,11 @@ let hard_reset t =
   t.insert_mode <- false;
   Array.fill t.charsets 0 4 'B';
   t.gl <- 0;
+  t.protect <- false;
+  t.selective <- false;
+  t.tracked <- false;
+  Bytes.fill t.protected_primary 0 (Bytes.length t.protected_primary) '\000';
+  Bytes.fill t.protected_alternate 0 (Bytes.length t.protected_alternate) '\000';
   t.bracketed_paste <- false;
   t.tabs <- default_tabs t.cols;
   mark_rows_dirty t 0 (t.rows - 1)
@@ -1104,6 +1202,8 @@ let soft_reset t =
   t.scroll_region.bottom <- t.rows - 1;
   Array.fill t.charsets 0 4 'B';
   t.gl <- 0;
+  t.protect <- false;
+  t.selective <- false;
   if t.active_grid == t.alternate then t.saved_alternate <- home_cursor
   else t.saved_primary <- home_cursor
 
@@ -1132,11 +1232,43 @@ let cursor_report t =
   let top = if t.origin_mode then t.scroll_region.top else 0 in
   (t.cursor.row - top + 1, min t.cursor.col (t.cols - 1) + 1)
 
+(* ED and DECSED. *)
+let erase_display t ~selective n =
+  let erase = erase_cells t ~selective in
+  match n with
+  | 0 ->
+      erase ~x:t.cursor.col ~y:t.cursor.row ~width:(t.cols - t.cursor.col)
+        ~height:1;
+      erase ~x:0 ~y:(t.cursor.row + 1) ~width:t.cols
+        ~height:(t.rows - (t.cursor.row + 1));
+      mark_rows_dirty t t.cursor.row (t.rows - 1)
+  | 1 ->
+      erase ~x:0 ~y:0 ~width:t.cols ~height:t.cursor.row;
+      erase ~x:0 ~y:t.cursor.row ~width:(t.cursor.col + 1) ~height:1;
+      mark_rows_dirty t 0 t.cursor.row
+  | 2 ->
+      erase ~x:0 ~y:0 ~width:t.cols ~height:t.rows;
+      mark_rows_dirty t 0 (t.rows - 1)
+  | 3 -> clear_scrollback t
+  | _ -> ()
+
+(* EL and DECSEL. *)
+let erase_line t ~selective n =
+  let erase ~x ~width =
+    erase_cells t ~selective ~x ~y:t.cursor.row ~width ~height:1
+  in
+  (match n with
+  | 0 -> erase ~x:t.cursor.col ~width:(t.cols - t.cursor.col)
+  | 1 -> erase ~x:0 ~width:(t.cursor.col + 1)
+  | 2 -> erase ~x:0 ~width:t.cols
+  | _ -> ());
+  mark_row_dirty t t.cursor.row
+
 let handle_control t ctrl =
   (match ctrl with
   | Ansi.Parser.(
-      ( CUU _ | CUD _ | CUF _ | CUB _ | VPA _ | ED _ | EL _ | IL _ | DL _
-      | DCH _ | ICH _ | RI )) ->
+      ( CUU _ | CUD _ | CUF _ | CUB _ | VPA _ | ED _ | EL _ | DECSED _
+      | DECSEL _ | IL _ | DL _ | DCH _ | ICH _ | RI )) ->
       clear_pending_wrap t
   | _ -> ());
   match ctrl with
@@ -1152,44 +1284,24 @@ let handle_control t ctrl =
       set_cursor_pos t ~row:(origin_row t (n - 1)) ~col:t.cursor.col
   | Ansi.Parser.CUP (r, c) ->
       move_cursor t ~row:(origin_row t (r - 1)) ~col:(c - 1)
-  | Ansi.Parser.ED n -> (
-      match n with
-      | 0 ->
-          (* Clear from cursor to end (destructive erase) on default/theme bg *)
-          erase_region t ~x:t.cursor.col ~y:t.cursor.row
-            ~width:(t.cols - t.cursor.col) ~height:1;
-          erase_region t ~x:0 ~y:(t.cursor.row + 1) ~width:t.cols
-            ~height:(t.rows - (t.cursor.row + 1));
-          mark_rows_dirty t t.cursor.row (t.rows - 1)
-      | 1 ->
-          (* Clear from start to cursor (destructive erase) *)
-          erase_region t ~x:0 ~y:0 ~width:t.cols ~height:t.cursor.row;
-          erase_region t ~x:0 ~y:t.cursor.row ~width:(t.cursor.col + 1)
-            ~height:1;
-          mark_rows_dirty t 0 t.cursor.row
-      | 2 ->
-          (* Clear entire screen *)
-          erase_region t ~x:0 ~y:0 ~width:t.cols ~height:t.rows;
-          mark_rows_dirty t 0 (t.rows - 1)
-      | 3 -> clear_scrollback t
-      | _ -> ())
+  | Ansi.Parser.ED n -> erase_display t ~selective:false n
+  | Ansi.Parser.DECSED n -> erase_display t ~selective:true n
   | Ansi.Parser.ECH n ->
       clear_pending_wrap t;
       erase_region t ~x:t.cursor.col ~y:t.cursor.row
         ~width:(min (max n 1) (t.cols - t.cursor.col))
         ~height:1;
       mark_row_dirty t t.cursor.row
-  | Ansi.Parser.EL n ->
-      (match n with
-      | 0 ->
-          erase_region t ~x:t.cursor.col ~y:t.cursor.row
-            ~width:(t.cols - t.cursor.col) ~height:1
+  | Ansi.Parser.EL n -> erase_line t ~selective:false n
+  | Ansi.Parser.DECSEL n -> erase_line t ~selective:true n
+  | Ansi.Parser.DECSCA n -> (
+      t.selective <- true;
+      match n with
+      | 0 | 2 -> t.protect <- false
       | 1 ->
-          erase_region t ~x:0 ~y:t.cursor.row ~width:(t.cursor.col + 1)
-            ~height:1
-      | 2 -> erase_region t ~x:0 ~y:t.cursor.row ~width:t.cols ~height:1
-      | _ -> ());
-      mark_row_dirty t t.cursor.row
+          t.protect <- true;
+          t.tracked <- true
+      | _ -> ())
   | Ansi.Parser.IND ->
       clear_pending_wrap t;
       advance_row t
@@ -1201,9 +1313,8 @@ let handle_control t ctrl =
       if n > 0 && in_scroll_region t then (
         let insert_count = min n (t.scroll_region.bottom - t.cursor.row + 1) in
         for row = t.scroll_region.bottom downto t.cursor.row + insert_count do
-          Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x:0
-            ~src_y:(row - insert_count) ~width:t.cols ~height:1 ~dst_x:0
-            ~dst_y:row
+          copy_cells t ~src_x:0 ~src_y:(row - insert_count) ~width:t.cols
+            ~dst_x:0 ~dst_y:row
         done;
         erase_region t ~x:0 ~y:t.cursor.row ~width:t.cols ~height:insert_count;
         mark_rows_dirty t t.cursor.row t.scroll_region.bottom;
@@ -1213,9 +1324,8 @@ let handle_control t ctrl =
       if n > 0 && in_scroll_region t then (
         let delete_count = min n (t.scroll_region.bottom - t.cursor.row + 1) in
         for row = t.cursor.row to t.scroll_region.bottom - delete_count do
-          Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x:0
-            ~src_y:(row + delete_count) ~width:t.cols ~height:1 ~dst_x:0
-            ~dst_y:row
+          copy_cells t ~src_x:0 ~src_y:(row + delete_count) ~width:t.cols
+            ~dst_x:0 ~dst_y:row
         done;
         erase_region t ~x:0
           ~y:(t.scroll_region.bottom - delete_count + 1)
@@ -1235,9 +1345,8 @@ let handle_control t ctrl =
               blank_cut_wide t row src_x;
               let move_width = t.cols - src_x in
               if move_width > 0 then
-                Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x
-                  ~src_y:row ~width:move_width ~height:1 ~dst_x:start_col
-                  ~dst_y:row;
+                copy_cells t ~src_x ~src_y:row ~width:move_width
+                  ~dst_x:start_col ~dst_y:row;
               erase_region t ~x:(t.cols - delete_span) ~y:row ~width:delete_span
                 ~height:1;
               mark_row_dirty t row)
@@ -1254,8 +1363,7 @@ let handle_control t ctrl =
             if insert_span > 0 then (
               let move_width = t.cols - start_col - insert_span in
               if move_width > 0 then (
-                Grid.blit_region ~src:t.active_grid ~dst:t.active_grid
-                  ~src_x:start_col ~src_y:row ~width:move_width ~height:1
+                copy_cells t ~src_x:start_col ~src_y:row ~width:move_width
                   ~dst_x:(start_col + insert_span) ~dst_y:row;
                 (* If a wide character at the right edge got truncated by the
                    shift, erase the orphaned cells. *)
@@ -1286,7 +1394,8 @@ let handle_control t ctrl =
       in
       let line = String.make t.cols 'E' in
       for row = 0 to t.rows - 1 do
-        Grid.draw_text t.active_grid ~x:0 ~y:row ~text:line ~style
+        Grid.draw_text t.active_grid ~x:0 ~y:row ~text:line ~style;
+        set_protected t ~x:0 ~y:row ~width:t.cols false
       done;
       mark_rows_dirty t 0 (t.rows - 1);
       set_cursor_pos t ~row:0 ~col:0

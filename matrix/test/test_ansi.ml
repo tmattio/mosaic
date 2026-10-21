@@ -854,9 +854,15 @@ let parser_csi_private_and_intermediates () =
   (match Parser.parse "\x1b[1 A" with
   | [ Parser.Control (Parser.CUU _) ] -> fail "SR should not be CUU"
   | _ -> ());
-  match Parser.parse "\x1b[?2J" with
-  | [ Parser.Control (Parser.ED 2) ] -> ()
-  | _ -> fail "DECSED should erase as ED"
+  (match Parser.parse "\x1b[?2J" with
+  | [ Parser.Control (Parser.DECSED 2) ] -> ()
+  | _ -> fail "CSI ? 2 J should be DECSED");
+  (match Parser.parse "\x1b[?K" with
+  | [ Parser.Control (Parser.DECSEL 0) ] -> ()
+  | _ -> fail "CSI ? K should be DECSEL");
+  match Parser.parse "\x1b[1\"q" with
+  | [ Parser.Control (Parser.DECSCA 1) ] -> ()
+  | _ -> fail "CSI 1 \" q should be DECSCA"
 
 (* --- 5. Writer & Low-Level Escape --- *)
 

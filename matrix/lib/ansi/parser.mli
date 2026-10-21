@@ -32,6 +32,16 @@ type control =
       (** Tab Clear: [0] the stop at the cursor column, [3] every stop. *)
   | ED of int  (** Erase in Display. *)
   | EL of int  (** Erase in Line. *)
+  | DECSED of int
+      (** Selective Erase in Display ([CSI ? Ps J]): {!ED} sparing the
+          characters {!DECSCA} protects. *)
+  | DECSEL of int
+      (** Selective Erase in Line ([CSI ? Ps K]): {!EL} sparing the characters
+          {!DECSCA} protects. *)
+  | DECSCA of int
+      (** Select Character Protection Attribute ([CSI Ps '"' q]): [1] protects
+          the characters written next from {!DECSED} and {!DECSEL}, [0] and [2]
+          do not. *)
   | ECH of int  (** Erase [n] Characters from the cursor. *)
   | IL of int  (** Insert [n] blank Lines. *)
   | DL of int  (** Delete [n] Lines. *)

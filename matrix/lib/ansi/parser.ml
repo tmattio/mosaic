@@ -18,6 +18,9 @@ type control =
   | TBC of int
   | ED of int
   | EL of int
+  | DECSED of int
+  | DECSEL of int
+  | DECSCA of int
   | ECH of int
   | IL of int
   | DL of int
@@ -313,6 +316,13 @@ let csi_form body =
     if params_end = len then Some (prefix, "")
     else Some (prefix, String.sub body params_end (len - params_end))
 
+(* The first parameter of [body]: 0 when missing. *)
+let csi_param ~params body =
+  let count, _ =
+    parse_csi_params body (String.length body) params max_csi_params
+  in
+  if count > 0 && params.(0) <> csi_param_missing then params.(0) else 0
+
 (* The first parameter of [body] as a count: 1 when missing or 0. *)
 let csi_count ~params body =
   let count, _ =
@@ -329,8 +339,14 @@ let parse_csi ~params body final : token option =
   | Some ('?', "") when final = 'n' && body = "?6" -> Some (Control DECXCPR)
   | Some ('\000', "") -> parse_plain_csi ~params body final
   | Some ('\000', "!") when final = 'p' -> Some (Control DECSTR)
-  | Some ('?', "") when String.contains "hlJK" final ->
+  | Some ('?', "") when final = 'h' || final = 'l' ->
       parse_plain_csi ~params body final
+  | Some ('?', "") when final = 'J' ->
+      Some (Control (DECSED (csi_param ~params body)))
+  | Some ('?', "") when final = 'K' ->
+      Some (Control (DECSEL (csi_param ~params body)))
+  | Some ('\000', "\"") when final = 'q' ->
+      Some (Control (DECSCA (csi_param ~params body)))
   | Some ('\000', " ") when final = '@' ->
       Some (Control (SL (csi_count ~params body)))
   | Some ('\000', " ") when final = 'A' ->
