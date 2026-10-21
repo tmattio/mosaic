@@ -950,6 +950,29 @@ let put_text t text =
       emit_unit ~offset:!next ~len:(String.length text - !next) ~width:0;
     flush ()
 
+(* A Prepend character joins the character after it into its grapheme, which
+   a later write cannot join. xterm writes each character as it comes, so
+   write the text after a Prepend character apart: a read split there then
+   draws the screen a whole one does. *)
+let put_run t text =
+  let len = String.length text in
+  let rec go start i =
+    if i >= len then (
+      if start = 0 then put_text t text
+      else if start < len then put_text t (String.sub text start (len - start)))
+    else if Char.code (String.unsafe_get text i) < 0xD8 then
+      (* ASCII, a continuation byte, or a character below U+0600 *)
+      go start (i + 1)
+    else
+      let d = String.get_utf_8_uchar text i in
+      let next = i + Uchar.utf_decode_length d in
+      if next < len && Text.is_prepend (Uchar.utf_decode_uchar d) then (
+        put_text t (String.sub text start (next - start));
+        go next next)
+      else go start next
+  in
+  go 0 0
+
 (* The next tab stop after [col], or the last column. *)
 let next_tab t col =
   let rec go x =
@@ -1014,7 +1037,7 @@ let handle_text t text =
 
   let flush_text i =
     if i > !text_start then (
-      put_text t (String.sub text !text_start (i - !text_start));
+      put_run t (String.sub text !text_start (i - !text_start));
       t.repeatable <- true);
     text_start := i + 1
   in
@@ -1044,7 +1067,7 @@ let repeat_preceding t n =
       for _ = 1 to n do
         Buffer.add_string buf cell
       done;
-      put_text t (Buffer.contents buf))
+      put_run t (Buffer.contents buf))
 
 let apply_sgr_attr style attr =
   match attr with

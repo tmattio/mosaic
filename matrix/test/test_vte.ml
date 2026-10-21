@@ -1164,6 +1164,31 @@ let unicode_combining_mark_across_writes () =
   equal ~msg:"cluster merged into the start cell" string "\xE4\xBD\xA0\xCC\x81"
     (Grid.get_text (Vte.grid split) 0)
 
+let unicode_prepend_across_writes () =
+  (* A Prepend character draws apart from the character after it, as in
+     xterm, so a read split between them draws the same screen. *)
+  let cells ?(cols = 4) width_method chunks =
+    let vte = Vte.create ~width_method ~rows:1 ~cols () in
+    List.iter (Vte.feed_string vte) chunks;
+    List.init cols (fun i -> Grid.get_text (Vte.grid vte) i)
+  in
+  let bytes s = List.init (String.length s) (fun i -> String.make 1 s.[i]) in
+  List.iter
+    (fun (width_method, name) ->
+      List.iter
+        (fun (cols, s, expected) ->
+          let msg = Printf.sprintf "%s %S" name s in
+          equal ~msg (list string) expected (cells ~cols width_method [ s ]);
+          equal ~msg:(msg ^ " split") (list string) expected
+            (cells ~cols width_method (bytes s)))
+        [
+          (4, "a\u{06DD}q", [ "a\u{06DD}"; "q"; " "; " " ]);
+          (4, "\u{06DD}q", [ "q"; " "; " "; " " ]);
+          (2, "\x1b[?7lab\u{06DD}q", [ "a"; "q" ]);
+          (4, "\u{0D4E}x", [ "\u{0D4E}"; "x"; " "; " " ]);
+        ])
+    [ (`Unicode, "unicode"); (`Wcwidth, "wcwidth") ]
+
 let unicode_zero_width_joins_cell () =
   (* U+200B and U+2060 join the cell before them, in the same write or a
      later one, also in insert mode. *)
@@ -1457,6 +1482,7 @@ let tests =
     test "unicode combining mark across writes"
       unicode_combining_mark_across_writes;
     test "unicode zero-width joins cell" unicode_zero_width_joins_cell;
+    test "unicode prepend across writes" unicode_prepend_across_writes;
     test "unicode mark after dropped wide" unicode_mark_after_dropped_wide;
     test "unicode malformed utf8" unicode_malformed_utf8;
     test "character sets" character_sets;

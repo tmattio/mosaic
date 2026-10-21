@@ -70,6 +70,11 @@ val iter_graphemes : (offset:int -> len:int -> unit) -> string -> unit
     [s]. Invalid UTF-8 byte sequences are treated as individual replacement
     characters. *)
 
+val is_prepend : Uchar.t -> bool
+(** [is_prepend u] is [true] iff [u] has the Grapheme_Cluster_Break property
+    Prepend, which joins the character after it into its grapheme cluster (UAX
+    #29 rule GB9b), as U+0600 ARABIC NUMBER SIGN does. *)
+
 val iter_grapheme_info :
   width_method:width_method ->
   tab_width:int ->
