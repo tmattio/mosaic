@@ -475,29 +475,37 @@ let dec_graphics = function
   | '~' -> Some "\u{00b7}"
   | _ -> None
 
-(* The national replacement sets for British ([ESC ( A]) and German
-   ([ESC ( K]). *)
-let british = function '#' -> Some "\u{00a3}" | _ -> None
-
-let german = function
-  | '@' -> Some "\u{00a7}"
-  | '[' -> Some "\u{00c4}"
-  | '\\' -> Some "\u{00d6}"
-  | ']' -> Some "\u{00dc}"
-  | '{' -> Some "\u{00e4}"
-  | '|' -> Some "\u{00f6}"
-  | '}' -> Some "\u{00fc}"
-  | '~' -> Some "\u{00df}"
+(* The national replacement sets: the characters each replaces, and their
+   replacements in order. *)
+let national = function
+  | 'A' -> Some ("#", "£")
+  | '4' -> Some ("#@[\\]{|}~", "£¾ĳ½|¨ƒ¼´")
+  | 'C' | '5' -> Some ("[\\]^`{|}~", "ÄÖÅÜéäöåü")
+  | 'R' -> Some ("#@[\\]{|}~", "£à°ç§éùè¨")
+  | 'Q' -> Some ("@[\\]^`{|}~", "àâçêîôéùèû")
+  | 'K' -> Some ("@[\\]{|}~", "§ÄÖÜäöüß")
+  | 'Y' -> Some ("#@[\\]`{|}~", "£§°çéùàòèì")
+  | 'E' | '6' -> Some ("@[\\]^`{|}~", "ÄÆØÅÜäæøåü")
+  | 'Z' -> Some ("#@[\\]{|}", "£§¡Ñ¿°ñç")
+  | 'H' | '7' -> Some ("@[\\]^`{|}~", "ÉÄÖÅÜéäöåü")
+  | '=' -> Some ("#@[\\]^_`{|}~", "ùàéçêîèôäöüû")
   | _ -> None
+
+(* The [n]th character of [s] from byte [i]. *)
+let rec nth_char s i n =
+  let len = Uchar.utf_decode_length (String.get_utf_8_uchar s i) in
+  if n = 0 then String.sub s i len else nth_char s (i + len) (n - 1)
 
 (* Map text through the set invoked into GL; any other set is ASCII. *)
 let translate_charset t text =
   let map =
     match t.charsets.(t.gl) with
     | '0' -> Some dec_graphics
-    | 'A' -> Some british
-    | 'K' -> Some german
-    | _ -> None
+    | set ->
+        Option.map
+          (fun (chars, by) c ->
+            Option.map (nth_char by 0) (String.index_opt chars c))
+          (national set)
   in
   match map with
   | None -> text
