@@ -771,17 +771,6 @@ let put_text t text =
   in
   if t.insert_mode then
     let line_width = t.cols in
-    let copy_cell row src_idx dst_x =
-      let cell = Grid.get_cell t.active_grid src_idx in
-      let attrs = Grid.get_attrs t.active_grid src_idx in
-      let link = Grid.get_link t.active_grid src_idx in
-      let fg_color = Grid.get_fg t.active_grid src_idx in
-      let bg_color = Grid.get_bg t.active_grid src_idx in
-      let link_url = Grid.hyperlink_url t.active_grid link in
-      Grid.set_cell t.active_grid ~x:dst_x ~y:row ~cell ~fg:fg_color
-        ~bg:bg_color ~attrs:(Ansi.Attr.unpack attrs) ?link:link_url ()
-    in
-
     Text.iter_graphemes
       (fun ~offset:off ~len:l ->
         if t.cursor.col >= line_width && t.auto_wrap_mode then (
@@ -805,32 +794,11 @@ let put_text t text =
           let insert_w = min w (line_width - t.cursor.col) in
 
           if insert_w > 0 then (
-            (* Shift existing cells to the right, grapheme-aware, from end to
-               start. *)
-            let rec shift x =
-              if x < t.cursor.col then ()
-              else
-                let idx = (row * line_width) + x in
-                if Grid.is_continuation t.active_grid idx then shift (x - 1)
-                else
-                  let gw = max 1 (Grid.cell_width t.active_grid idx) in
-                  let dest_start = x + insert_w in
-                  (if dest_start < line_width then
-                     let copy_span = min gw (line_width - dest_start) in
-                     if copy_span = gw then
-                       for k = copy_span - 1 downto 0 do
-                         copy_cell row (idx + k) (dest_start + k)
-                       done
-                     else
-                       (* The wide grapheme is pushed across the right
-                          margin: a partial copy would leave a start cell
-                          with no continuation, so blank the surviving
-                          cells instead. *)
-                       erase_region t ~x:dest_start ~y:row ~width:copy_span
-                         ~height:1);
-                  shift (x - gw)
-            in
-            shift (line_width - 1);
+            let keep = line_width - t.cursor.col - insert_w in
+            if keep > 0 then
+              Grid.blit_region ~src:t.active_grid ~dst:t.active_grid
+                ~src_x:t.cursor.col ~src_y:row ~width:keep ~height:1
+                ~dst_x:(t.cursor.col + insert_w) ~dst_y:row;
 
             (* Clear the newly opened gap and draw the cluster. *)
             erase_region t ~x:t.cursor.col ~y:row ~width:insert_w ~height:1;
@@ -1262,7 +1230,7 @@ let handle_control t ctrl =
   | Ansi.Parser.ICH n ->
       (* Insert characters: shift content right by insert_span, clear the gap.
          Mirror of DCH which shifts left. Grid.blit_region handles overlapping
-         same-grid blits by iterating right-to-left when src_x < dst_x. *)
+         same-grid blits. *)
       if n > 0 then
         let row = t.cursor.row in
         if row >= 0 && row < t.rows then

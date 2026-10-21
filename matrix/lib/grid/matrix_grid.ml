@@ -854,6 +854,29 @@ let bulk_update_graphemes t ~src_idx ~dst_idx ~len =
     done
   end
 
+(* A copy of a region of [t] that shares its stores and holds references to
+   its graphemes until its tracker is cleared. *)
+let snapshot t ~x ~y ~width ~height =
+  let s =
+    create_with_store ~width ~height ~grapheme_store:t.grapheme_store
+      ~link_registry:t.link_registry ~width_method:t.width_method
+      ~respect_alpha:false
+  in
+  for row = 0 to height - 1 do
+    let src_pos = ((y + row) * t.width) + x and dst_pos = row * width in
+    let copy a b = Buf.blit_range a ~src_pos b ~dst_pos ~len:width in
+    copy t.chars s.chars;
+    copy t.attrs s.attrs;
+    copy t.links s.links;
+    copy t.fg_color s.fg_color;
+    copy t.bg_color s.bg_color
+  done;
+  for i = 0 to (width * height) - 1 do
+    let c = Buf.get_cell s.chars i in
+    if Packed_cell.is_complex c then Grapheme_tracker.add s.grapheme_tracker c
+  done;
+  s
+
 let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
   let width = max 0 width and height = max 0 height in
 
@@ -923,24 +946,26 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
             (Bigarray.Array1.sub dst.bg_color di len)
         end
         else begin
-          (* General blit: cell-by-cell with cross-store support *)
+          (* General blit: cell-by-cell with cross-store support. Within one
+             grid, read from a snapshot: writing a cell clears the rest of the
+             wide character it replaces, which may be a cell already copied. *)
+          let src, src_x, src_y =
+            if same_grid then
+              (snapshot src ~x:src_x ~y:src_y ~width ~height, 0, 0)
+            else (src, src_x, src_y)
+          in
           let copy_cell =
-            if same_grid || src.grapheme_store == dst.grapheme_store then Fun.id
+            if src.grapheme_store == dst.grapheme_store then Fun.id
             else
               make_cell_copier ~src_store:src.grapheme_store
                 ~dst_store:dst.grapheme_store
           in
 
-          let x_start, x_limit, x_step =
-            if same_grid && src_x < dst_x then (width - 1, -1, -1)
-            else (0, width, 1)
-          in
-
           let i = ref y_start in
           while !i <> y_limit do
             let sy = src_y + !i and dy = dst_y + !i in
-            let k = ref x_start in
-            while !k <> x_limit do
+            let k = ref 0 in
+            while !k < width do
               let sx = src_x + !k and dx = dst_x + !k in
               let sidx = (sy * src.width) + sx in
 
@@ -1003,7 +1028,7 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                  [respect_alpha]. Plain framebuffers copy stored alpha values;
                  alpha-respecting framebuffers composite and fully transparent
                  cells become holes. *)
-              let compose = (not same_grid) && src.respect_alpha in
+              let compose = src.respect_alpha in
               if compose && composite_fg_a <= 0.001 && bg_a <= 0.001 then ()
               else
                 set_cell_internal dst
@@ -1012,10 +1037,11 @@ let blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
                   ~fg_a:composite_fg_a ~bg_r ~bg_g ~bg_b ~bg_a ~attrs ~link_id
                   ~blending:compose;
 
-              k := !k + x_step
+              incr k
             done;
             i := !i + y_step
-          done
+          done;
+          if same_grid then Grapheme_tracker.clear src.grapheme_tracker
         end
 
 (* {1 Scrolling} *)

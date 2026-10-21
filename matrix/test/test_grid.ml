@@ -975,6 +975,15 @@ let blit_region_clears_right_truncated_wide_start () =
     (read_char dst 0 0);
   equal ~msg:"width reset" int 1 (read_width dst 0 0)
 
+let blit_region_shifts_wide_over_wide () =
+  let grid = Grid.create ~width:6 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"中😀";
+  Grid.blit_region ~src:grid ~dst:grid ~src_x:0 ~src_y:0 ~width:4 ~height:1
+    ~dst_x:2 ~dst_y:0;
+  assert_valid_spans grid;
+  is_true ~msg:"moved continuation kept" (Grid.is_continuation grid 3);
+  equal ~msg:"row" string "中中😀" (row_to_string grid 0)
+
 let blit_region_copies_transparent_source_without_respect_alpha () =
   let src = Grid.create ~width:1 ~height:1 () in
   let transparent = Ansi.Color.of_rgba 0 0 0 0 in
@@ -1440,6 +1449,7 @@ let tests =
       fill_rect_clears_inline_wide_continuation;
     test "blit_region clears right-truncated wide start"
       blit_region_clears_right_truncated_wide_start;
+    test "blit_region shifts wide over wide" blit_region_shifts_wide_over_wide;
     test "blit_region copies transparent source without respect_alpha"
       blit_region_copies_transparent_source_without_respect_alpha;
     test "blit_region skips transparent source with respect_alpha"
