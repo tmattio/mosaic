@@ -703,6 +703,24 @@ let row_down t n =
   in
   min bottom (t.cursor.row + n)
 
+(* Join zero-width [marks] to the grapheme in the cell before the cursor.
+   [false] when there is none. *)
+let join_preceding t marks =
+  let row = t.cursor.row in
+  let x = ref (t.cursor.col - 1) in
+  let idx = ref ((row * t.cols) + !x) in
+  while !x > 0 && Grid.is_continuation t.active_grid !idx do
+    decr x;
+    decr idx
+  done;
+  let prev = Grid.get_text t.active_grid !idx in
+  if prev = "" || Grid.is_continuation t.active_grid !idx then false
+  else (
+    Grid.draw_text t.active_grid ~x:!x ~y:row ~text:(prev ^ marks)
+      ~style:(Grid.get_style t.active_grid !idx);
+    mark_row_dirty t row;
+    true)
+
 (* Write printable text using Grid and Text APIs. We manually segment the input
    string into pieces that fit in the current line, using an ASCII fast path and
    falling back to grapheme segmentation for complex text. *)
@@ -747,25 +765,8 @@ let put_text t text =
            text
        with Exit -> ());
       let stop = !zero_width_stop in
-      if stop = 0 then text
-      else begin
-        let row = t.cursor.row in
-        let x = ref (t.cursor.col - 1) in
-        let idx = ref ((row * t.cols) + !x) in
-        while !x > 0 && Grid.is_continuation t.active_grid !idx do
-          decr x;
-          decr idx
-        done;
-        let prev = Grid.get_text t.active_grid !idx in
-        if prev = "" || Grid.is_continuation t.active_grid !idx then text
-        else begin
-          Grid.draw_text t.active_grid ~x:!x ~y:row
-            ~text:(prev ^ String.sub text 0 stop)
-            ~style:(Grid.get_style t.active_grid !idx);
-          mark_row_dirty t row;
-          String.sub text stop (String.length text - stop)
-        end
-      end
+      if stop = 0 || not (join_preceding t (String.sub text 0 stop)) then text
+      else String.sub text stop (String.length text - stop)
     end
   in
   if t.insert_mode then
@@ -838,7 +839,9 @@ let put_text t text =
               ~style;
             mark_row_dirty t row;
             set_cursor_pos t ~row
-              ~col:(min line_width (t.cursor.col + insert_w))))
+              ~col:(min line_width (t.cursor.col + insert_w)))
+          else if t.cursor.col > 0 then
+            ignore (join_preceding t (String.sub text off l)))
       text
   else
     let remaining = ref text in
