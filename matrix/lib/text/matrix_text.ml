@@ -191,6 +191,10 @@ let rec iter_graphemes_unicode seg str len f i start =
       iter_graphemes_unicode seg str len f next i)
     else iter_graphemes_unicode seg str len f next start
 
+(* 11 is Prepend in the generated table, as in
+   Uuseg_grapheme_cluster.byte_to_gcb. *)
+let is_prepend u = Unicode.grapheme_cluster_break u = 11
+
 let iter_graphemes f str =
   let len = Stdlib.String.length str in
   if len = 0 then ()
