@@ -1073,6 +1073,24 @@ let unicode_combining_mark_across_writes () =
   equal ~msg:"cluster merged into the start cell" string "\xE4\xBD\xA0\xCC\x81"
     (Grid.get_text (Vte.grid split) 0)
 
+let unicode_zero_width_joins_cell () =
+  (* U+200B and U+2060 join the cell before them, in the same write or a
+     later one, also in insert mode. *)
+  let cells s =
+    let vte = Vte.create ~rows:1 ~cols:4 () in
+    List.iter (Vte.feed_string vte) s;
+    List.init 4 (fun i -> Grid.get_text (Vte.grid vte) i)
+  in
+  equal ~msg:"same write" (list string)
+    [ "a"; "b\u{200B}"; "c"; " " ]
+    (cells [ "ab\u{200B}c" ]);
+  equal ~msg:"later write" (list string)
+    [ "a"; "b\u{2060}"; " "; " " ]
+    (cells [ "ab"; "\u{2060}" ]);
+  equal ~msg:"insert mode" (list string)
+    [ "a\u{200B}"; "b"; "x"; " " ]
+    (cells [ "x\r\x1b[4ha\u{200B}b" ])
+
 let unicode_malformed_utf8 () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   let malformed = Bytes.create 5 in
@@ -1321,6 +1339,7 @@ let tests =
     test "unicode wide char wider than line" unicode_wide_char_wider_than_line;
     test "unicode combining mark across writes"
       unicode_combining_mark_across_writes;
+    test "unicode zero-width joins cell" unicode_zero_width_joins_cell;
     test "unicode malformed utf8" unicode_malformed_utf8;
     test "character sets" character_sets;
   ]

@@ -726,7 +726,7 @@ let put_text t text =
         columns := 0
       end
     in
-    let emit ~offset ~len ~width =
+    let emit_unit ~offset ~len ~width =
       if width = 0 then
         begin if !columns > 0 then stop := offset + len
         else if t.cursor.col > 0 then begin
@@ -783,6 +783,15 @@ let put_text t text =
         end
       end
     in
+    (* Text.iter_grapheme_info skips graphemes of no width. Those met in the
+       run, such as U+200B, join the cell before them, as in xterm. *)
+    let next = ref 0 in
+    let emit ~offset ~len ~width =
+      if offset > !next then
+        emit_unit ~offset:!next ~len:(offset - !next) ~width:0;
+      next := offset + len;
+      emit_unit ~offset ~len ~width
+    in
     (match width_method with
     | `Unicode | `Unicode_wide ->
         Text.iter_grapheme_info ~width_method ~tab_width:2 emit text
@@ -798,6 +807,8 @@ let put_text t text =
               (Text.uchar_width ~tab_width:2 (Uchar.utf_decode_uchar decoded));
           offset := !offset + len
         done);
+    if !next < String.length text then
+      emit_unit ~offset:!next ~len:(String.length text - !next) ~width:0;
     flush ()
 
 (* The next tab stop after [col], or the last column. *)
