@@ -411,6 +411,7 @@ type state =
   | Escape
   | Escape_charset
   | Csi
+  | Csi_utf8 of int
   | Escape_intermediate
   | Osc
   | Osc_escape
@@ -781,9 +782,27 @@ let feed p src ~off ~len emit =
             emit (Text (String.make 1 c));
             loop (pos + 1))
           else if c = '\x7f' then loop (pos + 1)
+          else if c >= '\x80' then (
+            (* A non-ASCII character ends the sequence and is dropped, as in
+               xterm.js, which decodes UTF-8 first. *)
+            Buffer.clear p.csi_buf;
+            p.state <-
+              (if c >= '\xf0' then Csi_utf8 3
+               else if c >= '\xe0' then Csi_utf8 2
+               else if c >= '\xc0' then Csi_utf8 1
+               else Normal);
+            loop (pos + 1))
           else (
             Buffer.add_char p.csi_buf c;
             loop (pos + 1))
+      | Csi_utf8 n ->
+          let c = Bytes.get input (input_off + pos) in
+          if c >= '\x80' && c < '\xc0' then (
+            p.state <- (if n > 1 then Csi_utf8 (n - 1) else Normal);
+            loop (pos + 1))
+          else (
+            p.state <- Normal;
+            loop pos)
       | Escape_intermediate -> (
           let c = Bytes.get input (input_off + pos) in
           match c with
