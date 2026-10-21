@@ -17,18 +17,19 @@
 
 (pin
  (url
-  "git+https://github.com/invariant-hq/thumper.git")
+  "git+https://github.com/invariant-hq/thumper.git#0d42dc6964e30525b0595b6d5be04a1eda76c90e")
  (package
   (name thumper)))
 
 (pin
  (url
-  "git+https://github.com/invariant-hq/windtrap.git")
+  "git+https://github.com/invariant-hq/windtrap.git#31121058567da1edb72603f42514eb1276ca37cc")
  (package
   (name windtrap)))
 
 (pin
- (url "git+ssh://git@github.com/invariant-hq/windtrap.git")
+ (url
+  "git+https://github.com/invariant-hq/windtrap.git#31121058567da1edb72603f42514eb1276ca37cc")
  (package
   (name ppx_windtrap)))
 
