@@ -745,12 +745,12 @@ let feed p src ~off ~len emit =
               loop (if pos = !c1_at then pos + 1 else pos))
       | Escape_charset ->
           (* The final byte of a designation, after the intermediate in
-             [csi_buf]; ESC % selects a coding system, which is ignored. *)
+             [csi_buf]; ESC % selects a coding system, left to the client. *)
           p.state <- Normal;
+          let c = Bytes.get input (input_off + pos) in
           (match String.index_opt "()*+" (Buffer.nth p.csi_buf 0) with
-          | Some g ->
-              emit (Control (SCS (g, Bytes.get input (input_off + pos))))
-          | None -> ());
+          | Some g -> emit (Control (SCS (g, c)))
+          | None -> emit (Control (Unknown (Printf.sprintf "ESC%%%c" c))));
           loop (pos + 1)
       | Csi ->
           let c = Bytes.get input (input_off + pos) in

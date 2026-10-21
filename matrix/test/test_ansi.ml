@@ -827,6 +827,12 @@ let parser_unknown_escape_sequences () =
   (match Parser.parse "\x1b#3" with
   | [ Parser.Control (Parser.Unknown "ESC#3") ] -> ()
   | _ -> fail "ESC # 3 should be one unknown control");
+  (match Parser.parse "\x1b%G\x1b%@" with
+  | [
+   Parser.Control (Parser.Unknown "ESC%G"); Parser.Control (Unknown "ESC%@");
+  ] ->
+      ()
+  | _ -> fail "ESC % G and ESC % @ should be unknown controls");
   let input = "a\x1b Fb\x1b#3c" in
   for cut = 0 to String.length input do
     equal
