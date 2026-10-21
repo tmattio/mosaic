@@ -552,6 +552,26 @@ let erase_keeps_background_index () =
   equal ~msg:"LF scroll" (option int) (Some 1) (bg "\x1b[41m\n\n" 1);
   equal ~msg:"RI scroll" (option int) (Some 1) (bg "\x1b[41m\x1bM" 0)
 
+let terminal_defaults_replace_cells () =
+  (* With the terminal-default colours as both defaults, erasing and printing
+     replace the cells instead of blending over them. *)
+  let vte () =
+    Vte.create ~default_fg:Ansi.Color.default_fg
+      ~default_bg:Ansi.Color.default_bg ~rows:1 ~cols:8 ()
+  in
+  let screen s =
+    let vte = vte () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"ECH" string "  cde   " (screen "abcde\r\x1b[2X");
+  equal ~msg:"EL" string "        " (screen "abcde\r\x1b[K");
+  equal ~msg:"space" string " bc     " (screen "abc\r ");
+  let vte = vte () in
+  Vte.feed_string vte "\x1b[41ma\x1b[49m\rb";
+  is_true ~msg:"default background replaces red"
+    (Ansi.Color.intent (Grid.get_bg (Vte.grid vte) 0) = Default)
+
 let sgr_reset () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.feed_string vte "\x1b[1;31mBold Red\x1b[0mNormal";
@@ -1327,6 +1347,7 @@ let tests =
     test "SGR foreground color" sgr_foreground_color;
     test "SGR background color" sgr_background_color;
     test "erase keeps background index" erase_keeps_background_index;
+    test "terminal defaults replace cells" terminal_defaults_replace_cells;
     test "SGR reset" sgr_reset;
     test "cursor hide/show" cursor_hide_show;
     test "set cursor visible" set_cursor_visible_programmatic;
