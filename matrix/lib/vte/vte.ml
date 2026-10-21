@@ -208,6 +208,9 @@ type t = {
   parser : Ansi.Parser.t;
   (* Text was the last thing printed, so REP has a character to repeat *)
   mutable repeatable : bool;
+  (* The last grapheme printed did not fit at the right margin and was
+     dropped, so marks that follow it in a later write are dropped too *)
+  mutable dropped : bool;
   (* Terminal state *)
   mutable title : string;
   (* Bytes owed to the application, and the device attributes it is told *)
@@ -270,6 +273,7 @@ let create ?(scrollback = 10000) ?width_method ?(respect_alpha = false)
     style = Ansi.Style.default;
     parser = Ansi.Parser.create ();
     repeatable = false;
+    dropped = false;
     title = "";
     replies = Buffer.create 16;
     da1;
@@ -765,10 +769,15 @@ let put_text t text =
            text
        with Exit -> ());
       let stop = !zero_width_stop in
-      if stop = 0 || not (join_preceding t (String.sub text 0 stop)) then text
-      else String.sub text stop (String.length text - stop)
+      if
+        stop > 0
+        && ((t.repeatable && t.dropped)
+           || join_preceding t (String.sub text 0 stop))
+      then String.sub text stop (String.length text - stop)
+      else text
     end
   in
+  if text <> "" then t.dropped <- false;
   if t.insert_mode then
     let line_width = t.cols in
     Text.iter_graphemes
@@ -832,6 +841,9 @@ let put_text t text =
           let run = !remaining in
           Text.iter_graphemes
             (fun ~offset ~len ->
+              t.dropped <-
+                Text.width_at ~width_method ~tab_width:2 run ~byte_offset:offset
+                > 1;
               Grid.draw_text t.active_grid ~x ~y:t.cursor.row
                 ~text:(String.sub run offset len)
                 ~style)
@@ -878,6 +890,7 @@ let put_text t text =
                 Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
                   ~text:(String.sub s 0 stop) ~style;
                 mark_row_dirty t t.cursor.row;
+                t.dropped <- stop = len;
                 remaining := String.sub s stop (len - stop))
             else
               let segment = String.sub s 0 fit.byte_offset in
