@@ -916,6 +916,14 @@ let scroll_uses_transparent_background () =
   equal ~msg:"transparent bg" rgba (0, (0, (0, 0))) (r, (g, (b, a)));
   equal ~msg:"space char" int (Char.code ' ') (read_char grid 0 1)
 
+let scroll_keeps_multi_codepoint_graphemes () =
+  let grid = Grid.create ~width:4 ~height:3 () in
+  Grid.draw_text grid ~x:0 ~y:1 ~text:"e\u{301}";
+  Grid.scroll grid ~top:0 ~bottom:2 1;
+  equal ~msg:"moved up" string "e\u{301}" (Grid.get_text grid (idx grid 0 0));
+  Grid.scroll grid ~top:0 ~bottom:2 (-2);
+  equal ~msg:"moved down" string "e\u{301}" (Grid.get_text grid (idx grid 0 2))
+
 let draw_text_overwrite_clears_span () =
   let grid = Grid.create ~width:4 ~height:1 () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"中";
@@ -1415,6 +1423,8 @@ let tests =
     test "fill rect transparent is noop" fill_rect_transparent_is_noop;
     test "clear_rect resets background" clear_rect_resets_background;
     test "scroll uses transparent background" scroll_uses_transparent_background;
+    test "scroll keeps multi-codepoint graphemes"
+      scroll_keeps_multi_codepoint_graphemes;
     test "draw text overwrites grapheme span" draw_text_overwrite_clears_span;
     test "draw text overflow clears row tail" draw_text_overflow_clears_row_tail;
     test "blit region skips partial spans" blit_region_skips_partial_span;

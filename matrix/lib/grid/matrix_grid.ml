@@ -843,14 +843,14 @@ let copy t =
 let bulk_update_graphemes t ~src_idx ~dst_idx ~len =
   if Grapheme_tracker.unique_count t.grapheme_tracker > 0 then begin
     for i = 0 to len - 1 do
-      let code = Buf.get_cell t.chars (dst_idx + i) in
-      if not (Packed_cell.is_inline code) then
-        Grapheme_tracker.remove t.grapheme_tracker code
-    done;
-    for i = 0 to len - 1 do
       let code = Buf.get_cell t.chars (src_idx + i) in
       if not (Packed_cell.is_inline code) then
         Grapheme_tracker.add t.grapheme_tracker code
+    done;
+    for i = 0 to len - 1 do
+      let code = Buf.get_cell t.chars (dst_idx + i) in
+      if not (Packed_cell.is_inline code) then
+        Grapheme_tracker.remove t.grapheme_tracker code
     done
   end
 
