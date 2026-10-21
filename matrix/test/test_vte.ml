@@ -946,6 +946,29 @@ let reset_clears_state () =
   equal ~msg:"scrollback cleared" int 0 (Vte.scrollback_size vte);
   is_true ~msg:"auto wrap reset" (Vte.auto_wrap_mode vte)
 
+let selective_erase () =
+  let screen ?(rows = 1) s =
+    let vte = Vte.create ~rows ~cols:6 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"DECSEL spares protected cells" string "abc   "
+    (screen "\x1b[1\"qabc\x1b[0\"qdef\r\x1b[?2K");
+  equal ~msg:"EL erases them" string "      "
+    (screen "\x1b[1\"qabc\x1b[0\"qdef\r\x1b[2K");
+  equal ~msg:"DECSED spares protected cells" string "ab    \n      "
+    (screen ~rows:2 "\x1b[1\"qab\x1b[0\"qc\r\ndef\x1b[?2J");
+  equal ~msg:"an overwrite unprotects" string " b    "
+    (screen "\x1b[1\"qab\x1b[0\"q\rX\x1b[?2K");
+  equal ~msg:"protection moves with ICH" string "  ab  "
+    (screen "\x1b[1\"qab\x1b[0\"q\r\x1b[2@\x1b[?2K");
+  equal ~msg:"protection moves with IL" string "      \nab    \n      "
+    (screen ~rows:3 "\x1b[1\"qab\x1b[0\"qc\r\x1b[L\x1b[?2J");
+  equal ~msg:"DECSC saves the attribute" string "ab    "
+    (screen "\x1b[1\"q\x1b7\x1b[0\"q\x1b8ab\x1b[?2K");
+  equal ~msg:"DECSTR ends selective erasure" string "      "
+    (screen "\x1b[1\"qab\x1b[!p\x1b[?2K")
+
 let ris_and_decstr () =
   let run s =
     let vte = Vte.create ~rows:2 ~cols:10 () in
@@ -1397,6 +1420,7 @@ let tests =
     test "resize clamps cursor" resize_clamps_cursor;
     test "reset clears state" reset_clears_state;
     test "RIS and DECSTR" ris_and_decstr;
+    test "selective erase" selective_erase;
     test "dirty flag on text" dirty_flag_on_text;
     test "dirty flag on cursor move" dirty_flag_on_cursor_move;
     test "dirty flag on style change" dirty_flag_on_style_change;
