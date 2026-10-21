@@ -1112,6 +1112,22 @@ let unicode_zero_width_joins_cell () =
     [ "a\u{200B}"; "b"; "x"; " " ]
     (cells [ "x\r\x1b[4ha\u{200B}b" ])
 
+let unicode_mark_after_dropped_wide () =
+  (* With auto-wrap off, a wide character that does not fit at the right
+     margin is dropped, and so is a mark that follows it in a later write. *)
+  let screen chunks =
+    let vte = Vte.create ~rows:1 ~cols:3 () in
+    List.iter (Vte.feed_string vte) chunks;
+    Vte.to_string vte
+  in
+  let wide = "\x1b[?7l\xE4\xBD\xA0" and mark = "\xCC\x81" in
+  equal ~msg:"last column" string
+    (screen [ "\x1b[1;3H" ^ wide ^ mark ])
+    (screen [ "\x1b[1;3H" ^ wide; mark ]);
+  equal ~msg:"past the last column" string
+    (screen [ "abc" ^ wide ^ mark ])
+    (screen [ "abc" ^ wide; mark ])
+
 let unicode_malformed_utf8 () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   let malformed = Bytes.create 5 in
@@ -1363,6 +1379,7 @@ let tests =
     test "unicode combining mark across writes"
       unicode_combining_mark_across_writes;
     test "unicode zero-width joins cell" unicode_zero_width_joins_cell;
+    test "unicode mark after dropped wide" unicode_mark_after_dropped_wide;
     test "unicode malformed utf8" unicode_malformed_utf8;
     test "character sets" character_sets;
   ]

@@ -135,6 +135,9 @@ type t = {
   parser : Ansi.Parser.t;
   (* Text was the last thing printed, so REP has a character to repeat *)
   mutable repeatable : bool;
+  (* The last grapheme printed did not fit at the right margin and was
+     dropped, so marks that follow it in a later write are dropped too *)
+  mutable dropped : bool;
   (* Terminal state *)
   mutable title : string;
   (* Bytes owed to the application, and the device attributes it is told *)
@@ -192,6 +195,7 @@ let create ?(scrollback = 10000) ?width_method ?(default_fg = Ansi.Color.white)
     style = Ansi.Style.default;
     parser = Ansi.Parser.create ();
     repeatable = false;
+    dropped = false;
     title = "";
     replies = Buffer.create 16;
     da1;
@@ -677,6 +681,8 @@ let put_text t text =
        with Exit -> ());
       let stop = !zero_width_stop in
       if stop = 0 then text
+      else if t.repeatable && t.dropped then
+        String.sub text stop (String.length text - stop)
       else begin
         let row = t.cursor.row in
         let x = ref (t.cursor.col - 1) in
@@ -697,6 +703,7 @@ let put_text t text =
       end
     end
   in
+  if text <> "" then t.dropped <- false;
   if text = "" then ()
   else if (not t.insert_mode) && String.length text <= t.cols - t.cursor.col
   then begin
@@ -729,6 +736,7 @@ let put_text t text =
     let emit_unit ~offset ~len ~width =
       if width = 0 then
         begin if !columns > 0 then stop := offset + len
+        else if t.dropped then ()
         else if t.cursor.col > 0 then begin
           let x = ref (min (t.cols - 1) (t.cursor.col - 1)) in
           while
@@ -762,6 +770,7 @@ let put_text t text =
         if t.insert_mode || width > t.cols - t.cursor.col then begin
           let x = min t.cursor.col (t.cols - 1) in
           let inserted = min width (t.cols - t.cursor.col) in
+          t.dropped <- width > t.cols - x;
           if t.insert_mode && inserted > 0 then begin
             Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x:x
               ~src_y:t.cursor.row
@@ -777,6 +786,7 @@ let put_text t text =
             set_cursor_pos t ~row:t.cursor.row ~col:(x + inserted)
         end
         else begin
+          t.dropped <- false;
           if !columns = 0 then start := offset;
           stop := offset + len;
           columns := !columns + width
