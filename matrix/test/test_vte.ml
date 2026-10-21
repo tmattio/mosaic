@@ -727,6 +727,17 @@ let scrollback_accumulates () =
   let lines = Vte.scrollback_lines vte in
   equal ~msg:"scrollback list length" int 2 (List.length lines)
 
+let one_row_scroll () =
+  (* On a one-row screen, a scroll clears the row it moves out. *)
+  let screen s =
+    let vte = Vte.create ~rows:1 ~cols:3 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"LF" string "d  " (screen "abc\r\nd");
+  equal ~msg:"SU" string "   " (screen "abc\x1b[S");
+  equal ~msg:"RI" string "   " (screen "abc\x1bM")
+
 let erase_scrollback_sequence () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
   Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
@@ -1317,6 +1328,7 @@ let tests =
     test "reverse index scrolls region down" reverse_index_scrolls_region_down;
     test "index and next line" index_and_next_line;
     test "scrollback accumulates" scrollback_accumulates;
+    test "one-row scroll" one_row_scroll;
     test "erase scrollback sequence" erase_scrollback_sequence;
     test "scrollback ring buffer" scrollback_ring_buffer;
     test "scrollback disabled" scrollback_disabled;
