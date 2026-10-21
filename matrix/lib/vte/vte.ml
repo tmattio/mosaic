@@ -307,7 +307,7 @@ let erase_region t ~x ~y ~width ~height =
       | Default -> t.default_bg
       | Indexed _ | Rgb -> base_bg
     in
-    Grid.fill_rect t.active_grid ~x ~y ~width ~height ~color:base_bg
+    Grid.clear_rect t.active_grid ~x ~y ~width ~height ~color:base_bg
 
 (* Dirty tracking helpers *)
 let mark_dirty t = t.dirty_state.dirty <- true
@@ -749,6 +749,16 @@ let put_text t text =
     |> Ansi.Style.with_attrs attrs
   in
   let width_method = Grid.width_method t.active_grid in
+  (* draw_text blends a colour that is not opaque over the cell, where a
+     terminal replaces it: clear the cells first. *)
+  let opaque = Ansi.Color.alpha fg >= 1. && Ansi.Color.alpha bg >= 1. in
+  let draw ~x ~y text =
+    if not opaque then
+      Grid.clear_rect t.active_grid ~color:bg ~x ~y
+        ~width:(Text.measure ~width_method ~tab_width:2 text)
+        ~height:1;
+    Grid.draw_text t.active_grid ~x ~y ~text ~style
+  in
   (* A run beginning with zero-width graphemes continues the grapheme drawn
      by an earlier write (its base sits in the preceding cell): merge the
      marks into that cell, as real terminals do, so a grapheme cluster split
@@ -793,8 +803,7 @@ let put_text t text =
              stay pinned, as in the non-insert path. Inserting at the margin
              would shift every surviving cell off the row anyway. *)
           let cluster = String.sub text off l in
-          Grid.draw_text t.active_grid ~x:(line_width - 1) ~y:row ~text:cluster
-            ~style;
+          draw ~x:(line_width - 1) ~y:row cluster;
           mark_row_dirty t row)
         else if row < t.rows && t.cursor.col < line_width then
           let w =
@@ -844,9 +853,7 @@ let put_text t text =
               t.dropped <-
                 Text.width_at ~width_method ~tab_width:2 run ~byte_offset:offset
                 > 1;
-              Grid.draw_text t.active_grid ~x ~y:t.cursor.row
-                ~text:(String.sub run offset len)
-                ~style)
+              draw ~x ~y:t.cursor.row (String.sub run offset len))
             run;
           mark_row_dirty t t.cursor.row;
           remaining := "")
@@ -858,8 +865,7 @@ let put_text t text =
              once. *)
           let total_w = Text.measure ~width_method ~tab_width:2 s in
           if total_w <= available then (
-            Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row ~text:s
-              ~style;
+            draw ~x:t.cursor.col ~y:t.cursor.row s;
             mark_row_dirty t t.cursor.row;
             set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col + total_w);
             remaining := "")
@@ -887,15 +893,13 @@ let put_text t text =
                 let stop =
                   if first.byte_offset > 0 then first.byte_offset else len
                 in
-                Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
-                  ~text:(String.sub s 0 stop) ~style;
+                draw ~x:t.cursor.col ~y:t.cursor.row (String.sub s 0 stop);
                 mark_row_dirty t t.cursor.row;
                 t.dropped <- stop = len;
                 remaining := String.sub s stop (len - stop))
             else
               let segment = String.sub s 0 fit.byte_offset in
-              Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
-                ~text:segment ~style;
+              draw ~x:t.cursor.col ~y:t.cursor.row segment;
               mark_row_dirty t t.cursor.row;
               set_cursor_pos t ~row:t.cursor.row
                 ~col:(t.cursor.col + fit.columns_used);

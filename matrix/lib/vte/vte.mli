@@ -52,11 +52,14 @@ val create :
       [`Unicode].
     - [respect_alpha] enables alpha blending for semi-transparent colours.
       Defaults to [false].
-    - [default_fg] is the opaque foreground colour used when the current style
-      has no explicit foreground. Defaults to {!Ansi.Color.white}.
-    - [default_bg] is the opaque background colour used when the current style
-      has no explicit background, and for clearing grids on resize or reset.
-      Defaults to {!Ansi.Color.black}.
+    - [default_fg] is the foreground colour used when the current style has no
+      explicit foreground. Defaults to {!Ansi.Color.white}.
+    - [default_bg] is the background colour used when the current style has no
+      explicit background, and for clearing grids on resize or reset. Defaults
+      to {!Ansi.Color.black}.
+
+    {!Ansi.Color.default} as either keeps the terminal's default colour in the
+    grid.
     - [da1] and [da2] are the replies to the primary and secondary device
       attributes queries ([CSI c] and [CSI > c]). Default to ["\027\[?1;2c"] (a
       VT100 with advanced video) and ["\027\[>0;0;0c"].
