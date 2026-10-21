@@ -587,6 +587,20 @@ let parser_esc_ends_string_controls () =
       | _ -> fail ("ESC does not end ESC " ^ intro))
     [ "P"; "X"; "^"; "_"; "]" ]
 
+let parser_non_ascii_ends_csi () =
+  (* A non-ASCII character ends a CSI sequence and is dropped, also when it
+     is split across feeds. *)
+  let text tokens =
+    String.concat ""
+      (List.filter_map (function Parser.Text s -> Some s | _ -> None) tokens)
+  in
+  equal ~msg:"whole" string "x</svg>"
+    (text (Parser.parse "x\xc2\x9b\xef\xbf\xbe</svg>"));
+  let p = Parser.create () in
+  let feed s = feed_to_list p (Bytes.of_string s) 0 (String.length s) in
+  let first = feed "x\x1b[1\xef\xbf" in
+  equal ~msg:"split" string "x</svg>" (text (first @ feed "\xbe</svg>"))
+
 let parser_csi_empty_parameter_defaults () =
   (match Parser.parse "\x1b[;5H" with
   | [ Parser.Control (Parser.CUP (1, 5)) ] -> ()
@@ -1147,6 +1161,7 @@ let tests =
         test "chunked protocol string controls"
           parser_protocol_string_controls_chunked;
         test "esc ends string controls" parser_esc_ends_string_controls;
+        test "non-ascii ends csi" parser_non_ascii_ends_csi;
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
         test "utf8 split invariance" parser_utf8_split_invariance;
         test "c1 controls" parser_c1_controls;
