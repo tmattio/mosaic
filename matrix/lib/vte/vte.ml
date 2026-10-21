@@ -227,6 +227,7 @@ type t = {
   (* Terminal modes *)
   mutable origin_mode : bool;
   mutable auto_wrap_mode : bool;
+  mutable reverse_wrap : bool;
   mutable cursor_key_mode : bool;
   mutable insert_mode : bool;
   (* Character sets: the designations of G0 to G3, and the one invoked into
@@ -242,6 +243,9 @@ type t = {
   mutable tracked : bool;
   mutable protected_primary : Bytes.t;
   mutable protected_alternate : Bytes.t;
+  (* The rows of each screen that auto-wrap continued on the next row *)
+  mutable wrapped_primary : Bytes.t;
+  mutable wrapped_alternate : Bytes.t;
   mutable bracketed_paste : bool;
   default_fg : Ansi.Color.t;
   default_bg : Ansi.Color.t;
@@ -295,6 +299,7 @@ let create ?(scrollback = 10000) ?width_method ?(respect_alpha = false)
     scroll_region = { top = 0; bottom = rows - 1 };
     origin_mode = false;
     auto_wrap_mode = true;
+    reverse_wrap = false;
     cursor_key_mode = false;
     insert_mode = false;
     charsets = Array.make 4 'B';
@@ -304,6 +309,8 @@ let create ?(scrollback = 10000) ?width_method ?(respect_alpha = false)
     tracked = false;
     protected_primary = Bytes.make (rows * cols) '\000';
     protected_alternate = Bytes.make (rows * cols) '\000';
+    wrapped_primary = Bytes.make rows '\000';
+    wrapped_alternate = Bytes.make rows '\000';
     bracketed_paste = false;
     default_fg;
     default_bg;
@@ -312,6 +319,23 @@ let create ?(scrollback = 10000) ?width_method ?(respect_alpha = false)
 let protected_cells t =
   if t.active_grid == t.alternate then t.protected_alternate
   else t.protected_primary
+
+let wrapped_rows t =
+  if t.active_grid == t.alternate then t.wrapped_alternate
+  else t.wrapped_primary
+
+(* Mark [row] as continued on the next row by auto-wrap, or not. *)
+let set_wrapped t row w =
+  if row >= 0 && row < t.rows then
+    Bytes.set (wrapped_rows t) row (if w then '\001' else '\000')
+
+let is_wrapped t row = row >= 0 && Bytes.get (wrapped_rows t) row <> '\000'
+
+(* Clear the wrap mark of [height] rows from [y], which an erasure blanked. *)
+let unwrap_rows t ~y ~height =
+  for row = y to y + height - 1 do
+    set_wrapped t row false
+  done
 
 (* Mark [width] cells from [x] on row [y] protected or not. *)
 let set_protected t ~x ~y ~width p =
@@ -440,6 +464,8 @@ let resize t ~rows ~cols =
     t.cols <- cols;
     t.protected_primary <- Bytes.make (rows * cols) '\000';
     t.protected_alternate <- Bytes.make (rows * cols) '\000';
+    t.wrapped_primary <- Bytes.make rows '\000';
+    t.wrapped_alternate <- Bytes.make rows '\000';
     let tabs = default_tabs cols in
     Array.blit t.tabs 0 tabs 0 (min cols (Array.length t.tabs));
     t.tabs <- tabs;
@@ -684,20 +710,24 @@ let clear_scrollback t =
       sb.head <- 0;
       sb.count <- 0
 
-(* Move the protection of the scroll region's rows by [n] rows, up for [n > 0]
-   and down for [n < 0], as Grid.scroll moves the cells. *)
-let scroll_protected t n =
-  if t.tracked then
-    let cells = protected_cells t and cols = t.cols in
-    let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
-    let k = abs n in
-    let keep = (bottom - top + 1 - k) * cols in
-    if n > 0 then (
-      Bytes.blit cells ((top + k) * cols) cells (top * cols) keep;
-      Bytes.fill cells ((bottom - k + 1) * cols) (k * cols) '\000')
-    else (
-      Bytes.blit cells (top * cols) cells ((top + k) * cols) keep;
-      Bytes.fill cells (top * cols) (k * cols) '\000')
+(* Move [rows] of [stride] bytes from [top] to [bottom] by [n] rows, up for
+   [n > 0] and down for [n < 0], and clear the rows the move vacates. *)
+let shift_rows bytes ~stride ~top ~bottom n =
+  let k = abs n in
+  let keep = (bottom - top + 1 - k) * stride in
+  if n > 0 then (
+    Bytes.blit bytes ((top + k) * stride) bytes (top * stride) keep;
+    Bytes.fill bytes ((bottom - k + 1) * stride) (k * stride) '\000')
+  else (
+    Bytes.blit bytes (top * stride) bytes ((top + k) * stride) keep;
+    Bytes.fill bytes (top * stride) (k * stride) '\000')
+
+(* Move the wrap marks and the protection of the scroll region's rows by [n]
+   rows, as Grid.scroll moves the cells. *)
+let scroll_marks t n =
+  let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
+  shift_rows (wrapped_rows t) ~stride:1 ~top ~bottom n;
+  if t.tracked then shift_rows (protected_cells t) ~stride:t.cols ~top ~bottom n
 
 (* Lines a scroll brings in take the current background when the style sets
    one (bce), as erased cells do. *)
@@ -722,7 +752,7 @@ let scroll_up t n =
     (* Use Grid's optimized scroll operation *)
     Grid.scroll t.active_grid ~top:t.scroll_region.top
       ~bottom:t.scroll_region.bottom n;
-    scroll_protected t n;
+    scroll_marks t n;
     fill_scrolled_in t ~y:(t.scroll_region.bottom - n + 1) ~height:n;
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
@@ -735,7 +765,7 @@ let scroll_down t n =
     (* Use Grid's optimized scroll operation *)
     Grid.scroll t.active_grid ~top:t.scroll_region.top
       ~bottom:t.scroll_region.bottom (-n);
-    scroll_protected t (-n);
+    scroll_marks t (-n);
     fill_scrolled_in t ~y:t.scroll_region.top ~height:n;
 
     mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
@@ -889,6 +919,7 @@ let put_text t text =
     Text.iter_graphemes
       (fun ~offset:off ~len:l ->
         if t.cursor.col >= line_width && t.auto_wrap_mode then (
+          set_wrapped t t.cursor.row true;
           advance_row t;
           set_cursor_pos t ~row:t.cursor.row ~col:0);
 
@@ -930,6 +961,7 @@ let put_text t text =
     while String.length !remaining > 0 do
       (* Handle pending wrap *)
       if t.cursor.col >= t.cols && t.auto_wrap_mode then (
+        set_wrapped t t.cursor.row true;
         advance_row t;
         set_cursor_pos t ~row:t.cursor.row ~col:0);
 
@@ -1014,6 +1046,29 @@ let prev_tab t col =
   let rec go x = if x <= 0 then 0 else if t.tabs.(x) then x else go (x - 1) in
   go (col - 1)
 
+(* BS and CUB move [n] columns left. With reverse-wrap (mode 45) and
+   auto-wrap set, a pending wrap takes the first step and a move past the
+   first column continues from the last column of the row above, while that
+   row wrapped onto this one, as in xterm. *)
+let cursor_back t n =
+  let rev = t.reverse_wrap && t.auto_wrap_mode in
+  let row = ref t.cursor.row and col = ref (min t.cursor.col (t.cols - 1)) in
+  let count = ref n in
+  if n > 0 then if rev && t.cursor.col >= t.cols then decr count else decr col;
+  let rec go () =
+    if !col < 0 && not (rev && is_wrapped t (!row - 1)) then col := 0
+    else (
+      if !col < 0 then (
+        decr row;
+        col := t.cols - 1);
+      decr count;
+      if !count > 0 then (
+        decr col;
+        go ()))
+  in
+  go ();
+  set_cursor_pos t ~row:!row ~col:!col
+
 (* Handle control characters *)
 let handle_control_char t code =
   match code with
@@ -1021,9 +1076,7 @@ let handle_control_char t code =
   | 0x08 ->
       (* BS: pure cursor movement, one column left. Never erases — overstrike
          sequences (nroff bold "c\bc") rely on the cell surviving. *)
-      clear_pending_wrap t;
-      if t.cursor.col > 0 then
-        set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col - 1)
+      cursor_back t 1
   | 0x09 ->
       (* HT: a pending wrap stays pending, as in xterm. *)
       if t.cursor.col < t.cols then
@@ -1146,6 +1199,7 @@ let switch_to_alternate t save_cursor =
     Bytes.fill t.protected_alternate 0
       (Bytes.length t.protected_alternate)
       '\000';
+    Bytes.fill t.wrapped_alternate 0 t.rows '\000';
     t.scroll_region.top <- 0;
     t.scroll_region.bottom <- t.rows - 1;
     mark_rows_dirty t 0 (t.rows - 1))
@@ -1175,6 +1229,7 @@ let hard_reset t =
   t.scroll_region.bottom <- t.rows - 1;
   t.origin_mode <- false;
   t.auto_wrap_mode <- true;
+  t.reverse_wrap <- false;
   t.cursor_key_mode <- false;
   t.insert_mode <- false;
   Array.fill t.charsets 0 4 'B';
@@ -1184,6 +1239,8 @@ let hard_reset t =
   t.tracked <- false;
   Bytes.fill t.protected_primary 0 (Bytes.length t.protected_primary) '\000';
   Bytes.fill t.protected_alternate 0 (Bytes.length t.protected_alternate) '\000';
+  Bytes.fill t.wrapped_primary 0 t.rows '\000';
+  Bytes.fill t.wrapped_alternate 0 t.rows '\000';
   t.bracketed_paste <- false;
   t.tabs <- default_tabs t.cols;
   mark_rows_dirty t 0 (t.rows - 1)
@@ -1196,6 +1253,7 @@ let soft_reset t =
   t.insert_mode <- false;
   t.origin_mode <- false;
   t.auto_wrap_mode <- true;
+  t.reverse_wrap <- false;
   t.cursor_key_mode <- false;
   t.style <- Ansi.Style.default;
   t.scroll_region.top <- 0;
@@ -1219,6 +1277,7 @@ let set_dec_mode t mode set =
       t.origin_mode <- set;
       set_cursor_pos t ~row:(origin_row t 0) ~col:0
   | 7 -> t.auto_wrap_mode <- set
+  | 45 -> t.reverse_wrap <- set
   | 25 -> set_cursor_visible t set
   | 47 | 1047 | 1049 ->
       if set then switch_to_alternate t (mode = 1049)
@@ -1241,13 +1300,16 @@ let erase_display t ~selective n =
         ~height:1;
       erase ~x:0 ~y:(t.cursor.row + 1) ~width:t.cols
         ~height:(t.rows - (t.cursor.row + 1));
+      unwrap_rows t ~y:t.cursor.row ~height:(t.rows - t.cursor.row);
       mark_rows_dirty t t.cursor.row (t.rows - 1)
   | 1 ->
       erase ~x:0 ~y:0 ~width:t.cols ~height:t.cursor.row;
       erase ~x:0 ~y:t.cursor.row ~width:(t.cursor.col + 1) ~height:1;
+      unwrap_rows t ~y:0 ~height:t.cursor.row;
       mark_rows_dirty t 0 t.cursor.row
   | 2 ->
       erase ~x:0 ~y:0 ~width:t.cols ~height:t.rows;
+      unwrap_rows t ~y:0 ~height:t.rows;
       mark_rows_dirty t 0 (t.rows - 1)
   | 3 -> clear_scrollback t
   | _ -> ()
@@ -1258,7 +1320,9 @@ let erase_line t ~selective n =
     erase_cells t ~selective ~x ~y:t.cursor.row ~width ~height:1
   in
   (match n with
-  | 0 -> erase ~x:t.cursor.col ~width:(t.cols - t.cursor.col)
+  | 0 ->
+      erase ~x:t.cursor.col ~width:(t.cols - t.cursor.col);
+      set_wrapped t t.cursor.row false
   | 1 -> erase ~x:0 ~width:(t.cursor.col + 1)
   | 2 -> erase ~x:0 ~width:t.cols
   | _ -> ());
@@ -1267,16 +1331,15 @@ let erase_line t ~selective n =
 let handle_control t ctrl =
   (match ctrl with
   | Ansi.Parser.(
-      ( CUU _ | CUD _ | CUF _ | CUB _ | VPA _ | ED _ | EL _ | DECSED _
-      | DECSEL _ | IL _ | DL _ | DCH _ | ICH _ | RI )) ->
+      ( CUU _ | CUD _ | CUF _ | VPA _ | ED _ | EL _ | DECSED _ | DECSEL _ | IL _
+      | DL _ | DCH _ | ICH _ | RI )) ->
       clear_pending_wrap t
   | _ -> ());
   match ctrl with
   | Ansi.Parser.CUU n -> set_cursor_pos t ~row:(row_up t n) ~col:t.cursor.col
   | Ansi.Parser.CUD n -> set_cursor_pos t ~row:(row_down t n) ~col:t.cursor.col
   | Ansi.Parser.CUF n -> move_cursor t ~row:t.cursor.row ~col:(t.cursor.col + n)
-  | Ansi.Parser.CUB n ->
-      set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col - n)
+  | Ansi.Parser.CUB n -> cursor_back t n
   | Ansi.Parser.CNL n -> set_cursor_pos t ~row:(row_down t n) ~col:0
   | Ansi.Parser.CPL n -> set_cursor_pos t ~row:(row_up t n) ~col:0
   | Ansi.Parser.CHA n -> move_cursor t ~row:t.cursor.row ~col:(n - 1)
@@ -1291,6 +1354,7 @@ let handle_control t ctrl =
       erase_region t ~x:t.cursor.col ~y:t.cursor.row
         ~width:(min (max n 1) (t.cols - t.cursor.col))
         ~height:1;
+      set_wrapped t t.cursor.row false;
       mark_row_dirty t t.cursor.row
   | Ansi.Parser.EL n -> erase_line t ~selective:false n
   | Ansi.Parser.DECSEL n -> erase_line t ~selective:true n
@@ -1314,9 +1378,11 @@ let handle_control t ctrl =
         let insert_count = min n (t.scroll_region.bottom - t.cursor.row + 1) in
         for row = t.scroll_region.bottom downto t.cursor.row + insert_count do
           copy_cells t ~src_x:0 ~src_y:(row - insert_count) ~width:t.cols
-            ~dst_x:0 ~dst_y:row
+            ~dst_x:0 ~dst_y:row;
+          set_wrapped t row (is_wrapped t (row - insert_count))
         done;
         erase_region t ~x:0 ~y:t.cursor.row ~width:t.cols ~height:insert_count;
+        unwrap_rows t ~y:t.cursor.row ~height:insert_count;
         mark_rows_dirty t t.cursor.row t.scroll_region.bottom;
         set_cursor_pos t ~row:t.cursor.row ~col:0)
   | Ansi.Parser.DL n ->
@@ -1325,11 +1391,15 @@ let handle_control t ctrl =
         let delete_count = min n (t.scroll_region.bottom - t.cursor.row + 1) in
         for row = t.cursor.row to t.scroll_region.bottom - delete_count do
           copy_cells t ~src_x:0 ~src_y:(row + delete_count) ~width:t.cols
-            ~dst_x:0 ~dst_y:row
+            ~dst_x:0 ~dst_y:row;
+          set_wrapped t row (is_wrapped t (row + delete_count))
         done;
         erase_region t ~x:0
           ~y:(t.scroll_region.bottom - delete_count + 1)
           ~width:t.cols ~height:delete_count;
+        unwrap_rows t
+          ~y:(t.scroll_region.bottom - delete_count + 1)
+          ~height:delete_count;
         mark_rows_dirty t t.cursor.row t.scroll_region.bottom;
         set_cursor_pos t ~row:t.cursor.row ~col:0)
   | Ansi.Parser.DCH n ->
@@ -1349,6 +1419,7 @@ let handle_control t ctrl =
                   ~dst_x:start_col ~dst_y:row;
               erase_region t ~x:(t.cols - delete_span) ~y:row ~width:delete_span
                 ~height:1;
+              set_wrapped t row false;
               mark_row_dirty t row)
   | Ansi.Parser.ICH n ->
       (* Insert characters: shift content right by insert_span, clear the gap.

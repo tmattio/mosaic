@@ -969,6 +969,24 @@ let selective_erase () =
   equal ~msg:"DECSTR ends selective erasure" string "      "
     (screen "\x1b[1\"qab\x1b[!p\x1b[?2K")
 
+let reverse_wrap () =
+  let screen s =
+    let vte = Vte.create ~rows:2 ~cols:4 () in
+    Vte.feed_string vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"BS crosses an automatic wrap" string "abcX\nZ   "
+    (screen "\x1b[?45habcdZ\b\bX");
+  equal ~msg:"not without mode 45" string "abcd\nX   " (screen "abcdZ\b\bX");
+  equal ~msg:"nor a line feed" string "abc \nX   "
+    (screen "\x1b[?45habc\r\nZ\b\bX");
+  equal ~msg:"a pending wrap takes the first step" string "abcX\n    "
+    (screen "\x1b[?45habcd\bX");
+  equal ~msg:"CUB crosses it too" string "abXd\nZ   "
+    (screen "\x1b[?45habcdZ\x1b[3DX");
+  equal ~msg:"DECSTR resets the mode" string "abcd\nX   "
+    (screen "\x1b[?45h\x1b[!pabcdZ\b\bX")
+
 let ris_and_decstr () =
   let run s =
     let vte = Vte.create ~rows:2 ~cols:10 () in
@@ -1297,6 +1315,7 @@ let tests =
     test "render with scrollback wrapped ring"
       render_with_scrollback_wrapped_ring;
     test "auto wrap mode" auto_wrap_mode;
+    test "reverse wrap" reverse_wrap;
     test "insert mode" insert_mode;
     test "insert mode wrap targets new row" insert_mode_wrap_targets_new_row;
     test "insert mode clips wide grapheme at margin"
