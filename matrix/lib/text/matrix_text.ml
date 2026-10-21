@@ -86,7 +86,7 @@ let uchar_width ~tab_width uchar =
    The [`Unicode] width method folds a cluster's codepoints through a small
    state machine handling VS16 emoji promotion, regional-indicator pairs,
    spacing marks, and Indic virama conjuncts. The whole state is one immediate
-   int: the accumulated cluster width in the bits above bit 2 and three flags below.
+   int: the accumulated cluster width in the bits above bit 3 and four flags below.
    Invariant: the width bits are [0] while [ws_has_width] is unset.
 
    The initial state is [0]; [ws_step] handles the first codepoint of a
@@ -96,17 +96,18 @@ let uchar_width ~tab_width uchar =
 let ws_has_width = 1 (* cluster has a base width *)
 let ws_ri_pair = 2 (* last codepoint was the first RI of a pair *)
 let ws_virama = 4 (* last codepoint was a virama *)
-let[@inline] ws_make w flags = (w lsl 3) lor flags
-let[@inline] ws_width state = state lsr 3
+let ws_emoji = 8 (* last codepoint was a narrow emoji *)
+let[@inline] ws_make w flags = (w lsl 4) lor flags
+let[@inline] ws_width state = state lsr 4
 
 (* [ws_step cp cp_w state] advances the state machine by the codepoint [cp]
    whose individual display width is [cp_w]. *)
 let[@inline] ws_step ~wide cp cp_w state =
-  let flags = state land 7 in
+  let flags = state land 15 in
   if cp = 0xFE0F then
-    if flags land ws_has_width <> 0 && ws_width state = 1 then ws_make 2 flags
+    if flags land ws_emoji <> 0 && ws_width state = 1 then ws_make 2 flags
     else state
-  else if is_virama cp then state lor ws_virama
+  else if is_virama cp then state land lnot ws_emoji lor ws_virama
   else if is_regional_indicator cp then
     if flags land ws_ri_pair <> 0 then
       ws_make (ws_width state + cp_w) ws_has_width
@@ -117,9 +118,11 @@ let[@inline] ws_step ~wide cp cp_w state =
     wide
     && flags land ws_has_width <> 0
     && not (Unicode.is_zero_in_grapheme (Uchar.unsafe_of_int cp))
-  then ws_make (max 2 (ws_width state)) (flags land lnot ws_virama)
+  then
+    ws_make (max 2 (ws_width state)) (flags land lnot (ws_virama lor ws_emoji))
   else if flags land ws_has_width <> 0 && cp_w > 0 && is_wide_spacing_mark cp
-  then ws_make (max 2 (ws_width state)) (flags land lnot ws_virama)
+  then
+    ws_make (max 2 (ws_width state)) (flags land lnot (ws_virama lor ws_emoji))
   else if
     flags land ws_has_width <> 0
     && flags land ws_virama <> 0
@@ -128,8 +131,12 @@ let[@inline] ws_step ~wide cp cp_w state =
     let add = if cp <> 0x0930 && cp_w > 0 then cp_w else 0 in
     ws_make (ws_width state + add) (flags lor ws_has_width land lnot ws_virama)
   else if flags land ws_has_width = 0 && cp_w > 0 then
-    ws_make cp_w (flags lor ws_has_width land lnot ws_virama)
-  else state land lnot ws_virama
+    let emoji =
+      if cp_w = 1 && Unicode.is_emoji (Uchar.unsafe_of_int cp) then ws_emoji
+      else 0
+    in
+    ws_make cp_w (flags lor ws_has_width lor emoji land lnot ws_virama)
+  else state land lnot (ws_virama lor ws_emoji)
 
 let rec grapheme_width_unicode_loop ~wide str limit tab_width i state =
   if i >= limit then ws_width state

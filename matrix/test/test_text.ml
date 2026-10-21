@@ -718,6 +718,14 @@ let emoji_presentation_widths () =
   let heart_vs16 = uchar_to_utf8 0x2764 ^ uchar_to_utf8 0xFE0F in
   check_width "heart with VS16 = width 2" 2
     (measure ~width_method:`Unicode ~tab_width:2 heart_vs16);
+  let vs16 base =
+    measure ~width_method:`Unicode ~tab_width:2 (base ^ "\u{FE0F}")
+  in
+  check_width "VS16 widens a narrow emoji" 2 (vs16 "\u{263A}");
+  check_width "VS16 widens a keycap base" 2 (vs16 "1");
+  check_width "VS16 leaves a letter" 1 (vs16 "a");
+  check_width "VS16 leaves a space" 1 (vs16 " ");
+  check_width "VS16 leaves a mark" 1 (vs16 "1\u{301}");
   let flag = uchar_to_utf8 0x1F1FA ^ uchar_to_utf8 0x1F1F8 in
   check_width "flag pair = width 2" 2
     (measure ~width_method:`Unicode ~tab_width:2 flag);

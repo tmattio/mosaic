@@ -7,7 +7,8 @@
    Layout per 16-bit entry: - bits 0-4: gcb (grapheme_cluster_break, values
    0-17) - bits 5-6: incb (indic_conjunct_break, values 0-3) - bit 7: extpic
    (extended_pictographic, boolean) - bits 8-9: width (encoded: 0=-1, 1=0, 2=1,
-   3=2) - bit 10: zero width inside a grapheme *)
+   3=2) - bit 10: zero width inside a grapheme - bit 11: emoji
+   (boolean) *)
 
 (* Surrogate packing: skip 0xD800-0xDFFF range *)
 let[@inline] pack_u u = if u > 0xd7ff then u - 0x800 else u
@@ -29,6 +30,7 @@ let[@inline] grapheme_cluster_break u = packed_props u land 0x1F
 let[@inline] indic_conjunct_break u = (packed_props u lsr 5) land 0x03
 let[@inline] is_extended_pictographic u = packed_props u land 0x80 <> 0
 let[@inline] tty_width_hint u = ((packed_props u lsr 8) land 0x03) - 1
+let[@inline] is_emoji u = packed_props u land 0x800 <> 0
 
 (* Combined lookup - returns packed (gcb, incb, extpic) in one access. Returns:
    bits 0-4 = gcb, bits 5-6 = incb, bit 7 = extpic *)
