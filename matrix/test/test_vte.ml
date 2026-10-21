@@ -1285,6 +1285,10 @@ let character_sets () =
   equal ~msg:"British" string "a\xc2\xa3    " (line "\x1b(Aa#");
   equal ~msg:"German" string "\xc3\x84\xc3\x9c\xc3\xa4\xc3\xbc  "
     (line "\x1b(K[]{}");
+  equal ~msg:"Dutch and French" string "\u{0133}\u{00e0}    "
+    (line "\x1b(4[\x1b(R@");
+  equal ~msg:"Swedish in G1" string "\u{00c9}\u{00fc}    " (line "\x1b)7\x0e@~");
+  equal ~msg:"Swiss" string "\u{00f9}\u{00e8}    " (line "\x1b(=#_");
   equal ~msg:"DECRC restores the designations" string "\xe2\x94\x80     "
     (line "\x1b(0\x1b7\x1b(B\x1b8q")
 
