@@ -393,7 +393,7 @@ let delete_characters_wide () =
   Vte.feed_string vte "中A";
   Vte.feed_string vte "\r\x1b[P";
   let grid = Vte.grid vte in
-  equal ~msg:"wide character removed entirely" string "A" (get_line grid 0);
+  equal ~msg:"half left behind blanked" string " A" (get_line grid 0);
   is_false ~msg:"no orphan continuation" (Grid.is_continuation grid 0)
 
 let insert_characters_wide_boundary () =
@@ -416,6 +416,12 @@ let edit_on_wide_right_half () =
   in
   equal ~msg:"DCH" string "a b   " (screen "\x1b[P");
   equal ~msg:"ICH" string "a   b " (screen "\x1b[@")
+
+let dch_ending_on_wide_left_half () =
+  (* DCH deletes the cells asked for and blanks the half left behind. *)
+  let vte = Vte.create ~rows:1 ~cols:8 () in
+  Vte.feed_string vte "a中b\r\x1b[2P";
+  equal ~msg:"two cells" string " b      " (Vte.to_string vte)
 
 let shift_wide_over_wide () =
   (* A wide character moved onto the halves of another keeps both halves. *)
@@ -1340,6 +1346,7 @@ let tests =
     test "delete characters wide grapheme" delete_characters_wide;
     test "insert characters wide boundary" insert_characters_wide_boundary;
     test "edit on wide right half" edit_on_wide_right_half;
+    test "DCH ending on wide left half" dch_ending_on_wide_left_half;
     test "shift wide over wide" shift_wide_over_wide;
     test "SGR bold" sgr_bold;
     test "SGR italic" sgr_italic;
