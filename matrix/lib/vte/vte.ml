@@ -1221,21 +1221,10 @@ let handle_control t ctrl =
         if row >= 0 && row < t.rows then
           let start_col = edit_start t row in
           if start_col < t.cols then
-            let delete_span =
-              let rec loop col remaining acc =
-                if col >= t.cols || remaining <= 0 then acc
-                else
-                  let start, w =
-                    grapheme_start_and_width t.active_grid row col
-                  in
-                  let next_col = start + w in
-                  loop next_col (remaining - w) (acc + w)
-              in
-              let span = loop start_col n 0 in
-              min span (t.cols - start_col)
-            in
+            let delete_span = min n (t.cols - start_col) in
             if delete_span > 0 then (
               let src_x = start_col + delete_span in
+              blank_cut_wide t row src_x;
               let move_width = t.cols - src_x in
               if move_width > 0 then
                 Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x
