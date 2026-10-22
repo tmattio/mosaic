@@ -37,12 +37,9 @@ let cold_reflow ((_, surface) as input) =
 
 let editor_text = String.make 1_000_000 'x'
 
-let edit buffer =
-  Edit_buffer.set_cursor buffer 500_000;
-  ignore (Edit_buffer.insert buffer "y" : bool);
-  let length = Edit_buffer.length buffer in
-  ignore (Edit_buffer.undo buffer : bool);
-  length
+let edit editor =
+  let edited = Editor.insert "y" editor in
+  Editor.length edited + Editor.length (Editor.undo edited)
 
 let paint_surface content ~height ~scroll_x =
   let renderer, surface =
@@ -149,12 +146,11 @@ let memory_check () =
 let history_check () =
   Gc.full_major ();
   let before = (Gc.stat ()).live_words in
-  let buffer = Edit_buffer.create ~max_length:2_000_000 editor_text in
+  let editor = ref (Editor.of_string editor_text) in
   let old_sources = Weak.create 200 in
   for i = 0 to 199 do
-    Weak.set old_sources i (Some (Edit_buffer.source buffer));
-    Edit_buffer.set_cursor buffer 500_000;
-    ignore (Edit_buffer.insert buffer "y" : bool)
+    Weak.set old_sources i (Some (Editor.source !editor));
+    editor := !editor |> Editor.set_cursor 500_000 |> Editor.insert "y"
   done;
   Gc.full_major ();
   let live = ((Gc.stat ()).live_words - before) * (Sys.word_size / 8) in
@@ -163,7 +159,7 @@ let history_check () =
       failwith "undo retained an obsolete source index"
   done;
   Printf.printf "200-version-history-and-current-index=%d bytes\n" live;
-  ignore (Sys.opaque_identity buffer)
+  ignore (Sys.opaque_identity !editor)
 
 let () =
   if Array.length Sys.argv = 2 && Sys.argv.(1) = "memory" then memory_check ()
@@ -197,12 +193,7 @@ let () =
           "styles/same-text-layout-100k" restyle_layout;
         Thumper.bench_with_setup
           ~setup:(fun () -> editor_text)
-          "index/create-1mb"
-          (fun text -> Edit_buffer.create ~max_length:2_000_000 text);
-        Thumper.bench_with_setup
-          ~setup:(fun () -> Edit_buffer.create ~max_length:2_000_000 "")
-          "index/set-text-1mb"
-          (fun buffer -> Edit_buffer.set_text buffer editor_text);
+          "index/create-1mb" Editor.of_string;
         Thumper.bench_with_setup
           ~setup:(fun () -> make_surface plain)
           "reflow/label" reflow;
@@ -214,7 +205,7 @@ let () =
           "reflow/styled-100k-cold" cold_reflow;
         Thumper.bench_with_setup
           ~setup:(fun () ->
-            Edit_buffer.create ~max_length:2_000_000 editor_text)
+            Editor.of_string editor_text |> Editor.set_cursor 500_000)
           "edit/1mb-middle-undo" edit;
         Thumper.bench_with_setup
           ~setup:(fun () ->

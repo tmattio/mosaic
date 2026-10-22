@@ -267,10 +267,29 @@ let value t = Editor.text t.props.state
 let cursor t = Editor.cursor t.props.state
 let selection t = Editor.selection t.props.state
 
+(* Single-line editors drop CR, LF and CRLF from inserted text. Text without
+   them is returned as is. *)
+let strip_newlines s =
+  let buf = Buffer.create (String.length s) in
+  let len = String.length s in
+  let i = ref 0 in
+  while !i < len do
+    let c = String.unsafe_get s !i in
+    if c = '\r' then
+      begin if !i + 1 < len && String.unsafe_get s (!i + 1) = '\n' then
+        i := !i + 2
+      else incr i
+      end
+    else if c = '\n' then incr i
+    else begin
+      Buffer.add_char buf c;
+      incr i
+    end
+  done;
+  if Buffer.length buf = len then s else Buffer.contents buf
+
 let sanitize_text t s =
-  match t.mode with
-  | `Multiline -> s
-  | `Single_line -> Edit_buffer.strip_newlines s
+  match t.mode with `Multiline -> s | `Single_line -> strip_newlines s
 
 (* Line info *)
 
@@ -548,7 +567,7 @@ let register_selection t =
                 Text_surface.local_caret t.surface ~x:(focus.x - nx)
                   ~y:(focus.y - ny)
               in
-              Editor.Private.select_carets ~anchor ~cursor:focus base
+              Editor.select_carets ~anchor ~cursor:focus base
         in
         propose t ~base next;
         Option.is_some (Editor.selection t.props.state))
@@ -568,12 +587,12 @@ let move_vertical t ~select ~delta =
   if target_line < 0 || target_line >= Layout.row_count layout then base
   else
     let col =
-      match Editor.Private.preferred_col base with
+      match Editor.preferred_col base with
       | Some col -> col
       | None -> cursor_visual_col t line
     in
     let next = Editor.set_caret ~select (caret_at_col t target_line col) base in
-    Editor.Private.propose ~base ~preferred_col:(Some col) next
+    Editor.propose ~base ~preferred_col:(Some col) next
 
 let move_visual_line_start t ~select =
   let layout = Text_surface.layout t.surface in
@@ -673,7 +692,7 @@ let run_action t action =
   | Newline when t.mode = `Multiline -> Some (Editor.insert "\n" base)
   | Newline | Submit ->
       fire_on_submit t;
-      Some (Editor.Private.propose ~base ~preferred_col:None base)
+      Some (Editor.propose ~base ~preferred_col:None base)
   | Undo -> Some (Editor.undo base)
   | Redo -> Some (Editor.redo base)
   | Word_forward -> Some (Editor.move_word_forward base)
@@ -709,9 +728,7 @@ let handle_key t (ev : Event.key) =
       | Some next ->
           Event.Key.prevent_default ev;
           let next =
-            Editor.Private.propose ~base
-              ~preferred_col:(Editor.Private.preferred_col next)
-              next
+            Editor.propose ~base ~preferred_col:(Editor.preferred_col next) next
           in
           propose t ~base next)
 

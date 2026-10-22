@@ -10,7 +10,6 @@ module Text_buffer = Text_buffer
 module Text_surface = Text_surface
 module Text = Text
 module Slider = Slider
-module Edit_buffer = Edit_buffer
 module Syntax_highlight = Syntax_highlight
 module Syntax_style = Syntax_style
 module Text_input = Text_input

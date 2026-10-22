@@ -9,7 +9,7 @@
       descriptions.
     - {b Text primitives.} {!Text_buffer} for styled text storage,
       {!Text_surface} for viewport-aware text rendering with wrapping, and
-      {!Edit_buffer} for grapheme-aware editing with undo.
+      {!Editor} for persistent grapheme-aware editing with undo.
     - {b Widget catalogue.} {!Box}, {!Text}, {!Slider}, {!Text_input},
       {!Canvas}, {!Select}, {!Tab_select}, {!Markdown}, {!Spinner},
       {!Progress_bar}, {!Textarea}, {!Scroll_bar}, {!Scroll_box}, {!Table},
@@ -44,7 +44,6 @@ module Text_buffer = Text_buffer
 module Text_surface = Text_surface
 (** Text rendering surface with wrapping, viewport, and selection. *)
 
-module Edit_buffer = Edit_buffer
 (** Grapheme-aware text editing buffer with cursor, selection, and undo. *)
 
 module Syntax_highlight = Syntax_highlight

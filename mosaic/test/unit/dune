@@ -86,12 +86,6 @@
  (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi test_harness))
 
 (test
- (name test_edit_buffer)
- (modules test_edit_buffer)
- (package mosaic)
- (libraries windtrap mosaic.ui matrix matrix.text))
-
-(test
  (name test_text_input)
  (modules test_text_input)
  (package mosaic)

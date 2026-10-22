@@ -1,27 +1,8 @@
-module Buffer = struct
+module Engine = struct
   module Layout = Matrix.Text.Layout
   module Source = Layout.Source
 
   (* ───── Helpers ───── *)
-
-  let strip_newlines s =
-    let buf = Buffer.create (String.length s) in
-    let len = String.length s in
-    let i = ref 0 in
-    while !i < len do
-      let c = String.unsafe_get s !i in
-      if c = '\r' then
-        begin if !i + 1 < len && String.unsafe_get s (!i + 1) = '\n' then
-          i := !i + 2
-        else incr i
-        end
-      else if c = '\n' then incr i
-      else begin
-        Buffer.add_char buf c;
-        incr i
-      end
-    done;
-    if Buffer.length buf = len then s else Buffer.contents buf
 
   let indexed_text s max_graphemes =
     let source = Source.of_string s in
@@ -42,12 +23,10 @@ module Buffer = struct
     mutable cursor_pos : int;
     mutable affinity : Layout.affinity;
     mutable selection_anchor : int option;
-    mutable max_length : int;
+    max_length : int;
     mutable undo_stack : snapshot list;
     mutable redo_stack : snapshot list;
     mutable cache : Source.t option;
-    tab_width : int;
-    width_method : Matrix.Text.width_method;
     mutable revision : unit ref;
     mutable base : unit ref option;
     mutable preferred_col : int option;
@@ -70,10 +49,8 @@ module Buffer = struct
 
   (* ───── Construction ───── *)
 
-  let create ?(max_length = 1000) ?(width_method = `Unicode) ?(tab_width = 2)
-      initial =
+  let create ~max_length initial =
     let max_length = Int.max 0 max_length in
-    let tab_width = Int.max 1 tab_width in
     let source = indexed_text initial max_length in
     {
       content = Source.text source;
@@ -84,8 +61,6 @@ module Buffer = struct
       undo_stack = [];
       redo_stack = [];
       cache = Some source;
-      tab_width;
-      width_method;
       revision = ref ();
       base = None;
       preferred_col = None;
@@ -107,39 +82,11 @@ module Buffer = struct
 
   let text t = t.content
 
-  let set_text t s =
-    let source = indexed_text s t.max_length in
-    t.affinity <- Layout.Downstream;
-    t.content <- Source.text source;
-    t.cache <- Some source;
-    t.cursor_pos <- Source.length source;
-    t.selection_anchor <- None
-
   let length t =
     let c = ensure_cache t in
     Source.length c
 
-  let display_width t =
-    let c = ensure_cache t in
-    Source.columns ~width_method:t.width_method ~tab_width:t.tab_width c
-      ~first:0 ~last:(Source.length c)
-
   let is_empty t = String.length t.content = 0
-
-  (* ───── Line information ───── *)
-
-  let line_count t =
-    let c = ensure_cache t in
-    Source.line_count c
-
-  let cursor_line t =
-    let c = ensure_cache t in
-    find_line c t.cursor_pos
-
-  let cursor_col t =
-    let c = ensure_cache t in
-    let line = find_line c t.cursor_pos in
-    t.cursor_pos - Source.line_start c line
 
   (* ───── Cursor ───── *)
 
@@ -152,10 +99,6 @@ module Buffer = struct
     t.selection_anchor <- None
 
   let caret t = Layout.{ grapheme = t.cursor_pos; affinity = t.affinity }
-
-  let cursor_display_offset t =
-    Source.columns ~width_method:t.width_method ~tab_width:t.tab_width
-      (ensure_cache t) ~first:0 ~last:t.cursor_pos
 
   (* ───── Selection ───── *)
 
@@ -291,23 +234,6 @@ module Buffer = struct
       save_undo t;
       delete_grapheme_range t 0 (length t);
       true
-    end
-
-  (* ───── Max length ───── *)
-
-  let max_length t = t.max_length
-
-  let set_max_length t n =
-    let n = Int.max 0 n in
-    t.max_length <- n;
-    let c = ensure_cache t in
-    if Source.length c > n then begin
-      let byte_end = byte_offset_of_grapheme_in_content c n in
-      t.content <- String.sub t.content 0 byte_end;
-      invalidate_cache t;
-      let new_len = n in
-      if t.cursor_pos > new_len then t.cursor_pos <- new_len;
-      t.selection_anchor <- None
     end
 
   (* ───── Editing ───── *)
@@ -474,26 +400,6 @@ module Buffer = struct
         true
       end
 
-  let delete_to_start t =
-    if has_selection t then delete_selection t
-    else if t.cursor_pos = 0 then false
-    else begin
-      save_undo t;
-      delete_grapheme_range t 0 t.cursor_pos;
-      true
-    end
-
-  let delete_to_end t =
-    if has_selection t then delete_selection t
-    else
-      let c = ensure_cache t in
-      if t.cursor_pos >= Source.length c then false
-      else begin
-        save_undo t;
-        delete_grapheme_range t t.cursor_pos (Source.length c);
-        true
-      end
-
   let delete_line t =
     let c = ensure_cache t in
     if Source.length c = 0 then false
@@ -636,150 +542,117 @@ module Buffer = struct
     let pos = Int.max 0 (Int.min pos (Source.length c)) in
     ignore (update_cursor_with_selection t ~select pos : bool)
 
-  (* ───── Offset conversions ───── *)
-
-  let line_of_offset t pos =
-    let c = ensure_cache t in
-    let pos = Int.max 0 (Int.min pos (Source.length c)) in
-    find_line c pos
-
-  let col_of_offset t pos =
-    let c = ensure_cache t in
-    let pos = Int.max 0 (Int.min pos (Source.length c)) in
-    let line = find_line c pos in
-    pos - Source.line_start c line
-
-  let line_start t line =
-    let c = ensure_cache t in
-    let line = Int.max 0 (Int.min line (Source.line_count c - 1)) in
-    Source.line_start c line
-
-  let line_end t line =
-    let c = ensure_cache t in
-    let line = Int.max 0 (Int.min line (Source.line_count c - 1)) in
-    if line + 1 < Source.line_count c then Source.line_start c (line + 1) - 1
-    else Source.length c
-
-  let byte_offset t ~grapheme =
-    let c = ensure_cache t in
-    byte_offset_of_grapheme_in_content c grapheme
-
   let set_caret ?(select = false) t (caret : Layout.caret) =
     set_cursor_offset ~select t caret.grapheme;
     t.affinity <- caret.affinity
 end
 
-type t = Buffer.t
+type t = Engine.t
 
-let of_string ?(max_length = max_int) text = Buffer.create ~max_length text
+let of_string ?(max_length = max_int) text = Engine.create ~max_length text
 let empty = of_string ""
-let text = Buffer.text
-let length = Buffer.length
-let cursor = Buffer.cursor
-let caret = Buffer.caret
-let selection = Buffer.selection
-let selected_text = Buffer.selected_text
-let source = Buffer.source
+let text = Engine.text
+let length = Engine.length
+let cursor = Engine.cursor
+let caret = Engine.caret
+let selection = Engine.selection
+let selected_text = Engine.selected_text
+let source = Engine.source
 
 let accept ~current proposal =
-  match proposal.Buffer.base with
-  | Some base when base != current.Buffer.revision -> current
+  match proposal.Engine.base with
+  | Some base when base != current.Engine.revision -> current
   | _ -> proposal
 
 let transform f t =
-  let next = Buffer.copy t in
+  let next = Engine.copy t in
   f next;
-  if Buffer.same t next && t.Buffer.preferred_col = None then t
+  if Engine.same t next && t.Engine.preferred_col = None then t
   else begin
-    ignore (Buffer.source next : Matrix.Text.Layout.Source.t);
+    ignore (Engine.source next : Matrix.Text.Layout.Source.t);
     next.revision <- ref ();
     next.base <- Some t.revision;
     next.preferred_col <- None;
     next
   end
 
-let insert text = transform (fun t -> ignore (Buffer.insert t text : bool))
-let clear = transform (fun t -> ignore (Buffer.clear t : bool))
+let insert text = transform (fun t -> ignore (Engine.insert t text : bool))
+let clear = transform (fun t -> ignore (Engine.clear t : bool))
 
 let set_cursor ?(select = false) pos =
-  transform (fun t -> Buffer.set_cursor_offset ~select t pos)
+  transform (fun t -> Engine.set_cursor_offset ~select t pos)
 
 let set_caret ?(select = false) caret =
-  transform (fun t -> Buffer.set_caret ~select t caret)
+  transform (fun t -> Engine.set_caret ~select t caret)
 
 let select ~anchor ~cursor =
   transform (fun t ->
-      Buffer.set_cursor t anchor;
-      Buffer.set_cursor_offset ~select:true t cursor)
+      Engine.set_cursor t anchor;
+      Engine.set_cursor_offset ~select:true t cursor)
 
-let clear_selection = transform Buffer.clear_selection
-let select_all = transform Buffer.select_all
+let clear_selection = transform Engine.clear_selection
+let select_all = transform Engine.select_all
 
 let delete_backward =
-  transform (fun t -> ignore (Buffer.delete_backward t : bool))
+  transform (fun t -> ignore (Engine.delete_backward t : bool))
 
 let delete_forward =
-  transform (fun t -> ignore (Buffer.delete_forward t : bool))
+  transform (fun t -> ignore (Engine.delete_forward t : bool))
 
 let delete_word_backward =
-  transform (fun t -> ignore (Buffer.delete_word_backward t : bool))
+  transform (fun t -> ignore (Engine.delete_word_backward t : bool))
 
 let delete_word_forward =
-  transform (fun t -> ignore (Buffer.delete_word_forward t : bool))
+  transform (fun t -> ignore (Engine.delete_word_forward t : bool))
 
 let delete_to_line_start =
-  transform (fun t -> ignore (Buffer.delete_to_line_start t : bool))
+  transform (fun t -> ignore (Engine.delete_to_line_start t : bool))
 
 let delete_to_line_end =
-  transform (fun t -> ignore (Buffer.delete_to_line_end t : bool))
+  transform (fun t -> ignore (Engine.delete_to_line_end t : bool))
 
-let delete_line = transform (fun t -> ignore (Buffer.delete_line t : bool))
-let undo = transform (fun t -> ignore (Buffer.undo t : bool))
-let redo = transform (fun t -> ignore (Buffer.redo t : bool))
+let delete_line = transform (fun t -> ignore (Engine.delete_line t : bool))
+let undo = transform (fun t -> ignore (Engine.undo t : bool))
+let redo = transform (fun t -> ignore (Engine.redo t : bool))
 
 let move_left ?(select = false) =
-  transform (fun t -> ignore (Buffer.move_left ~select t : bool))
+  transform (fun t -> ignore (Engine.move_left ~select t : bool))
 
 let move_right ?(select = false) =
-  transform (fun t -> ignore (Buffer.move_right ~select t : bool))
+  transform (fun t -> ignore (Engine.move_right ~select t : bool))
 
 let move_word_backward ?(select = false) =
-  transform (fun t -> ignore (Buffer.move_word_backward ~select t : bool))
+  transform (fun t -> ignore (Engine.move_word_backward ~select t : bool))
 
 let move_word_forward ?(select = false) =
-  transform (fun t -> ignore (Buffer.move_word_forward ~select t : bool))
+  transform (fun t -> ignore (Engine.move_word_forward ~select t : bool))
 
 let move_home ?(select = false) =
-  transform (fun t -> ignore (Buffer.move_home ~select t : bool))
+  transform (fun t -> ignore (Engine.move_home ~select t : bool))
 
 let move_end ?(select = false) =
-  transform (fun t -> ignore (Buffer.move_end ~select t : bool))
+  transform (fun t -> ignore (Engine.move_end ~select t : bool))
 
 let move_line_start ?(select = false) =
-  transform (fun t -> ignore (Buffer.move_line_start ~select t : bool))
+  transform (fun t -> ignore (Engine.move_line_start ~select t : bool))
 
 let move_line_end ?(select = false) =
-  transform (fun t -> ignore (Buffer.move_line_end ~select t : bool))
+  transform (fun t -> ignore (Engine.move_line_end ~select t : bool))
 
-module Private = struct
-  module Buffer = Buffer
+let preferred_col t = t.Engine.preferred_col
 
-  let preferred_col t = t.Buffer.preferred_col
+let select_carets ~anchor ~cursor =
+  transform (fun t ->
+      Engine.set_caret t anchor;
+      Engine.set_caret ~select:true t cursor)
 
-  let select_carets ~anchor ~cursor =
-    transform (fun t ->
-        Buffer.set_caret t anchor;
-        Buffer.set_caret ~select:true t cursor)
-
-  let propose ~base ~preferred_col next =
-    if Buffer.same base next && base.Buffer.preferred_col = preferred_col then
-      base
-    else if
-      (match next.base with
-        | Some revision -> revision == base.revision
-        | None -> false)
-      && next.preferred_col = preferred_col
-    then next
-    else
-      { next with revision = ref (); base = Some base.revision; preferred_col }
-end
+let propose ~base ~preferred_col next =
+  if Engine.same base next && base.Engine.preferred_col = preferred_col then
+    base
+  else if
+    (match next.base with
+      | Some revision -> revision == base.revision
+      | None -> false)
+    && next.preferred_col = preferred_col
+  then next
+  else { next with revision = ref (); base = Some base.revision; preferred_col }

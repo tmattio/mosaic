@@ -1,9 +1,10 @@
 (** Editable text rendering surfaces.
 
-    [Edit_surface] connects an {!Edit_buffer.t} to a {!Text_surface.t}. It
-    synchronizes edited content into styled text storage and adds cursor
-    display, focus styling, keyboard actions, paste handling, selection, and
-    cursor-visible scrolling.
+    [Edit_surface] displays an accepted {!Editor.t} through a {!Text_surface.t},
+    with cursor display, focus styling and cursor-visible scrolling. Keys,
+    pastes and pointer gestures become proposals: the whole next {!Editor.t},
+    handed to the change callback. The surface never commits a proposal itself;
+    it displays the state it is next given.
 
     This module is an implementation module for editable text widgets such as
     {!Textarea}. *)
