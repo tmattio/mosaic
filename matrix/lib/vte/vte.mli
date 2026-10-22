@@ -1,36 +1,139 @@
-(** Virtual terminal emulator.
+(** Terminal emulator.
 
-    A virtual terminal emulator (VTE) processes raw byte streams containing
-    ANSI/VT100 escape sequences and maintains the resulting terminal state: a
-    visible {!Matrix_grid.t}, cursor position, style, scrollback history, and
-    mode flags.
+    A program running in a terminal writes bytes: the characters it shows, and
+    the coded forms of control functions that move the cursor, edit the screen
+    or ask the terminal something ({!Ansi.Parser} reads them). [t] applies those
+    bytes to a model of a DEC VT-series terminal as xterm extends it, and keeps
+    what a renderer shows: the cells of the screen, the cursor, and the lines
+    scrolled off the top. It does no I/O: the answers the program asked for wait
+    in {!take_replies}.
 
-    The emulator maintains two screen buffers. The {e primary screen} has
-    optional scrollback history; the {e alternate screen} is a temporary buffer
-    used by full-screen applications like [vi] or [less] and never accumulates
-    scrollback. The VTE automatically switches between buffers in response to
-    DECSET/DECRST sequences.
+    The screen is a function of the bytes, never of how they were split into
+    {!feed} calls.
 
-    {b Dirty tracking.} Grid, cursor, and style mutations flip a dirty flag (see
-    {!is_dirty} and {!dirty_rows}). Metadata changes such as {!title} updates or
-    mode toggles do {e not} mark the VTE dirty; track those separately if you
-    display them.
+    {1:model The model}
 
-    {b Thread safety.} Values of type {!t} are mutable and {e not} thread-safe.
+    {2:cursor The cursor}
 
-    {1:invariants Invariants}
+    The {e cursor state} decides where and how the next character is written:
+    - the position;
+    - the {e Last Column Flag};
+    - the {e pen}: the rendition SGR selects, the hyperlink OSC 8 opens, and
+      whether DECSCA protects the characters written next;
+    - the character sets designated as G0 to G3 and the one invoked into GL;
+    - origin mode (DECOM).
 
-    - Cursor row satisfies [0 <= row < rows t]. Column satisfies
-      [0 <= col <= cols t]; [col = cols t] encodes the pending-wrap column
-      required by DECAWM.
-    - Scroll region is always within \[[0]; [{!rows} - 1]\].
-    - The active grid is either primary or alternate, never both.
-    - Scrollback only accumulates on the primary screen. *)
+    DECSC saves exactly this and DECRC restores it. Autowrap (DECAWM) is a
+    setting, not part of it: DEC's VT220, VT420 and VT510, measured, restore the
+    flag and not the mode.
+
+    A character printed into the last column with autowrap on leaves the cursor
+    on it with the Last Column Flag set; the next character first moves to the
+    start of the next line. Every function that sets the cursor position or
+    changes cells clears the flag. HT and CHT keep it, since they never leave
+    the last column; SGR, settings, DECSC and reports keep it too. With autowrap
+    off the flag is never set, and a character printed at the last column
+    replaces the one there. Cursor reports never show the flag: the cursor is in
+    the last column.
+
+    {2:screens Screens}
+
+    The terminal has two screens, primary and alternate. Each has its own cells,
+    its own wrap marks and its own DECSC slot, which holds the power-up cursor
+    state until DECSC fills it; everything else is shared. xterm's modes 47,
+    1047 and 1049 switch to the alternate screen and clear it; 1049 also saves
+    the cursor on entry and restores it on leaving.
+
+    A row's {e wrap mark} says that its text goes on at the start of the next
+    row because autowrap moved there. Only printing sets it; an edit that
+    reaches the row's last column or moves its cells sideways clears it, and a
+    scroll moves it with the row. Rows scrolled off the top of the primary
+    screen, while the scroll region starts at the first row, enter the
+    scrollback with their mark.
+
+    {2:blanks Blanks}
+
+    Every cell an erase, insertion, deletion or scroll empties becomes a
+    {e blank}: a space with no attributes, unprotected, on the pen's background
+    colour. ECMA-48 puts such cells "into the erased state" (§8.3.26, DCH); the
+    colour is xterm's, which terminfo advertises as [bce]. A wide character such
+    an operation cuts becomes blanks of the same colour. Selective erase
+    (DECSED, DECSEL) instead turns the characters of unprotected cells into
+    spaces and keeps their rendition: it "does not affect video line attributes
+    or video character attributes (SGR)" (VT220 Programmer Reference Manual
+    §4.12).
+
+    {2:printing Printing}
+
+    Characters are placed by display unit, as {!Matrix_text.Segmenter} cuts them
+    under the grid's width method: a grapheme cluster, or a wcwidth unit. The
+    terminal places a unit as soon as it has a width, before it knows that the
+    unit is complete, and places it again from the same position when later
+    characters extend it; a unit never narrows. For the screen not to depend on
+    where the output was split, placement follows four rules:
+    + a unit that does not fit before the right margin, with autowrap on, first
+      erases the cells from its position to the margin, then moves to the next
+      line. xterm leaves those cells alone; but a unit placed narrow and then
+      widened past the margin must vacate the cells it wrote, and the screen
+      must not show whether that happened;
+    + with autowrap off, a unit that does not fit ends at the margin, replacing
+      what is there;
+    + in insert mode (IRM) a unit moves the rest of the line right by its width,
+      and by its growth when it widens;
+    + a unit wider than the line is narrowed to it.
+
+    A control function ends the unit in progress. A unit of no width that
+    continues nothing, such as U+200B, or a combining mark after a control
+    function, joins the character in the cell before the cursor, or in the
+    cursor's cell when the Last Column Flag is set, without changing its width
+    or rendition; with no such cell it is dropped. The cell before the cursor
+    holds the character a mark after an SGR change belongs to, and is found from
+    the cursor alone, whatever came before. xterm instead joins the cell it last
+    wrote, or after a cursor motion the cell at the cursor: after [ab], CUB and
+    a combining acute accent it accents [b] where this terminal accents [a]. No
+    cell holds a control character: U+0080 to U+009F are not controls in UTF-8
+    and never reach a cell ({!Ansi.Parser}).
+
+    REP repeats the unit printed just before it, if nothing came between them
+    (ECMA-48 §8.3.103), as many times as asked, each repetition a unit of its
+    own. Its work is bounded by the screen and the scrollback, whatever the
+    count.
+
+    Character sets translate characters before units are formed: DEC Special
+    Graphics, the UK set and the national replacement sets (VT220 Programmer
+    Reference Manual tables 2-5 to 2-15), invoked by SI, SO, LS2 and LS3.
+
+    {2:parameters Parameters}
+
+    For counts and positions 0 means the default, as an absent parameter does
+    (VT510 §4.3.3). A count acts only as far as it can: [CSI 99999 C] stops at
+    the right margin.
+
+    {2:replies Replies}
+
+    The terminal answers:
+    - DA ([CSI c]) with [CSI ? 1 ; 2 c], a VT100 with Advanced Video, and DA2
+      ([CSI > c]) with [CSI > 0 ; 0 ; 0 c], unless {!create} is given others;
+    - DSR 5 with [CSI 0 n], and CPR (DSR 6) with [CSI r ; c R], the row counted
+      from the top margin in origin mode;
+    - DECXCPR ([CSI ? 6 n]) with [CSI ? r ; c ; 1 R]. The VT510 manual shows no
+      [?]; xterm sends it, as DEC's other answers to [CSI ? ... n] carry it, and
+      it keeps the answer apart from a modified F3 key ([CSI 1 ; 2 R]).
+
+    {2:resets Resets}
+
+    RIS returns to the power-up state. DECSTR returns each terminal setting to
+    its power-up value: insert, origin, autowrap and reverse-wrap modes, cursor
+    keys, cursor visibility and the margins; the pen and the character sets to
+    their defaults; the active screen's DECSC slot to the power-up cursor state.
+    The VT510's table gives "No autowrap", its own power-up value; this terminal
+    powers up with autowrap on, so DECSTR sets it on. The screen, the cursor
+    position, the active screen and bracketed paste stay. *)
 
 type t
-(** The type for virtual terminal emulators. *)
+(** The type for terminal emulators. Mutable, not thread-safe. *)
 
-(** {1:create Constructors} *)
+(** {1:create Creating} *)
 
 val create :
   ?scrollback:int ->
@@ -43,220 +146,131 @@ val create :
   cols:int ->
   unit ->
   t
-(** [create ~rows ~cols ()] is a VTE with the given dimensions and:
-    - [scrollback] is the maximum number of scrollback lines stored in a ring
-      buffer. Defaults to [10000]. Use [0] to disable. Only applies to the
-      primary screen.
-    - [width_method] is the grapheme width computation method. Defaults to
-      [`Unicode].
-    - [default_fg] is the opaque foreground colour used when the current style
-      has no explicit foreground. Defaults to {!Ansi.Color.white}.
-    - [default_bg] is the opaque background colour used when the current style
-      has no explicit background, and for clearing grids on resize or reset.
-      Defaults to {!Ansi.Color.black}.
-    - [da1] and [da2] are the replies to the primary and secondary device
-      attributes queries ([CSI c] and [CSI > c]). Default to ["\027\[?1;2c"] (a
-      VT100 with advanced video) and ["\027\[>0;0;0c"].
+(** [create ~rows ~cols ()] is a terminal in its power-up state, with:
+    - [scrollback], the number of lines the scrollback keeps, the oldest dropped
+      first. Defaults to [10000]; [0] keeps none.
+    - [width_method], how wide characters are. Defaults to [`Unicode].
+    - [default_fg] and [default_bg], the colours cells take when the pen sets
+      none or sets the default (SGR 39, 49). Default to {!Ansi.Color.white} and
+      {!Ansi.Color.black}; {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}
+      keep the terminal default in the cells.
+    - [da1] and [da2], the replies to DA and DA2. Default to ["\027\[?1;2c"] and
+      ["\027\[>0;0;0c"].
 
-    [rows] and [cols] are clamped to a minimum of [1]. The returned VTE has both
-    screens cleared with [default_bg], cursor at [(0, 0)] and visible, auto-wrap
-    on, all other modes off, and the scroll region spanning the full screen. *)
+    [rows] and [cols] are at least [1]. *)
 
-(** {1:dims Terminal dimensions} *)
-
-val rows : t -> int
-(** [rows t] is [t]'s height in lines. *)
-
-val cols : t -> int
-(** [cols t] is [t]'s width in columns. *)
-
-val resize : t -> rows:int -> cols:int -> unit
-(** [resize t ~rows ~cols] resizes both grids to the given dimensions. Both
-    grids are cleared after the resize. Cursor and scroll region are clamped to
-    the new bounds. Scrollback content is preserved; compressed lines adapt to
-    the new width during decompression.
-
-    [rows] and [cols] are clamped to a minimum of [1]. Marks all rows dirty. *)
-
-(** {1:input Input processing} *)
+(** {1:feeding Feeding output} *)
 
 val feed : t -> bytes -> int -> int -> unit
-(** [feed t buf ofs len] processes [len] bytes starting at offset [ofs] in [buf]
-    as terminal input.
+(** [feed t b off len] applies the [len] bytes of [b] from [off].
 
-    Accepts partial and interleaved text/escape sequences. Invalid or
-    unrecognised sequences are silently ignored. Updates the active grid,
-    cursor, title, style, and mode flags.
-
-    [ofs] and [len] must satisfy [0 <= ofs] and [ofs + len <= Bytes.length buf].
-    Out-of-bounds access is undefined behaviour.
-
-    O([len]), amortised constant time per byte. *)
+    Raises [Invalid_argument] if [off] and [len] do not designate a range of
+    [b]. *)
 
 val feed_string : t -> string -> unit
 (** [feed_string t s] is
     [feed t (Bytes.unsafe_of_string s) 0 (String.length s)]. *)
 
-(** {1:state Terminal state} *)
+val take_replies : t -> string
+(** [take_replies t] are the replies the bytes fed since the last call asked for
+    (DA, DA2, DSR, CPR, DECXCPR), in order: write them to the program's input.
+*)
+
+val reset : t -> unit
+(** [reset t] is RIS: the power-up state, with the scrollback emptied and the
+    title cleared. It also drops a sequence left unfinished by {!feed}. *)
+
+val resize : t -> rows:int -> cols:int -> unit
+(** [resize t ~rows ~cols] changes the screen size and clears both screens,
+    which a program repaints after a size change. The scrollback is kept. The
+    cursor and the DECSC slots are clamped to the screen and lose the Last
+    Column Flag, the margins become the whole screen, and a unit in progress is
+    ended. [rows] and [cols] are at least [1]. *)
+
+(** {1:state State} *)
+
+val rows : t -> int
+(** [rows t] is the number of rows. *)
+
+val cols : t -> int
+(** [cols t] is the number of columns. *)
 
 val grid : t -> Matrix_grid.t
-(** [grid t] is the active visible grid (primary or alternate).
-
-    {b Warning.} The grid is mutable and shared with [t]. External modifications
-    break dirty tracking and may cause rendering inconsistencies. *)
-
-val title : t -> string
-(** [title t] is the terminal title set via OSC 0 or OSC 2 sequences. *)
-
-val take_replies : t -> string
-(** [take_replies t] is the bytes [t] owes the application since the last call,
-    in order: the replies to device attributes (DA1, DA2), device status (DSR 5)
-    and cursor position (CPR, DECXCPR) queries. Write them to the application's
-    input. *)
-
-val is_alternate_screen : t -> bool
-(** [is_alternate_screen t] is [true] iff the alternate screen is active.
-    Switched via DECSET/DECRST 47, 1047, or 1049.
-
-    Defaults to [false]. *)
-
-(** {1:dirty Dirty tracking} *)
-
-val is_dirty : t -> bool
-(** [is_dirty t] is [true] iff grid, cursor, or style state changed since the
-    last {!clear_dirty}.
-
-    {b Note.} OSC title updates and mode toggles do {e not} flip the dirty flag.
-*)
-
-val dirty_rows : t -> int list
-(** [dirty_rows t] is the list of zero-based row indices modified since the last
-    {!clear_dirty}, sorted ascending. O(k) where k is the number of dirty rows.
-*)
-
-val is_cursor_dirty : t -> bool
-(** [is_cursor_dirty t] is [true] iff cursor position or visibility changed
-    since the last {!clear_dirty}. *)
-
-val clear_dirty : t -> unit
-(** [clear_dirty t] resets the dirty flag, dirty row set, and cursor dirty flag.
-    Does not alter content. *)
-
-(** {1:cursor Cursor} *)
+(** [grid t] are the cells of the active screen. The grid belongs to [t]: read
+    it, and do not change it. *)
 
 val cursor_pos : t -> int * int
-(** [cursor_pos t] is the cursor position [(row, col)]. Satisfies
-    [0 <= row < rows t] and [0 <= col <= cols t]. [col] can equal [cols t] in
-    pending-wrap state when auto-wrap is enabled. *)
+(** [cursor_pos t] is the cursor's [(row, col)], from [(0, 0)], with
+    [row < rows t] and [col < cols t]. *)
 
-val cursor_visible : t -> bool
-(** [cursor_visible t] is [true] iff the cursor is visible. Controlled via
-    DECTCEM (CSI ?25h/l). Defaults to [true]. *)
+val wrapped : t -> int -> bool
+(** [wrapped t y] is the wrap mark of row [y] of the active screen, or for
+    [y < 0] of the [-y]th newest scrollback line. [false] outside them. *)
 
-val set_cursor_pos : t -> row:int -> col:int -> unit
-(** [set_cursor_pos t ~row ~col] moves the cursor. [row] is clamped to \[0,
-    rows-1\], [col] to \[0, cols\]. Marks cursor dirty if the position changes.
-*)
+type modes = {
+  insert : bool;  (** IRM (SM 4). *)
+  origin : bool;  (** DECOM (DECSET 6). *)
+  auto_wrap : bool;  (** DECAWM (DECSET 7). *)
+  reverse_wrap : bool;
+      (** xterm's reverse-wraparound (DECSET 45): with autowrap, BS and CUB go
+          back across the wraps that printing made. *)
+  cursor_keys : bool;  (** DECCKM (DECSET 1): cursor keys send [ESC O]. *)
+  cursor_visible : bool;  (** DECTCEM (DECSET 25). *)
+  bracketed_paste : bool;  (** xterm's bracketed paste (DECSET 2004). *)
+  alternate_screen : bool;  (** The alternate screen is active. *)
+}
+(** The type for the terminal's modes. At power-up autowrap is on, the cursor
+    visible and the others off. *)
 
-val set_cursor_visible : t -> bool -> unit
-(** [set_cursor_visible t v] shows or hides the cursor. Marks cursor dirty if
-    visibility changes. *)
+val modes : t -> modes
+(** [modes t] are [t]'s modes. *)
+
+val title : t -> string
+(** [title t] is the title set by OSC 0 or OSC 2. *)
 
 (** {1:scrollback Scrollback} *)
 
 val scrollback_capacity : t -> int
-(** [scrollback_capacity t] is the maximum number of scrollback lines. [0] if
-    scrollback is disabled. *)
+(** [scrollback_capacity t] is the number of lines the scrollback keeps. *)
 
 val scrollback_size : t -> int
-(** [scrollback_size t] is the current number of lines in the scrollback buffer.
-    [0] if scrollback is disabled, empty, or the alternate screen is active.
-    Satisfies [0 <= scrollback_size t <= scrollback_capacity t]. *)
+(** [scrollback_size t] is the number of lines in the scrollback, [0] while the
+    alternate screen is active. *)
 
 val scrollback_lines : t -> string list
-(** [scrollback_lines t] is the scrollback content as plain-text strings ordered
-    oldest to newest. Style information is discarded and trailing spaces are
-    trimmed. Empty if scrollback is disabled, empty, or the alternate screen is
-    active. Time is linear in the stored text size. *)
+(** [scrollback_lines t] are the scrollback's lines, oldest first, as text
+    without trailing spaces. Empty while the alternate screen is active. *)
 
 val render_with_scrollback : t -> offset:int -> Matrix_grid.t -> unit
-(** [render_with_scrollback t ~offset dst] renders a snapshot combining
-    scrollback history and the live screen into [dst]. History retains text
-    styles, hyperlinks, and decorated trailing spaces.
+(** [render_with_scrollback t ~offset dst] draws into [dst] the view [offset]
+    lines above the live screen: the scrollback lines at the top, oldest first,
+    then the screen. [offset] is clamped to \[[0];{!scrollback_size}\]; [0]
+    shows the live screen. Scrollback lines keep their rendition and hyperlinks.
+    [dst] should be as wide as [t]. On the alternate screen it copies the
+    screen. *)
 
-    The top rows of [dst] are filled with scrollback lines (oldest at the top)
-    and the remaining rows with the current screen. [offset] is the number of
-    lines above the live screen the snapshot extends: [0] shows only the live
-    terminal. [offset] is clamped to \[0, {!scrollback_size}\].
+(** {1:dirty Changes}
 
-    [dst] should have the same width as [t] for correct glyph placement; smaller
-    widths clip decompressed graphemes. On the alternate screen (no scrollback)
-    this is equivalent to [Matrix_grid.blit ~src:(grid t) ~dst].
+    A renderer redraws what changed since it last looked. Writing cells, moving
+    the cursor or changing its visibility, and changing the rendition mark [t]
+    changed; the title and the other modes do not. *)
 
-    O(Matrix_grid.height dst × {!cols}). *)
+val is_dirty : t -> bool
+(** [is_dirty t] is [true] iff [t] changed since {!clear_dirty}. *)
 
-(** {1:modes Terminal modes} *)
+val dirty_rows : t -> int list
+(** [dirty_rows t] are the rows whose cells changed since {!clear_dirty}, in
+    increasing order. *)
 
-val auto_wrap_mode : t -> bool
-(** [auto_wrap_mode t] is [true] iff auto-wrap (DECAWM) is active. When enabled,
-    writing past the right margin wraps to the next line. Controlled via CSI
-    ?7h/l. Defaults to [true]. *)
+val is_cursor_dirty : t -> bool
+(** [is_cursor_dirty t] is [true] iff the cursor moved or was shown or hidden
+    since {!clear_dirty}. *)
 
-val insert_mode : t -> bool
-(** [insert_mode t] is [true] iff insert mode (IRM) is active. Characters push
-    existing content right instead of replacing it. Controlled via CSI 4h/l.
-    Defaults to [false]. *)
-
-val cursor_key_mode : t -> bool
-(** [cursor_key_mode t] is [true] iff cursor keys use application mode (DECCKM).
-    Application mode sends [ESC O A] instead of [ESC \[ A] for arrow keys.
-    Controlled via CSI ?1h/l. Defaults to [false]. *)
-
-val bracketed_paste_mode : t -> bool
-(** [bracketed_paste_mode t] is [true] iff bracketed paste is active. Pasted
-    text is wrapped with [ESC \[ 200 ~] / [ESC \[ 201 ~] markers. Controlled via
-    CSI ?2004h/l. Defaults to [false]. *)
-
-val origin_mode : t -> bool
-(** [origin_mode t] is [true] iff origin mode (DECOM) is active. In origin mode,
-    CUP/HVP and VPA rows are relative to the scroll region and clamped to it.
-    Controlled via CSI ?6h/l. Defaults to [false]. *)
-
-(** {1:scrolling Scrolling} *)
-
-val scroll_up : t -> int -> unit
-(** [scroll_up t n] scrolls the current scroll region up by [n] lines. Lines
-    leaving the top enter scrollback only when the primary screen is active,
-    scrollback is enabled, and the region starts at row 0. Newly exposed rows
-    are cleared with the current SGR background if one is set, and with the
-    default transparent background otherwise. No effect if [n <= 0].
-
-    Marks all rows in the scroll region dirty. *)
-
-val scroll_down : t -> int -> unit
-(** [scroll_down t n] scrolls the current scroll region down by [n] lines. Blank
-    rows, cleared as by {!scroll_up}, are inserted at the top; lines leaving the
-    bottom are discarded (never saved to scrollback). No effect if [n <= 0].
-
-    Marks all rows in the scroll region dirty.
-
-    See also {!scroll_up}. *)
-
-(** {1:control Terminal control} *)
-
-val reset : t -> unit
-(** [reset t] resets [t] to its initial state. Clears both grids and scrollback,
-    moves cursor to [(0, 0)] and makes it visible, resets style to default, sets
-    auto-wrap on and all other modes off, resets scroll region to full screen,
-    and switches to the primary screen. Dimensions are unchanged. Equivalent to
-    RIS ([ESC c]).
-
-    Marks all rows dirty. *)
+val clear_dirty : t -> unit
+(** [clear_dirty t] forgets the changes. *)
 
 (** {1:debug Debugging} *)
 
 val to_string : t -> string
-(** [to_string t] is the visible screen content as a multi-line string. One line
-    per row, separated by newlines. Trailing spaces are preserved. Wide
-    graphemes appear once. Style information is not included. The result does
-    not end with a trailing newline. *)
+(** [to_string t] is the text of the screen, a line a row, separated by
+    newlines, trailing spaces kept. *)

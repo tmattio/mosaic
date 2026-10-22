@@ -211,8 +211,9 @@ let handle_key_down state (event : Sdl.event) =
 
   (* Use a buffer to build the output sequence *)
   let buf = Buffer.create 8 in
-  let app_cursor = Vte.cursor_key_mode state.vte in
-  let bracketed_paste = Vte.bracketed_paste_mode state.vte in
+  let { Vte.cursor_keys = app_cursor; bracketed_paste; _ } =
+    Vte.modes state.vte
+  in
   let cursor_seq normal application =
     if app_cursor then application else normal
   in
@@ -584,7 +585,7 @@ let render state =
   done;
 
   (* Render cursor (always at live position, even in scrollback view) *)
-  if Vte.cursor_visible vte then (
+  if (Vte.modes vte).cursor_visible then (
     let r, c = Vte.cursor_pos vte in
     Sdl.set_render_draw_color renderer 255 255 0 255
     |> or_else "Set cursor color";

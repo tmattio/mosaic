@@ -145,7 +145,7 @@ let check_invariants vte =
   let row, col = Vte.cursor_pos vte in
   if not (row >= 0 && row < rows) then
     failf "cursor row %d out of bounds (rows=%d)" row rows;
-  if not (col >= 0 && col <= cols) then
+  if not (col >= 0 && col < cols) then
     failf "cursor col %d out of bounds (cols=%d)" col cols;
   if Vte.scrollback_size vte > Vte.scrollback_capacity vte then
     failf "scrollback size %d exceeds capacity %d" (Vte.scrollback_size vte)
@@ -174,8 +174,8 @@ let check_invariants vte =
     if !expected > 0 then failf "row %d: wide span crosses the row edge" r
   done
 
-let feed_chunks vte chunks =
-  List.iter (fun chunk -> Vte.feed_string vte chunk) chunks
+let feed vte s = Vte.feed_string vte s
+let feed_chunks vte chunks = List.iter (feed vte) chunks
 
 (* Properties ------------------------------------------------------------- *)
 
@@ -183,13 +183,13 @@ let prop_safety_and_invariants (rows, cols, s, cuts) =
   let vte = Vte.create ~scrollback:16 ~rows ~cols () in
   List.iter
     (fun chunk ->
-      Vte.feed_string vte chunk;
+      feed vte chunk;
       check_invariants vte)
     (chunks_of s cuts)
 
 let prop_split_invariance (rows, cols, s, cuts) =
   let whole = Vte.create ~scrollback:16 ~rows ~cols () in
-  Vte.feed_string whole s;
+  feed whole s;
   let split = Vte.create ~scrollback:16 ~rows ~cols () in
   feed_chunks split (chunks_of s cuts);
   equal ~msg:"screen content" string (Vte.to_string whole) (Vte.to_string split);
@@ -199,21 +199,174 @@ let prop_split_invariance (rows, cols, s, cuts) =
   done;
   equal ~msg:"cursor position" (pair int int) (Vte.cursor_pos whole)
     (Vte.cursor_pos split);
-  equal ~msg:"cursor visibility" bool (Vte.cursor_visible whole)
-    (Vte.cursor_visible split);
-  equal ~msg:"alternate screen" bool
-    (Vte.is_alternate_screen whole)
-    (Vte.is_alternate_screen split);
+  is_true ~msg:"modes" (Vte.modes whole = Vte.modes split);
   equal ~msg:"title" string (Vte.title whole) (Vte.title split);
   equal ~msg:"scrollback" string
     (String.concat "\n" (Vte.scrollback_lines whole))
     (String.concat "\n" (Vte.scrollback_lines split))
+
+(* Split invariance over the text that makes units grow: every generator
+   family a terminal meets, interleaved with control functions, margins,
+   autowrap on and off, and insert mode, under each width method. *)
+
+let unit_fragments =
+  [
+    (* CJK *)
+    "\xe4\xb8\xad";
+    "\xe5\xa5\xbd";
+    (* combining marks *)
+    "e\xcc\x81";
+    "\xcc\x81";
+    "\xcc\x82";
+    (* ZWJ emoji *)
+    "\u{1F468}";
+    "\u{200D}";
+    "\u{1F4BB}";
+    (* VS15, VS16 *)
+    "\u{2764}";
+    "\u{FE0F}";
+    "\u{FE0E}";
+    "\u{231A}";
+    (* keycaps *)
+    "1\u{FE0F}";
+    "\u{20E3}";
+    (* regional indicators *)
+    "\u{1F1EB}";
+    "\u{1F1F7}";
+    (* Prepend *)
+    "\u{0D4E}";
+    "\u{111C2}";
+    "\u{0600}";
+    (* Hangul jamo *)
+    "\u{1100}";
+    "\u{1161}";
+    "\u{11A8}";
+    (* format characters *)
+    "\u{200B}";
+    "\u{2060}";
+    (* a conjunct *)
+    "\u{0915}\u{094D}";
+  ]
+
+let function_fragments =
+  [
+    "\r";
+    "\n";
+    "\b";
+    "\t";
+    "\x1b[m";
+    "\x1b[1;41m";
+    "\x1b[C";
+    "\x1b[D";
+    "\x1b[3b";
+    "\x1b[@";
+    "\x1b[P";
+    "\x1b[K";
+    "\x1b[X";
+    "\x1b7";
+    "\x1b8";
+    "\x1b[1\"q";
+    "\x1b[0\"q";
+    "\x1b[?2K";
+    "\x1b[S";
+    "\x1bM";
+  ]
+
+let setting_fragments =
+  [
+    "\x1b[?7l";
+    "\x1b[?7h";
+    "\x1b[4h";
+    "\x1b[4l";
+    "\x1b[2;3r";
+    "\x1b[r";
+    "\x1b[?45h";
+    "\x1b[?6h";
+    "\x1b(0";
+    "\x1b(B";
+    "\x1b*0\x1bN";
+  ]
+
+let unit_case_gen =
+  let open Gen in
+  let fragment =
+    frequency
+      [
+        (4, string_of ~size:(int_range 1 6) (char_range 'a' 'z'));
+        (8, of_list unit_fragments);
+        (3, of_list function_fragments);
+        (2, of_list setting_fragments);
+      ]
+  in
+  let* rows = int_range 1 4 in
+  let* cols = int_range 1 7 in
+  let* width_method = of_list [ `Unicode; `Unicode_wide; `Wcwidth ] in
+  let* frags = list ~size:(int_range 1 14) fragment in
+  let s = String.concat "" frags in
+  let+ cuts = list ~size:(int_range 1 8) (int_range 0 (String.length s)) in
+  (rows, cols, width_method, s, cuts)
+
+let pp_unit_case fmt (rows, cols, width_method, s, cuts) =
+  Format.fprintf fmt "%dx%d %s %S cut at [%s]" rows cols
+    (match width_method with
+    | `Unicode -> "unicode"
+    | `Unicode_wide -> "unicode_wide"
+    | `Wcwidth -> "wcwidth")
+    s
+    (String.concat ";" (List.map string_of_int cuts))
+
+(* What a renderer and a reader of the terminal see: the cells with their
+   rendition and protection, the cursor, the modes, the wrap marks and the
+   scrollback. *)
+let check_same ~msg whole split =
+  let g = Vte.grid whole and g' = Vte.grid split in
+  for idx = 0 to (Grid.width g * Grid.height g) - 1 do
+    if
+      not
+        (Grid.cells_equal g idx g' idx
+        && Grid.is_protected g idx = Grid.is_protected g' idx)
+    then
+      failf "%s: cell %d: %S, %S" msg idx (Grid.get_text g idx)
+        (Grid.get_text g' idx)
+  done;
+  equal ~msg:(msg ^ ": cursor") (pair int int) (Vte.cursor_pos whole)
+    (Vte.cursor_pos split);
+  is_true ~msg:(msg ^ ": modes") (Vte.modes whole = Vte.modes split);
+  equal ~msg:(msg ^ ": scrollback") (list string)
+    (Vte.scrollback_lines whole)
+    (Vte.scrollback_lines split);
+  let marks vte =
+    List.init
+      (Vte.rows vte + Vte.scrollback_size vte)
+      (fun i -> Vte.wrapped vte (i - Vte.scrollback_size vte))
+  in
+  equal ~msg:(msg ^ ": wrap marks") (list bool) (marks whole) (marks split)
+
+let fed ~rows ~cols ~width_method chunks =
+  let vte = Vte.create ~scrollback:8 ~width_method ~rows ~cols () in
+  feed_chunks vte chunks;
+  vte
+
+let prop_unit_split_invariance (rows, cols, width_method, s, cuts) =
+  let whole = fed ~rows ~cols ~width_method [ s ] in
+  check_same ~msg:"random chunks" whole
+    (fed ~rows ~cols ~width_method (chunks_of s cuts));
+  for i = 1 to String.length s - 1 do
+    check_same
+      ~msg:(Printf.sprintf "split at %d" i)
+      whole
+      (fed ~rows ~cols ~width_method
+         [ String.sub s 0 i; String.sub s i (String.length s - i) ])
+  done
 
 let props =
   [
     prop ~count:1000 "feed is total and preserves grid invariants" vte_case
       prop_safety_and_invariants;
     prop ~count:1000 "split invariance" vte_case prop_split_invariance;
+    prop ~count:1000 "split invariance of units"
+      (Gen.with_pp pp_unit_case unit_case_gen)
+      prop_unit_split_invariance;
   ]
 
 let () = run "matrix.vte.props" [ group "vte" props ]

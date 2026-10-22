@@ -3,6 +3,9 @@ open Windtrap
 
 (** Test utilities *)
 
+(* Feed output whose replies the test does not read. *)
+let feed vte s = Vte.feed_string vte s
+
 let get_char_at grid row col =
   let idx = (row * Grid.width grid) + col in
   let s = Grid.get_text grid idx in
@@ -29,9 +32,9 @@ let create_with_defaults () =
   equal ~msg:"scrollback capacity" int 10000 (Vte.scrollback_capacity vte);
   equal ~msg:"scrollback size" int 0 (Vte.scrollback_size vte);
   is_false ~msg:"not dirty initially" (Vte.is_dirty vte);
-  is_false ~msg:"not alternate screen" (Vte.is_alternate_screen vte);
+  is_false ~msg:"not alternate screen" (Vte.modes vte).alternate_screen;
   equal ~msg:"cursor at origin" (pair int int) (0, 0) (Vte.cursor_pos vte);
-  is_true ~msg:"cursor visible" (Vte.cursor_visible vte)
+  is_true ~msg:"cursor visible" (Vte.modes vte).cursor_visible
 
 let create_with_no_scrollback () =
   let vte = Vte.create ~scrollback:0 ~rows:10 ~cols:20 () in
@@ -46,7 +49,7 @@ let create_with_custom_scrollback () =
 
 let feed_simple_text () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello World";
+  feed vte "Hello World";
   is_true ~msg:"marked dirty" (Vte.is_dirty vte);
   let line = get_line (Vte.grid vte) 0 in
   equal ~msg:"text rendered" string "Hello World" line;
@@ -54,7 +57,7 @@ let feed_simple_text () =
 
 let feed_multiline_text () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\r\nLine2\r\nLine3";
+  feed vte "Line1\r\nLine2\r\nLine3";
   equal ~msg:"first line" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"second line" string "Line2" (get_line (Vte.grid vte) 1);
   equal ~msg:"third line" string "Line3" (get_line (Vte.grid vte) 2);
@@ -62,13 +65,13 @@ let feed_multiline_text () =
 
 let feed_carriage_return () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\rWorld";
+  feed vte "Hello\rWorld";
   equal ~msg:"CR overwrites" string "World" (get_line (Vte.grid vte) 0);
   equal ~msg:"cursor after CR" (pair int int) (0, 5) (Vte.cursor_pos vte)
 
 let feed_tab () =
   let vte = Vte.create ~rows:5 ~cols:40 () in
-  Vte.feed_string vte "A\tB\tC";
+  feed vte "A\tB\tC";
   equal ~msg:"first char" char 'A' (get_char_at (Vte.grid vte) 0 0);
   equal ~msg:"after first tab" char 'B' (get_char_at (Vte.grid vte) 0 8);
   equal ~msg:"after second tab" char 'C' (get_char_at (Vte.grid vte) 0 16)
@@ -76,7 +79,7 @@ let feed_tab () =
 let tab_stops () =
   let line ?(cols = 20) s =
     let vte = Vte.create ~rows:2 ~cols () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   let row0 s = s ^ "\n" ^ String.make 20 ' ' in
@@ -98,38 +101,38 @@ let tab_stops () =
 
 let feed_backspace () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\bX";
+  feed vte "Hello\bX";
   equal ~msg:"backspace moves cursor" string "HellX" (get_line (Vte.grid vte) 0)
 
 (** {1 Cursor Movement} *)
 
 let cursor_up () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\r\nLine2";
-  Vte.feed_string vte "\x1b[A";
-  Vte.feed_string vte "X";
+  feed vte "Line1\r\nLine2";
+  feed vte "\x1b[A";
+  feed vte "X";
   equal ~msg:"cursor up modifies previous line" string "Line1X"
     (get_line (Vte.grid vte) 0)
 
 let cursor_down () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\x1b[B\rLine2";
+  feed vte "Line1\x1b[B\rLine2";
   equal ~msg:"first line" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"second line" string "Line2" (get_line (Vte.grid vte) 1)
 
 let cursor_forward () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\r\x1b[3CX";
+  feed vte "Hello\r\x1b[3CX";
   equal ~msg:"cursor forward" string "HelXo" (get_line (Vte.grid vte) 0)
 
 let cursor_backward () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\x1b[2DX";
+  feed vte "Hello\x1b[2DX";
   equal ~msg:"cursor backward" string "HelXo" (get_line (Vte.grid vte) 0)
 
 let cursor_position () =
   let vte = Vte.create ~rows:10 ~cols:20 () in
-  Vte.feed_string vte "\x1b[3;5HX";
+  feed vte "\x1b[3;5HX";
   equal ~msg:"positioned character" char 'X' (get_char_at (Vte.grid vte) 2 4)
 
 let origin_mode_positions () =
@@ -138,12 +141,12 @@ let origin_mode_positions () =
      cursor there. *)
   let pos s =
     let vte = Vte.create ~rows:4 ~cols:3 () in
-    Vte.feed_string vte ("\x1b[2;3r\x1b[?6h" ^ s);
+    feed vte ("\x1b[2;3r\x1b[?6h" ^ s);
     Vte.cursor_pos vte
   in
   let vte = Vte.create ~rows:4 ~cols:3 () in
-  Vte.feed_string vte "\x1b[?6h";
-  is_true ~msg:"DECOM is reported" (Vte.origin_mode vte);
+  feed vte "\x1b[?6h";
+  is_true ~msg:"DECOM is reported" (Vte.modes vte).origin;
   equal ~msg:"DECOM homes to the top margin" (pair int int) (1, 0) (pos "");
   equal ~msg:"CUP is relative" (pair int int) (1, 0) (pos "\x1b[1;1H");
   equal ~msg:"CUP is clamped" (pair int int) (2, 0) (pos "\x1b[9;1H");
@@ -157,13 +160,13 @@ let origin_mode_positions () =
 
 let cursor_horizontal_absolute () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\x1b[10GX";
+  feed vte "Hello\x1b[10GX";
   equal ~msg:"horizontal absolute" char 'X' (get_char_at (Vte.grid vte) 0 9)
 
 let ecma48_position_forms () =
   let screen s =
     let vte = Vte.create ~rows:4 ~cols:6 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   let blank = "      " in
@@ -183,13 +186,13 @@ let ecma48_position_forms () =
 
 let cursor_next_line () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\x1b[EX";
+  feed vte "Hello\x1b[EX";
   equal ~msg:"next line moves down and to column 0" (pair int int) (1, 1)
     (Vte.cursor_pos vte)
 
 let cursor_previous_line () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\r\nHello\x1b[FX";
+  feed vte "\r\nHello\x1b[FX";
   equal ~msg:"previous line moves up and to column 0" (pair int int) (0, 1)
     (Vte.cursor_pos vte)
 
@@ -198,7 +201,7 @@ let vertical_moves_stop_at_margins () =
      margin; one that starts outside stops at the screen edge. *)
   let pos s =
     let vte = Vte.create ~rows:4 ~cols:3 () in
-    Vte.feed_string vte ("\x1b[2;3r" ^ s);
+    feed vte ("\x1b[2;3r" ^ s);
     Vte.cursor_pos vte
   in
   equal ~msg:"CUU stops at the top margin" (pair int int) (1, 0)
@@ -219,14 +222,14 @@ let vertical_moves_stop_at_margins () =
 
 let erase_display_to_end () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;5H\x1b[J";
+  feed vte "Line1\r\nLine2\r\nLine3\x1b[2;5H\x1b[J";
   equal ~msg:"first line unchanged" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"second line partial" string "Line" (get_line (Vte.grid vte) 1);
   equal ~msg:"third line cleared" string "" (get_line (Vte.grid vte) 2)
 
 let erase_display_to_beginning () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;3H\x1b[1J";
+  feed vte "Line1\r\nLine2\r\nLine3\x1b[2;3H\x1b[1J";
   equal ~msg:"first line cleared" string "" (get_line (Vte.grid vte) 0);
   let line2 = get_line (Vte.grid vte) 1 in
   satisfies ~claim:"second line partially cleared (at least 2 chars left)"
@@ -237,32 +240,32 @@ let erase_display_to_beginning () =
 
 let erase_display_all () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2J";
+  feed vte "Line1\r\nLine2\r\nLine3\x1b[2J";
   equal ~msg:"line 0 cleared" string "" (get_line (Vte.grid vte) 0);
   equal ~msg:"line 1 cleared" string "" (get_line (Vte.grid vte) 1);
   equal ~msg:"line 2 cleared" string "" (get_line (Vte.grid vte) 2)
 
 let erase_line_to_end () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello World\r\x1b[5C\x1b[K";
+  feed vte "Hello World\r\x1b[5C\x1b[K";
   equal ~msg:"erase to end of line" string "Hello" (get_line (Vte.grid vte) 0)
 
 let erase_line_to_beginning () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello World\r\x1b[5C\x1b[1K";
+  feed vte "Hello World\r\x1b[5C\x1b[1K";
   let line = get_line (Vte.grid vte) 0 in
   is_true ~msg:"beginning erased" (String.sub line 0 5 = "     ");
   equal ~msg:"end preserved" string " World" (String.sub line 5 6)
 
 let erase_line_all () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello World\r\x1b[5C\x1b[2K";
+  feed vte "Hello World\r\x1b[5C\x1b[2K";
   equal ~msg:"entire line erased" string "" (get_line (Vte.grid vte) 0)
 
 let erase_characters () =
   let screen s =
     let vte = Vte.create ~rows:1 ~cols:6 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"ECH erases from the cursor" string "a  def"
@@ -275,8 +278,8 @@ let erase_characters () =
 let default_background_spaces_overwrite_text () =
   let vte = Vte.create ~rows:3 ~cols:30 () in
   let replacement = " 1 + let status" in
-  Vte.feed_string vte "› Find and fix a bug";
-  Vte.feed_string vte ("\x1b[1;1H\x1b[49m" ^ replacement);
+  feed vte "› Find and fix a bug";
+  feed vte ("\x1b[1;1H\x1b[49m" ^ replacement);
   let line = get_line (Vte.grid vte) 0 in
   equal ~msg:"leading and interior spaces overwrite previous glyphs" string
     replacement
@@ -284,7 +287,7 @@ let default_background_spaces_overwrite_text () =
 
 let insert_lines () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;1H\x1b[LNew";
+  feed vte "Line1\r\nLine2\r\nLine3\x1b[2;1H\x1b[LNew";
   equal ~msg:"first line unchanged" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"new line inserted" string "New" (get_line (Vte.grid vte) 1);
   equal ~msg:"second line pushed down" string "Line2"
@@ -292,7 +295,7 @@ let insert_lines () =
 
 let delete_lines () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\r\nLine2\r\nLine3\x1b[2;1H\x1b[M";
+  feed vte "Line1\r\nLine2\r\nLine3\x1b[2;1H\x1b[M";
   equal ~msg:"first line unchanged" string "Line1" (get_line (Vte.grid vte) 0);
   equal ~msg:"third line moved up" string "Line3" (get_line (Vte.grid vte) 1);
   equal ~msg:"bottom line empty" string "" (get_line (Vte.grid vte) 2)
@@ -302,7 +305,7 @@ let insert_delete_lines_in_region () =
      inside the region, and return the cursor to the first column. *)
   let run s =
     let vte = Vte.create ~rows:4 ~cols:3 () in
-    Vte.feed_string vte ("1\r\n2\r\n3\r\n4\x1b[2;3r" ^ s);
+    feed vte ("1\r\n2\r\n3\r\n4\x1b[2;3r" ^ s);
     (Vte.to_string vte, Vte.cursor_pos vte)
   in
   equal ~msg:"IL"
@@ -324,7 +327,7 @@ let insert_delete_lines_in_region () =
 
 let insert_characters () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\r\x1b[3C\x1b[2@XX";
+  feed vte "Hello\r\x1b[3C\x1b[2@XX";
   let line = get_line (Vte.grid vte) 0 in
   satisfies ~claim:"characters inserted (at least 7 chars)" string
     (fun s -> String.length s >= 7)
@@ -333,13 +336,13 @@ let insert_characters () =
 
 let delete_characters () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello World\r\x1b[7C\x1b[5P";
+  feed vte "Hello World\r\x1b[7C\x1b[5P";
   equal ~msg:"characters deleted" string "Hello W" (get_line (Vte.grid vte) 0)
 
 let repeat_preceding_character () =
   let screen s =
     let vte = Vte.create ~rows:2 ~cols:5 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"REP" string "abbbb\n     " (screen "ab\x1b[3b");
@@ -352,20 +355,20 @@ let repeat_preceding_character () =
 
 let backspace_moves_without_erasing () =
   let vte = Vte.create ~rows:1 ~cols:5 () in
-  Vte.feed_string vte "ABC";
-  Vte.feed_string vte "\b";
+  feed vte "ABC";
+  feed vte "\b";
   let grid = Vte.grid vte in
   equal ~msg:"A kept" char 'A' (get_char_at grid 0 0);
   equal ~msg:"B kept" char 'B' (get_char_at grid 0 1);
   equal ~msg:"cell under cursor kept" char 'C' (get_char_at grid 0 2);
   equal ~msg:"cursor moved left" (pair int int) (0, 2) (Vte.cursor_pos vte);
   (* Overstrike (nroff bold "C\bX"): the redraw lands on the same cell. *)
-  Vte.feed_string vte "X";
+  feed vte "X";
   equal ~msg:"overstrike hits same cell" char 'X' (get_char_at grid 0 2)
 
 let line_feed_preserves_column () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "abc\ndef";
+  feed vte "abc\ndef";
   equal ~msg:"first line" string "abc" (get_line (Vte.grid vte) 0);
   equal ~msg:"LF moved straight down" string "   def"
     (get_line (Vte.grid vte) 1);
@@ -373,16 +376,16 @@ let line_feed_preserves_column () =
 
 let line_feed_scroll_region () =
   let vte = Vte.create ~rows:5 ~cols:10 () in
-  Vte.feed_string vte "A\r\nB\r\nC\r\nD\r\nE";
+  feed vte "A\r\nB\r\nC\r\nD\r\nE";
   (* Region rows 2..3 (1-based). *)
-  Vte.feed_string vte "\x1b[2;3r";
+  feed vte "\x1b[2;3r";
   (* Below the region (classic status-line setup): LF must not scroll. *)
-  Vte.feed_string vte "\x1b[5;1H\n";
+  feed vte "\x1b[5;1H\n";
   equal ~msg:"region untouched below" string "B" (get_line (Vte.grid vte) 1);
   equal ~msg:"cursor stays at screen bottom" (pair int int) (4, 0)
     (Vte.cursor_pos vte);
   (* At the region bottom: LF scrolls the region only. *)
-  Vte.feed_string vte "\x1b[3;1H\n";
+  feed vte "\x1b[3;1H\n";
   equal ~msg:"region scrolled" string "C" (get_line (Vte.grid vte) 1);
   equal ~msg:"region bottom blank" string "" (get_line (Vte.grid vte) 2);
   equal ~msg:"row above region untouched" string "A" (get_line (Vte.grid vte) 0);
@@ -390,16 +393,16 @@ let line_feed_scroll_region () =
 
 let delete_characters_wide () =
   let vte = Vte.create ~rows:1 ~cols:5 () in
-  Vte.feed_string vte "中A";
-  Vte.feed_string vte "\r\x1b[P";
+  feed vte "中A";
+  feed vte "\r\x1b[P";
   let grid = Vte.grid vte in
   equal ~msg:"half left behind blanked" string " A" (get_line grid 0);
   is_false ~msg:"no orphan continuation" (Grid.is_continuation grid 0)
 
 let insert_characters_wide_boundary () =
   let vte = Vte.create ~rows:1 ~cols:4 () in
-  Vte.feed_string vte "AB中";
-  Vte.feed_string vte "\r\x1b[@";
+  feed vte "AB中";
+  feed vte "\r\x1b[@";
   let grid = Vte.grid vte in
   equal ~msg:"shift respects graphemes" string " AB" (get_line grid 0);
   let last_idx = Grid.width grid - 1 in
@@ -411,7 +414,7 @@ let edit_on_wide_right_half () =
      from that cell and blank the half left behind. *)
   let screen s =
     let vte = Vte.create ~rows:1 ~cols:6 () in
-    Vte.feed_string vte ("a\xe4\xb8\xadb\x1b[1;3H" ^ s);
+    feed vte ("a\xe4\xb8\xadb\x1b[1;3H" ^ s);
     Vte.to_string vte
   in
   equal ~msg:"DCH" string "a b   " (screen "\x1b[P");
@@ -420,14 +423,14 @@ let edit_on_wide_right_half () =
 let dch_ending_on_wide_left_half () =
   (* DCH deletes the cells asked for and blanks the half left behind. *)
   let vte = Vte.create ~rows:1 ~cols:8 () in
-  Vte.feed_string vte "a中b\r\x1b[2P";
+  feed vte "a中b\r\x1b[2P";
   equal ~msg:"two cells" string " b      " (Vte.to_string vte)
 
 let shift_wide_over_wide () =
   (* A wide character moved onto the halves of another keeps both halves. *)
   let continuation s =
     let vte = Vte.create ~rows:1 ~cols:6 () in
-    Vte.feed_string vte ("中你\r" ^ s);
+    feed vte ("中你\r" ^ s);
     Grid.is_continuation (Vte.grid vte) 3
   in
   is_true ~msg:"ICH" (continuation "\x1b[2@");
@@ -439,14 +442,14 @@ let shift_wide_over_wide () =
    combining mark attach to the wrong cell. *)
 let margin_overwrite_with_wrap_off () =
   let vte = Vte.create ~rows:1 ~cols:3 () in
-  Vte.feed_string vte "\x1b[?7labcdef";
+  feed vte "\x1b[?7labcdef";
   equal ~msg:"last column holds the run's final char" string "abf"
     (get_line (Vte.grid vte) 0);
   let whole = Vte.create ~rows:1 ~cols:1 () in
-  Vte.feed_string whole "\r\n \x1b[?7le\xCC\x81     ";
+  feed whole "\r\n \x1b[?7le\xCC\x81     ";
   let split = Vte.create ~rows:1 ~cols:1 () in
-  Vte.feed_string split "\r\n \x1b[?7le";
-  Vte.feed_string split "\xCC\x81     ";
+  feed split "\r\n \x1b[?7le";
+  feed split "\xCC\x81     ";
   equal ~msg:"whole and split feeds converge" string (Vte.to_string whole)
     (Vte.to_string split);
   equal ~msg:"final overwrite is a space" string " " (Vte.to_string whole)
@@ -457,7 +460,7 @@ let margin_overwrite_with_wrap_off () =
 let pending_wrap_cleared_by_controls () =
   let after_last_column s =
     let vte = Vte.create ~rows:3 ~cols:5 () in
-    Vte.feed_string vte ("abcde" ^ s);
+    feed vte ("abcde" ^ s);
     vte
   in
   let vte = after_last_column "\x1b[DX" in
@@ -477,24 +480,24 @@ let pending_wrap_cleared_by_controls () =
   equal ~msg:"EL erases the last column" string "abcd"
     (get_line (Vte.grid vte) 0);
   let vte = Vte.create ~rows:3 ~cols:5 () in
-  Vte.feed_string vte "\x1b[1;9HX";
+  feed vte "\x1b[1;9HX";
   equal ~msg:"CUP clamps to the last column" string "    X"
     (get_line (Vte.grid vte) 0);
-  Vte.feed_string vte "\r\x1b[9GY";
+  feed vte "\r\x1b[9GY";
   equal ~msg:"CHA clamps to the last column" string "    Y"
     (get_line (Vte.grid vte) 0);
   let vte = Vte.create ~rows:3 ~cols:5 () in
-  Vte.feed_string vte "ab\x1b[9CX";
+  feed vte "ab\x1b[9CX";
   equal ~msg:"CUF stops at the last column" string "ab  X"
     (get_line (Vte.grid vte) 0);
   equal ~msg:"CUF does not wrap" string "" (get_line (Vte.grid vte) 1)
 
 let wrap_below_scroll_region () =
   let vte = Vte.create ~rows:5 ~cols:3 () in
-  Vte.feed_string vte "A\r\nB\r\nC\r\nD\r\nE";
+  feed vte "A\r\nB\r\nC\r\nD\r\nE";
   (* Region rows 2..3 (1-based); write below it at the screen bottom. *)
-  Vte.feed_string vte "\x1b[2;3r";
-  Vte.feed_string vte "\x1b[5;1Habcd";
+  feed vte "\x1b[2;3r";
+  feed vte "\x1b[5;1Habcd";
   (* Auto-wrap at the screen bottom outside the region must neither scroll
      the region nor yank the cursor up into it: the cursor wraps in place. *)
   equal ~msg:"region row untouched" string "B" (get_line (Vte.grid vte) 1);
@@ -507,21 +510,21 @@ let wrap_below_scroll_region () =
 
 let sgr_bold () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[1mBold\x1b[0m";
+  feed vte "\x1b[1mBold\x1b[0m";
   let grid = Vte.grid vte in
   let attrs = Grid.get_attrs grid 0 |> Ansi.Attr.unpack in
   is_true ~msg:"bold attribute set" (Ansi.Attr.mem Ansi.Attr.Bold attrs)
 
 let sgr_italic () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[3mItalic\x1b[0m";
+  feed vte "\x1b[3mItalic\x1b[0m";
   let grid = Vte.grid vte in
   let attrs = Grid.get_attrs grid 0 |> Ansi.Attr.unpack in
   is_true ~msg:"italic attribute set" (Ansi.Attr.mem Ansi.Attr.Italic attrs)
 
 let sgr_underline () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[4mUnderline\x1b[0m";
+  feed vte "\x1b[4mUnderline\x1b[0m";
   let grid = Vte.grid vte in
   let attrs = Grid.get_attrs grid 0 |> Ansi.Attr.unpack in
   is_true ~msg:"underline attribute set"
@@ -529,7 +532,7 @@ let sgr_underline () =
 
 let sgr_foreground_color () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[31mRed\x1b[0m";
+  feed vte "\x1b[31mRed\x1b[0m";
   let grid = Vte.grid vte in
   let r, _, _ = Grid.get_fg grid 0 |> Ansi.Color.to_rgb in
   (* Standard ANSI red fallback = (128, 0, 0) *)
@@ -537,7 +540,7 @@ let sgr_foreground_color () =
 
 let sgr_background_color () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[42mGreen BG\x1b[0m";
+  feed vte "\x1b[42mGreen BG\x1b[0m";
   let grid = Vte.grid vte in
   let _, g, _ = Grid.get_bg grid 0 |> Ansi.Color.to_rgb in
   (* Standard ANSI green fallback = (0, 128, 0) *)
@@ -548,7 +551,7 @@ let erase_keeps_background_index () =
      background, palette index included (bce). *)
   let bg s row =
     let vte = Vte.create ~rows:2 ~cols:3 () in
-    Vte.feed_string vte s;
+    feed vte s;
     match Ansi.Color.intent (Grid.get_bg (Vte.grid vte) (row * 3)) with
     | Indexed i -> Some i
     | Default | Rgb -> None
@@ -563,7 +566,7 @@ let erase_cutting_wide_takes_background () =
      in the erasure's colour, as the cells it erases. *)
   let bg s =
     let vte = Vte.create ~rows:1 ~cols:4 () in
-    Vte.feed_string vte ("\xe4\xb8\xad\x1b[1;2H\x1b[41m" ^ s);
+    feed vte ("\xe4\xb8\xad\x1b[1;2H\x1b[41m" ^ s);
     match Ansi.Color.intent (Grid.get_bg (Vte.grid vte) 0) with
     | Indexed i -> Some i
     | Default | Rgb -> None
@@ -580,20 +583,25 @@ let terminal_defaults_replace_cells () =
   in
   let screen s =
     let vte = vte () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"ECH" string "  cde   " (screen "abcde\r\x1b[2X");
   equal ~msg:"EL" string "        " (screen "abcde\r\x1b[K");
   equal ~msg:"space" string " bc     " (screen "abc\r ");
   let vte = vte () in
-  Vte.feed_string vte "\x1b[41ma\x1b[49m\rb";
+  feed vte "\x1b[41ma\x1b[49m\rb";
   is_true ~msg:"default background replaces red"
     (Ansi.Color.intent (Grid.get_bg (Vte.grid vte) 0) = Default)
 
+let sgr_24_ends_double_underline () =
+  let vte = Vte.create ~rows:1 ~cols:4 () in
+  feed vte "\x1b[21;24ma";
+  equal ~msg:"SGR 24" int 0 (Grid.get_attrs (Vte.grid vte) 0)
+
 let sgr_reset () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[1;31mBold Red\x1b[0mNormal";
+  feed vte "\x1b[1;31mBold Red\x1b[0mNormal";
   let grid = Vte.grid vte in
   let normal_attrs = Grid.get_attrs grid 8 |> Ansi.Attr.unpack in
   is_true ~msg:"attributes reset" (Ansi.Attr.is_empty normal_attrs)
@@ -602,46 +610,51 @@ let sgr_reset () =
 
 let cursor_hide_show () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  is_true ~msg:"initially visible" (Vte.cursor_visible vte);
-  Vte.feed_string vte "\x1b[?25l";
-  is_false ~msg:"hidden after DECTCEM hide" (Vte.cursor_visible vte);
-  Vte.feed_string vte "\x1b[?25h";
-  is_true ~msg:"shown after DECTCEM show" (Vte.cursor_visible vte)
+  is_true ~msg:"initially visible" (Vte.modes vte).cursor_visible;
+  feed vte "\x1b[?25l";
+  is_false ~msg:"hidden after DECTCEM hide" (Vte.modes vte).cursor_visible;
+  feed vte "\x1b[?25h";
+  is_true ~msg:"shown after DECTCEM show" (Vte.modes vte).cursor_visible
 
+(* The cursor is shown and hidden only by the program (DECTCEM); a change
+   marks the cursor changed, and setting the same visibility does not. *)
 let set_cursor_visible_programmatic () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.set_cursor_visible vte false;
-  is_false ~msg:"programmatically hidden" (Vte.cursor_visible vte);
-  Vte.set_cursor_visible vte true;
-  is_true ~msg:"programmatically shown" (Vte.cursor_visible vte)
+  Vte.clear_dirty vte;
+  feed vte "\x1b[?25h";
+  is_false ~msg:"showing a shown cursor changes nothing"
+    (Vte.is_cursor_dirty vte);
+  feed vte "\x1b[?25l";
+  is_false ~msg:"hidden" (Vte.modes vte).cursor_visible;
+  is_true ~msg:"hiding marks the cursor" (Vte.is_cursor_dirty vte)
 
 (** {1 Cursor Save/Restore} *)
 
 let cursor_save_restore () =
   let vte = Vte.create ~rows:10 ~cols:20 () in
-  Vte.feed_string vte "\x1b[5;10HHello\x1b7";
+  feed vte "\x1b[5;10HHello\x1b7";
   let pos1 = Vte.cursor_pos vte in
-  Vte.feed_string vte "\x1b[1;1HWorld\x1b8";
+  feed vte "\x1b[1;1HWorld\x1b8";
   let pos2 = Vte.cursor_pos vte in
   equal ~msg:"cursor restored" (pair int int) pos1 pos2
 
 let cursor_save_restore_style () =
   (* DECRC restores the SGR state saved by DECSC, not just the cursor. *)
   let vte = Vte.create ~rows:3 ~cols:20 () in
-  Vte.feed_string vte "\x1b[31m\x1b7\x1b[0m\x1b8X";
+  feed vte "\x1b[31m\x1b7\x1b[0m\x1b8X";
   let r, _, _ = Grid.get_fg (Vte.grid vte) 0 |> Ansi.Color.to_rgb in
   equal ~msg:"DECRC restores saved SGR" int 128 r
 
 let saved_cursor_per_screen () =
   let run s =
     let vte = Vte.create ~rows:3 ~cols:5 () in
-    Vte.feed_string vte s;
+    feed vte s;
     vte
   in
   is_false ~msg:"DECRC keeps the cursor hidden"
-    (Vte.cursor_visible (run "\x1b7\x1b[?25l\x1b8"));
+    (Vte.modes (run "\x1b7\x1b[?25l\x1b8")).cursor_visible;
   is_false ~msg:"leaving 1049 keeps the cursor hidden"
-    (Vte.cursor_visible (run "\x1b[?1049h\x1b[?25l\x1b[?1049l"));
+    (Vte.modes (run "\x1b[?1049h\x1b[?25l\x1b[?1049l")).cursor_visible;
   let vte = run "\x1b[2;3H\x1b7\x1b[?47h\x1b[3;5H\x1b7\x1b[?47l\x1b8X" in
   equal ~msg:"each screen keeps its saved cursor" string "     \n  X  \n     "
     (Vte.to_string vte);
@@ -655,8 +668,8 @@ let alternate_screen_restores_style () =
   (* Leaving the alternate screen (DECRST 1049) restores the SGR state saved
      on entry, so a full-screen app can't leak its last style. *)
   let vte = Vte.create ~rows:3 ~cols:20 () in
-  Vte.feed_string vte "\x1b[31m\x1b[?1049h\x1b[0m\x1b[?1049lX";
-  is_false ~msg:"back on primary screen" (Vte.is_alternate_screen vte);
+  feed vte "\x1b[31m\x1b[?1049h\x1b[0m\x1b[?1049lX";
+  is_false ~msg:"back on primary screen" (Vte.modes vte).alternate_screen;
   let r, _, _ = Grid.get_fg (Vte.grid vte) 0 |> Ansi.Color.to_rgb in
   equal ~msg:"1049 exit restores saved SGR" int 128 r
 
@@ -665,7 +678,7 @@ let alternate_screen_keeps_cursor () =
      cursor saved on entry. *)
   let screen s =
     let vte = Vte.create ~rows:1 ~cols:8 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"47" string "abc   X " (screen "abc\x1b[?47hALT\x1b[?47lX");
@@ -678,39 +691,39 @@ let alternate_screen_keeps_cursor () =
 
 let scroll_up_basic () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
-  Vte.scroll_up vte 2;
+  feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
+  feed vte "\x1b[2S";
   equal ~msg:"line moved up" string "L3" (get_line (Vte.grid vte) 0);
   equal ~msg:"bottom cleared" string "" (get_line (Vte.grid vte) 3)
 
 let scroll_down_basic () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3";
-  Vte.scroll_down vte 1;
+  feed vte "L1\r\nL2\r\nL3";
+  feed vte "\x1b[T";
   equal ~msg:"top cleared" string "" (get_line (Vte.grid vte) 0);
   equal ~msg:"line moved down" string "L1" (get_line (Vte.grid vte) 1)
 
 let csi_scroll_sequences () =
   let vte = Vte.create ~scrollback:100 ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
-  Vte.feed_string vte "\x1b[2S";
+  feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
+  feed vte "\x1b[2S";
   equal ~msg:"CSI S moves rows up" string "L3" (get_line (Vte.grid vte) 0);
   equal ~msg:"CSI S records native scrollback" int 2 (Vte.scrollback_size vte);
-  Vte.feed_string vte "\x1b[1T";
+  feed vte "\x1b[1T";
   equal ~msg:"CSI T inserts a blank top row" string ""
     (get_line (Vte.grid vte) 0);
   equal ~msg:"CSI T moves content down" string "L3" (get_line (Vte.grid vte) 1)
 
 let scroll_on_bottom_line () =
   let vte = Vte.create ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4";
+  feed vte "L1\r\nL2\r\nL3\r\nL4";
   equal ~msg:"first line scrolled off" string "L2" (get_line (Vte.grid vte) 0);
   equal ~msg:"new line at bottom" string "L4" (get_line (Vte.grid vte) 2)
 
 let alignment_and_column_edits () =
   let screen s =
     let vte = Vte.create ~rows:2 ~cols:6 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"DECALN" string "EEEEEE\nEEEEEE" (screen "ab\x1b#8");
@@ -721,19 +734,19 @@ let alignment_and_column_edits () =
   equal ~msg:"DECDC" string "abdef \nghjkl "
     (screen "abcdef\r\nghijkl\x1b[1;3H\x1b[1'~");
   let vte = Vte.create ~rows:3 ~cols:6 () in
-  Vte.feed_string vte "abcdef\r\nghijkl\r\nmnopqr\x1b[1;2r\x1b[3;1H\x1b[1 @";
+  feed vte "abcdef\r\nghijkl\r\nmnopqr\x1b[1;2r\x1b[3;1H\x1b[1 @";
   equal ~msg:"SL from outside the region" string "abcdef\nghijkl\nmnopqr"
     (Vte.to_string vte)
 
 let reverse_index_moves_cursor_up () =
   let vte = Vte.create ~rows:5 ~cols:10 () in
-  Vte.feed_string vte "\x1b[3;4H\x1bM";
+  feed vte "\x1b[3;4H\x1bM";
   equal ~msg:"RI moves cursor up" (pair int int) (1, 3) (Vte.cursor_pos vte)
 
 let reverse_index_scrolls_region_down () =
   let vte = Vte.create ~rows:4 ~cols:10 () in
-  Vte.feed_string vte "\x1b[1;1HA\x1b[2;1HB\x1b[3;1HC\x1b[4;1HD";
-  Vte.feed_string vte "\x1b[2;4r\x1b[2;1H\x1bM";
+  feed vte "\x1b[1;1HA\x1b[2;1HB\x1b[3;1HC\x1b[4;1HD";
+  feed vte "\x1b[2;4r\x1b[2;1H\x1bM";
   equal ~msg:"line above region unchanged" string "A"
     (get_line (Vte.grid vte) 0);
   equal ~msg:"top margin cleared" string "" (get_line (Vte.grid vte) 1);
@@ -745,15 +758,15 @@ let reverse_index_scrolls_region_down () =
 
 let index_and_next_line () =
   let vte = Vte.create ~rows:3 ~cols:5 () in
-  Vte.feed_string vte "ab\x1bDcd";
+  feed vte "ab\x1bDcd";
   equal ~msg:"IND moves down a row" string "ab   \n  cd \n     "
     (Vte.to_string vte);
   let vte = Vte.create ~rows:3 ~cols:5 () in
-  Vte.feed_string vte "ab\x1bEcd";
+  feed vte "ab\x1bEcd";
   equal ~msg:"NEL moves to the start of the next row" string
     "ab   \ncd   \n     " (Vte.to_string vte);
   let vte = Vte.create ~rows:2 ~cols:5 () in
-  Vte.feed_string vte "a\r\nb\x1bDc\x1bEd";
+  feed vte "a\r\nb\x1bDc\x1bEd";
   equal ~msg:"IND and NEL scroll at the bottom margin" string " c   \nd    "
     (Vte.to_string vte)
 
@@ -761,7 +774,7 @@ let index_and_next_line () =
 
 let scrollback_accumulates () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
+  feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"scrollback has lines" int 2 (Vte.scrollback_size vte);
   let lines = Vte.scrollback_lines vte in
   equal ~msg:"scrollback list length" int 2 (List.length lines)
@@ -770,7 +783,7 @@ let one_row_scroll () =
   (* On a one-row screen, a scroll clears the row it moves out. *)
   let screen s =
     let vte = Vte.create ~rows:1 ~cols:3 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"LF" string "d  " (screen "abc\r\nd");
@@ -779,19 +792,19 @@ let one_row_scroll () =
 
 let erase_scrollback_sequence () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
+  feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   satisfies ~claim:"fixture has scrollback (> 0)" int
     (fun n -> n > 0)
     (Vte.scrollback_size vte);
   let visible = get_line (Vte.grid vte) 0 in
-  Vte.feed_string vte "\x1b[3J";
+  feed vte "\x1b[3J";
   equal ~msg:"ED 3 clears native scrollback" int 0 (Vte.scrollback_size vte);
   equal ~msg:"ED 3 preserves the visible screen" string visible
     (get_line (Vte.grid vte) 0)
 
 let scrollback_ring_buffer () =
   let vte = Vte.create ~scrollback:2 ~rows:2 ~cols:5 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
+  feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"scrollback at capacity" int 2 (Vte.scrollback_size vte);
   let lines = Vte.scrollback_lines vte in
   equal ~msg:"oldest in ring" string "L2" (List.nth lines 0);
@@ -799,7 +812,7 @@ let scrollback_ring_buffer () =
 
 let render_with_scrollback_order () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
+  feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"two lines in scrollback" int 2 (Vte.scrollback_size vte);
   let dst = Grid.create ~width:10 ~height:3 () in
   Vte.render_with_scrollback vte ~offset:2 dst;
@@ -813,7 +826,7 @@ let render_with_scrollback_order () =
 
 let render_with_scrollback_wrapped_ring () =
   let vte = Vte.create ~scrollback:2 ~rows:2 ~cols:5 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
+  feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   (* Ring holds L2 (oldest) and L3 (newest); L1 was evicted. *)
   let dst = Grid.create ~width:5 ~height:3 () in
   Vte.render_with_scrollback vte ~offset:2 dst;
@@ -823,7 +836,7 @@ let render_with_scrollback_wrapped_ring () =
 
 let scrollback_disabled () =
   let vte = Vte.create ~scrollback:0 ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "L1\r\nL2\r\nL3\r\nL4";
+  feed vte "L1\r\nL2\r\nL3\r\nL4";
   equal ~msg:"no scrollback" int 0 (Vte.scrollback_size vte);
   equal ~msg:"empty scrollback" (list string) [] (Vte.scrollback_lines vte)
 
@@ -831,24 +844,24 @@ let scrollback_disabled () =
 
 let auto_wrap_mode () =
   let vte = Vte.create ~rows:3 ~cols:5 () in
-  is_true ~msg:"auto wrap on by default" (Vte.auto_wrap_mode vte);
-  Vte.feed_string vte "HelloWorld";
+  is_true ~msg:"auto wrap on by default" (Vte.modes vte).auto_wrap;
+  feed vte "HelloWorld";
   equal ~msg:"wrapped to next line" string "World" (get_line (Vte.grid vte) 1)
 
 let insert_mode () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  is_false ~msg:"insert mode off by default" (Vte.insert_mode vte);
-  Vte.feed_string vte "\x1b[4h";
-  is_true ~msg:"insert mode enabled" (Vte.insert_mode vte);
-  Vte.feed_string vte "\x1b[4l";
-  is_false ~msg:"insert mode disabled" (Vte.insert_mode vte)
+  is_false ~msg:"insert mode off by default" (Vte.modes vte).insert;
+  feed vte "\x1b[4h";
+  is_true ~msg:"insert mode enabled" (Vte.modes vte).insert;
+  feed vte "\x1b[4l";
+  is_false ~msg:"insert mode disabled" (Vte.modes vte).insert
 
 let insert_mode_wrap_targets_new_row () =
   (* After an insert-mode wrap, clusters must land on the row the cursor
      wrapped to, not back on the previous row at column 0. *)
   let vte = Vte.create ~rows:2 ~cols:3 () in
-  Vte.feed_string vte "\x1b[4h";
-  Vte.feed_string vte "abcde";
+  feed vte "\x1b[4h";
+  feed vte "abcde";
   equal ~msg:"first row keeps pre-wrap text" string "abc\nde "
     (Vte.to_string vte);
   equal ~msg:"cursor on wrapped row" (pair int int) (1, 2) (Vte.cursor_pos vte)
@@ -859,9 +872,9 @@ let insert_mode_clips_wide_grapheme_at_margin () =
      only its start cell, leaving a wide start with no continuation in the
      last column. The clipped grapheme must be blanked instead. *)
   let vte = Vte.create ~rows:1 ~cols:3 () in
-  Vte.feed_string vte "a\xE4\xBD\xA0";
-  Vte.feed_string vte "\x1b[1;2H\x1b[4h";
-  Vte.feed_string vte "x";
+  feed vte "a\xE4\xBD\xA0";
+  feed vte "\x1b[1;2H\x1b[4h";
+  feed vte "x";
   let grid = Vte.grid vte in
   satisfies ~claim:"no wide start in the last column (cell width <= 1)" int
     (fun w -> w <= 1)
@@ -871,38 +884,38 @@ let insert_mode_clips_wide_grapheme_at_margin () =
 
 let cursor_key_mode () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  is_false ~msg:"cursor key mode off by default" (Vte.cursor_key_mode vte);
-  Vte.feed_string vte "\x1b[?1h";
-  is_true ~msg:"cursor key mode enabled" (Vte.cursor_key_mode vte);
-  Vte.feed_string vte "\x1b[?1l";
-  is_false ~msg:"cursor key mode disabled" (Vte.cursor_key_mode vte)
+  is_false ~msg:"cursor key mode off by default" (Vte.modes vte).cursor_keys;
+  feed vte "\x1b[?1h";
+  is_true ~msg:"cursor key mode enabled" (Vte.modes vte).cursor_keys;
+  feed vte "\x1b[?1l";
+  is_false ~msg:"cursor key mode disabled" (Vte.modes vte).cursor_keys
 
 let combined_mode_sequence () =
   (* ECMA-48 allows several modes in one CSI; none may be dropped. *)
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[?1049;2004h";
-  is_true ~msg:"alternate screen enabled" (Vte.is_alternate_screen vte);
-  is_true ~msg:"bracketed paste enabled" (Vte.bracketed_paste_mode vte);
-  Vte.feed_string vte "\x1b[?1049;2004l";
-  is_false ~msg:"alternate screen disabled" (Vte.is_alternate_screen vte);
-  is_false ~msg:"bracketed paste disabled" (Vte.bracketed_paste_mode vte)
+  feed vte "\x1b[?1049;2004h";
+  is_true ~msg:"alternate screen enabled" (Vte.modes vte).alternate_screen;
+  is_true ~msg:"bracketed paste enabled" (Vte.modes vte).bracketed_paste;
+  feed vte "\x1b[?1049;2004l";
+  is_false ~msg:"alternate screen disabled" (Vte.modes vte).alternate_screen;
+  is_false ~msg:"bracketed paste disabled" (Vte.modes vte).bracketed_paste
 
 let bracketed_paste_mode () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  is_false ~msg:"bracketed paste off by default" (Vte.bracketed_paste_mode vte);
-  Vte.feed_string vte "\x1b[?2004h";
-  is_true ~msg:"bracketed paste enabled" (Vte.bracketed_paste_mode vte);
-  Vte.feed_string vte "\x1b[?2004l";
-  is_false ~msg:"bracketed paste disabled" (Vte.bracketed_paste_mode vte)
+  is_false ~msg:"bracketed paste off by default" (Vte.modes vte).bracketed_paste;
+  feed vte "\x1b[?2004h";
+  is_true ~msg:"bracketed paste enabled" (Vte.modes vte).bracketed_paste;
+  feed vte "\x1b[?2004l";
+  is_false ~msg:"bracketed paste disabled" (Vte.modes vte).bracketed_paste
 
 (** {1 OSC Sequences} *)
 
 let osc_set_title () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   equal ~msg:"title empty initially" string "" (Vte.title vte);
-  Vte.feed_string vte "\x1b]0;My Title\x07";
+  feed vte "\x1b]0;My Title\x07";
   equal ~msg:"title set via OSC 0" string "My Title" (Vte.title vte);
-  Vte.feed_string vte "\x1b]2;New Title\x07";
+  feed vte "\x1b]2;New Title\x07";
   equal ~msg:"title set via OSC 2" string "New Title" (Vte.title vte)
 
 let query_replies () =
@@ -928,10 +941,10 @@ let query_replies () =
    Only OSC 0, 2 and 8 are kept, each up to 64 KiB. *)
 let osc_acts_only_when_terminated () =
   let vte = Vte.create ~rows:1 ~cols:20 () in
-  Vte.feed_string vte "\x1b]2;kept\x1b\\";
+  feed vte "\x1b]2;kept\x1b\\";
   List.iter
     (fun cut ->
-      Vte.feed_string vte cut;
+      feed vte cut;
       equal ~msg:(Printf.sprintf "%S" cut) string "kept" (Vte.title vte))
     [
       "\x1b]2;cut\x1b[m";
@@ -943,41 +956,39 @@ let osc_acts_only_when_terminated () =
       "\x1b];cut\x07";
     ];
   (* Fed a byte at a time. *)
-  String.iter
-    (fun c -> Vte.feed_string vte (String.make 1 c))
-    "\x1b]0;by\xc3\xa9tes\x07";
+  String.iter (fun c -> feed vte (String.make 1 c)) "\x1b]0;by\xc3\xa9tes\x07";
   equal ~msg:"split title" string "by\xc3\xa9tes" (Vte.title vte);
   let budget = 65536 in
-  Vte.feed_string vte ("\x1b]2;" ^ String.make budget 'a' ^ "\x07");
+  feed vte ("\x1b]2;" ^ String.make budget 'a' ^ "\x07");
   equal ~msg:"title at the budget" int budget (String.length (Vte.title vte));
-  Vte.feed_string vte ("\x1b]2;" ^ String.make (budget + 1) 'b' ^ "\x07");
+  feed vte ("\x1b]2;" ^ String.make (budget + 1) 'b' ^ "\x07");
   equal ~msg:"title over the budget is dropped whole" int budget
     (String.length (Vte.title vte));
   (* A hyperlink cut short is not installed. *)
   let vte = Vte.create ~rows:1 ~cols:8 () in
-  Vte.feed_string vte "\x1b]8;;http://exa\x1b[ma\x1b]8;;http://b.test\x07b";
+  feed vte "\x1b]8;;http://exa\x1b[ma\x1b]8;;http://b.test\x07b";
   equal ~msg:"cut link" string "" (Grid.get_link (Vte.grid vte) 0);
   equal ~msg:"BEL link" string "http://b.test" (Grid.get_link (Vte.grid vte) 1);
-  Vte.feed_string vte "\x1b]8;id=1;\x1b\\c";
+  feed vte "\x1b]8;id=1;\x1b\\c";
   equal ~msg:"empty URI closes, with parameters" string ""
     (Grid.get_link (Vte.grid vte) 2)
 
 (* Counts and positions read 0 as their default, 1. *)
 let zero_counts_mean_one () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[3;5H\x1b[0A";
+  feed vte "\x1b[3;5H\x1b[0A";
   equal ~msg:"CUU 0" (pair int int) (1, 4) (Vte.cursor_pos vte);
-  Vte.feed_string vte "\x1b[0C";
+  feed vte "\x1b[0C";
   equal ~msg:"CUF 0" (pair int int) (1, 5) (Vte.cursor_pos vte);
-  Vte.feed_string vte "\x1b[0I";
+  feed vte "\x1b[0I";
   equal ~msg:"CHT 0" (pair int int) (1, 8) (Vte.cursor_pos vte);
-  Vte.feed_string vte "\x1b[0;0H";
+  feed vte "\x1b[0;0H";
   equal ~msg:"CUP 0;0" (pair int int) (0, 0) (Vte.cursor_pos vte);
-  Vte.feed_string vte "abcd\x1b[0b";
+  feed vte "abcd\x1b[0b";
   equal ~msg:"REP 0" string "abcdd" (get_line (Vte.grid vte) 0);
-  Vte.feed_string vte "\x1b[1G\x1b[0P";
+  feed vte "\x1b[1G\x1b[0P";
   equal ~msg:"DCH 0" string "bcdd" (get_line (Vte.grid vte) 0);
-  Vte.feed_string vte "\x1b[0X";
+  feed vte "\x1b[0X";
   equal ~msg:"ECH 0" string " cdd" (get_line (Vte.grid vte) 0)
 
 (* DA2 and DECXCPR are recognised by their parameter's value. *)
@@ -990,7 +1001,7 @@ let replies_by_parameter_value () =
 (* In UTF-8, U+0080..U+009F are not controls: they do nothing. *)
 let utf8_c1_is_not_a_control () =
   let vte = Vte.create ~rows:3 ~cols:10 () in
-  Vte.feed_string vte "a\xc2\x8db\xc2\x9b2Cc\xc2\x9d0;t\xc2\x9c";
+  feed vte "a\xc2\x8db\xc2\x9b2Cc\xc2\x9d0;t\xc2\x9c";
   equal ~msg:"nothing performed" string "ab2Cc0;t" (get_line (Vte.grid vte) 0);
   equal ~msg:"title untouched" string "" (Vte.title vte)
 
@@ -998,14 +1009,14 @@ let utf8_c1_is_not_a_control () =
    bytes prints. *)
 let two_byte_designators () =
   let vte = Vte.create ~rows:1 ~cols:10 () in
-  Vte.feed_string vte "\x1b(%6a\x1b(\">q\x1b%/Gr";
+  feed vte "\x1b(%6a\x1b(\">q\x1b%/Gr";
   equal ~msg:"designators not printed" string "aqr" (get_line (Vte.grid vte) 0)
 
 (** {1 Resize} *)
 
 let resize_preserves_content () =
   let vte = Vte.create ~rows:5 ~cols:10 () in
-  Vte.feed_string vte "Hello\r\nWorld";
+  feed vte "Hello\r\nWorld";
   Vte.resize vte ~rows:10 ~cols:20;
   equal ~msg:"rows resized" int 10 (Vte.rows vte);
   equal ~msg:"cols resized" int 20 (Vte.cols vte);
@@ -1015,7 +1026,7 @@ let resize_preserves_content () =
 
 let resize_clamps_cursor () =
   let vte = Vte.create ~rows:10 ~cols:20 () in
-  Vte.feed_string vte "\x1b[8;15H";
+  feed vte "\x1b[8;15H";
   Vte.resize vte ~rows:5 ~cols:10;
   let row, col = Vte.cursor_pos vte in
   satisfies ~claim:"cursor row clamped (< 5 rows)" int (fun r -> r < 5) row;
@@ -1025,21 +1036,21 @@ let resize_clamps_cursor () =
 
 let reset_clears_state () =
   let vte = Vte.create ~scrollback:100 ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello\r\nWorld";
-  Vte.feed_string vte "\x1b[1;31m";
-  Vte.feed_string vte "\x1b]0;Title\x07";
-  Vte.scroll_up vte 1;
+  feed vte "Hello\r\nWorld";
+  feed vte "\x1b[1;31m";
+  feed vte "\x1b]0;Title\x07";
+  feed vte "\x1b[S";
   Vte.reset vte;
   equal ~msg:"grid cleared" string "" (get_line (Vte.grid vte) 0);
   equal ~msg:"title cleared" string "" (Vte.title vte);
   equal ~msg:"cursor at origin" (pair int int) (0, 0) (Vte.cursor_pos vte);
   equal ~msg:"scrollback cleared" int 0 (Vte.scrollback_size vte);
-  is_true ~msg:"auto wrap reset" (Vte.auto_wrap_mode vte)
+  is_true ~msg:"auto wrap reset" (Vte.modes vte).auto_wrap
 
 let selective_erase () =
   let screen ?(rows = 1) s =
     let vte = Vte.create ~rows ~cols:6 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"DECSEL spares protected cells" string "abc   "
@@ -1056,13 +1067,17 @@ let selective_erase () =
     (screen ~rows:3 "\x1b[1\"qab\x1b[0\"qc\r\x1b[L\x1b[?2J");
   equal ~msg:"DECSC saves the attribute" string "ab    "
     (screen "\x1b[1\"q\x1b7\x1b[0\"q\x1b8ab\x1b[?2K");
-  equal ~msg:"DECSTR ends selective erasure" string "      "
-    (screen "\x1b[1\"qab\x1b[!p\x1b[?2K")
+  (* DECSTR makes the characters written next erasable (VT510 DECSTR,
+     DECSCA); those already protected stay protected. *)
+  equal ~msg:"DECSTR keeps protected cells" string "ab    "
+    (screen "\x1b[1\"qab\x1b[!p\x1b[?2K");
+  equal ~msg:"DECSTR protects nothing written next" string "ab    "
+    (screen "\x1b[1\"qab\x1b[!pcd\x1b[?2K")
 
 let reverse_wrap () =
   let screen s =
     let vte = Vte.create ~rows:2 ~cols:4 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"BS crosses an automatic wrap" string "abcX\nZ   "
@@ -1083,14 +1098,14 @@ let reverse_wrap () =
 let ris_and_decstr () =
   let run s =
     let vte = Vte.create ~rows:2 ~cols:10 () in
-    Vte.feed_string vte s;
+    feed vte s;
     vte
   in
   let screen s = Vte.to_string (run s) in
   equal ~msg:"RIS turns auto-wrap back on" string "0123456789\nq         "
     (screen "\x1b[?7l\x1bc0123456789q");
   is_true ~msg:"RIS shows the cursor"
-    (Vte.cursor_visible (run "\x1b[?25l\x1bc"));
+    (Vte.modes (run "\x1b[?25l\x1bc")).cursor_visible;
   equal ~msg:"RIS resets the tab stops" string "        X \n          "
     (screen "\x1b[3g\x1bc\tX");
   equal ~msg:"DECSTR resets insert mode and auto-wrap" string
@@ -1100,7 +1115,7 @@ let ris_and_decstr () =
     "X Y       \n          "
     (screen "\x1b[2;5H\x1b7\x1b[1;3H\x1b[!pY\x1b8X");
   let vte = run "\x1b[?25l\x1b[1m\x1b[!pX" in
-  is_true ~msg:"DECSTR shows the cursor" (Vte.cursor_visible vte);
+  is_true ~msg:"DECSTR shows the cursor" (Vte.modes vte).cursor_visible;
   is_true ~msg:"DECSTR resets SGR"
     (Ansi.Attr.is_empty (Ansi.Attr.unpack (Grid.get_attrs (Vte.grid vte) 0)))
 
@@ -1109,7 +1124,7 @@ let ris_and_decstr () =
 let dirty_flag_on_text () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   is_false ~msg:"clean initially" (Vte.is_dirty vte);
-  Vte.feed_string vte "Hello";
+  feed vte "Hello";
   is_true ~msg:"dirty after text" (Vte.is_dirty vte);
   Vte.clear_dirty vte;
   is_false ~msg:"clean after clear" (Vte.is_dirty vte)
@@ -1117,13 +1132,13 @@ let dirty_flag_on_text () =
 let dirty_flag_on_cursor_move () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.clear_dirty vte;
-  Vte.feed_string vte "\x1b[5;10H";
+  feed vte "\x1b[5;10H";
   is_true ~msg:"dirty after cursor move" (Vte.is_dirty vte)
 
 let dirty_flag_on_style_change () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
   Vte.clear_dirty vte;
-  Vte.feed_string vte "\x1b[1m";
+  feed vte "\x1b[1m";
   is_true ~msg:"dirty after style change" (Vte.is_dirty vte)
 
 let dirty_row_tracking () =
@@ -1131,20 +1146,20 @@ let dirty_row_tracking () =
   Vte.clear_dirty vte;
 
   (* Write to row 0 *)
-  Vte.feed_string vte "Hello";
+  feed vte "Hello";
   is_true ~msg:"dirty after write" (Vte.is_dirty vte);
   equal ~msg:"row 0 dirty" (list int) [ 0 ] (Vte.dirty_rows vte);
 
   Vte.clear_dirty vte;
 
   (* Move to row 5 and write *)
-  Vte.feed_string vte "\x1b[6;1HWorld";
+  feed vte "\x1b[6;1HWorld";
   equal ~msg:"row 5 dirty" (list int) [ 5 ] (Vte.dirty_rows vte);
 
   Vte.clear_dirty vte;
 
   (* Erase display (affects multiple rows) *)
-  Vte.feed_string vte "\x1b[2J";
+  feed vte "\x1b[2J";
   let rows = Vte.dirty_rows vte in
   satisfies ~claim:"multiple rows dirty (> 1)" (list int)
     (fun l -> List.length l > 1)
@@ -1156,40 +1171,40 @@ let dirty_cursor_tracking () =
   Vte.clear_dirty vte;
 
   (* Move cursor *)
-  Vte.feed_string vte "\x1b[3;5H";
+  feed vte "\x1b[3;5H";
   is_true ~msg:"cursor dirty after move" (Vte.is_cursor_dirty vte);
 
   Vte.clear_dirty vte;
   is_false ~msg:"cursor clean after clear" (Vte.is_cursor_dirty vte);
 
   (* Hide cursor *)
-  Vte.feed_string vte "\x1b[?25l";
+  feed vte "\x1b[?25l";
   is_true ~msg:"cursor dirty after visibility change" (Vte.is_cursor_dirty vte)
 
 (** {1 Unicode Support} *)
 
 let unicode_basic () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello 世界 🌍";
+  feed vte "Hello 世界 🌍";
   let output = Vte.to_string vte in
   equal ~msg:"unicode text" string "Hello 世界 🌍" (String.trim output)
 
 let unicode_with_escapes () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "\x1b[31mRed 文字\x1b[0m Normal";
+  feed vte "\x1b[31mRed 文字\x1b[0m Normal";
   let output = Vte.to_string vte in
   equal ~msg:"unicode with ANSI" string "Red 文字 Normal" (String.trim output)
 
 let unicode_multiline () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Line1\r\nΓειά σου\r\n日本語";
+  feed vte "Line1\r\nΓειά σου\r\n日本語";
   let output = Vte.to_string vte in
   equal ~msg:"multiline unicode" string
     "Line1               \nΓειά σου            \n日本語" (String.trim output)
 
 let unicode_wide_char_cursor () =
   let vte = Vte.create ~rows:5 ~cols:20 () in
-  Vte.feed_string vte "Hello 世界";
+  feed vte "Hello 世界";
   let row, col = Vte.cursor_pos vte in
   (* "Hello " = 6 cols, "世界" = 4 cols (2 wide chars × 2 cols each) *)
   equal ~msg:"cursor after wide chars" (pair int int) (0, 10) (row, col)
@@ -1198,18 +1213,20 @@ let unicode_wide_char_wraps_at_margin () =
   (* A wide grapheme that doesn't fit at the right margin wraps to the next
      row; the rest of the input must not be dropped. *)
   let vte = Vte.create ~rows:2 ~cols:4 () in
-  Vte.feed_string vte "abc全xy";
+  feed vte "abc全xy";
   equal ~msg:"wide grapheme wraps with following text" string "abc \n全xy"
     (Vte.to_string vte);
-  equal ~msg:"cursor after wrapped tail" (pair int int) (1, 4)
+  equal ~msg:"cursor on the last column" (pair int int) (1, 3)
     (Vte.cursor_pos vte);
-  (* With auto-wrap off the unfittable wide grapheme is skipped and every
-     following character overwrites the margin column in turn — the run's
-     last character wins, as on a real terminal. *)
+  (* With auto-wrap off the wide grapheme ends at the margin, replacing what
+     is there; every following character replaces the last column in turn,
+     and blanks the half it cuts. *)
   let vte = Vte.create ~rows:2 ~cols:4 () in
-  Vte.feed_string vte "\x1b[?7l";
-  Vte.feed_string vte "abc全xy";
-  equal ~msg:"no wrap when DECAWM off" string "abcy\n    " (Vte.to_string vte)
+  feed vte "\x1b[?7l";
+  feed vte "abc全";
+  equal ~msg:"ends at the margin" string "ab全\n    " (Vte.to_string vte);
+  feed vte "xy";
+  equal ~msg:"no wrap when DECAWM off" string "ab y\n    " (Vte.to_string vte)
 
 let unicode_wide_char_wider_than_line () =
   (* Shrunk from a split-invariance property counterexample: on a 1x1 grid,
@@ -1217,14 +1234,14 @@ let unicode_wide_char_wider_than_line () =
      grapheme wider than the whole line is skipped; the rest of the run must
      still be processed. *)
   let vte = Vte.create ~rows:1 ~cols:1 () in
-  Vte.feed_string vte "\xE4\xBD\xA0x";
+  feed vte "\xE4\xBD\xA0x";
   equal ~msg:"text after unfittable wide grapheme survives" string "x"
     (Vte.to_string vte);
-  equal ~msg:"cursor after drawn text" (pair int int) (0, 1)
+  equal ~msg:"cursor on the last column" (pair int int) (0, 0)
     (Vte.cursor_pos vte);
   let split = Vte.create ~rows:1 ~cols:1 () in
-  Vte.feed_string split "\xE4\xBD\xA0";
-  Vte.feed_string split "x";
+  feed split "\xE4\xBD\xA0";
+  feed split "x";
   equal ~msg:"split feed matches whole feed" string (Vte.to_string vte)
     (Vte.to_string split)
 
@@ -1234,10 +1251,10 @@ let unicode_combining_mark_across_writes () =
      preceding cell, as real terminals do, instead of drawing an orphan
      cluster at the cursor. *)
   let whole = Vte.create ~rows:1 ~cols:4 () in
-  Vte.feed_string whole "e\xCC\x81x";
+  feed whole "e\xCC\x81x";
   let split = Vte.create ~rows:1 ~cols:4 () in
-  Vte.feed_string split "e";
-  Vte.feed_string split "\xCC\x81x";
+  feed split "e";
+  feed split "\xCC\x81x";
   equal ~msg:"split combining mark matches whole feed" string
     (Vte.to_string whole) (Vte.to_string split);
   equal ~msg:"cursor matches" (pair int int) (Vte.cursor_pos whole)
@@ -1245,21 +1262,23 @@ let unicode_combining_mark_across_writes () =
   (* A mark after a wide grapheme attaches through the continuation cell and
      the cluster ends up merged in the start cell. *)
   let whole = Vte.create ~rows:1 ~cols:4 () in
-  Vte.feed_string whole "\xE4\xBD\xA0\xCC\x81";
+  feed whole "\xE4\xBD\xA0\xCC\x81";
   let split = Vte.create ~rows:1 ~cols:4 () in
-  Vte.feed_string split "\xE4\xBD\xA0";
-  Vte.feed_string split "\xCC\x81";
+  feed split "\xE4\xBD\xA0";
+  feed split "\xCC\x81";
   equal ~msg:"wide grapheme keeps its mark across writes" string
     (Vte.to_string whole) (Vte.to_string split);
   equal ~msg:"cluster merged into the start cell" string "\xE4\xBD\xA0\xCC\x81"
     (Grid.get_text (Vte.grid split) 0)
 
 let unicode_prepend_across_writes () =
-  (* A Prepend character draws apart from the character after it, as in
-     xterm, so a read split between them draws the same screen. *)
+  (* A Prepend character starts the grapheme cluster of the character after
+     it (UAX #29 GB9b), and a read split between them draws the same screen.
+     A wcwidth terminal places it with the character before it, as one of no
+     width. *)
   let cells ?(cols = 4) width_method chunks =
     let vte = Vte.create ~width_method ~rows:1 ~cols () in
-    List.iter (Vte.feed_string vte) chunks;
+    List.iter (feed vte) chunks;
     List.init cols (fun i -> Grid.get_text (Vte.grid vte) i)
   in
   let bytes s = List.init (String.length s) (fun i -> String.make 1 s.[i]) in
@@ -1271,12 +1290,21 @@ let unicode_prepend_across_writes () =
           equal ~msg (list string) expected (cells ~cols width_method [ s ]);
           equal ~msg:(msg ^ " split") (list string) expected
             (cells ~cols width_method (bytes s)))
-        [
-          (4, "a\u{06DD}q", [ "a\u{06DD}"; "q"; " "; " " ]);
-          (4, "\u{06DD}q", [ "q"; " "; " "; " " ]);
-          (2, "\x1b[?7lab\u{06DD}q", [ "a"; "q" ]);
-          (4, "\u{0D4E}x", [ "\u{0D4E}"; "x"; " "; " " ]);
-        ])
+        (match width_method with
+        | `Wcwidth ->
+            [
+              (4, "a\u{06DD}q", [ "a\u{06DD}"; "q"; " "; " " ]);
+              (4, "\u{06DD}q", [ "q"; " "; " "; " " ]);
+              (2, "\x1b[?7lab\u{06DD}q", [ "a"; "q" ]);
+              (4, "\u{0D4E}x", [ "\u{0D4E}"; "x"; " "; " " ]);
+            ]
+        | _ ->
+            [
+              (4, "a\u{06DD}q", [ "a"; "\u{06DD}q"; " "; " " ]);
+              (4, "\u{06DD}q", [ "\u{06DD}q"; " "; " "; " " ]);
+              (2, "\x1b[?7lab\u{06DD}q", [ "a"; "\u{06DD}q" ]);
+              (4, "\u{0D4E}x", [ "\u{0D4E}x"; " "; " "; " " ]);
+            ]))
     [ (`Unicode, "unicode"); (`Wcwidth, "wcwidth") ]
 
 let unicode_zero_width_joins_cell () =
@@ -1284,7 +1312,7 @@ let unicode_zero_width_joins_cell () =
      later one, also in insert mode. *)
   let cells s =
     let vte = Vte.create ~rows:1 ~cols:4 () in
-    List.iter (Vte.feed_string vte) s;
+    List.iter (feed vte) s;
     List.init 4 (fun i -> Grid.get_text (Vte.grid vte) i)
   in
   equal ~msg:"same write" (list string)
@@ -1302,7 +1330,7 @@ let unicode_mark_after_dropped_wide () =
      margin is dropped, and so is a mark that follows it in a later write. *)
   let screen chunks =
     let vte = Vte.create ~rows:1 ~cols:3 () in
-    List.iter (Vte.feed_string vte) chunks;
+    List.iter (feed vte) chunks;
     Vte.to_string vte
   in
   let wide = "\x1b[?7l\xE4\xBD\xA0" and mark = "\xCC\x81" in
@@ -1332,8 +1360,7 @@ let unicode_malformed_utf8 () =
 
 let hyperlinks_survive_styles_and_scrollback () =
   let vte = Vte.create ~rows:1 ~cols:8 () in
-  Vte.feed_string vte
-    "\027]8;;https://example.test\027\\a\027[31mb\027[0mc\027]8;;\027\\d";
+  feed vte "\027]8;;https://example.test\027\\a\027[31mb\027[0mc\027]8;;\027\\d";
   let check grid =
     for i = 0 to 2 do
       equal ~msg:"link survives SGR changes" string "https://example.test"
@@ -1342,19 +1369,19 @@ let hyperlinks_survive_styles_and_scrollback () =
     equal ~msg:"OSC8 closes link" string "" (Grid.get_link grid 3)
   in
   check (Vte.grid vte);
-  Vte.feed_string vte "\r\n";
+  feed vte "\r\n";
   let dst = Grid.create ~width:8 ~height:1 () in
   Vte.render_with_scrollback vte ~offset:1 dst;
   check dst
 
 let scrollback_preserves_decorated_spaces () =
   let vte = Vte.create ~rows:1 ~cols:8 () in
-  Vte.feed_string vte
+  feed vte
     "x\027[44m  \027[0;4m \027[0m\027]8;;https://space.test\027\\ \
      \027]8;;\027\\";
   let before = Vte.grid vte in
   let styles = Array.init 5 (Grid.get_style before) in
-  Vte.feed_string vte "\r\n";
+  feed vte "\r\n";
   equal ~msg:"plain history remains trimmed" (list string) [ "x" ]
     (Vte.scrollback_lines vte);
   let dst = Grid.create ~width:8 ~height:1 () in
@@ -1371,13 +1398,13 @@ let clearing_scrollback_releases_text () =
       let vte = Vte.create ~rows:1 ~cols:80 () in
       let weak = Weak.create 1 in
       let fill () =
-        Vte.feed_string vte (String.make 40 'x' ^ "\r\n");
+        feed vte (String.make 40 'x' ^ "\r\n");
         Weak.set weak 0 (Some (List.hd (Vte.scrollback_lines vte)))
       in
       fill ();
       Gc.full_major ();
       is_true ~msg:"live history owns its text" (Weak.check weak 0);
-      if reset then Vte.reset vte else Vte.feed_string vte "\027[3J";
+      if reset then Vte.reset vte else feed vte "\027[3J";
       Gc.full_major ();
       is_false ~msg:"cleared history releases its text" (Weak.check weak 0);
       equal ~msg:"history cleared" int 0 (Vte.scrollback_size vte))
@@ -1385,11 +1412,11 @@ let clearing_scrollback_releases_text () =
 
 let wcwidth_combining_at_margin_and_insert () =
   let vte = Vte.create ~width_method:`Wcwidth ~rows:1 ~cols:2 () in
-  Vte.feed_string vte "\027[?7labć";
+  feed vte "\027[?7labć";
   equal ~msg:"mark attaches to overwritten margin glyph" string "ć"
     (Grid.get_text (Vte.grid vte) 1);
   Vte.reset vte;
-  Vte.feed_string vte "\027[4hé";
+  feed vte "\027[4hé";
   equal ~msg:"insert preserves the entire cluster" string "é"
     (Grid.get_text (Vte.grid vte) 0);
   equal ~msg:"insert measures the cluster" (pair int int) (0, 1)
@@ -1397,7 +1424,7 @@ let wcwidth_combining_at_margin_and_insert () =
 
 let wcwidth_insert_measures_complete_cluster () =
   let vte = Vte.create ~width_method:`Wcwidth ~rows:1 ~cols:8 () in
-  Vte.feed_string vte "ABCDEFGH\r\027[4h👨‍💻";
+  feed vte "ABCDEFGH\r\027[4h👨‍💻";
   equal ~msg:"insert shifts by the entire four-column cluster" string "A"
     (Grid.get_text (Vte.grid vte) 4);
   (* A wcwidth terminal places each emoji in its own cells, with the ZWJ after
@@ -1416,13 +1443,13 @@ let long_runs_match_fragmented_runs () =
           let whole = Vte.create ~width_method ~rows:3 ~cols:13 () in
           let split = Vte.create ~width_method ~rows:3 ~cols:13 () in
           if insert then begin
-            Vte.feed_string whole "\027[4h";
-            Vte.feed_string split "\027[4h"
+            feed whole "\027[4h";
+            feed split "\027[4h"
           end;
           let unit = "ab中é" in
           let text = String.concat "" (List.init 150 (fun _ -> unit)) in
-          Vte.feed_string whole text;
-          List.iter (Vte.feed_string split) (List.init 150 (fun _ -> unit));
+          feed whole text;
+          List.iter (feed split) (List.init 150 (fun _ -> unit));
           equal ~msg:"row slices match separate runs" string
             (Vte.to_string split) (Vte.to_string whole);
           equal ~msg:"cursor matches separate runs" (pair int int)
@@ -1436,7 +1463,7 @@ let long_runs_match_fragmented_runs () =
 let character_sets () =
   let line s =
     let vte = Vte.create ~rows:1 ~cols:6 () in
-    Vte.feed_string vte s;
+    feed vte s;
     Vte.to_string vte
   in
   equal ~msg:"DEC Special Graphics in G0" string
@@ -1453,6 +1480,346 @@ let character_sets () =
   equal ~msg:"Swiss" string "\u{00f9}\u{00e8}    " (line "\x1b(=#_");
   equal ~msg:"DECRC restores the designations" string "\xe2\x94\x80     "
     (line "\x1b(0\x1b7\x1b(B\x1b8q")
+
+(** {1 The model} *)
+
+let screen_of ?(rows = 1) ?(cols = 6) ?width_method chunks =
+  let vte = Vte.create ?width_method ~rows ~cols () in
+  List.iter (feed vte) chunks;
+  vte
+
+(* The cells, cursor, wrap marks and scrollback that make the screen. *)
+let state vte =
+  let g = Vte.grid vte in
+  let cells =
+    List.init
+      (Grid.width g * Grid.height g)
+      (fun i ->
+        Printf.sprintf "%S/%d/%b" (Grid.get_text g i) (Grid.cell_width g i)
+          (Grid.is_continuation g i))
+  in
+  let marks =
+    List.init
+      (Vte.rows vte + Vte.scrollback_size vte)
+      (fun i -> Vte.wrapped vte (i - Vte.scrollback_size vte))
+  in
+  ( String.concat " " cells,
+    (Vte.cursor_pos vte, (marks, Vte.scrollback_lines vte)) )
+
+let state_t = pair string (pair (pair int int) (pair (list bool) (list string)))
+
+(* Every split of [s] in two gives the screen of [s] fed whole. *)
+let check_splits ?(rows = 2) ?(cols = 6) ?width_method msg s =
+  let whole = state (screen_of ~rows ~cols ?width_method [ s ]) in
+  for i = 1 to String.length s - 1 do
+    let split =
+      screen_of ~rows ~cols ?width_method
+        [ String.sub s 0 i; String.sub s i (String.length s - i) ]
+    in
+    equal
+      ~msg:(Printf.sprintf "%s, split at %d" msg i)
+      state_t whole (state split)
+  done
+
+(* DECSC saves the Last Column Flag: a character after DECRC wraps. Every
+   function that moves the cursor or changes cells clears it; HT, CHT, SGR,
+   settings and reports keep it. *)
+let last_column_flag () =
+  let pos s =
+    Vte.cursor_pos (screen_of ~rows:3 ~cols:10 [ "\x1b[1;9HAB" ^ s ])
+  in
+  equal ~msg:"set at the last column" (pair int int) (0, 9) (pos "");
+  equal ~msg:"DECSC saves it" (pair int int) (1, 1)
+    (pos "\x1b7\x1b[3;1HQ\x1b8X");
+  equal ~msg:"HT keeps it" (pair int int) (1, 1) (pos "\tX");
+  equal ~msg:"CHT keeps it" (pair int int) (1, 1) (pos "\x1b[2IX");
+  equal ~msg:"SGR keeps it" (pair int int) (1, 1) (pos "\x1b[1mX");
+  equal ~msg:"a report keeps it" (pair int int) (1, 1) (pos "\x1b[6nX");
+  equal ~msg:"CBT clears it and moves" (pair int int) (0, 9) (pos "\x1b[ZX");
+  equal ~msg:"SU clears it" (pair int int) (0, 9) (pos "\x1b[SX");
+  equal ~msg:"ICH clears it" (pair int int) (0, 9) (pos "\x1b[@X");
+  equal ~msg:"CUF clears it" (pair int int) (0, 9) (pos "\x1b[CX");
+  List.iter
+    (fun f ->
+      equal
+        ~msg:(f ^ ", which changes no cell, keeps it")
+        (pair int int) (1, 1)
+        (pos (f ^ "X")))
+    [ "\x1b[3J"; "\x1b[4J"; "\x1b[3K" ];
+  let vte = screen_of ~rows:2 ~cols:4 [ "abcd\x1b[?7lX" ] in
+  equal ~msg:"inert with autowrap off" string "abcX\n    " (Vte.to_string vte)
+
+(* REP repeats the unit before it, exactly, whatever the count. *)
+let repeat_exactly () =
+  let state_of ?(setup = "") ?(rows = 2) ?(cols = 5) s =
+    let vte = Vte.create ~scrollback:3 ~rows ~cols () in
+    feed vte (setup ^ s);
+    state vte
+  in
+  (* A literal run against REP, for counts past the screen and the
+     scrollback. *)
+  List.iter
+    (fun (setup, unit) ->
+      for n = 1 to 60 do
+        let literal = String.concat "" (List.init (n + 1) (fun _ -> unit)) in
+        equal
+          ~msg:(Printf.sprintf "%S %S REP %d" setup unit n)
+          state_t (state_of ~setup literal)
+          (state_of ~setup (Printf.sprintf "%s\x1b[%db" unit n))
+      done)
+    [
+      ("", "a");
+      ("", "\xe4\xb8\xad");
+      ("", "e\xcc\x81");
+      ("\x1b[?7l", "a");
+      ("\x1b[?7l", "\xe4\xb8\xad");
+      ("\x1b[4h", "a");
+      ("\x1b[4hxyzw\r", "\xe4\xb8\xad");
+      ("\x1b[2;2r\x1b[2;1H", "a");
+    ];
+  equal ~msg:"no cap"
+    (pair string (pair int int))
+    ("aaaaa\naaa  ", (1, 3))
+    (let vte = screen_of ~rows:2 ~cols:5 [ "a\x1b[12b" ] in
+     (Vte.to_string vte, Vte.cursor_pos vte));
+  let huge = state_of (Printf.sprintf "a\x1b[%db" max_int) in
+  (* 1 + max_int prints are 4 mod 5, as 39 are: once the screen and the
+     scrollback hold the same rows, only the count modulo the 5 units of a
+     row matters. *)
+  equal ~msg:"a saturated count" state_t (state_of (String.make 39 'a')) huge;
+  let cells s = Vte.to_string (screen_of ~rows:1 ~cols:8 [ s ]) in
+  equal ~msg:"a keycap" string "1\xef\xb8\x8f1\xef\xb8\x8f1\xef\xb8\x8f  "
+    (cells "1\xef\xb8\x8f\x1b[2b");
+  equal ~msg:"a regional indicator stays a unit" string "\u{1F1EB}\u{1F1EB}"
+    (String.concat ""
+       (List.filter
+          (fun s -> s <> " ")
+          (let g = Vte.grid (screen_of ~rows:1 ~cols:8 [ "\u{1F1EB}\x1b[b" ]) in
+           List.init 8 (Grid.get_text g))));
+  equal ~msg:"REP after REP repeats nothing" string "aa      "
+    (cells "a\x1b[b\x1b[b");
+  equal ~msg:"a mark after REP joins the last repeat" string "aaee\xcc\x81    "
+    (cells "aae\x1b[b\xcc\x81")
+
+(* Every edit's blank has the colour ED's blank has, and no attributes, also
+   where the edit cuts a wide character. *)
+let one_blank () =
+  let rows text = String.concat "\r\n" [ text; text; text ] in
+  let blank_bg =
+    Grid.get_bg (Vte.grid (screen_of ~rows:3 [ "\x1b[41m\x1b[2J" ])) 0
+  in
+  List.iter
+    (fun (fill, col) ->
+      List.iter
+        (fun (name, op) ->
+          let vte =
+            screen_of ~rows:3
+              [ fill; Printf.sprintf "\x1b[2;%dH\x1b[1;41m" col; op ]
+          in
+          let g = Vte.grid vte in
+          for i = 0 to 17 do
+            if Grid.get_text g i = " " then (
+              is_true
+                ~msg:
+                  (Printf.sprintf "%s, %S at column %d: cell %d colour" name
+                     fill col i)
+                (Ansi.Color.equal (Grid.get_bg g i) blank_bg);
+              is_true
+                ~msg:
+                  (Printf.sprintf "%s, %S at column %d: cell %d attributes" name
+                     fill col i)
+                (Grid.get_attrs g i = 0))
+          done)
+        [
+          ("ED 0", "\x1b[J");
+          ("ED 1", "\x1b[1J");
+          ("ED 2", "\x1b[2J");
+          ("EL 0", "\x1b[K");
+          ("EL 1", "\x1b[1K");
+          ("EL 2", "\x1b[2K");
+          ("ECH", "\x1b[X");
+          ("ICH", "\x1b[@");
+          ("DCH", "\x1b[P");
+          ("IL", "\x1b[L");
+          ("DL", "\x1b[M");
+          ("SU", "\x1b[S");
+          ("SD", "\x1b[T");
+          ("SL", "\x1b[ @");
+          ("SR", "\x1b[ A");
+          ("DECIC", "\x1b['}");
+          ("DECDC", "\x1b['~");
+          ("LF", "\x1b[3H\n");
+          ("RI", "\x1b[H\x1bM");
+          ("insert mode", "\x1b[4hx");
+          ("a wrap", "\x1b[2;6H\xe4\xb8\xad");
+          ("a cut by printing", "x");
+        ])
+    [
+      (rows "\xe4\xb8\xad\xe4\xb8\xad\xe4\xb8\xad", 3);
+      (rows "\xe4\xb8\xad\xe4\xb8\xad\xe4\xb8\xad", 4);
+      (rows "abcdef", 3);
+    ]
+
+(* A unit of no width that continues nothing joins the cell before the
+   cursor, keeping its width and rendition, or is dropped; it is taken back
+   if it gains a width. *)
+let zero_width_units () =
+  let cells ?(cols = 8) chunks =
+    let g = Vte.grid (screen_of ~cols chunks) in
+    List.init cols (Grid.get_text g)
+  in
+  equal ~msg:"after SGR" (list string)
+    [ "a\u{200B}"; "b"; " "; " "; " "; " "; " "; " " ]
+    (cells [ "a\x1b[0m\u{200B}b" ]);
+  equal ~msg:"after a cursor motion" (list string)
+    [ "a"; " "; " "; " "; " "; " \u{200B}"; "b"; " " ]
+    (cells [ "a\x1b[5C\u{200B}b" ]);
+  equal ~msg:"a mark after a control function" (list string)
+    [ "e\xcc\x81"; " "; " "; " "; " "; " "; " "; " " ]
+    (cells [ "e\x1b[1m\xcc\x81" ]);
+  let vte = screen_of [ "e\x1b[1m\xcc\x81" ] in
+  equal ~msg:"keeps the rendition" int 0 (Grid.get_attrs (Vte.grid vte) 0);
+  equal ~msg:"at the first column it is dropped" (list string)
+    [ "x"; " "; " "; " "; " "; " "; " "; " " ]
+    (cells [ "\u{200B}x" ]);
+  equal ~msg:"with the Last Column Flag" (list string)
+    [ "a"; "b"; "c"; "d\u{200B}" ]
+    (cells ~cols:4 [ "abcd\u{200B}" ]);
+  equal ~msg:"keeps a wide character's width" (list string)
+    [ "\xe4\xb8\xad\u{2060}"; ""; "x"; " " ]
+    (cells ~cols:4 [ "\xe4\xb8\xad"; "\u{2060}"; "x" ]);
+  check_splits "a Prepend taken back" "x\u{0600}ab";
+  equal ~msg:"a Prepend taken back" (list string)
+    [ "x"; "\u{0600}a"; "b"; " "; " "; " "; " "; " " ]
+    (cells [ "x"; "\u{0600}"; "ab" ])
+
+(* Placement does not depend on how the output was split. *)
+let split_counterexamples () =
+  List.iter
+    (fun width_method ->
+      check_splits ~width_method "Malayalam dot reph" "\u{0D4E}ab";
+      check_splits ~width_method "Sharada jihvamuliya" "x\u{111C2}ab";
+      check_splits ~width_method "a keycap" "a1\u{FE0F}";
+      check_splits ~width_method "a keycap at the margin" "abcde1\u{FE0F}x";
+      check_splits ~width_method "a keycap at the margin, no autowrap"
+        "\x1b[?7labcde1\u{FE0F}x";
+      check_splits ~width_method "a keycap in insert mode"
+        "uvwxyz\r\x1b[4ha1\u{FE0F}b";
+      check_splits ~width_method "a ZWJ sequence"
+        "abcd\u{1F468}\u{200D}\u{1F4BB}e";
+      check_splits ~width_method "VS16 and VS15"
+        "abcde\u{2764}\u{FE0F}\u{231A}\u{FE0E}";
+      check_splits ~width_method "a flag at the margin"
+        "abcde\u{1F1EB}\u{1F1F7}x";
+      check_splits ~width_method "Hangul jamo" "a\u{1100}\u{1161}\u{11A8}b";
+      check_splits ~width_method "marks after a wrap"
+        "abcde\xe4\xb8\xad\xcc\x81\xcc\x81x")
+    [ `Unicode; `Unicode_wide; `Wcwidth ];
+  let g = Vte.grid (screen_of [ "\u{0D4E}ab" ]) in
+  equal ~msg:"a Prepend letter starts the cluster" (pair string string)
+    ("\u{0D4E}a", "b")
+    (Grid.get_text g 0, Grid.get_text g 1)
+
+(* A unit that does not fit, with autowrap, erases to the margin before it
+   wraps; without, it ends at the margin. *)
+let placement_rules () =
+  let text ?(cols = 4) s = Vte.to_string (screen_of ~rows:2 ~cols [ s ]) in
+  equal ~msg:"erase before a wrap" string "abc \n\xe4\xb8\xad  "
+    (text "abcd\r\x1b[3C\xe4\xb8\xad");
+  equal ~msg:"ends at the margin" string "ab\xe4\xb8\xad\n    "
+    (text "\x1b[?7labc\xe4\xb8\xad");
+  equal ~msg:"narrowed to the line" string "\xe4\xb8\xad\n "
+    (text ~cols:1 "\xe4\xb8\xad");
+  equal ~msg:"insert mode moves the line by the unit" string
+    "\xe4\xb8\xadab\n    "
+    (text "ab\r\x1b[4h\xe4\xb8\xad");
+  equal ~msg:"insert mode wraps a unit at the last column" string
+    "    \n\u{ff21}  "
+    (text "\x1b[4G\x1b[4h\u{ff21}")
+
+(* Wrap marks: set by autowrap only, kept in the scrollback, moved by a
+   scroll, cleared by an edit that reaches the last column. *)
+let wrap_marks () =
+  let marks s =
+    let vte = Vte.create ~scrollback:4 ~rows:3 ~cols:4 () in
+    feed vte s;
+    List.init
+      (3 + Vte.scrollback_size vte)
+      (fun i -> Vte.wrapped vte (i - Vte.scrollback_size vte))
+  in
+  equal ~msg:"autowrap" (list bool) [ true; false; false ] (marks "abcdef");
+  equal ~msg:"not a line feed" (list bool) [ false; false; false ]
+    (marks "abcd\r\nef");
+  equal ~msg:"into the scrollback" (list bool)
+    [ true; true; true; false ]
+    (marks "abcdefghijklmn");
+  equal ~msg:"moved by IL" (list bool) [ false; true; false ]
+    (marks "abcdef\x1b[H\x1b[L");
+  equal ~msg:"cleared by EL" (list bool) [ false; false; false ]
+    (marks "abcdef\x1b[H\x1b[K");
+  equal ~msg:"kept by an erase short of the end" (list bool)
+    [ true; false; false ]
+    (marks "abcdef\x1b[H\x1b[1K");
+  equal ~msg:"cleared by DCH" (list bool) [ false; false; false ]
+    (marks "abcdef\x1b[H\x1b[P");
+  equal ~msg:"no next row below the region" (list bool) [ false; false; false ]
+    (marks "\x1b[1;2r\x1b[3Habcdef")
+
+(* Counts are clamped before arithmetic: a saturated parameter acts like the
+   largest move. *)
+let huge_parameters () =
+  let pos s = Vte.cursor_pos (screen_of ~rows:4 ~cols:6 [ "\x1b[2;3H" ^ s ]) in
+  let big = "99999999999999999999999" in
+  List.iter
+    (fun (name, s, expected) ->
+      equal ~msg:name (pair int int) expected (pos (Printf.sprintf s big)))
+    [
+      ("CUF", "\x1b[%sC", (1, 5));
+      ("CUB", "\x1b[%sD", (1, 0));
+      ("CUU", "\x1b[%sA", (0, 2));
+      ("CUD", "\x1b[%sB", (3, 2));
+      ("VPR", "\x1b[%se", (3, 2));
+      ("HPR", "\x1b[%sa", (1, 5));
+      ("CUP", "\x1b[%s;99999999999999999999H", (3, 5));
+      ("CHT", "\x1b[%sI", (1, 5));
+      ("CBT", "\x1b[%sZ", (1, 0));
+      ("CNL", "\x1b[%sE", (3, 0));
+    ];
+  let text s =
+    Vte.to_string (screen_of ~rows:2 ~cols:4 [ "abcd\r\nefgh\x1b[1;2H" ^ s ])
+  in
+  equal ~msg:"ICH" string "a   \nefgh" (text ("\x1b[" ^ big ^ "@"));
+  equal ~msg:"DCH" string "a   \nefgh" (text ("\x1b[" ^ big ^ "P"));
+  equal ~msg:"ECH" string "a   \nefgh" (text ("\x1b[" ^ big ^ "X"));
+  equal ~msg:"IL" string "    \n    " (text ("\x1b[" ^ big ^ "L"));
+  equal ~msg:"SU" string "    \n    " (text ("\x1b[" ^ big ^ "S"))
+
+(* The control functions of the parser's probes, at the VTE. *)
+let parser_probes () =
+  let vte s = screen_of ~rows:2 ~cols:8 [ s ] in
+  let text s = Vte.to_string (vte s) in
+  equal ~msg:"a UTF-8 C1 ends a CSI" string "2Cb     \n        "
+    (text "\x1b[1\xc2\x9b2Cb");
+  equal ~msg:"a UTF-8 C1 in an OSC is dropped" string "t2Cb"
+    (Vte.title (vte "\x1b]0;t\xc2\x9b2Cb\x07"));
+  equal ~msg:"ESC ends ESC %" string " b      \n        " (text "\x1b%\x1b[Cb");
+  equal ~msg:"ESC ends a designation" string " b      \n        "
+    (text "\x1b(\x1b[Cb");
+  equal ~msg:"ESC ESC" string " b      \n        " (text "\x1b\x1b[Cb");
+  equal ~msg:"a non-ASCII character ends an escape" string "b       \n        "
+    (text "\x1b\xc3\xa9b");
+  equal ~msg:"C0 inside an escape sequence" string "EEEEEEEE\nEEEEEEEE"
+    (text "\x1b#\n8");
+  equal ~msg:"an APC cut short does nothing" string " b      \n        "
+    (text "\x1b_abc\x1b[Cb");
+  let pos s = Vte.cursor_pos (vte ("\x1b[2;5H" ^ s)) in
+  equal ~msg:"CNL 0" (pair int int) (1, 0) (pos "\x1b[0E");
+  equal ~msg:"CPL 0" (pair int int) (0, 0) (pos "\x1b[0F");
+  equal ~msg:"VPR 0" (pair int int) (1, 4) (pos "\x1b[0e");
+  equal ~msg:"HPR 0" (pair int int) (1, 5) (pos "\x1b[0a");
+  equal ~msg:"CBT 0" (pair int int) (1, 0) (pos "\x1b[0Z");
+  equal ~msg:"VPR saturated" (pair int int) (1, 4)
+    (pos "\x1b[4611686018427387904e")
 
 (** {1 Test Suite} *)
 
@@ -1523,6 +1890,7 @@ let tests =
     test "SGR background color" sgr_background_color;
     test "erase keeps background index" erase_keeps_background_index;
     test "terminal defaults replace cells" terminal_defaults_replace_cells;
+    test "SGR 24 ends a double underline" sgr_24_ends_double_underline;
     test "SGR reset" sgr_reset;
     test "cursor hide/show" cursor_hide_show;
     test "set cursor visible" set_cursor_visible_programmatic;
@@ -1586,6 +1954,15 @@ let tests =
     test "unicode mark after dropped wide" unicode_mark_after_dropped_wide;
     test "unicode malformed utf8" unicode_malformed_utf8;
     test "character sets" character_sets;
+    test "last column flag" last_column_flag;
+    test "REP repeats exactly" repeat_exactly;
+    test "one blank" one_blank;
+    test "zero-width units" zero_width_units;
+    test "split counterexamples" split_counterexamples;
+    test "placement rules" placement_rules;
+    test "wrap marks" wrap_marks;
+    test "huge parameters" huge_parameters;
+    test "parser probes" parser_probes;
   ]
 
 let () = run "matrix.vte" [ group "vte" tests ]

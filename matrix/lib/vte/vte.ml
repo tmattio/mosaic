@@ -1,53 +1,239 @@
 module Grid = Matrix_grid
 module Text = Matrix_text
+module Params = Ansi.Parser.Params
 
-type cursor = { mutable row : int; mutable col : int; mutable visible : bool }
-(* Internal cursor state *)
+(* {1:state State} *)
 
-type saved_cursor = {
-  saved_row : int;
-  saved_col : int;
-  saved_style : Ansi.Style.t;
-  saved_origin : bool;
-  saved_charsets : char array;
-  saved_gl : int;
-  saved_protect : bool;
+(* [last_column] is DEC's Last Column Flag: the cursor is on the character just
+   printed in the last column, and the next one wraps first. It implies
+   [col = cols - 1]. Only [set_cursor] changes the cursor, for [goto] and
+   printing; a saved cursor is a copy, never changed. *)
+type cursor = {
+  mutable row : int;
+  mutable col : int;
+  mutable last_column : bool;
 }
-(* What DECSC saves. Visibility is not part of it, as in xterm. *)
 
-(* What DECRC restores when nothing was saved. *)
-let home_cursor =
+(* [style] is the SGR rendition, never with a link: OSC 8 sets [link]. *)
+type pen = { style : Ansi.Style.t; link : string option; protected : bool }
+
+(* A 94-character set: ASCII, or the code points that replace 0x20..0x7F. *)
+type charset = Ascii | Mapped of int array
+
+(* [g] is never mutated: a designation makes a new array. *)
+type charsets = { g : charset array; gl : int }
+
+(* What DECSC saves. *)
+type saved = { cursor : cursor; pen : pen; charsets : charsets; origin : bool }
+
+(* A screen's cells, the wrap mark of each row (a byte), and its DECSC slot.
+   The screen functions below are the only ones that change [grid] and
+   [wrapped]. *)
+type screen = {
+  grid : Grid.t;
+  mutable wrapped : Bytes.t;
+  mutable saved : saved;
+}
+
+type margins = { top : int; bottom : int }
+
+type modes = {
+  insert : bool;
+  origin : bool;
+  auto_wrap : bool;
+  reverse_wrap : bool;
+  cursor_keys : bool;
+  cursor_visible : bool;
+  bracketed_paste : bool;
+  alternate_screen : bool;
+}
+
+(* A scrollback line: its text, the style of each run of it from
+   [start_byte], and its wrap mark. *)
+type style_run = { start_byte : int; style : Ansi.Style.t }
+type line = { text : string; styles : style_run array; wrapped : bool }
+
+(* A ring of the newest lines: [head] is where the next one goes. *)
+type history = { lines : line array; mutable head : int; mutable count : int }
+
+(* The display unit in progress, the text printed since the last unit boundary
+   or control function: its bytes after translation, its width as the
+   segmenter measures it, and whether it [grew] since it was last placed.
+   Placed, it covers [cells] cells from [(row, col)]; joined, having no width,
+   its bytes follow those of the grapheme at [(row, col)], whose text was
+   [prev]. *)
+type placement = Nowhere | Cells | Joined
+
+type cluster = {
+  seg : Text.Segmenter.t;
+  mutable text : Bytes.t;
+  mutable len : int;
+  mutable width : int;
+  mutable grown : bool;
+  mutable at : placement;
+  mutable row : int;
+  mutable col : int;
+  mutable cells : int;
+  mutable prev : string;
+}
+
+(* An OSC is kept only when the VTE performs it: [Osc_number n] while its
+   number is read (-1 before the first digit), [Osc_text n] once it is known
+   to be kept, and [Osc_skip] otherwise. *)
+type osc = Osc_skip | Osc_number of int | Osc_text of int
+
+(* The rows changed, a byte a row. *)
+type dirty = {
+  mutable any : bool;
+  mutable cursor : bool;
+  mutable rows : Bytes.t;
+}
+
+type t = {
+  mutable rows : int;
+  mutable cols : int;
+  primary : screen;
+  alternate : screen;
+  history : history;
+  cursor : cursor;
+  mutable pen : pen;
+  mutable charsets : charsets;
+  mutable modes : modes;
+  mutable margins : margins;
+  mutable tabs : bool array;
+  mutable title : string;
+  cluster : cluster;
+  default_fg : Ansi.Color.t;
+  default_bg : Ansi.Color.t;
+  parser : Ansi.Parser.t;
+  mutable osc : osc;
+  osc_text : Buffer.t;
+  (* The replies owed, until [take_replies], and the identity given. *)
+  replies : Buffer.t;
+  da1 : string;
+  da2 : string;
+  dirty : dirty;
+}
+
+let top_left = { row = 0; col = 0; last_column = false }
+let plain_pen = { style = Ansi.Style.default; link = None; protected = false }
+let ascii_sets = { g = [| Ascii; Ascii; Ascii; Ascii |]; gl = 0 }
+
+let power_up =
+  { cursor = top_left; pen = plain_pen; charsets = ascii_sets; origin = false }
+
+let power_up_modes =
   {
-    saved_row = 0;
-    saved_col = 0;
-    saved_style = Ansi.Style.default;
-    saved_origin = false;
-    saved_charsets = Array.make 4 'B';
-    saved_gl = 0;
-    saved_protect = false;
+    insert = false;
+    origin = false;
+    auto_wrap = true;
+    reverse_wrap = false;
+    cursor_keys = false;
+    cursor_visible = true;
+    bracketed_paste = false;
+    alternate_screen = false;
   }
 
-type style_run = { start_byte : int; style : Ansi.Style.t }
-type scrollback_line = { text : string; styles : style_run array }
+(* Tab stops every eight columns, as at power-up. *)
+let default_tabs cols = Array.init cols (fun i -> i > 0 && i mod 8 = 0)
+let empty_line = { text = ""; styles = [||]; wrapped = false }
 
-let empty_scrollback_line = { text = ""; styles = [||] }
+let create ?(scrollback = 10000) ?(width_method = `Unicode)
+    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black)
+    ?(da1 = "\027[?1;2c") ?(da2 = "\027[>0;0;0c") ~rows ~cols () =
+  let rows = max 1 rows and cols = max 1 cols in
+  let screen () =
+    let grid = Grid.create ~width:cols ~height:rows ~width_method () in
+    Grid.clear ~color:default_bg grid;
+    { grid; wrapped = Bytes.make rows '\000'; saved = power_up }
+  in
+  {
+    rows;
+    cols;
+    primary = screen ();
+    alternate = screen ();
+    history =
+      { lines = Array.make (max 0 scrollback) empty_line; head = 0; count = 0 };
+    cursor = { row = 0; col = 0; last_column = false };
+    pen = plain_pen;
+    charsets = ascii_sets;
+    modes = power_up_modes;
+    margins = { top = 0; bottom = rows - 1 };
+    tabs = default_tabs cols;
+    title = "";
+    cluster =
+      {
+        seg = Text.Segmenter.create width_method;
+        text = Bytes.create 16;
+        len = 0;
+        width = 0;
+        grown = false;
+        at = Nowhere;
+        row = 0;
+        col = 0;
+        cells = 0;
+        prev = "";
+      };
+    default_fg;
+    default_bg;
+    parser = Ansi.Parser.create ();
+    osc = Osc_skip;
+    osc_text = Buffer.create 64;
+    replies = Buffer.create 16;
+    da1;
+    da2;
+    dirty = { any = false; cursor = false; rows = Bytes.make rows '\000' };
+  }
 
-type scrollback = {
-  lines : scrollback_line array; (* Ring buffer of compressed lines *)
-  mutable head : int;
-  mutable count : int;
-  capacity : int;
-}
-(* Scrollback ring buffer with compressed storage *)
+let screen t = if t.modes.alternate_screen then t.alternate else t.primary
+let grid t = (screen t).grid
 
-type scroll_region = { mutable top : int; mutable bottom : int }
-(* Scroll region bounds *)
+(* A colour of the pen, or the default for none and for SGR 39/49. *)
+let resolve ~default = function
+  | None -> default
+  | Some c -> (
+      match Ansi.Color.intent c with Default -> default | Indexed _ | Rgb -> c)
 
-module Int_set = Set.Make (Int)
+let fg t = resolve ~default:t.default_fg t.pen.style.fg
 
-(* Store complete styles, including hyperlinks, only when they change. Spaces
-   can be omitted only when they carry no visible decoration or link. *)
-let compress_row ~default_bg grid row cols =
+(* The background of what is printed, and of every blank. *)
+let bg t = resolve ~default:t.default_bg t.pen.style.bg
+let protected_yes = Some true
+let protection t = if t.pen.protected then protected_yes else None
+
+(* {1:dirty Changes} *)
+
+let touch_row t row =
+  t.dirty.any <- true;
+  Bytes.unsafe_set t.dirty.rows row '\001'
+
+let touch_rows t top bottom =
+  if top <= bottom then (
+    t.dirty.any <- true;
+    Bytes.fill t.dirty.rows top (bottom - top + 1) '\001')
+
+let set_cursor t ~row ~col ~last_column =
+  let c = t.cursor in
+  if row <> c.row || col <> c.col then (
+    t.dirty.any <- true;
+    t.dirty.cursor <- true);
+  c.row <- row;
+  c.col <- col;
+  c.last_column <- last_column
+
+(* Every function that sets the cursor position does it here, so it clears
+   the Last Column Flag. *)
+let goto t ~row ~col =
+  let row = max 0 (min row (t.rows - 1))
+  and col = max 0 (min col (t.cols - 1)) in
+  set_cursor t ~row ~col ~last_column:false
+
+(* {1:history Scrollback} *)
+
+(* Styles are stored only when they change. Trailing spaces are dropped
+   unless they show a background, an attribute or a link. *)
+let compress_row t (s : screen) row =
+  let g = s.grid and cols = t.cols in
   let buf = Buffer.create (cols * 2) in
   let styles = ref [] in
   let current_fg = ref Ansi.Color.default_fg in
@@ -57,14 +243,10 @@ let compress_row ~default_bg grid row cols =
   let content_end = ref 0 in
   for col = 0 to cols - 1 do
     let idx = (row * cols) + col in
-    if not (Grid.is_continuation grid idx) then begin
-      let text =
-        if Grid.is_empty grid idx then " " else Grid.get_text grid idx
-      in
-      let fg = Grid.get_fg grid idx in
-      let bg = Grid.get_bg grid idx in
-      let attrs = Grid.get_attrs grid idx in
-      let link = Grid.get_link grid idx in
+    if not (Grid.is_continuation g idx) then begin
+      let text = if Grid.is_empty g idx then " " else Grid.get_text g idx in
+      let fg = Grid.get_fg g idx and bg = Grid.get_bg g idx in
+      let attrs = Grid.get_attrs g idx and link = Grid.get_link g idx in
       if
         !styles = []
         || (not (Ansi.Color.equal fg !current_fg))
@@ -72,7 +254,7 @@ let compress_row ~default_bg grid row cols =
         || attrs <> !current_attrs || link <> !current_link
       then begin
         styles :=
-          { start_byte = Buffer.length buf; style = Grid.get_style grid idx }
+          { start_byte = Buffer.length buf; style = Grid.get_style g idx }
           :: !styles;
         current_fg := fg;
         current_bg := bg;
@@ -83,7 +265,7 @@ let compress_row ~default_bg grid row cols =
       if
         text <> " "
         || Ansi.Color.Packed.alpha (Ansi.Color.Packed.encode bg) > 0
-           && not (Ansi.Color.equal bg default_bg)
+           && not (Ansi.Color.equal bg t.default_bg)
         || attrs <> 0 || link <> ""
       then content_end := Buffer.length buf
     end
@@ -93,7 +275,11 @@ let compress_row ~default_bg grid row cols =
     | run :: rest when run.start_byte >= !content_end -> trim_runs rest
     | runs -> runs
   in
-  { text; styles = Array.of_list (List.rev (trim_runs !styles)) }
+  {
+    text;
+    styles = Array.of_list (List.rev (trim_runs !styles));
+    wrapped = Bytes.get s.wrapped row <> '\000';
+  }
 
 let decompress_line line grid row =
   let col = ref 0 in
@@ -111,1434 +297,779 @@ let decompress_line line grid row =
     end
   done
 
-(* An OSC is kept only when the VTE performs it: [Osc_number n] while its
-   number is read (-1 before the first digit), [Osc_text n] once it is known
-   to be kept, and [Osc_skip] otherwise. *)
-type osc = Osc_skip | Osc_number of int | Osc_text of int
+let push_line t s row =
+  let h = t.history in
+  let capacity = Array.length h.lines in
+  if capacity > 0 then (
+    h.lines.(h.head) <- compress_row t s row;
+    h.head <- (h.head + 1) mod capacity;
+    h.count <- min capacity (h.count + 1))
 
-type dirty_state = {
-  mutable dirty : bool;
-  mutable dirty_rows : Int_set.t;
-  mutable dirty_cursor : bool;
-}
+(* The [i]th newest line, [i < count]. *)
+let newest h i =
+  let capacity = Array.length h.lines in
+  h.lines.((h.head - 1 - i + capacity) mod capacity)
 
-type t = {
-  (* Screen grids *)
-  primary : Grid.t;
-  alternate : Grid.t;
-  mutable active_grid : Grid.t;
-  (* Dimensions *)
-  mutable rows : int;
-  mutable cols : int;
-  mutable tabs : bool array;
-  (* Cursor state *)
-  cursor : cursor;
-  (* One saved cursor per screen *)
-  mutable saved_primary : saved_cursor;
-  mutable saved_alternate : saved_cursor;
-  (* Graphics state *)
-  mutable style : Ansi.Style.t;
-  (* Parser, and the OSC in progress *)
-  parser : Ansi.Parser.t;
-  mutable osc : osc;
-  osc_text : Buffer.t;
-  (* Text was the last thing printed, so REP has a character to repeat *)
-  mutable repeatable : bool;
-  (* The last grapheme printed did not fit at the right margin and was
-     dropped, so marks that follow it in a later write are dropped too *)
-  mutable dropped : bool;
-  (* Terminal state *)
-  mutable title : string;
-  (* Bytes owed to the application, and the device attributes it is told *)
-  replies : Buffer.t;
-  da1 : string;
-  da2 : string;
-  dirty_state : dirty_state;
-  (* Scrollback *)
-  scrollback : scrollback option;
-  (* Scroll region *)
-  scroll_region : scroll_region;
-  (* Terminal modes *)
-  mutable origin_mode : bool;
-  mutable auto_wrap_mode : bool;
-  mutable reverse_wrap : bool;
-  mutable cursor_key_mode : bool;
-  mutable insert_mode : bool;
-  (* Character sets: the designations of G0 to G3, and the one invoked into
-     GL *)
-  charsets : char array;
-  mutable gl : int;
-  (* DECSCA: the characters written next are protected *)
-  mutable protect : bool;
-  (* Selective erasures spare protected cells, from a DECSCA to a reset *)
-  mutable selective : bool;
-  (* The protected cells of each screen, a byte a cell, kept from the first
-     DECSCA 1 to RIS *)
-  mutable tracked : bool;
-  mutable protected_primary : Bytes.t;
-  mutable protected_alternate : Bytes.t;
-  (* The rows of each screen that auto-wrap continued on the next row *)
-  mutable wrapped_primary : Bytes.t;
-  mutable wrapped_alternate : Bytes.t;
-  mutable bracketed_paste : bool;
-  default_fg : Ansi.Color.t;
-  default_bg : Ansi.Color.t;
-}
-(* VTE instance *)
+let clear_history t =
+  let h = t.history in
+  Array.fill h.lines 0 (Array.length h.lines) empty_line;
+  h.head <- 0;
+  h.count <- 0
 
-(* Tab stops every eight columns, as at power-up. *)
-let default_tabs cols = Array.init cols (fun i -> i > 0 && i mod 8 = 0)
+(* {1:screen Changing the screen}
 
-let create ?(scrollback = 10000) ?width_method ?(default_fg = Ansi.Color.white)
-    ?(default_bg = Ansi.Color.black) ?(da1 = "\027[?1;2c")
-    ?(da2 = "\027[>0;0;0c") ~rows ~cols () =
-  let rows = max 1 rows in
-  let cols = max 1 cols in
-  let primary = Grid.create ~width:cols ~height:rows ?width_method () in
-  let alternate = Grid.create ~width:cols ~height:rows ?width_method () in
-  let scrollback_buffer =
-    if scrollback <= 0 then None
-    else
-      let lines = Array.make scrollback empty_scrollback_line in
-      Some { lines; head = 0; count = 0; capacity = scrollback }
-  in
-  Grid.clear ~color:default_bg primary;
-  Grid.clear ~color:default_bg alternate;
-  {
-    primary;
-    alternate;
-    active_grid = primary;
-    rows;
-    cols;
-    tabs = default_tabs cols;
-    cursor = { row = 0; col = 0; visible = true };
-    saved_primary = home_cursor;
-    saved_alternate = home_cursor;
-    style = Ansi.Style.default;
-    parser = Ansi.Parser.create ();
-    osc = Osc_skip;
-    osc_text = Buffer.create 64;
-    repeatable = false;
-    dropped = false;
-    title = "";
-    replies = Buffer.create 16;
-    da1;
-    da2;
-    dirty_state =
-      { dirty = false; dirty_rows = Int_set.empty; dirty_cursor = false };
-    scrollback = scrollback_buffer;
-    scroll_region = { top = 0; bottom = rows - 1 };
-    origin_mode = false;
-    auto_wrap_mode = true;
-    reverse_wrap = false;
-    cursor_key_mode = false;
-    insert_mode = false;
-    charsets = Array.make 4 'B';
-    gl = 0;
-    protect = false;
-    selective = false;
-    tracked = false;
-    protected_primary = Bytes.make (rows * cols) '\000';
-    protected_alternate = Bytes.make (rows * cols) '\000';
-    wrapped_primary = Bytes.make rows '\000';
-    wrapped_alternate = Bytes.make rows '\000';
-    bracketed_paste = false;
-    default_fg;
-    default_bg;
-  }
+   Every change of cells goes through these functions, and each clears the
+   Last Column Flag: with [goto], that is the rule "every function that sets
+   the cursor position or changes cells clears it". Printing sets the flag
+   after its changes. Every blank is on the pen's background. *)
 
-let protected_cells t =
-  if t.active_grid == t.alternate then t.protected_alternate
-  else t.protected_primary
+let changed t ~top ~bottom =
+  touch_rows t top bottom;
+  t.cursor.last_column <- false
 
-let wrapped_rows t =
-  if t.active_grid == t.alternate then t.wrapped_alternate
-  else t.wrapped_primary
+let unwrap t ~top ~bottom =
+  Bytes.fill (screen t).wrapped top (bottom - top + 1) '\000'
 
-(* Mark [row] as continued on the next row by auto-wrap, or not. *)
-let set_wrapped t row w =
-  if row >= 0 && row < t.rows then
-    Bytes.set (wrapped_rows t) row (if w then '\001' else '\000')
-
-let is_wrapped t row = row >= 0 && Bytes.get (wrapped_rows t) row <> '\000'
-
-(* Clear the wrap mark of [height] rows from [y], which an erasure blanked. *)
-let unwrap_rows t ~y ~height =
-  for row = y to y + height - 1 do
-    set_wrapped t row false
-  done
-
-(* Mark [width] cells from [x] on row [y] protected or not. *)
-let set_protected t ~x ~y ~width p =
-  let x = max 0 x in
-  let width = min width (t.cols - x) in
-  if t.tracked && width > 0 && y >= 0 && y < t.rows then
-    Bytes.fill (protected_cells t)
-      ((y * t.cols) + x)
-      width
-      (if p then '\001' else '\000')
-
-(* Copy [width] cells, with their protection. *)
-let copy_cells t ~src_x ~src_y ~dst_x ~dst_y ~width =
-  Grid.blit_region ~src:t.active_grid ~dst:t.active_grid ~src_x ~src_y ~width
-    ~height:1 ~dst_x ~dst_y;
-  if t.tracked then
-    let cells = protected_cells t in
-    Bytes.blit cells
-      ((src_y * t.cols) + src_x)
-      cells
-      ((dst_y * t.cols) + dst_x)
-      width
-
-(* Efficient destructive erase using the new Grid API: replace region with
-   spaces, with BG matching current style (or default). The colour keeps its
-   palette index, so a theme can recolour the fill as it does text. *)
-let erase_region t ~x ~y ~width ~height =
+(* A wrap mark asserts that the row's last cell is followed by the next row,
+   so an erase that reaches the last column clears it. *)
+let erase_with f t ~x ~y ~width ~height =
   if width > 0 && height > 0 then (
-    let base_bg =
-      match t.style.Ansi.Style.bg with Some c -> c | None -> t.default_bg
-    in
-    let base_bg =
-      match Ansi.Color.intent base_bg with
-      | Default -> t.default_bg
-      | Indexed _ | Rgb -> base_bg
-    in
-    Grid.fill_rect t.active_grid ~x ~y ~width ~height ~color:base_bg;
-    for row = y to y + height - 1 do
-      set_protected t ~x ~y:row ~width false
-    done)
+    f (grid t) { Grid.x; y; width; height };
+    if x + width = t.cols then unwrap t ~top:y ~bottom:(y + height - 1);
+    changed t ~top:y ~bottom:(y + height - 1))
 
-(* Erase as [erase_region]. A selective erasure (DECSED, DECSEL) spares the
-   cells DECSCA protects, as xterm does from a DECSCA to the next reset. *)
-let erase_cells t ~selective ~x ~y ~width ~height =
-  if not (selective && t.selective && t.tracked) then
-    erase_region t ~x ~y ~width ~height
-  else
-    let cells = protected_cells t in
-    for row = y to y + height - 1 do
-      let base = row * t.cols in
-      let col = ref x in
-      while !col < x + width do
-        let start = !col in
-        while !col < x + width && Bytes.get cells (base + !col) = '\000' do
-          incr col
-        done;
-        erase_region t ~x:start ~y:row ~width:(!col - start) ~height:1;
-        while !col < x + width && Bytes.get cells (base + !col) <> '\000' do
-          incr col
-        done
-      done
-    done
+let erase t =
+  erase_with
+    (fun g { Grid.x; y; width; height } ->
+      Grid.clear_rect ~color:(bg t) g ~x ~y ~width ~height)
+    t
 
-(* Dirty tracking helpers *)
-let mark_dirty t = t.dirty_state.dirty <- true
+let erase_unprotected = erase_with Grid.erase_unprotected
 
-let mark_row_dirty t row =
-  if row >= 0 && row < t.rows then (
-    t.dirty_state.dirty <- true;
-    t.dirty_state.dirty_rows <- Int_set.add row t.dirty_state.dirty_rows)
-
-let mark_rows_dirty t start_row end_row =
-  for row = start_row to end_row do
-    mark_row_dirty t row
-  done
-
-let mark_cursor_dirty t =
-  t.dirty_state.dirty <- true;
-  t.dirty_state.dirty_cursor <- true
-
-let grapheme_start_and_width grid row col =
-  let width = Grid.width grid in
-  if width = 0 then (0, 1)
-  else
-    let row_start = row * width in
-    let col = min (max col 0) (width - 1) in
-    let idx = ref (row_start + col) in
-    while !idx >= row_start && Grid.is_continuation grid !idx do
-      idx := !idx - 1
-    done;
-    let start_idx = !idx in
-    let start_col = start_idx - row_start in
-    let w = max 1 (Grid.cell_width grid start_idx) in
-    (start_col, w)
-
-(* DCH and ICH act from the cursor cell. On the right half of a wide
-   character, blank the character first, as xterm does. *)
-let edit_start t row =
-  let start, w = grapheme_start_and_width t.active_grid row t.cursor.col in
-  if start < t.cursor.col then erase_region t ~x:start ~y:row ~width:w ~height:1;
-  t.cursor.col
-
-let rows t = t.rows
-let cols t = t.cols
-
-let resize t ~rows ~cols =
-  let rows = max 1 rows in
-  let cols = max 1 cols in
-  if t.rows = rows && t.cols = cols then ()
-  else (
-    Grid.resize t.primary ~width:cols ~height:rows;
-    Grid.resize t.alternate ~width:cols ~height:rows;
-    (* Resizing leaves existing content intact; terminals expect a clear grid
-       after a size change so applications repaint. Explicitly clear both
-       buffers. *)
-    Grid.clear ~color:t.default_bg t.primary;
-    Grid.clear ~color:t.default_bg t.alternate;
-
-    (* Scrollback doesn't need resize - it's already compressed text *)
-    (* Width changes are handled automatically during decompression *)
-    (match t.scrollback with
-    | Some _ -> () (* Compressed lines adapt to any width *)
-    | None -> ());
-
-    t.rows <- rows;
-    t.cols <- cols;
-    t.protected_primary <- Bytes.make (rows * cols) '\000';
-    t.protected_alternate <- Bytes.make (rows * cols) '\000';
-    t.wrapped_primary <- Bytes.make rows '\000';
-    t.wrapped_alternate <- Bytes.make rows '\000';
-    let tabs = default_tabs cols in
-    Array.blit t.tabs 0 tabs 0 (min cols (Array.length t.tabs));
-    t.tabs <- tabs;
-
-    (* Clamp cursor *)
-    if t.cursor.row >= rows then t.cursor.row <- rows - 1;
-    if t.cursor.col >= cols then t.cursor.col <- cols - 1;
-
-    (* Adjust scroll region *)
-    if t.scroll_region.top >= rows then t.scroll_region.top <- 0;
-    t.scroll_region.bottom <- rows - 1;
-
-    mark_rows_dirty t 0 (rows - 1))
-
-let grid t = t.active_grid
-let title t = t.title
-
-let take_replies t =
-  let s = Buffer.contents t.replies in
-  Buffer.clear t.replies;
-  s
-
-let is_dirty t = t.dirty_state.dirty
-
-let clear_dirty t =
-  t.dirty_state.dirty <- false;
-  t.dirty_state.dirty_rows <- Int_set.empty;
-  t.dirty_state.dirty_cursor <- false
-
-let dirty_rows t = Int_set.elements t.dirty_state.dirty_rows
-let is_cursor_dirty t = t.dirty_state.dirty_cursor
-let is_alternate_screen t = t.active_grid == t.alternate
-let cursor_pos t = (t.cursor.row, t.cursor.col)
-let cursor_visible t = t.cursor.visible
-
-let set_cursor_pos t ~row ~col =
-  let row = max 0 (min row (t.rows - 1)) in
-  (* Allow cursor at t.cols for autowrap - it wraps on next character *)
-  let col = max 0 (min col t.cols) in
-  if t.cursor.row <> row || t.cursor.col <> col then (
-    t.cursor.row <- row;
-    t.cursor.col <- col;
-    mark_cursor_dirty t)
-
-(* A cursor at column [cols] is the pending wrap left by a write to the last
-   column. Cursor motion, line feeds and edits act from the last column and
-   leave it there, as xterm resets its wrap flag. *)
-let clear_pending_wrap t =
-  if t.cursor.col >= t.cols then
-    set_cursor_pos t ~row:t.cursor.row ~col:(t.cols - 1)
-
-(* Explicit motion stops at the last column: only printing can leave the
-   cursor in the pending-wrap position. *)
-let move_cursor t ~row ~col = set_cursor_pos t ~row ~col:(min col (t.cols - 1))
-
-(* In origin mode (DECOM) CUP and VPA rows count from the top margin and stay
-   inside the scroll region. *)
-let origin_row t row =
-  if t.origin_mode then
-    max t.scroll_region.top
-      (min t.scroll_region.bottom (t.scroll_region.top + row))
-  else row
-
-let set_cursor_visible t visible =
-  if t.cursor.visible <> visible then (
-    t.cursor.visible <- visible;
-    mark_cursor_dirty t)
-
-(* DEC Special Graphics ([ESC ( 0]), the line drawing set. *)
-let dec_graphics = function
-  | '`' -> Some "\u{25c6}"
-  | 'a' -> Some "\u{2592}"
-  | 'b' -> Some "\u{2409}"
-  | 'c' -> Some "\u{240c}"
-  | 'd' -> Some "\u{240d}"
-  | 'e' -> Some "\u{240a}"
-  | 'f' -> Some "\u{00b0}"
-  | 'g' -> Some "\u{00b1}"
-  | 'h' -> Some "\u{2424}"
-  | 'i' -> Some "\u{240b}"
-  | 'j' -> Some "\u{2518}"
-  | 'k' -> Some "\u{2510}"
-  | 'l' -> Some "\u{250c}"
-  | 'm' -> Some "\u{2514}"
-  | 'n' -> Some "\u{253c}"
-  | 'o' -> Some "\u{23ba}"
-  | 'p' -> Some "\u{23bb}"
-  | 'q' -> Some "\u{2500}"
-  | 'r' -> Some "\u{23bc}"
-  | 's' -> Some "\u{23bd}"
-  | 't' -> Some "\u{251c}"
-  | 'u' -> Some "\u{2524}"
-  | 'v' -> Some "\u{2534}"
-  | 'w' -> Some "\u{252c}"
-  | 'x' -> Some "\u{2502}"
-  | 'y' -> Some "\u{2264}"
-  | 'z' -> Some "\u{2265}"
-  | '{' -> Some "\u{03c0}"
-  | '|' -> Some "\u{2260}"
-  | '}' -> Some "\u{00a3}"
-  | '~' -> Some "\u{00b7}"
-  | _ -> None
-
-(* The national replacement sets: the characters each replaces, and their
-   replacements in order. *)
-let national = function
-  | 'A' -> Some ("#", "£")
-  | '4' -> Some ("#@[\\]{|}~", "£¾ĳ½|¨ƒ¼´")
-  | 'C' | '5' -> Some ("[\\]^`{|}~", "ÄÖÅÜéäöåü")
-  | 'R' -> Some ("#@[\\]{|}~", "£à°ç§éùè¨")
-  | 'Q' -> Some ("@[\\]^`{|}~", "àâçêîôéùèû")
-  | 'K' -> Some ("@[\\]{|}~", "§ÄÖÜäöüß")
-  | 'Y' -> Some ("#@[\\]`{|}~", "£§°çéùàòèì")
-  | 'E' | '6' -> Some ("@[\\]^`{|}~", "ÄÆØÅÜäæøåü")
-  | 'Z' -> Some ("#@[\\]{|}", "£§¡Ñ¿°ñç")
-  | 'H' | '7' -> Some ("@[\\]^`{|}~", "ÉÄÖÅÜéäöåü")
-  | '=' -> Some ("#@[\\]^_`{|}~", "ùàéçêîèôäöüû")
-  | _ -> None
-
-(* The [n]th character of [s] from byte [i]. *)
-let rec nth_char s i n =
-  let len = Uchar.utf_decode_length (String.get_utf_8_uchar s i) in
-  if n = 0 then String.sub s i len else nth_char s (i + len) (n - 1)
-
-(* Map text through the set invoked into GL; any other set is ASCII. *)
-let translate_charset t text =
-  let map =
-    match t.charsets.(t.gl) with
-    | '0' -> Some dec_graphics
-    | set ->
-        Option.map
-          (fun (chars, by) c ->
-            Option.map (nth_char by 0) (String.index_opt chars c))
-          (national set)
-  in
-  match map with
-  | None -> text
-  | Some map ->
-      let buf = Buffer.create (String.length text * 3) in
-      String.iter
-        (fun c ->
-          match map c with
-          | Some s -> Buffer.add_string buf s
-          | None -> Buffer.add_char buf c)
-        text;
-      Buffer.contents buf
-
-let scrollback_capacity t =
-  match t.scrollback with None -> 0 | Some sb -> sb.capacity
-
-let scrollback_size t =
-  if t.active_grid != t.primary then 0
-  else match t.scrollback with None -> 0 | Some sb -> sb.count
-
-let scrollback_lines t =
-  if t.active_grid != t.primary then []
-  else
-    match t.scrollback with
-    | None -> []
-    | Some sb when sb.count = 0 -> []
-    | Some sb ->
-        let lines = ref [] in
-        let start_idx =
-          if sb.count < sb.capacity then 0
-          else (sb.head + sb.capacity - sb.count) mod sb.capacity
-        in
-        for i = 0 to sb.count - 1 do
-          let idx = (start_idx + i) mod sb.capacity in
-          let line = sb.lines.(idx) in
-          let stop = ref (String.length line.text) in
-          while !stop > 0 && line.text.[!stop - 1] = ' ' do
-            decr stop
-          done;
-          let text =
-            if !stop = String.length line.text then line.text
-            else String.sub line.text 0 !stop
-          in
-          lines := text :: !lines
-        done;
-        List.rev !lines
-
-let render_with_scrollback t ~offset dst =
-  (* Only works on primary screen with scrollback *)
-  if t.active_grid != t.primary then Grid.blit ~src:t.active_grid ~dst
-  else
-    match t.scrollback with
-    | None -> Grid.blit ~src:t.active_grid ~dst
-    | Some sb ->
-        let offset = max 0 (min offset sb.count) in
-        let dst_height = Grid.height dst in
-
-        (* Clear destination grid up-front so we don't need per-row clearing. *)
-        Grid.clear ~color:t.default_bg dst;
-
-        (* Calculate how many lines come from scrollback vs screen *)
-        let scrollback_lines = min offset dst_height in
-        let screen_lines = dst_height - scrollback_lines in
-
-        (* Render scrollback lines by decompressing them. Row [i] shows the
-           line [offset - i] positions above the live screen, so the oldest
-           visible line is at the top and the newest sits adjacent to the
-           screen. *)
-        for i = 0 to scrollback_lines - 1 do
-          (* Distance above the screen, as a 0-based newest-first index. *)
-          let scrollback_offset = offset - 1 - i in
-          let scrollback_idx =
-            if sb.count < sb.capacity then
-              (* Not wrapped yet - simple offset from head *)
-              sb.count - 1 - scrollback_offset
-            else
-              (* Wrapped - use modulo arithmetic *)
-              (sb.head - 1 - scrollback_offset + sb.capacity) mod sb.capacity
-          in
-          let line = sb.lines.(scrollback_idx) in
-          decompress_line line dst i
-        done;
-
-        (* Render visible screen lines *)
-        if screen_lines > 0 then
-          Grid.blit_region ~src:t.active_grid ~dst ~src_x:0 ~src_y:0
-            ~width:t.cols ~height:(min screen_lines t.rows) ~dst_x:0
-            ~dst_y:scrollback_lines
-
-let cursor_key_mode t = t.cursor_key_mode
-let insert_mode t = t.insert_mode
-let auto_wrap_mode t = t.auto_wrap_mode
-let bracketed_paste_mode t = t.bracketed_paste
-let origin_mode t = t.origin_mode
-
-(* IL and DL act only on a cursor inside the scroll region. *)
-let in_scroll_region t =
-  t.cursor.row >= t.scroll_region.top && t.cursor.row <= t.scroll_region.bottom
-
-(* Save a row to scrollback *)
-let push_to_scrollback t row =
-  match t.scrollback with
-  | None -> ()
-  | Some _ when t.active_grid != t.primary -> ()
-  | Some sb ->
-      (* Compress the row and store it *)
-      let compressed =
-        compress_row ~default_bg:t.default_bg t.active_grid row t.cols
-      in
-      sb.lines.(sb.head) <- compressed;
-      sb.head <- (sb.head + 1) mod sb.capacity;
-      if sb.count < sb.capacity then sb.count <- sb.count + 1
-
-let clear_scrollback t =
-  match t.scrollback with
-  | None -> ()
-  | Some sb ->
-      Array.fill sb.lines 0 sb.capacity empty_scrollback_line;
-      sb.head <- 0;
-      sb.count <- 0
-
-(* Move [rows] of [stride] bytes from [top] to [bottom] by [n] rows, up for
-   [n > 0] and down for [n < 0], and clear the rows the move vacates. *)
-let shift_rows bytes ~stride ~top ~bottom n =
-  let k = abs n in
-  let keep = (bottom - top + 1 - k) * stride in
+(* Move rows [top] to [bottom] up by [n] rows, or down for [n < 0], with
+   their marks. *)
+let shift_rows t ~top ~bottom n =
+  let height = bottom - top + 1 in
+  let k = min (abs n) height in
+  Grid.shift (grid t)
+    { Grid.x = 0; y = top; width = t.cols; height }
+    ~dx:0 ~dy:(-n) ~color:(bg t);
+  let marks = (screen t).wrapped in
   if n > 0 then (
-    Bytes.blit bytes ((top + k) * stride) bytes (top * stride) keep;
-    Bytes.fill bytes ((bottom - k + 1) * stride) (k * stride) '\000')
+    Bytes.blit marks (top + k) marks top (height - k);
+    Bytes.fill marks (bottom - k + 1) k '\000')
   else (
-    Bytes.blit bytes (top * stride) bytes ((top + k) * stride) keep;
-    Bytes.fill bytes (top * stride) (k * stride) '\000')
+    Bytes.blit marks top marks (top + k) (height - k);
+    Bytes.fill marks top k '\000');
+  changed t ~top ~bottom
 
-(* Move the wrap marks and the protection of the scroll region's rows by [n]
-   rows, as [shift_region] moves the cells. *)
-let scroll_marks t n =
-  let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
-  shift_rows (wrapped_rows t) ~stride:1 ~top ~bottom n;
-  if t.tracked then shift_rows (protected_cells t) ~stride:t.cols ~top ~bottom n
+(* Move the cells of rows [top] to [bottom] from column [x] by [dx] columns.
+   The rows' last cells change, so their marks go. *)
+let shift_cols t ~x ~top ~bottom dx =
+  if dx <> 0 then (
+    Grid.shift (grid t)
+      { Grid.x; y = top; width = t.cols - x; height = bottom - top + 1 }
+      ~dx ~dy:0 ~color:(bg t);
+    unwrap t ~top ~bottom;
+    changed t ~top ~bottom)
 
-(* Lines a scroll brings in take the current background when the style sets
-   one (bce), as erased cells do. *)
-let fill_scrolled_in t ~y ~height =
-  match t.style.Ansi.Style.bg with
-  | Some c when Ansi.Color.intent c <> Default ->
-      erase_region t ~x:0 ~y ~width:t.cols ~height
-  | Some _ | None -> ()
+let mark_wrapped t row = Bytes.set (screen t).wrapped row '\001'
 
-(* Move the scroll region's rows up by [n] rows, or down for [n < 0]. The
-   rows brought in are transparent, then [fill_scrolled_in] colours them. *)
-let shift_region t n =
-  let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
-  Grid.shift t.active_grid
-    { x = 0; y = top; width = t.cols; height = bottom - top + 1 }
-    ~dx:0 ~dy:(-n) ~color:Ansi.Color.transparent
+(* {1:scroll Scrolling} *)
 
+(* Rows leaving the top of a scroll region that starts at the first row of the
+   primary screen enter the scrollback. *)
 let scroll_up t n =
-  if n <= 0 then ()
-  else
-    let region_height = t.scroll_region.bottom - t.scroll_region.top + 1 in
-    let n = min n region_height in
-
-    (* Save scrolled rows to scrollback if at screen top *)
-    if t.active_grid == t.primary && t.scroll_region.top = 0 then
-      for i = 0 to n - 1 do
-        push_to_scrollback t (t.scroll_region.top + i)
-      done;
-
-    shift_region t n;
-    scroll_marks t n;
-    fill_scrolled_in t ~y:(t.scroll_region.bottom - n + 1) ~height:n;
-
-    mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
+  let { top; bottom } = t.margins in
+  let n = min n (bottom - top + 1) in
+  if top = 0 && not t.modes.alternate_screen then
+    for row = 0 to n - 1 do
+      push_line t t.primary row
+    done;
+  shift_rows t ~top ~bottom n
 
 let scroll_down t n =
-  if n <= 0 then ()
-  else
-    let n = min n (t.scroll_region.bottom - t.scroll_region.top + 1) in
+  let { top; bottom } = t.margins in
+  shift_rows t ~top ~bottom (-min n (bottom - top + 1))
 
-    shift_region t (-n);
-    scroll_marks t (-n);
-    fill_scrolled_in t ~y:t.scroll_region.top ~height:n;
+(* IND: down a row, scrolling at the bottom margin. Below the region the
+   cursor stops at the last row. *)
+let index t =
+  if t.cursor.row = t.margins.bottom then scroll_up t 1
+  else goto t ~row:(t.cursor.row + 1) ~col:t.cursor.col
 
-    mark_rows_dirty t t.scroll_region.top t.scroll_region.bottom
+let reverse_index t =
+  if t.cursor.row = t.margins.top then scroll_down t 1
+  else goto t ~row:(t.cursor.row - 1) ~col:t.cursor.col
 
-(* Blank the wide character whose right half is at [col], so a column shift
-   that cuts it leaves no half behind. *)
-let blank_cut_wide t row col =
-  if
-    col > 0 && col < t.cols
-    && Grid.is_continuation t.active_grid ((row * t.cols) + col)
-  then
-    let start, w = grapheme_start_and_width t.active_grid row col in
-    erase_region t ~x:start ~y:row ~width:w ~height:1
+(* Autowrap: the text goes on at the start of the next row, which the row
+   records. At the last row below the region there is no next row: the line
+   starts over on the same row. *)
+let wrap t =
+  let row = t.cursor.row in
+  if row = t.margins.bottom || row < t.rows - 1 then mark_wrapped t row;
+  index t;
+  goto t ~row:t.cursor.row ~col:0
 
-(* Delete [n] cells (n > 0) or insert [-n] blank cells (n < 0) at column [x]
-   of every row of the scroll region, for SL, SR, DECIC and DECDC. Like IL and
-   DL, these act only on a cursor inside the region. *)
-let shift_columns t ~x n =
-  let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
-  let span = min (abs n) (t.cols - x) in
-  if t.cursor.row >= top && t.cursor.row <= bottom && span > 0 then (
-    for row = top to bottom do
-      blank_cut_wide t row x;
-      let keep = t.cols - x - span in
-      if n > 0 then (
-        blank_cut_wide t row (x + span);
-        if keep > 0 then
-          copy_cells t ~src_x:(x + span) ~src_y:row ~width:keep ~dst_x:x
-            ~dst_y:row;
-        erase_region t ~x:(t.cols - span) ~y:row ~width:span ~height:1)
-      else (
-        blank_cut_wide t row (t.cols - span);
-        if keep > 0 then
-          copy_cells t ~src_x:x ~src_y:row ~width:keep ~dst_x:(x + span)
-            ~dst_y:row;
-        erase_region t ~x ~y:row ~width:span ~height:1)
-    done;
-    mark_rows_dirty t top bottom)
+(* {1:charsets Character sets} *)
 
-(* Move down one row for LF/auto-wrap: scroll only when the cursor sits on the
-   region bottom; below the region (legal via CUP after DECSTBM) advance toward
-   the screen bottom without touching the region. Preserves the column. *)
-let advance_row t =
-  if t.cursor.row = t.scroll_region.bottom then scroll_up t 1
-  else if t.cursor.row < t.rows - 1 then
-    set_cursor_pos t ~row:(t.cursor.row + 1) ~col:t.cursor.col
+(* The set whose [chars] are replaced by [by], in order. *)
+let replacing chars by =
+  let table = Array.init 96 (fun i -> i + 0x20) in
+  let i = ref 0 in
+  String.iter
+    (fun c ->
+      let d = String.get_utf_8_uchar by !i in
+      table.(Char.code c - 0x20) <- Uchar.to_int (Uchar.utf_decode_uchar d);
+      i := !i + Uchar.utf_decode_length d)
+    chars;
+  Mapped table
 
-(* The row [n] up or down for CUU, CUD, CPL and CNL. Moving up stops at the
-   top margin from at or below it, moving down at the bottom margin from at or
-   above it, and otherwise at the screen edge. *)
-let row_up t n =
-  let top =
-    if t.cursor.row >= t.scroll_region.top then t.scroll_region.top else 0
-  in
-  max top (t.cursor.row - n)
+(* DEC Special Graphics (VT100 User Guide table 3-9). *)
+let dec_graphics =
+  replacing "`abcdefghijklmnopqrstuvwxyz{|}~"
+    "\u{25c6}\u{2592}\u{2409}\u{240c}\u{240d}\u{240a}\u{00b0}\u{00b1}\u{2424}\u{240b}\u{2518}\u{2510}\u{250c}\u{2514}\u{253c}\u{23ba}\u{23bb}\u{2500}\u{23bc}\u{23bd}\u{251c}\u{2524}\u{2534}\u{252c}\u{2502}\u{2264}\u{2265}\u{03c0}\u{2260}\u{00a3}\u{00b7}"
 
-let row_down t n =
-  let bottom =
-    if t.cursor.row <= t.scroll_region.bottom then t.scroll_region.bottom
-    else t.rows - 1
-  in
-  min bottom (t.cursor.row + n)
+let uk = replacing "#" "£"
+let dutch = replacing "#@[\\]{|}~" "£¾ĳ½|¨ƒ¼´"
+let finnish = replacing "[\\]^`{|}~" "ÄÖÅÜéäöåü"
+let french = replacing "#@[\\]{|}~" "£à°ç§éùè¨"
+let french_canadian = replacing "@[\\]^`{|}~" "àâçêîôéùèû"
+let german = replacing "@[\\]{|}~" "§ÄÖÜäöüß"
+let italian = replacing "#@[\\]`{|}~" "£§°çéùàòèì"
+let norwegian_danish = replacing "@[\\]^`{|}~" "ÄÆØÅÜäæøåü"
+let spanish = replacing "#@[\\]{|}" "£§¡Ñ¿°ñç"
+let swedish = replacing "@[\\]^`{|}~" "ÉÄÖÅÜéäöåü"
+let swiss = replacing "#@[\\]^_`{|}~" "ùàéçêîèôäöüû"
 
-(* C1 controls, encoded in UTF-8, which no cell holds. *)
-let has_c1 s =
-  let rec go i =
-    i + 1 < String.length s
-    && (s.[i] = '\xC2'
-        && Char.code s.[i + 1] < 0xA0
-        && Char.code s.[i + 1] >= 0x80
-       || go (i + 1))
-  in
-  go 0
+(* The 94-character sets by their one-byte designators (ctlseqs, SCS). *)
+let charset_94 = function
+  | '0' -> dec_graphics
+  | 'A' -> uk
+  | '4' -> dutch
+  | 'C' | '5' -> finnish
+  | 'R' -> french
+  | 'Q' -> french_canadian
+  | 'K' -> german
+  | 'Y' -> italian
+  | 'E' | '6' -> norwegian_danish
+  | 'Z' -> spanish
+  | 'H' | '7' -> swedish
+  | '=' -> swiss
+  | _ -> Ascii
 
-(* Join the zero-width [marks] to the grapheme whose cells end at column
-   [col] - 1 of [row], as xterm adds a character of no width to the cell
-   before the cursor. The grapheme keeps its rendition; marks holding a C1
-   control are dropped. *)
-let join_before t ~row ~col marks =
-  if col > 0 && not (has_c1 marks) then begin
-    let grid = t.active_grid in
-    let x = ref (min (t.cols - 1) (col - 1)) in
-    while !x > 0 && Grid.is_continuation grid ((row * t.cols) + !x) do
+let translate t u =
+  match t.charsets.g.(t.charsets.gl) with
+  | Ascii -> u
+  | Mapped table ->
+      let c = Uchar.to_int u in
+      if c >= 0x20 && c < 0x80 then Uchar.unsafe_of_int table.(c - 0x20) else u
+
+let untranslated t =
+  match t.charsets.g.(t.charsets.gl) with Ascii -> true | Mapped _ -> false
+
+(* {1:print Printing} *)
+
+let write_cluster t ~row ~col ~width =
+  let cl = t.cluster in
+  Grid.set_grapheme (grid t) ~x:col ~y:row ~width ~fg:(fg t) ~bg:(bg t)
+    ~attrs:t.pen.style.attrs ?link:t.pen.link ?protected:(protection t)
+    (Bytes.unsafe_to_string cl.text)
+    ~pos:0 ~len:cl.len;
+  touch_row t row
+
+(* Place the cluster from its position, by the four rules of vte.mli. With
+   autowrap off it ends at the margin; otherwise, if it does not fit, the rest
+   of the line is erased and it moves to the next. In insert mode the line
+   moves right by the cells it gains. *)
+let place t =
+  let cl = t.cluster and m = t.modes in
+  let width = min cl.width t.cols in
+  if cl.col + width > t.cols && not m.auto_wrap then (
+    write_cluster t ~row:cl.row ~col:(t.cols - width) ~width;
+    cl.cells <- width;
+    set_cursor t ~row:cl.row ~col:(t.cols - 1) ~last_column:false)
+  else begin
+    if cl.col + width > t.cols then begin
+      erase t ~x:cl.col ~y:cl.row ~width:(t.cols - cl.col) ~height:1;
+      wrap t;
+      cl.row <- t.cursor.row;
+      cl.col <- 0;
+      cl.cells <- 0
+    end;
+    if m.insert then
+      shift_cols t ~x:(cl.col + cl.cells) ~top:cl.row ~bottom:cl.row
+        (width - cl.cells);
+    write_cluster t ~row:cl.row ~col:cl.col ~width;
+    cl.cells <- width;
+    let last = cl.col + width - 1 in
+    if last = t.cols - 1 then
+      set_cursor t ~row:cl.row ~col:last ~last_column:m.auto_wrap
+    else set_cursor t ~row:cl.row ~col:(last + 1) ~last_column:false
+  end
+
+(* The grapheme at the cluster's [(row, col)], with [text] and its own width
+   and rendition. *)
+let rewrite_joined t text =
+  let cl = t.cluster and g = grid t in
+  let idx = (cl.row * t.cols) + cl.col in
+  let link = Grid.get_link g idx in
+  Grid.set_grapheme g ~x:cl.col ~y:cl.row
+    ~width:(max 1 (Grid.cell_width g idx))
+    ~fg:(Grid.get_fg g idx) ~bg:(Grid.get_bg g idx)
+    ~attrs:(Ansi.Attr.unpack (Grid.get_attrs g idx))
+    ?link:(if link = "" then None else Some link)
+    ~protected:(Grid.is_protected g idx) text ~pos:0 ~len:(String.length text);
+  touch_row t cl.row
+
+(* A unit of no width that continues nothing joins the grapheme in the cell
+   before the cursor, or under it at the last column; with no such cell it
+   is dropped (vte.mli says how xterm differs). It is joined as soon as it is seen, so a reader of
+   the cells finds it, and taken back if it gains a width. *)
+let join t =
+  let cl = t.cluster and c = t.cursor in
+  let x = if c.last_column then c.col else c.col - 1 in
+  if cl.at = Nowhere && x >= 0 then begin
+    let g = grid t and base = c.row * t.cols in
+    let x = ref x in
+    while !x > 0 && Grid.is_continuation g (base + !x) do
       decr x
     done;
-    let idx = (row * t.cols) + !x in
-    let prev = Grid.get_text grid idx in
-    if prev <> "" && not (Grid.is_continuation grid idx) then begin
-      let text = prev ^ marks in
-      let width_method = Grid.width_method grid in
-      let width =
-        min (t.cols - !x)
-          (max (Grid.cell_width grid idx)
-             (Text.measure ~width_method ~tab_width:2 text))
-      in
-      Grid.set_grapheme grid ~x:!x ~y:row ~width ~fg:(Grid.get_fg grid idx)
-        ~bg:(Grid.get_bg grid idx)
-        ~attrs:(Ansi.Attr.unpack (Grid.get_attrs grid idx))
-        ~link:(Grid.get_link grid idx) text ~pos:0 ~len:(String.length text);
-      mark_row_dirty t row;
-      true
-    end
-    else false
-  end
-  else false
+    let prev = Grid.get_text g (base + !x) in
+    cl.at <- Joined;
+    cl.row <- c.row;
+    cl.col <- !x;
+    cl.prev <- (if prev = "" then " " else prev)
+  end;
+  if cl.at = Joined then
+    rewrite_joined t (cl.prev ^ Bytes.sub_string cl.text 0 cl.len)
 
-(* Write printable text using Grid and Text APIs. We manually segment the input
-   string into pieces that fit in the current line, using an ASCII fast path and
-   falling back to grapheme segmentation for complex text. *)
-let put_text t text =
-  let text = translate_charset t text in
-  let resolve_color ~default color =
-    match Ansi.Color.intent color with
-    | Default -> default
-    | Indexed _ | Rgb -> color
-  in
-  let fg =
-    Option.value t.style.Ansi.Style.fg ~default:t.default_fg
-    |> resolve_color ~default:t.default_fg
-  in
-  let bg =
-    Option.value t.style.Ansi.Style.bg ~default:t.default_bg
-    |> resolve_color ~default:t.default_bg
-  in
-  let style = t.style |> Ansi.Style.fg fg |> Ansi.Style.bg bg in
-  let width_method = Grid.width_method t.active_grid in
-  (* A run beginning with zero-width graphemes continues the grapheme drawn
-     by an earlier write (its base sits in the preceding cell): merge the
-     marks into that cell, as real terminals do, so a grapheme cluster split
-     across writes renders exactly like one delivered whole. *)
-  let text =
-    if String.length text = 0 || t.cursor.col = 0 || t.cursor.row >= t.rows then
-      text
+(* Place the cluster if it grew since it was last placed. Its first
+   placement starts where the cursor is, after the wrap the Last Column Flag
+   asks for. *)
+let settle t =
+  let cl = t.cluster in
+  if cl.grown then begin
+    cl.grown <- false;
+    if cl.width = 0 then join t
     else begin
-      let zero_width_stop = ref 0 in
-      (try
-         Text.iter_graphemes
-           (fun ~offset ~len ->
-             if
-               Text.width_at ~width_method ~tab_width:2 text ~byte_offset:offset
-               = 0
-             then zero_width_stop := offset + len
-             else raise Exit)
-           text
-       with Exit -> ());
-      let stop = !zero_width_stop in
-      if stop = 0 then text
-      else if t.repeatable && t.dropped then
-        String.sub text stop (String.length text - stop)
-      else
-        begin if
-          join_before t ~row:t.cursor.row ~col:t.cursor.col
-            (String.sub text 0 stop)
-        then String.sub text stop (String.length text - stop)
-        else text
-        end
+      if cl.at = Joined then (
+        rewrite_joined t cl.prev;
+        cl.at <- Nowhere);
+      if cl.at = Nowhere then begin
+        if t.cursor.last_column && t.modes.auto_wrap then wrap t;
+        cl.at <- Cells;
+        cl.row <- t.cursor.row;
+        cl.col <- t.cursor.col;
+        cl.cells <- 0
+      end;
+      place t
     end
-  in
-  if text <> "" then t.dropped <- false;
-  if text = "" then ()
-  else if
-    (not t.insert_mode)
-    && String.length text <= t.cols - t.cursor.col
-    && String.for_all (fun c -> c < '\x80') text
-  then begin
-    (* Printable UTF-8 never occupies more columns than bytes. This bounded
-       fit check keeps short writes allocation-light without rescanning suffixes. *)
-    Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row ~text ~style;
-    mark_row_dirty t t.cursor.row;
-    (* Printable ASCII: a column a byte. *)
-    let width = String.length text in
-    set_protected t ~x:t.cursor.col ~y:t.cursor.row ~width t.protect;
-    set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col + width)
   end
-  else
-    (* Accumulate one contiguous row slice at a time. No suffix is copied or
-     remeasured: every display unit is visited once before Grid draws it. *)
-    let start = ref 0 in
-    let stop = ref 0 in
-    let columns = ref 0 in
-    let flush () =
-      if !columns > 0 then begin
-        let segment =
-          if !start = 0 && !stop = String.length text then text
-          else String.sub text !start (!stop - !start)
-        in
-        Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row
-          ~text:segment ~style;
-        set_protected t ~x:t.cursor.col ~y:t.cursor.row ~width:!columns
-          t.protect;
-        mark_row_dirty t t.cursor.row;
-        set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col + !columns);
-        columns := 0
-      end
-    in
-    let emit_unit ~offset ~len ~width =
-      if width = 0 then begin
-        flush ();
-        if not t.dropped then
-          ignore
-            (join_before t ~row:t.cursor.row ~col:t.cursor.col
-               (String.sub text offset len)
-              : bool)
-      end
-      else begin
-        if t.insert_mode || t.cursor.col + !columns + width > t.cols then
-          flush ();
-        if t.cursor.col >= t.cols && t.auto_wrap_mode then begin
-          set_wrapped t t.cursor.row true;
-          advance_row t;
-          set_cursor_pos t ~row:t.cursor.row ~col:0
-        end;
-        if
-          (not t.insert_mode)
-          && width > t.cols - t.cursor.col
-          && t.auto_wrap_mode && t.cursor.col > 0
-        then begin
-          set_wrapped t t.cursor.row true;
-          advance_row t;
-          set_cursor_pos t ~row:t.cursor.row ~col:0
-        end;
-        if t.insert_mode || width > t.cols - t.cursor.col then begin
-          let x = min t.cursor.col (t.cols - 1) in
-          let inserted = min width (t.cols - t.cursor.col) in
-          t.dropped <- width > t.cols - x;
-          if t.insert_mode && inserted > 0 then begin
-            copy_cells t ~src_x:x ~src_y:t.cursor.row
-              ~width:(t.cols - x - inserted)
-              ~dst_x:(x + inserted) ~dst_y:t.cursor.row;
-            erase_region t ~x ~y:t.cursor.row ~width:inserted ~height:1
-          end;
-          Grid.draw_text t.active_grid ~x ~y:t.cursor.row
-            ~text:(String.sub text offset len)
-            ~style;
-          set_protected t ~x ~y:t.cursor.row
-            ~width:(min width (t.cols - x))
-            t.protect;
-          mark_row_dirty t t.cursor.row;
-          if t.insert_mode && inserted > 0 then
-            set_cursor_pos t ~row:t.cursor.row ~col:(x + inserted)
-        end
-        else begin
-          t.dropped <- false;
-          if !columns = 0 then start := offset;
-          stop := offset + len;
-          columns := !columns + width
-        end
-      end
-    in
-    (* Text.iter_grapheme_info skips graphemes of no width. Those met in the
-       run, such as U+200B, join the cell before them, as in xterm. *)
-    let next = ref 0 in
-    let emit ~offset ~len ~width =
-      if offset > !next then
-        emit_unit ~offset:!next ~len:(offset - !next) ~width:0;
-      next := offset + len;
-      emit_unit ~offset ~len ~width
-    in
-    (match width_method with
-    | `Unicode | `Unicode_wide ->
-        Text.iter_grapheme_info ~width_method ~tab_width:2 emit text
-    | `Wcwidth when t.insert_mode ->
-        Text.iter_grapheme_info ~width_method ~tab_width:2 emit text
-    | `Wcwidth ->
-        let offset = ref 0 in
-        while !offset < String.length text do
-          let decoded = String.get_utf_8_uchar text !offset in
-          let len = Uchar.utf_decode_length decoded in
-          emit ~offset:!offset ~len
-            ~width:
-              (Text.uchar_width ~tab_width:2 (Uchar.utf_decode_uchar decoded));
-          offset := !offset + len
-        done);
-    if !next < String.length text then
-      emit_unit ~offset:!next ~len:(String.length text - !next) ~width:0;
-    flush ()
 
-(* A Prepend character joins the character after it into its grapheme, which
-   a later write cannot join. xterm writes each character as it comes, so
-   write the text after a Prepend character apart: a read split there then
-   draws the screen a whole one does. *)
-let put_run t text =
-  let len = String.length text in
-  let rec go start i =
-    if i >= len then (
-      if start = 0 then put_text t text
-      else if start < len then put_text t (String.sub text start (len - start)))
-    else if Char.code (String.unsafe_get text i) < 0xD8 then
-      (* ASCII, a continuation byte, or a character below U+0600 *)
-      go start (i + 1)
-    else
-      let d = String.get_utf_8_uchar text i in
-      let next = i + Uchar.utf_decode_length d in
-      if next < len && Text.is_prepend (Uchar.utf_decode_uchar d) then (
-        put_text t (String.sub text start (next - start));
-        go next next)
-      else go start next
+(* The unit in progress is complete. *)
+let finish t =
+  settle t;
+  let cl = t.cluster in
+  cl.len <- 0;
+  cl.width <- 0;
+  cl.at <- Nowhere
+
+(* A control function ends the unit, and the next character starts one. *)
+let close t =
+  finish t;
+  Text.Segmenter.reset t.cluster.seg
+
+let append cl u =
+  let n = Uchar.utf_8_byte_length u in
+  if cl.len + n > Bytes.length cl.text then begin
+    let text = Bytes.create (2 * (cl.len + n)) in
+    Bytes.blit cl.text 0 text 0 cl.len;
+    cl.text <- text
+  end;
+  ignore (Bytes.set_utf_8_uchar cl.text cl.len u : int);
+  cl.len <- cl.len + n
+
+(* The cluster is placed at boundaries and at the end of a text, not at each
+   character, so a run of marks is written once. *)
+let print_scalar t u =
+  let cl = t.cluster in
+  if Text.Segmenter.add cl.seg u then finish t;
+  append cl u;
+  cl.width <- Text.Segmenter.width cl.seg;
+  cl.grown <- true
+
+(* The [k] bytes of [s] from [pos] are units of one ASCII character each
+   ({!Text.Segmenter.ascii_run}): place them a row segment at a time, as each
+   would be placed alone. The last one stays the unit in progress. *)
+let print_run t s pos k =
+  finish t;
+  let g = grid t and fg = fg t and bg = bg t in
+  let attrs = t.pen.style.attrs and link = t.pen.link in
+  let protected = protection t in
+  let put ~x ~y i =
+    Grid.set_grapheme g ~x ~y ~width:1 ~fg ~bg ~attrs ?link ?protected s ~pos:i
+      ~len:1
   in
-  go 0 0
+  let i = ref pos and stop = pos + k in
+  let last_row = ref 0 and last_col = ref 0 in
+  while !i < stop do
+    if t.cursor.last_column && t.modes.auto_wrap then wrap t;
+    let row = t.cursor.row and col = t.cursor.col in
+    let n = min (stop - !i) (t.cols - col) in
+    if t.modes.insert then shift_cols t ~x:col ~top:row ~bottom:row n;
+    for j = 0 to n - 1 do
+      put ~x:(col + j) ~y:row (!i + j)
+    done;
+    i := !i + n;
+    let last = col + n - 1 in
+    if last < t.cols - 1 then
+      set_cursor t ~row ~col:(last + 1) ~last_column:false
+    else if t.modes.auto_wrap then set_cursor t ~row ~col:last ~last_column:true
+    else begin
+      (* Without autowrap each further character replaces the last column. *)
+      if !i < stop then put ~x:last ~y:row (stop - 1);
+      i := stop;
+      set_cursor t ~row ~col:last ~last_column:false
+    end;
+    touch_row t row;
+    last_row := row;
+    last_col := last
+  done;
+  let cl = t.cluster in
+  Bytes.set cl.text 0 s.[stop - 1];
+  cl.len <- 1;
+  cl.width <- 1;
+  cl.at <- Cells;
+  cl.row <- !last_row;
+  cl.col <- !last_col;
+  cl.cells <- 1
 
-(* The next tab stop after [col], or the last column. *)
+let print t s =
+  let len = String.length s in
+  let i = ref 0 in
+  while !i < len do
+    let k =
+      if untranslated t then
+        Text.Segmenter.ascii_run t.cluster.seg s ~pos:!i ~len:(len - !i)
+      else 0
+    in
+    if k > 0 then (
+      print_run t s !i k;
+      i := !i + k)
+    else begin
+      let d = String.get_utf_8_uchar s !i in
+      print_scalar t (translate t (Uchar.utf_decode_uchar d));
+      i := !i + Uchar.utf_decode_length d
+    end
+  done;
+  settle t
+
+(* REP prints the unit before it [n] more times. Without autowrap the cursor
+   reaches the margin within [cols] prints and each print after it is the
+   same. With autowrap, once every row the prints can reach (the screen, the
+   scrollback and the row being written) holds the same [per_row] units, the
+   state depends on [n] only modulo [per_row], so the work is bounded by the
+   screen and the scrollback, whatever [n]. *)
+let repetitions t n width =
+  if not t.modes.auto_wrap then min n (t.cols + 1)
+  else
+    let per_row = t.cols / width in
+    let saturated = per_row * (t.rows + Array.length t.history.lines + 2) in
+    if n <= saturated then n else saturated + ((n - saturated) mod per_row)
+
+let rep t n =
+  settle t;
+  let cl = t.cluster in
+  if cl.at = Cells then
+    for _ = 1 to repetitions t n (min cl.width t.cols) do
+      cl.at <- Nowhere;
+      cl.grown <- true;
+      settle t
+    done
+
+(* {1:motion Cursor motion} *)
+
+(* Counts are clamped to the distance they act on before any arithmetic, so a
+   saturated parameter never overflows. *)
+let toward ~from ~limit n =
+  if limit >= from then from + min n (limit - from)
+  else from - min n (from - limit)
+
+(* Up and down stop at the margin when they start inside the region, and at
+   the screen edge otherwise. *)
+let cuu t n =
+  let { top; _ } = t.margins and row = t.cursor.row in
+  let limit = if row >= top then top else 0 in
+  goto t ~row:(toward ~from:row ~limit n) ~col:t.cursor.col
+
+let cud t n =
+  let { bottom; _ } = t.margins and row = t.cursor.row in
+  let limit = if row <= bottom then bottom else t.rows - 1 in
+  goto t ~row:(toward ~from:row ~limit n) ~col:t.cursor.col
+
+let cuf t n =
+  goto t ~row:t.cursor.row
+    ~col:(toward ~from:t.cursor.col ~limit:(t.cols - 1) n)
+
+let wrapped_row t row = row >= 0 && Bytes.get (screen t).wrapped row <> '\000'
+
+(* BS and CUB: [n] columns left. With reverse-wrap (and autowrap) the Last
+   Column Flag takes the first step, and a move past the first column goes on
+   from the end of the row above while that row wrapped onto this one. *)
+let cub t n =
+  let c = t.cursor in
+  if not (t.modes.reverse_wrap && t.modes.auto_wrap) then
+    goto t ~row:c.row ~col:(toward ~from:c.col ~limit:0 n)
+  else begin
+    let row = ref c.row and col = ref c.col in
+    let n = ref (if c.last_column then n - 1 else n) in
+    while !n > 0 do
+      if !n <= !col then (
+        col := !col - !n;
+        n := 0)
+      else if wrapped_row t (!row - 1) then (
+        n := !n - !col - 1;
+        decr row;
+        col := t.cols - 1)
+      else (
+        col := 0;
+        n := 0)
+    done;
+    goto t ~row:!row ~col:!col
+  end
+
+let cnl t n =
+  cud t n;
+  goto t ~row:t.cursor.row ~col:0
+
+let cpl t n =
+  cuu t n;
+  goto t ~row:t.cursor.row ~col:0
+
+let cha t n = goto t ~row:t.cursor.row ~col:(min n t.cols - 1)
+
+(* In origin mode (DECOM) rows count from the top margin and stay in the
+   region. *)
+let origin_row t n =
+  if t.modes.origin then
+    let { top; bottom } = t.margins in
+    top + min (n - 1) (bottom - top)
+  else min n t.rows - 1
+
+let cup t row col = goto t ~row:(origin_row t row) ~col:(min col t.cols - 1)
+let vpa t n = goto t ~row:(origin_row t n) ~col:t.cursor.col
+
+(* VPR: down [n] rows, ignoring the margins. *)
+let vpr t n =
+  goto t
+    ~row:(toward ~from:t.cursor.row ~limit:(t.rows - 1) n)
+    ~col:t.cursor.col
+
+let home t = goto t ~row:(if t.modes.origin then t.margins.top else 0) ~col:0
+
+(* {1:tabs Tab stops} *)
+
 let next_tab t col =
   let rec go x =
     if x >= t.cols - 1 then t.cols - 1 else if t.tabs.(x) then x else go (x + 1)
   in
   go (col + 1)
 
-(* The previous tab stop before [col], or the first column. *)
 let prev_tab t col =
   let rec go x = if x <= 0 then 0 else if t.tabs.(x) then x else go (x - 1) in
   go (col - 1)
 
-(* BS and CUB move [n] columns left. With reverse-wrap (mode 45) and
-   auto-wrap set, a pending wrap takes the first step and a move past the
-   first column continues from the last column of the row above, while that
-   row wrapped onto this one, as in xterm. *)
-let cursor_back t n =
-  let rev = t.reverse_wrap && t.auto_wrap_mode in
-  let row = ref t.cursor.row and col = ref (min t.cursor.col (t.cols - 1)) in
-  let count = ref n in
-  if n > 0 then if rev && t.cursor.col >= t.cols then decr count else decr col;
-  let rec go () =
-    if !col < 0 && not (rev && is_wrapped t (!row - 1)) then col := 0
-    else (
-      if !col < 0 then (
-        decr row;
-        col := t.cols - 1);
-      decr count;
-      if !count > 0 then (
-        decr col;
-        go ()))
-  in
-  go ();
-  set_cursor_pos t ~row:!row ~col:!col
-
-(* REP prints the whole cell before the cursor again, combining marks
-   included, as xterm does. *)
-let repeat_preceding t n =
-  let row = t.cursor.row in
-  let x = ref (min t.cursor.col t.cols - 1) in
-  while !x > 0 && Grid.is_continuation t.active_grid ((row * t.cols) + !x) do
-    decr x
+let tab_steps t n next =
+  let col = ref t.cursor.col in
+  for _ = 1 to min n t.cols do
+    col := next t !col
   done;
-  if t.repeatable && !x >= 0 then
-    let cell = Grid.get_text t.active_grid ((row * t.cols) + !x) in
-    if cell <> "" then (
-      let n = min n (t.rows * t.cols) in
-      let buf = Buffer.create (n * String.length cell) in
-      for _ = 1 to n do
-        Buffer.add_string buf cell
-      done;
-      put_run t (Buffer.contents buf))
+  goto t ~row:t.cursor.row ~col:!col
 
-(* DECSC and DECRC act on the saved cursor of the active screen. *)
-let decsc t =
-  let saved =
-    {
-      saved_row = t.cursor.row;
-      saved_col = t.cursor.col;
-      saved_style = t.style;
-      saved_origin = t.origin_mode;
-      saved_charsets = Array.copy t.charsets;
-      saved_gl = t.gl;
-      saved_protect = t.protect;
-    }
-  in
-  if t.active_grid == t.alternate then t.saved_alternate <- saved
-  else t.saved_primary <- saved
+(* HT and CHT stop at the last column, so with the Last Column Flag set they
+   do nothing and keep it. *)
+let cht t n = if not t.cursor.last_column then tab_steps t n next_tab
+let cbt t n = tab_steps t n prev_tab
+let hts t = t.tabs.(t.cursor.col) <- true
 
-let decrc t =
-  let saved =
-    if t.active_grid == t.alternate then t.saved_alternate else t.saved_primary
-  in
-  t.origin_mode <- saved.saved_origin;
-  Array.blit saved.saved_charsets 0 t.charsets 0 4;
-  t.gl <- saved.saved_gl;
-  t.protect <- saved.saved_protect;
-  let row =
-    if t.origin_mode then
-      max t.scroll_region.top (min t.scroll_region.bottom saved.saved_row)
-    else saved.saved_row
-  in
-  set_cursor_pos t ~row ~col:saved.saved_col;
-  t.style <- saved.saved_style
-
-let switch_to_alternate t save_cursor =
-  if t.active_grid != t.alternate then (
-    if save_cursor then decsc t;
-    t.active_grid <- t.alternate;
-    Grid.clear ~color:t.default_bg t.active_grid;
-    Bytes.fill t.protected_alternate 0
-      (Bytes.length t.protected_alternate)
-      '\000';
-    Bytes.fill t.wrapped_alternate 0 t.rows '\000';
-    t.scroll_region.top <- 0;
-    t.scroll_region.bottom <- t.rows - 1;
-    mark_rows_dirty t 0 (t.rows - 1))
-
-let switch_to_primary t restore_cursor =
-  if t.active_grid == t.alternate then (
-    t.active_grid <- t.primary;
-    if restore_cursor then decrc t;
-    mark_rows_dirty t 0 (t.rows - 1))
-
-(* RIS: everything but the parser, which [reset] also resets. *)
-let hard_reset t =
-  if t.active_grid == t.alternate then switch_to_primary t false;
-  Grid.clear ~color:t.default_bg t.primary;
-  Grid.clear ~color:t.default_bg t.alternate;
-  set_cursor_pos t ~row:0 ~col:0;
-  set_cursor_visible t true;
-  t.style <- Ansi.Style.default;
-  t.saved_primary <- home_cursor;
-  t.saved_alternate <- home_cursor;
-  t.title <- "";
-
-  (* Clear scrollback *)
-  clear_scrollback t;
-
-  t.scroll_region.top <- 0;
-  t.scroll_region.bottom <- t.rows - 1;
-  t.origin_mode <- false;
-  t.auto_wrap_mode <- true;
-  t.reverse_wrap <- false;
-  t.cursor_key_mode <- false;
-  t.insert_mode <- false;
-  Array.fill t.charsets 0 4 'B';
-  t.gl <- 0;
-  t.protect <- false;
-  t.selective <- false;
-  t.tracked <- false;
-  Bytes.fill t.protected_primary 0 (Bytes.length t.protected_primary) '\000';
-  Bytes.fill t.protected_alternate 0 (Bytes.length t.protected_alternate) '\000';
-  Bytes.fill t.wrapped_primary 0 t.rows '\000';
-  Bytes.fill t.wrapped_alternate 0 t.rows '\000';
-  t.bracketed_paste <- false;
-  t.tabs <- default_tabs t.cols;
-  mark_rows_dirty t 0 (t.rows - 1)
-
-(* DECSTR, as xterm's soft reset: the modes, SGR, the margins, the character
-   sets and the saved cursor return to their defaults, and the screen and the
-   cursor position stay. *)
-let soft_reset t =
-  set_cursor_visible t true;
-  t.insert_mode <- false;
-  t.origin_mode <- false;
-  t.auto_wrap_mode <- true;
-  t.reverse_wrap <- false;
-  t.cursor_key_mode <- false;
-  t.style <- Ansi.Style.default;
-  t.scroll_region.top <- 0;
-  t.scroll_region.bottom <- t.rows - 1;
-  Array.fill t.charsets 0 4 'B';
-  t.gl <- 0;
-  t.protect <- false;
-  t.selective <- false;
-  if t.active_grid == t.alternate then t.saved_alternate <- home_cursor
-  else t.saved_primary <- home_cursor
-
-(* ANSI modes ([CSI Pm h/l]). *)
-let set_ansi_mode t mode set =
-  match mode with 4 -> t.insert_mode <- set | _ -> ()
-
-(* DEC private modes ([CSI ? Pm h/l]). *)
-let set_dec_mode t mode set =
-  match mode with
-  | 1 -> t.cursor_key_mode <- set
-  | 6 ->
-      t.origin_mode <- set;
-      set_cursor_pos t ~row:(origin_row t 0) ~col:0
-  | 7 -> t.auto_wrap_mode <- set
-  | 45 -> t.reverse_wrap <- set
-  | 25 -> set_cursor_visible t set
-  | 47 | 1047 | 1049 ->
-      if set then switch_to_alternate t (mode = 1049)
-      else switch_to_primary t (mode = 1049)
-  | 2004 -> t.bracketed_paste <- set
-  | _ -> ()
-
-(* The 1-based cursor position CPR reports: a pending wrap reports the last
-   column, and origin mode counts rows from the top margin, as in xterm. *)
-let cursor_report t =
-  let top = if t.origin_mode then t.scroll_region.top else 0 in
-  (t.cursor.row - top + 1, min t.cursor.col (t.cols - 1) + 1)
-
-(* ED and DECSED. *)
-let erase_display t ~selective n =
-  let erase = erase_cells t ~selective in
-  match n with
-  | 0 ->
-      erase ~x:t.cursor.col ~y:t.cursor.row ~width:(t.cols - t.cursor.col)
-        ~height:1;
-      erase ~x:0 ~y:(t.cursor.row + 1) ~width:t.cols
-        ~height:(t.rows - (t.cursor.row + 1));
-      unwrap_rows t ~y:t.cursor.row ~height:(t.rows - t.cursor.row);
-      mark_rows_dirty t t.cursor.row (t.rows - 1)
-  | 1 ->
-      erase ~x:0 ~y:0 ~width:t.cols ~height:t.cursor.row;
-      erase ~x:0 ~y:t.cursor.row ~width:(t.cursor.col + 1) ~height:1;
-      unwrap_rows t ~y:0 ~height:t.cursor.row;
-      mark_rows_dirty t 0 t.cursor.row
-  | 2 ->
-      erase ~x:0 ~y:0 ~width:t.cols ~height:t.rows;
-      unwrap_rows t ~y:0 ~height:t.rows;
-      mark_rows_dirty t 0 (t.rows - 1)
-  | 3 -> clear_scrollback t
-  | _ -> ()
-
-(* EL and DECSEL. *)
-let erase_line t ~selective n =
-  let erase ~x ~width =
-    erase_cells t ~selective ~x ~y:t.cursor.row ~width ~height:1
-  in
-  (match n with
-  | 0 ->
-      erase ~x:t.cursor.col ~width:(t.cols - t.cursor.col);
-      set_wrapped t t.cursor.row false
-  | 1 -> erase ~x:0 ~width:(t.cursor.col + 1)
-  | 2 -> erase ~x:0 ~width:t.cols
-  | _ -> ());
-  mark_row_dirty t t.cursor.row
-
-(* Control functions, one each, named as in ECMA-48 and the DEC manuals. A
-   count [n] is at least 1. *)
-
-let bel _t = ()
-
-(* BS: one column left. Never erases: overstrike sequences (nroff bold
-   "c\bc") rely on the cell surviving. *)
-let bs t = cursor_back t 1
-
-(* HT: a pending wrap stays pending, as in xterm. *)
-let ht t =
-  if t.cursor.col < t.cols then
-    set_cursor_pos t ~row:t.cursor.row ~col:(next_tab t t.cursor.col)
-
-(* LF, VT and FF: down one row, same column (VT100). ONLCR translation is the
-   tty driver's job; curses cursor-motion optimizations depend on bare LF not
-   implying CR. *)
-let lf t =
-  clear_pending_wrap t;
-  advance_row t
-
-let cr t = set_cursor_pos t ~row:t.cursor.row ~col:0
-
-(* SO, SI, LS2 and LS3 invoke G1, G0, G2 and G3 into GL. *)
-let ls t g = t.gl <- g
-
-let ind t =
-  clear_pending_wrap t;
-  advance_row t
-
-let nel t =
-  advance_row t;
-  set_cursor_pos t ~row:t.cursor.row ~col:0
-
-let hts t = if t.cursor.col < t.cols then t.tabs.(t.cursor.col) <- true
-
-let ri t =
-  clear_pending_wrap t;
-  if t.cursor.row = t.scroll_region.top then scroll_down t 1
-  else set_cursor_pos t ~row:(t.cursor.row - 1) ~col:t.cursor.col
-
-let cuu t n =
-  clear_pending_wrap t;
-  set_cursor_pos t ~row:(row_up t n) ~col:t.cursor.col
-
-let cud t n =
-  clear_pending_wrap t;
-  set_cursor_pos t ~row:(row_down t n) ~col:t.cursor.col
-
-let cuf t n =
-  clear_pending_wrap t;
-  move_cursor t ~row:t.cursor.row ~col:(t.cursor.col + n)
-
-let cub t n = cursor_back t n
-let cnl t n = set_cursor_pos t ~row:(row_down t n) ~col:0
-let cpl t n = set_cursor_pos t ~row:(row_up t n) ~col:0
-let cha t n = move_cursor t ~row:t.cursor.row ~col:(n - 1)
-
-let vpa t n =
-  clear_pending_wrap t;
-  set_cursor_pos t ~row:(origin_row t (n - 1)) ~col:t.cursor.col
-
-(* VPR: down [n] rows, ignoring the margins. *)
-let vpr t n =
-  clear_pending_wrap t;
-  set_cursor_pos t ~row:(t.cursor.row + n) ~col:t.cursor.col
-
-let cup t row col = move_cursor t ~row:(origin_row t (row - 1)) ~col:(col - 1)
-
-let move_tabs t n next =
-  if t.cursor.col < t.cols then (
-    let col = ref t.cursor.col in
-    for _ = 1 to min n t.cols do
-      col := next t !col
-    done;
-    set_cursor_pos t ~row:t.cursor.row ~col:!col)
-
-let cht t n = move_tabs t n next_tab
-let cbt t n = move_tabs t n prev_tab
-
-let tbc t n =
-  match n with
-  | 0 -> if t.cursor.col < t.cols then t.tabs.(t.cursor.col) <- false
+let tbc t = function
+  | 0 -> t.tabs.(t.cursor.col) <- false
   | 3 -> Array.fill t.tabs 0 t.cols false
   | _ -> ()
 
-let ed t n =
-  clear_pending_wrap t;
-  erase_display t ~selective:false n
+(* {1:edit Editing} *)
 
-let decsed t n =
-  clear_pending_wrap t;
-  erase_display t ~selective:true n
-
-let el t n =
-  clear_pending_wrap t;
-  erase_line t ~selective:false n
-
-let decsel t n =
-  clear_pending_wrap t;
-  erase_line t ~selective:true n
-
-let ech t n =
-  clear_pending_wrap t;
-  erase_region t ~x:t.cursor.col ~y:t.cursor.row
-    ~width:(min n (t.cols - t.cursor.col))
-    ~height:1;
-  set_wrapped t t.cursor.row false;
-  mark_row_dirty t t.cursor.row
-
-let decsca t n =
-  t.selective <- true;
-  match n with
-  | 0 | 2 -> t.protect <- false
+(* ED and DECSED, EL and DECSEL, by the erase they use. *)
+let erase_display t erase = function
+  | 0 ->
+      let ({ row; col; _ } : cursor) = t.cursor in
+      erase t ~x:col ~y:row ~width:(t.cols - col) ~height:1;
+      erase t ~x:0 ~y:(row + 1) ~width:t.cols ~height:(t.rows - row - 1)
   | 1 ->
-      t.protect <- true;
-      t.tracked <- true
+      let ({ row; col; _ } : cursor) = t.cursor in
+      erase t ~x:0 ~y:0 ~width:t.cols ~height:row;
+      erase t ~x:0 ~y:row ~width:(col + 1) ~height:1
+  | 2 -> erase t ~x:0 ~y:0 ~width:t.cols ~height:t.rows
+  | 3 -> clear_history t
   | _ -> ()
 
+let erase_line t erase n =
+  let ({ row; col; _ } : cursor) = t.cursor in
+  match n with
+  | 0 -> erase t ~x:col ~y:row ~width:(t.cols - col) ~height:1
+  | 1 -> erase t ~x:0 ~y:row ~width:(col + 1) ~height:1
+  | 2 -> erase t ~x:0 ~y:row ~width:t.cols ~height:1
+  | _ -> ()
+
+let ed t n = erase_display t erase n
+let decsed t n = erase_display t erase_unprotected n
+let el t n = erase_line t erase n
+let decsel t n = erase_line t erase_unprotected n
+
+let ech t n =
+  let ({ row; col; _ } : cursor) = t.cursor in
+  erase t ~x:col ~y:row ~width:(min n (t.cols - col)) ~height:1
+
+let in_region t =
+  t.cursor.row >= t.margins.top && t.cursor.row <= t.margins.bottom
+
+(* IL and DL act from a cursor inside the region and return it to the first
+   column. *)
 let il t n =
-  clear_pending_wrap t;
-  if in_scroll_region t then (
-    let insert_count = min n (t.scroll_region.bottom - t.cursor.row + 1) in
-    for row = t.scroll_region.bottom downto t.cursor.row + insert_count do
-      copy_cells t ~src_x:0 ~src_y:(row - insert_count) ~width:t.cols ~dst_x:0
-        ~dst_y:row;
-      set_wrapped t row (is_wrapped t (row - insert_count))
-    done;
-    erase_region t ~x:0 ~y:t.cursor.row ~width:t.cols ~height:insert_count;
-    unwrap_rows t ~y:t.cursor.row ~height:insert_count;
-    mark_rows_dirty t t.cursor.row t.scroll_region.bottom;
-    set_cursor_pos t ~row:t.cursor.row ~col:0)
+  if in_region t then (
+    let row = t.cursor.row in
+    shift_rows t ~top:row ~bottom:t.margins.bottom
+      (-min n (t.margins.bottom - row + 1));
+    goto t ~row ~col:0)
 
 let dl t n =
-  clear_pending_wrap t;
-  if in_scroll_region t then (
-    let delete_count = min n (t.scroll_region.bottom - t.cursor.row + 1) in
-    for row = t.cursor.row to t.scroll_region.bottom - delete_count do
-      copy_cells t ~src_x:0 ~src_y:(row + delete_count) ~width:t.cols ~dst_x:0
-        ~dst_y:row;
-      set_wrapped t row (is_wrapped t (row + delete_count))
-    done;
-    erase_region t ~x:0
-      ~y:(t.scroll_region.bottom - delete_count + 1)
-      ~width:t.cols ~height:delete_count;
-    unwrap_rows t
-      ~y:(t.scroll_region.bottom - delete_count + 1)
-      ~height:delete_count;
-    mark_rows_dirty t t.cursor.row t.scroll_region.bottom;
-    set_cursor_pos t ~row:t.cursor.row ~col:0)
+  if in_region t then (
+    let row = t.cursor.row in
+    shift_rows t ~top:row ~bottom:t.margins.bottom
+      (min n (t.margins.bottom - row + 1));
+    goto t ~row ~col:0)
+
+let ich t n =
+  let ({ row; col; _ } : cursor) = t.cursor in
+  shift_cols t ~x:col ~top:row ~bottom:row (min n (t.cols - col))
 
 let dch t n =
-  clear_pending_wrap t;
-  let row = t.cursor.row in
-  if row >= 0 && row < t.rows then
-    let start_col = edit_start t row in
-    if start_col < t.cols then
-      let delete_span = min n (t.cols - start_col) in
-      if delete_span > 0 then (
-        let src_x = start_col + delete_span in
-        blank_cut_wide t row src_x;
-        let move_width = t.cols - src_x in
-        if move_width > 0 then
-          copy_cells t ~src_x ~src_y:row ~width:move_width ~dst_x:start_col
-            ~dst_y:row;
-        erase_region t ~x:(t.cols - delete_span) ~y:row ~width:delete_span
-          ~height:1;
-        set_wrapped t row false;
-        mark_row_dirty t row)
+  let ({ row; col; _ } : cursor) = t.cursor in
+  shift_cols t ~x:col ~top:row ~bottom:row (-min n (t.cols - col))
 
-(* ICH shifts the content right by the span and clears the gap, the mirror
-   of DCH. Grid.blit_region handles overlapping same-grid blits by iterating
-   right-to-left when src_x < dst_x. *)
-let ich t n =
-  clear_pending_wrap t;
-  let row = t.cursor.row in
-  if row >= 0 && row < t.rows then
-    let start_col = edit_start t row in
-    if start_col < t.cols then
-      let insert_span = min n (t.cols - start_col) in
-      if insert_span > 0 then (
-        let move_width = t.cols - start_col - insert_span in
-        if move_width > 0 then (
-          copy_cells t ~src_x:start_col ~src_y:row ~width:move_width
-            ~dst_x:(start_col + insert_span) ~dst_y:row;
-          (* A wide character cut at the right edge by the shift is
-             erased. *)
-          let right_start, right_w =
-            grapheme_start_and_width t.active_grid row (t.cols - 1)
-          in
-          if right_start + right_w > t.cols then
-            erase_region t ~x:right_start ~y:row ~width:(t.cols - right_start)
-              ~height:1);
-        erase_region t ~x:start_col ~y:row ~width:insert_span ~height:1;
-        mark_row_dirty t row)
+(* SL, SR, DECIC and DECDC shift the columns of the region's rows, from a
+   cursor inside it. *)
+let shift_region_cols t ~x dx =
+  if in_region t then
+    shift_cols t ~x ~top:t.margins.top ~bottom:t.margins.bottom dx
 
-let decstbm t top bottom =
-  let top = min top t.rows in
-  let bottom = min bottom t.rows in
-  if top < bottom then (
-    t.scroll_region.top <- top - 1;
-    t.scroll_region.bottom <- bottom - 1;
-    set_cursor_pos t ~row:(origin_row t 0) ~col:0)
+let sl t n = shift_region_cols t ~x:0 (-min n t.cols)
+let sr t n = shift_region_cols t ~x:0 (min n t.cols)
+
+let decic t n =
+  shift_region_cols t ~x:t.cursor.col (min n (t.cols - t.cursor.col))
+
+let decdc t n =
+  shift_region_cols t ~x:t.cursor.col (-min n (t.cols - t.cursor.col))
 
 let su t n = scroll_up t n
 let sd t n = scroll_down t n
 
-(* As xterm: reset the margins, fill with E in the default rendition, and
-   home the cursor. *)
+let decstbm t top bottom =
+  let top = min top t.rows and bottom = min bottom t.rows in
+  if top < bottom then (
+    t.margins <- { top = top - 1; bottom = bottom - 1 };
+    home t)
+
+(* DECALN resets the margins, fills the screen with E in the default
+   rendition, and homes the cursor. *)
 let decaln t =
-  t.scroll_region.top <- 0;
-  t.scroll_region.bottom <- t.rows - 1;
-  let style =
-    Ansi.Style.default |> Ansi.Style.fg t.default_fg
-    |> Ansi.Style.bg t.default_bg
-  in
-  let line = String.make t.cols 'E' in
-  for row = 0 to t.rows - 1 do
-    Grid.draw_text t.active_grid ~x:0 ~y:row ~text:line ~style;
-    set_protected t ~x:0 ~y:row ~width:t.cols false
+  t.margins <- { top = 0; bottom = t.rows - 1 };
+  let g = grid t in
+  for y = 0 to t.rows - 1 do
+    for x = 0 to t.cols - 1 do
+      Grid.set_grapheme g ~x ~y ~width:1 ~fg:t.default_fg ~bg:t.default_bg
+        ~attrs:Ansi.Attr.empty "E" ~pos:0 ~len:1
+    done
   done;
-  mark_rows_dirty t 0 (t.rows - 1);
-  set_cursor_pos t ~row:0 ~col:0
+  unwrap t ~top:0 ~bottom:(t.rows - 1);
+  changed t ~top:0 ~bottom:(t.rows - 1);
+  goto t ~row:0 ~col:0
 
-let sl t n = shift_columns t ~x:0 n
-let sr t n = shift_columns t ~x:0 (-n)
+(* {1:modes Modes and resets} *)
 
-let decic t n =
-  clear_pending_wrap t;
-  shift_columns t ~x:t.cursor.col (-n)
+let decsc t =
+  (screen t).saved <-
+    {
+      cursor = { t.cursor with row = t.cursor.row };
+      pen = t.pen;
+      charsets = t.charsets;
+      origin = t.modes.origin;
+    }
 
-let decdc t n =
-  clear_pending_wrap t;
-  shift_columns t ~x:t.cursor.col n
+(* DECRC restores the Last Column Flag with the position. *)
+let decrc t =
+  let s = (screen t).saved in
+  t.pen <- s.pen;
+  t.charsets <- s.charsets;
+  t.modes <- { t.modes with origin = s.origin };
+  let row =
+    if s.origin then max t.margins.top (min t.margins.bottom s.cursor.row)
+    else s.cursor.row
+  in
+  set_cursor t ~row ~col:s.cursor.col ~last_column:s.cursor.last_column
 
-let rep t n = repeat_preceding t n
+let set_cursor_visible t visible =
+  if t.modes.cursor_visible <> visible then (
+    t.modes <- { t.modes with cursor_visible = visible };
+    t.dirty.any <- true;
+    t.dirty.cursor <- true)
 
-let sgr t p =
-  let style = Ansi.Style.apply_sgr p t.style in
-  if not (Ansi.Style.equal style t.style) then (
-    t.style <- style;
-    mark_dirty t)
+let switch_screen t ~alternate =
+  if t.modes.alternate_screen <> alternate then (
+    t.modes <- { t.modes with alternate_screen = alternate };
+    touch_rows t 0 (t.rows - 1))
 
-let da t = Buffer.add_string t.replies t.da1
-let da2 t = Buffer.add_string t.replies t.da2
+let erase_screen t = erase t ~x:0 ~y:0 ~width:t.cols ~height:t.rows
 
-let dsr t n =
-  match n with
-  | 5 -> Buffer.add_string t.replies "\027[0n"
+(* Entering the alternate screen clears it; 1049 also saves the cursor on
+   entry and restores it on leaving. *)
+let enter_alternate t ~save =
+  if not t.modes.alternate_screen then (
+    if save then decsc t;
+    switch_screen t ~alternate:true;
+    erase_screen t;
+    t.margins <- { top = 0; bottom = t.rows - 1 })
+
+let leave_alternate t ~restore =
+  if t.modes.alternate_screen then (
+    switch_screen t ~alternate:false;
+    if restore then decrc t)
+
+let set_ansi_mode t mode on =
+  match mode with 4 -> t.modes <- { t.modes with insert = on } | _ -> ()
+
+let set_dec_mode t mode on =
+  let m = t.modes in
+  match mode with
+  | 1 -> t.modes <- { m with cursor_keys = on }
   | 6 ->
-      let row, col = cursor_report t in
-      Printf.bprintf t.replies "\027[%d;%dR" row col
+      t.modes <- { m with origin = on };
+      home t
+  | 7 -> t.modes <- { m with auto_wrap = on }
+  | 25 -> set_cursor_visible t on
+  | 45 -> t.modes <- { m with reverse_wrap = on }
+  | 47 | 1047 | 1049 ->
+      if on then enter_alternate t ~save:(mode = 1049)
+      else leave_alternate t ~restore:(mode = 1049)
+  | 2004 -> t.modes <- { m with bracketed_paste = on }
+  | _ -> ()
+
+(* SM, RM, DECSET and DECRST: every mode listed, absent ones skipped. *)
+let set_modes t p set on =
+  for i = 0 to Params.count p - 1 do
+    Option.iter (fun mode -> set t mode on) (Params.value p i)
+  done
+
+(* RIS: the power-up state. *)
+let ris t =
+  List.iter
+    (fun s ->
+      Grid.clear ~color:t.default_bg s.grid;
+      Bytes.fill s.wrapped 0 t.rows '\000';
+      s.saved <- power_up)
+    [ t.primary; t.alternate ];
+  clear_history t;
+  set_cursor_visible t true;
+  t.modes <- power_up_modes;
+  set_cursor t ~row:0 ~col:0 ~last_column:false;
+  t.pen <- plain_pen;
+  t.charsets <- ascii_sets;
+  t.margins <- { top = 0; bottom = t.rows - 1 };
+  t.tabs <- default_tabs t.cols;
+  t.title <- "";
+  touch_rows t 0 (t.rows - 1)
+
+(* DECSTR: the settings, the pen and the character sets to their power-up
+   values (VT510 DECSTR, Table 5-9), autowrap on as at power-up. *)
+let decstr t =
+  set_cursor_visible t true;
+  t.modes <-
+    {
+      t.modes with
+      insert = false;
+      origin = false;
+      auto_wrap = true;
+      reverse_wrap = false;
+      cursor_keys = false;
+    };
+  t.margins <- { top = 0; bottom = t.rows - 1 };
+  t.pen <- plain_pen;
+  t.charsets <- ascii_sets;
+  (screen t).saved <- power_up
+
+(* {1:charset_functions Character set functions} *)
+
+(* SCS: [ESC ( F] to [ESC + F] designate the 94-character set [F] as G0 to
+   G3. *)
+let scs t g final =
+  let sets = Array.copy t.charsets.g in
+  sets.(g) <- charset_94 final;
+  t.charsets <- { t.charsets with g = sets }
+
+(* SI, SO, LS2 and LS3 invoke G0, G1, G2 and G3 into GL. *)
+let ls t g = t.charsets <- { t.charsets with gl = g }
+
+(* {1:replies Replies} *)
+
+let reply t s = Buffer.add_string t.replies s
+let da t = reply t t.da1
+let da2 t = reply t t.da2
+
+(* The 1-based position cursor reports give: in origin mode the row counts
+   from the top margin. *)
+let report_row t =
+  t.cursor.row - (if t.modes.origin then t.margins.top else 0) + 1
+
+let dsr t = function
+  | 5 -> reply t "\027[0n"
+  | 6 -> Printf.bprintf t.replies "\027[%d;%dR" (report_row t) (t.cursor.col + 1)
   | _ -> ()
 
 let decxcpr t =
-  let row, col = cursor_report t in
-  Printf.bprintf t.replies "\027[?%d;%d;1R" row col
+  Printf.bprintf t.replies "\027[?%d;%d;1R" (report_row t) (t.cursor.col + 1)
 
-let ris t = hard_reset t
-let decstr t = soft_reset t
+(* {1:dispatch Dispatch}
 
-(* SM, RM, DECSET and DECRST: every mode listed, absent ones skipped. *)
-let set_modes t p set_mode set =
-  for i = 0 to Ansi.Parser.Params.count p - 1 do
-    Option.iter (fun mode -> set_mode t mode set) (Ansi.Parser.Params.value p i)
-  done
+   A function is named by the private marker, the intermediates and the final
+   byte (ECMA-48 §5.4; ECMA-35 §13.1). Counts and positions read 0 as their
+   default (Params.pn); selectors do not (Params.ps). *)
 
-let sm t p = set_modes t p set_ansi_mode true
-let rm t p = set_modes t p set_ansi_mode false
-let decset t p = set_modes t p set_dec_mode true
-let decrst t p = set_modes t p set_dec_mode false
+let sgr t p =
+  let style = Ansi.Style.apply_sgr p t.pen.style in
+  if not (Ansi.Style.equal style t.pen.style) then (
+    t.pen <- { t.pen with style };
+    t.dirty.any <- true)
 
-(* SCS: designate the 94-character set named by [final] as G[g]. *)
-let scs t g final = t.charsets.(g) <- final
+let decsca t = function
+  | 0 | 2 -> t.pen <- { t.pen with protected = false }
+  | 1 -> t.pen <- { t.pen with protected = true }
+  | _ -> ()
 
-(* OSC 0 and 2 set the title, OSC 8 opens a hyperlink, or closes it when the
-   URI is empty: [8 ; params ; URI]. *)
-let osc_title t text = t.title <- text
-
-let osc_hyperlink t text =
-  match String.index_opt text ';' with
-  | None -> ()
-  | Some i ->
-      if i + 1 = String.length text then t.style <- Ansi.Style.unlink t.style
-      else
-        let uri = String.sub text (i + 1) (String.length text - i - 1) in
-        t.style <- Ansi.Style.hyperlink uri t.style
-
-(* Dispatch: a function is named by the private marker, the intermediates
-   and the final byte (ECMA-48 §5.4; ECMA-35 §13.1). Counts and positions
-   read 0 as their default (Params.pn); selectors do not (Params.ps). *)
-
-let control t c =
-  match c with
-  | '\x07' -> bel t
-  | '\x08' -> bs t
-  | '\x09' -> ht t
-  | '\x0a' | '\x0b' | '\x0c' -> lf t
-  | '\x0d' -> cr t
+let control t = function
+  | '\x08' -> cub t 1
+  | '\x09' -> cht t 1
+  | '\x0a' | '\x0b' | '\x0c' -> index t
+  | '\x0d' -> goto t ~row:t.cursor.row ~col:0
   | '\x0e' -> ls t 1
   | '\x0f' -> ls t 0
-  | '\x84' -> ind t
-  | '\x85' -> nel t
+  | '\x84' -> index t
+  | '\x85' ->
+      index t;
+      goto t ~row:t.cursor.row ~col:0
   | '\x88' -> hts t
-  | '\x8d' -> ri t
+  | '\x8d' -> reverse_index t
   | _ -> ()
 
 let esc t intermediates final =
@@ -1557,8 +1088,7 @@ let esc t intermediates final =
 
 let csi t (s : Ansi.Parser.sequence) =
   let p = s.params in
-  let pn i = Ansi.Parser.Params.pn p i ~default:1 in
-  let ps i = Ansi.Parser.Params.ps p i ~default:0 in
+  let pn i = Params.pn p i ~default:1 and ps i = Params.ps p i ~default:0 in
   match (s.marker, s.intermediates, s.final) with
   | None, "", 'A' -> cuu t (pn 0)
   | None, "", 'B' -> cud t (pn 0)
@@ -1580,8 +1110,7 @@ let csi t (s : Ansi.Parser.sequence) =
   | None, "", 'M' -> dl t (pn 0)
   | None, "", 'P' -> dch t (pn 0)
   | None, "", '@' -> ich t (pn 0)
-  | None, "", 'r' ->
-      decstbm t (pn 0) (Ansi.Parser.Params.pn p 1 ~default:t.rows)
+  | None, "", 'r' -> decstbm t (pn 0) (Params.pn p 1 ~default:t.rows)
   | None, "", 'S' -> su t (pn 0)
   | None, "", 'T' -> sd t (pn 0)
   | None, "", 'm' -> sgr t p
@@ -1589,10 +1118,10 @@ let csi t (s : Ansi.Parser.sequence) =
   | None, "", 'n' -> dsr t (ps 0)
   | None, "", 's' -> decsc t (* SCOSC *)
   | None, "", 'u' -> decrc t (* SCORC *)
-  | None, "", 'h' -> sm t p
-  | None, "", 'l' -> rm t p
-  | Some '?', "", 'h' -> decset t p
-  | Some '?', "", 'l' -> decrst t p
+  | None, "", 'h' -> set_modes t p set_ansi_mode true
+  | None, "", 'l' -> set_modes t p set_ansi_mode false
+  | Some '?', "", 'h' -> set_modes t p set_dec_mode true
+  | Some '?', "", 'l' -> set_modes t p set_dec_mode false
   | Some '?', "", 'J' -> decsed t (ps 0)
   | Some '?', "", 'K' -> decsel t (ps 0)
   | Some '?', "", 'n' when ps 0 = 6 -> decxcpr t
@@ -1605,10 +1134,13 @@ let csi t (s : Ansi.Parser.sequence) =
   | None, "'", '~' -> decdc t (pn 0)
   | _ -> ()
 
-(* Strings. Only an OSC the VTE performs is kept, and only up to
-   [osc_budget] bytes; a longer one is dropped whole, as xterm drops an
-   over-long string. It is performed when it ends with ST or BEL, never when
-   it is cut short. *)
+(* {1:strings Strings}
+
+   Only an OSC the VTE performs is kept, and only up to [osc_budget] bytes; a
+   longer one is dropped whole, as xterm drops an over-long string. It is
+   performed when it ends with ST or BEL, never when it is cut short. OSC 0 and
+   2 set the title; OSC 8 opens a hyperlink, [8 ; params ; URI], or closes it
+   when the URI is empty. *)
 
 let osc_budget = 65536
 
@@ -1633,6 +1165,13 @@ let rec osc_number t s i n =
         osc_keep t s (i + 1)
     | _ -> osc_drop t
 
+let osc_hyperlink t text =
+  match String.index_opt text ';' with
+  | None -> ()
+  | Some i ->
+      let uri = String.sub text (i + 1) (String.length text - i - 1) in
+      t.pen <- { t.pen with link = (if uri = "" then None else Some uri) }
+
 let open_string t (o : Ansi.Parser.opening) =
   match o with Osc -> t.osc <- Osc_number (-1) | _ -> t.osc <- Osc_skip
 
@@ -1644,75 +1183,156 @@ let string_data t s =
 
 let close_string t ending =
   (match (t.osc, ending) with
-  | Osc_text (0 | 2), (`St | `Bel) -> osc_title t (Buffer.contents t.osc_text)
+  | Osc_text (0 | 2), (`St | `Bel) -> t.title <- Buffer.contents t.osc_text
   | Osc_text 8, (`St | `Bel) -> osc_hyperlink t (Buffer.contents t.osc_text)
   | _ -> ());
   osc_drop t
 
-let handle_token t token =
-  match token with
-  | Ansi.Parser.Text s ->
-      put_run t s;
-      t.repeatable <- true
+(* Every token but text ends the unit in progress. REP reads it first. *)
+let handle_token t = function
+  | Ansi.Parser.Text s -> print t s
   | Csi { marker = None; intermediates = ""; final = 'b'; params } ->
-      (* REP repeats the last character printed, so it keeps [repeatable]. *)
-      rep t (Ansi.Parser.Params.pn params 0 ~default:1)
+      rep t (Params.pn params 0 ~default:1);
+      close t
   | Csi s ->
-      t.repeatable <- false;
+      close t;
       csi t s
   | Control c ->
-      t.repeatable <- false;
+      close t;
       control t c
   | Esc { intermediates; final } ->
-      t.repeatable <- false;
+      close t;
       esc t intermediates final
   | Open o ->
-      t.repeatable <- false;
+      close t;
       open_string t o
   | Data s -> string_data t s
   | Close ending -> close_string t ending
 
-let feed t bytes ofs len =
-  Ansi.Parser.feed t.parser bytes ~off:ofs ~len (handle_token t)
+let feed t bytes off len =
+  Ansi.Parser.feed t.parser bytes ~off ~len (handle_token t)
 
-let feed_string t str =
-  let bytes = Bytes.unsafe_of_string str in
-  feed t bytes 0 (String.length str)
+let feed_string t s = feed t (Bytes.unsafe_of_string s) 0 (String.length s)
+
+let take_replies t =
+  let replies = Buffer.contents t.replies in
+  Buffer.clear t.replies;
+  replies
 
 let reset t =
-  hard_reset t;
   Ansi.Parser.reset t.parser;
-  osc_drop t
+  osc_drop t;
+  close t;
+  ris t
+
+(* {1:resize Resizing} *)
+
+(* The screens are cleared: a program repaints after a size change. *)
+let resize t ~rows ~cols =
+  let rows = max 1 rows and cols = max 1 cols in
+  if rows <> t.rows || cols <> t.cols then begin
+    close t;
+    let clamp (c : cursor) =
+      {
+        row = min c.row (rows - 1);
+        col = min c.col (cols - 1);
+        last_column = false;
+      }
+    in
+    List.iter
+      (fun s ->
+        Grid.resize s.grid ~width:cols ~height:rows;
+        Grid.clear ~color:t.default_bg s.grid;
+        s.wrapped <- Bytes.make rows '\000';
+        s.saved <- { s.saved with cursor = clamp s.saved.cursor })
+      [ t.primary; t.alternate ];
+    let tabs = default_tabs cols in
+    Array.blit t.tabs 0 tabs 0 (min cols (Array.length t.tabs));
+    t.rows <- rows;
+    t.cols <- cols;
+    t.tabs <- tabs;
+    t.margins <- { top = 0; bottom = rows - 1 };
+    t.dirty.rows <- Bytes.make rows '\001';
+    t.dirty.any <- true;
+    t.dirty.cursor <- true;
+    let c = clamp t.cursor in
+    set_cursor t ~row:c.row ~col:c.col ~last_column:false
+  end
+
+(* {1:access Access} *)
+
+let rows t = t.rows
+let cols t = t.cols
+let cursor_pos t = (t.cursor.row, t.cursor.col)
+
+let wrapped t y =
+  if y >= 0 then y < t.rows && wrapped_row t y
+  else
+    (not t.modes.alternate_screen)
+    && -y <= t.history.count && (newest t.history (-y - 1)).wrapped
+
+let modes t = t.modes
+let title t = t.title
+let scrollback_capacity t = Array.length t.history.lines
+let scrollback_size t = if t.modes.alternate_screen then 0 else t.history.count
+
+let scrollback_lines t =
+  if t.modes.alternate_screen then []
+  else
+    List.init t.history.count (fun i ->
+        let line = newest t.history (t.history.count - 1 - i) in
+        let stop = ref (String.length line.text) in
+        while !stop > 0 && line.text.[!stop - 1] = ' ' do
+          decr stop
+        done;
+        if !stop = String.length line.text then line.text
+        else String.sub line.text 0 !stop)
+
+let render_with_scrollback t ~offset dst =
+  if t.modes.alternate_screen || Array.length t.history.lines = 0 then
+    Grid.blit ~src:(grid t) ~dst
+  else begin
+    let offset = max 0 (min offset t.history.count) in
+    let height = Grid.height dst in
+    Grid.clear ~color:t.default_bg dst;
+    let from_history = min offset height in
+    (* Row [i] shows the line [offset - i] above the screen, so the newest
+       line sits next to the screen. *)
+    for i = 0 to from_history - 1 do
+      decompress_line (newest t.history (offset - 1 - i)) dst i
+    done;
+    if height > from_history then
+      Grid.blit_region ~src:(grid t) ~dst ~src_x:0 ~src_y:0 ~width:t.cols
+        ~height:(min (height - from_history) t.rows)
+        ~dst_x:0 ~dst_y:from_history
+  end
+
+let is_dirty t = t.dirty.any
+
+let dirty_rows t =
+  let rows = ref [] in
+  for row = t.rows - 1 downto 0 do
+    if Bytes.get t.dirty.rows row <> '\000' then rows := row :: !rows
+  done;
+  !rows
+
+let is_cursor_dirty t = t.dirty.cursor
+
+let clear_dirty t =
+  t.dirty.any <- false;
+  t.dirty.cursor <- false;
+  Bytes.fill t.dirty.rows 0 t.rows '\000'
 
 let to_string t =
-  let grid = t.active_grid in
-  let rows = t.rows in
-  let cols = t.cols in
-  let lines = ref [] in
-
-  for row = 0 to rows - 1 do
-    let buf = Buffer.create cols in
-    let col = ref 0 in
-    while !col < cols do
-      let idx = (row * cols) + !col in
-      if Grid.is_empty grid idx then (
-        Buffer.add_char buf ' ';
-        incr col)
-      else if Grid.is_continuation grid idx then
-        (* Part of a wide grapheme already emitted. *)
-        incr col
-      else
-        let s = Grid.get_text grid idx in
-        if s = "" then (
-          Buffer.add_char buf ' ';
-          incr col)
-        else (
-          Buffer.add_string buf s;
-          let w = Grid.cell_width grid idx in
-          let adv = if w <= 0 then 1 else w in
-          col := !col + adv)
+  let g = grid t in
+  let line row =
+    let buf = Buffer.create t.cols in
+    for col = 0 to t.cols - 1 do
+      let idx = (row * t.cols) + col in
+      if not (Grid.is_continuation g idx) then
+        let s = Grid.get_text g idx in
+        Buffer.add_string buf (if s = "" then " " else s)
     done;
-    let line = Buffer.contents buf in
-    lines := line :: !lines
-  done;
-  String.concat "\n" (List.rev !lines)
+    Buffer.contents buf
+  in
+  String.concat "\n" (List.init t.rows line)
