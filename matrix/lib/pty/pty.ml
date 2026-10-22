@@ -1,6 +1,10 @@
 type t = {
   fd : Unix.file_descr;
   mutable pid : int option;
+  (* The slave of a {!spawn} PTY, where its last close discards the output
+     not yet read from the master: holding it keeps the child's exit from
+     being that last close. *)
+  slave : Unix.file_descr option;
   (* [close] must be a true no-op the second time: the kernel can reallocate
      the fd number to anything else in the process, and a second [Unix.close]
      would then close that unrelated descriptor. *)
@@ -21,6 +25,10 @@ external set_winsize_raw : Unix.file_descr -> winsize -> unit
 external setsid_and_setctty : Unix.file_descr -> unit
   = "ocaml_pty_setsid_and_setctty"
 
+external close_discards_output : unit -> bool
+  = "ocaml_pty_close_discards_output"
+
+let hold_slave = close_discards_output ()
 let file_descr t = t.fd
 let in_fd t = t.fd
 let out_fd t = t.fd
@@ -63,10 +71,19 @@ let reap pid =
   in
   poll 10
 
+let close_fd fd = try Unix.close fd with Unix.Unix_error _ -> ()
+
 let close ?(wait = true) t =
   if t.closed then ()
   else (
     t.closed <- true;
+    (* While the slave is held, a child exiting as session leader waits for
+       the master to read its output: hang up first, so that it can exit. *)
+    (match t.slave with
+    | Some slave ->
+        close_fd t.fd;
+        close_fd slave
+    | None -> ());
     (* Terminate and reap child process if spawned *)
     (match t.pid with
     | Some pid ->
@@ -75,8 +92,7 @@ let close ?(wait = true) t =
         if wait then reap pid
     | None -> ());
     t.pid <- None;
-    (* Close file descriptor *)
-    try Unix.close t.fd with Unix.Unix_error _ -> ())
+    if t.slave = None then close_fd t.fd)
 
 let get_winsize t = get_winsize_raw (live_fd t "get_winsize")
 let set_winsize t ws = set_winsize_raw (live_fd t "set_winsize") ws
@@ -91,8 +107,8 @@ let inherit_size ~src ~dst =
 
 let open_pty ?winsize () =
   let master_fd, slave_fd = open_pty_raw () in
-  let master = { fd = master_fd; pid = None; closed = false } in
-  let slave = { fd = slave_fd; pid = None; closed = false } in
+  let master = { fd = master_fd; pid = None; slave = None; closed = false } in
+  let slave = { fd = slave_fd; pid = None; slave = None; closed = false } in
   (* Set initial window size if provided *)
   (match winsize with
   | Some ws -> (
@@ -110,7 +126,10 @@ let spawn ?env ?cwd ?winsize ~prog ~args () =
   (* [Unix.fork] never returns -1: on failure it raises [Unix_error]. Close
      both PTY ends before propagating so a failed fork does not leak them. *)
   let pid =
-    try Unix.fork ()
+    try
+      (* A held slave must not leak into other children. *)
+      if hold_slave then Unix.set_close_on_exec pty_slave.fd;
+      Unix.fork ()
     with exn ->
       close pty_master;
       close pty_slave;
@@ -138,10 +157,13 @@ let spawn ?env ?cwd ?winsize ~prog ~args () =
       with _ -> Unix._exit 127)
   | pid ->
       (* Parent process *)
-      close pty_slave;
-      (* Store PID for cleanup on close *)
-      pty_master.pid <- Some pid;
-      pty_master
+      let slave =
+        if hold_slave then Some pty_slave.fd
+        else (
+          close pty_slave;
+          None)
+      in
+      { pty_master with pid = Some pid; slave }
 
 let with_pty ?winsize f =
   let master, slave = open_pty ?winsize () in
