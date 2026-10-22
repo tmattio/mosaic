@@ -362,9 +362,12 @@ let registry =
       how = "xterm rewrite";
       why =
         "a designation of a set this terminal has no table for, such as DEC \
-         Supplemental (<) or DEC Technical (>), designates nothing: the slot \
-         leaves characters unchanged (vte.mli; RFC 0004 §2 Charsets lists the \
-         sets); xterm has those tables. xterm gets the ASCII designation.";
+         Supplemental (<), DEC Technical (>) or any 96-character set, \
+         designates nothing: the slot leaves characters unchanged (vte.mli; \
+         RFC 0004 §2 Charsets lists the sets); xterm has those tables, and \
+         after a 96-character designation prints DEL as a character \
+         (charproc.c, doparsing: scssize). xterm gets the ASCII designation of \
+         the same slot.";
     };
     {
       name = "national-utf8";
@@ -1500,13 +1503,19 @@ let rewrite ctx bytes =
           feed raw
       | Esc { inter; final; raw }
         when String.length inter >= 1
-             && String.contains "()*+" inter.[0]
+             && String.contains "()*+-./" inter.[0]
              && (String.length inter > 1
+                || String.contains "-./" inter.[0]
                 || not (String.contains "0A4C5RfQ9KYE6`ZH7=B" final))
              && on ctx "unknown-charsets" ->
-          (* A set without a table here designates nothing. *)
+          (* A set without a table here, 96-character sets included,
+             designates nothing: ASCII, through the 94-character
+             designation of the same slot. *)
           fire ctx "unknown-charsets";
-          emit ("\027" ^ String.make 1 inter.[0] ^ "B");
+          let slot =
+            match inter.[0] with '-' -> ')' | '.' -> '*' | '/' -> '+' | g -> g
+          in
+          emit ("\027" ^ String.make 1 slot ^ "B");
           feed raw
       | Esc { inter = ""; final = '8'; raw } ->
           emit raw;
