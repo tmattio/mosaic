@@ -10,10 +10,16 @@ let resources ~fifo ~decid =
     ("decTerminalID", string_of_int decid);
     (* UTF-8 in and out ([-u8] also sets it). *)
     ("utf8", "true");
+    (* Decode ill-formed UTF-8 as the web does (one U+FFFD per maximal
+       subpart, Unicode §3.9) for overlong forms, surrogates and code points
+       beyond U+10FFFF, as matrix does. (A lone continuation byte followed by
+       ASCII still reads as a Latin-1 or C1 character: ptydata.c.) *)
+    ("utf8Weblike", "true");
     (* Keep combining characters as written: xterm composes them to NFC by
        default, matrix never does. *)
     ("precompose", "false");
-    (* Store up to 10 combining characters per cell (default 2). *)
+    (* Store more combining characters per cell than the default 2 (xterm
+       clamps this to 5). *)
     ("combiningChars", "10");
     (* xterm's own width table, not the C library's, so that widths do not
        depend on the host. *)
@@ -107,7 +113,7 @@ let spec =
     ]
 
 let usage =
-  "xterm_diff (fuzz | case BYTES | matrix BYTES) [options]\n\
+  "xterm_diff (fuzz | case BYTES | case @FILE | matrix BYTES | gen) [options]\n\
    BYTES is escaped: \\e, \\xHH, \\u{HHHH}, \\n, \\r, \\t, \\\\."
 
 let anon a =
@@ -142,9 +148,9 @@ let matrix_side bytes =
       let replies, cpr1 = Xterm.split_last_cpr r1 in
       (replies, cpr1, r2, screen))
 
-let compare_case session ~zero_width bytes =
+let compare_case session ~width bytes =
   let x = Xterm.run session bytes in
-  let xs = Screen.decode ~zero_width ~rows:!rows ~cols:!cols x.dump in
+  let xs = Screen.decode ~width ~rows:!rows ~cols:!cols x.dump in
   let x_replies, x_cpr1 = Xterm.split_last_cpr x.replies in
   let mismatch kind where a b =
     if a = b then []
@@ -206,10 +212,11 @@ let describe_tokens tokens =
 
 (* {1 The agent: runs inside xterm} *)
 
-let agent () =
+let rec agent () =
   (* xterm waits for its printer process on exit, which waits for xterm to
      close the pipe it reads: xterm never exits by itself after the agent. *)
-  at_exit (fun () -> Unix.kill (Unix.getppid ()) Sys.sigkill);
+  at_exit (fun () ->
+      try Unix.kill (Unix.getppid ()) Sys.sigkill with Unix.Unix_error _ -> ());
   let fifo = Filename.concat !out "printer.fifo" in
   let log =
     open_out_gen
@@ -218,14 +225,39 @@ let agent () =
       (Filename.concat !out "log.txt")
   in
   let logf fmt = Printf.kfprintf (fun oc -> flush oc) log fmt in
+  List.iter
+    (fun (signal, name) ->
+      Sys.set_signal signal
+        (Sys.Signal_handle
+           (fun _ ->
+             logf "agent: %s\n" name;
+             exit 5)))
+    [
+      (Sys.sighup, "SIGHUP: xterm went away");
+      (Sys.sigterm, "SIGTERM");
+      (Sys.sigpipe, "SIGPIPE");
+    ];
+  Printexc.register_printer (function
+    | Xterm.Timeout w -> Some ("Timeout " ^ w)
+    | _ -> None);
+  try agent_body ~fifo ~log
+  with e ->
+    logf "agent failed: %s\n%s" (Printexc.to_string e)
+      (Printexc.get_backtrace ());
+    exit 4
+
+and agent_body ~fifo ~log =
+  let logf fmt = Printf.kfprintf (fun oc -> flush oc) log fmt in
   let session = Xterm.open_ ~fifo in
   let widths = Xterm.calibrate session Gen.alphabet in
-  let zero = Hashtbl.create 64 in
-  List.iter (fun (cp, w) -> if w = 0 then Hashtbl.replace zero cp ()) widths;
+  let table = Hashtbl.create 64 in
+  List.iter (fun (cp, w) -> Hashtbl.replace table cp w) widths;
   logf "calibration: %s\n"
     (String.concat " "
        (List.map (fun (cp, w) -> Printf.sprintf "U+%04X:%d" cp w) widths));
-  let zero_width cp = Hashtbl.mem zero cp in
+  (* Characters outside the alphabet reach the print only through the
+     character sets (narrow) or as U+FFFD (narrow). *)
+  let width cp = Option.value (Hashtbl.find_opt table cp) ~default:1 in
   (* The case being run, which the parent skips if xterm cannot recover. *)
   let next = Filename.concat !out "next" in
   let set_next i =
@@ -233,7 +265,7 @@ let agent () =
         output_string oc (string_of_int i))
   in
   let compare bytes =
-    try Some (compare_case session ~zero_width bytes)
+    try Some (compare_case session ~width bytes)
     with Xterm.Timeout what ->
       logf "timeout (%s) on %s\n" what (Screen.escape bytes);
       (try Xterm.recover session
@@ -244,14 +276,27 @@ let agent () =
   in
   match !mode with
   | "case" ->
-      let bytes = Screen.unescape !input in
+      (* [@FILE] runs every line of FILE. *)
+      let inputs =
+        if String.starts_with ~prefix:"@" !input then
+          In_channel.with_open_bin
+            (String.sub !input 1 (String.length !input - 1))
+            In_channel.input_lines
+          |> List.filter (fun l -> l <> "" && l.[0] <> '#')
+        else [ !input ]
+      in
       let oc = open_out (Filename.concat !out "case.txt") in
-      (match compare bytes with
-      | Some o ->
-          Printf.fprintf oc "case: %s\n%s%s" (Screen.escape bytes)
-            (describe_diffs o.diffs) o.report
-      | None ->
-          Printf.fprintf oc "case: %s\nxterm timed out\n" (Screen.escape bytes));
+      List.iter
+        (fun input ->
+          let bytes = Screen.unescape input in
+          match compare bytes with
+          | Some o ->
+              Printf.fprintf oc "case: %s\n%s%s\n" (Screen.escape bytes)
+                (describe_diffs o.diffs) o.report
+          | None ->
+              Printf.fprintf oc "case: %s\nxterm timed out\n\n"
+                (Screen.escape bytes))
+        inputs;
       close_out oc
   | _ ->
       let cfg = config () in
@@ -425,7 +470,12 @@ let launch () =
       Unix.create_process !xterm (Array.of_list args) Unix.stdin Unix.stdout
         Unix.stderr
     in
-    ignore (Unix.waitpid [] pid);
+    let status =
+      match snd (Unix.waitpid [] pid) with
+      | Unix.WEXITED n -> Printf.sprintf "exited %d" n
+      | WSIGNALED n -> Printf.sprintf "killed by signal %d" n
+      | WSTOPPED n -> Printf.sprintf "stopped by signal %d" n
+    in
     let reached =
       try
         int_of_string
@@ -433,7 +483,8 @@ let launch () =
       with _ -> first
     in
     if !mode = "fuzz" && reached < stop then (
-      Printf.eprintf "xterm_diff: case %d wedged xterm, skipping it\n%!" reached;
+      Printf.eprintf "xterm_diff: case %d wedged xterm (%s), skipping it\n%!"
+        reached status;
       go (reached + 1))
   in
   go !start;
@@ -461,6 +512,13 @@ let () =
       mode := "case";
       agent ()
   | "matrix" -> matrix_only ()
+  | "gen" ->
+      for i = !start to !start + !count - 1 do
+        let tokens = Gen.case (config ()) ~seed:!seed i in
+        Printf.printf "%d\t%s\t%s\n" i
+          (Screen.escape (Gen.bytes tokens))
+          (describe_tokens tokens)
+      done
   | _ ->
       Arg.usage spec usage;
       exit 2

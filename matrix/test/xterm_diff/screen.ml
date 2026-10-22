@@ -16,8 +16,14 @@
    - Trailing cells no character was drawn in (erased or never written) are not
      printed, whatever their colour; matrix has no such distinction, so both
      sides drop trailing spaces.
+   - The SGR test is skipped for cells holding no character (code 0, which is
+     how xterm stores the rows a scroll brings in, whatever their colour): they
+     print as a space with no SGR. A space with no SGR before it therefore has
+     unknown attributes, and is compared by its text only.
    - The second cell of a wide character holds U+FFFF, printed as is with
-     [printRawChars: true]; combining characters follow their base. *)
+     [printRawChars: true]; combining characters follow their base. xterm can
+     leave a U+FFFF whose first half was overwritten (it draws nothing there);
+     it decodes as a space. *)
 
 type color = Default | Index of int | Rgb of int * int * int
 
@@ -38,11 +44,21 @@ type cell = {
   attrs : int;
   fg : color;
   bg : color;
+  known : bool;
+      (** [false] when the print does not tell the attributes: see [decode]. *)
 }
 
 type t = { lines : cell array array; line_attrs : char array }
 
-let blank = { text = " "; cont = false; attrs = 0; fg = Default; bg = Default }
+let blank =
+  {
+    text = " ";
+    cont = false;
+    attrs = 0;
+    fg = Default;
+    bg = Default;
+    known = true;
+  }
 
 (* {1 Escaping} *)
 
@@ -168,13 +184,20 @@ let apply_sgr (attrs, fg, bg) params =
     params;
   !st
 
-(* [decode ~zero_width ~rows dump] is the screen [dump] describes.
-   [zero_width cp] tells a combining character from a cell's base: xterm prints
-   both the same way, so the decision is xterm's own width, measured once per
-   session (see [Xterm.calibrate]). *)
-let decode ~zero_width ~rows ~cols dump =
+(* [decode ~width ~rows dump] is the screen [dump] describes. [width cp] is
+   xterm's own width of [cp], measured once per session (see
+   [Xterm.calibrate]): it tells a combining character from a cell's base, which
+   xterm prints the same way, and a wide character's second half from an
+   orphan. *)
+let decode ~width ~rows ~cols dump =
+  let zero_width cp = width cp = 0 in
+  let first_cp s =
+    if s = "" then 0
+    else Uchar.to_int (Uchar.utf_decode_uchar (String.get_utf_8_uchar s 0))
+  in
   let lines = ref [] and line_attrs = ref [] in
   let row = ref [] and line_attr = ref '5' and pending = ref None in
+  let prefix = ref false in
   let end_row () =
     lines := Array.of_list (List.rev !row) :: !lines;
     line_attrs := !line_attr :: !line_attrs;
@@ -186,8 +209,8 @@ let decode ~zero_width ~rows ~cols dump =
     match !pending with
     | Some st ->
         pending := None;
-        st
-    | None -> (0, Default, Default)
+        (st, true)
+    | None -> ((0, Default, Default), false)
   in
   let n = String.length dump in
   let rec go i =
@@ -198,10 +221,14 @@ let decode ~zero_width ~rows ~cols dump =
           let params =
             String.split_on_char ';' (String.sub dump (i + 2) (j - i - 2))
           in
-          pending := Some (apply_sgr (0, Default, Default) params);
+          (* The [SGR 0] after a row's line attribute is the row's prefix, sent
+             whatever the first cell holds. *)
+          if !prefix then prefix := false
+          else pending := Some (apply_sgr (0, Default, Default) params);
           go (j + 1)
       | '\027' when i + 2 < n && dump.[i + 1] = '#' ->
           line_attr := dump.[i + 2];
+          prefix := true;
           go (i + 3)
       | '\r' | '\x0e' | '\x0f' -> go (i + 1)
       | '\n' ->
@@ -214,8 +241,14 @@ let decode ~zero_width ~rows ~cols dump =
           let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
           let text = String.sub dump i len in
           (if cp = 0xFFFF then
-             let attrs, fg, bg = state () in
-             row := { text = ""; cont = true; attrs; fg; bg } :: !row
+             let (attrs, fg, bg), _ = state () in
+             match !row with
+             | prev :: _ when (not prev.cont) && width (first_cp prev.text) = 2
+               ->
+                 row :=
+                   { text = ""; cont = true; attrs; fg; bg; known = true }
+                   :: !row
+             | _ -> row := { blank with known = false } :: !row
            else
              let rec attach = function
                | c :: rest when c.cont -> (
@@ -228,8 +261,9 @@ let decode ~zero_width ~rows ~cols dump =
              match if zero_width cp then attach !row else None with
              | Some r -> row := r
              | None ->
-                 let attrs, fg, bg = state () in
-                 row := { text; cont = false; attrs; fg; bg } :: !row);
+                 let (attrs, fg, bg), emitted = state () in
+                 let known = emitted || text <> " " in
+                 row := { text; cont = false; attrs; fg; bg; known } :: !row);
           go (i + len)
   in
   go 0;
@@ -261,7 +295,8 @@ let cells_match a b =
   a.text = b.text && a.cont = b.cont
   && (a.cont
      ||
-     if a.text = " " then
+     if a.text = " " && not (a.known && b.known) then true
+     else if a.text = " " then
        let va = a.attrs land visible_on_blank
        and vb = b.attrs land visible_on_blank in
        a.bg = b.bg && va = vb && (va = 0 || a.fg = b.fg)

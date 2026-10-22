@@ -3,7 +3,7 @@
 
    One xterm runs every case. For each case the driver writes, in one write:
 
-   - RIS, returning xterm to its power-up state;
+   - RIS, returning xterm to its power-up state (see [reset]);
    - the case and the trailer [ESC \] (ST), which ends any sequence or
      string the case left open (both sides receive the trailer; CAN would not
      do, since xterm, as a VT100, shows it as a checkerboard);
@@ -26,6 +26,10 @@ type t = {
   fifo_pending : Buffer.t;
 }
 
+(* RIS, then the alternate screen's saved cursor back to its power-up state:
+   xterm's RIS resets the normal screen's DECSC slot but not the alternate
+   one's, which would leak from one case to the next. *)
+let reset = "\027c\027[?47h\0277\027[?47l"
 let trailer = "\027\\"
 let probe = "\027[6n\027[i#\027[6n\027[>0q"
 let terminator_prefix = "\027P>|"
@@ -53,9 +57,25 @@ let write_all fd s =
   in
   go 0
 
+(* With S8C1T (VT220 and later identities) xterm replies with raw C1 bytes:
+   they are read as their 7-bit forms. Only replies: prints are UTF-8, where
+   these bytes are continuation bytes. *)
+let normalize s =
+  if not (String.exists (fun c -> c = '\x90' || c = '\x9b' || c = '\x9c') s)
+  then s
+  else
+    String.concat ""
+      (List.map
+         (function
+           | '\x90' -> "\027P"
+           | '\x9b' -> "\027["
+           | '\x9c' -> "\027\\"
+           | c -> String.make 1 c)
+         (List.init (String.length s) (String.get s)))
+
 (* Reads from [fd] until [until buf] is [Some n]: the first [n] bytes are the
    result, and the rest stays in [pending] for the next call. *)
-let read_until ?(timeout = 2.0) fd pending ~what until =
+let read_until ?(timeout = 2.0) ?(normalize = Fun.id) fd pending ~what until =
   let chunk = Bytes.create 4096 in
   let deadline = Unix.gettimeofday () +. timeout in
   let rec go () =
@@ -74,7 +94,7 @@ let read_until ?(timeout = 2.0) fd pending ~what until =
             let n = Unix.read fd chunk 0 (Bytes.length chunk) in
             tracef "%.4f read %s %s\n" (Unix.gettimeofday ()) what
               (Screen.escape (Bytes.sub_string chunk 0 n));
-            Buffer.add_subbytes pending chunk 0 n);
+            Buffer.add_string pending (normalize (Bytes.sub_string chunk 0 n)));
         go ()
   in
   go ()
@@ -92,7 +112,7 @@ let find_sub ?(from = 0) s sub =
    consumed. *)
 let read_replies t =
   let s =
-    read_until t.tty_in t.tty_pending ~what:"replies" (fun s ->
+    read_until ~normalize t.tty_in t.tty_pending ~what:"replies" (fun s ->
         match find_sub s terminator_prefix with
         | Some i -> (
             match find_sub ~from:i s "\027\\" with
@@ -160,7 +180,7 @@ let split_last_cpr s =
 type result = { replies : string; cpr2 : string; dump : string }
 
 let run t bytes =
-  write_all t.tty_out ("\027c" ^ bytes ^ trailer ^ probe);
+  write_all t.tty_out (reset ^ bytes ^ trailer ^ probe);
   let replies = read_replies t in
   let dump = read_dump t in
   let replies, cpr2 = split_last_cpr replies in

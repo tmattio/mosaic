@@ -48,6 +48,7 @@ let screen t =
       attrs = attrs (Grid.get_attrs g idx);
       fg = color (Grid.get_fg g idx);
       bg = color (Grid.get_bg g idx);
+      known = true;
     }
   in
   {

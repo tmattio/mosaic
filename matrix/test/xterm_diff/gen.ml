@@ -422,8 +422,8 @@ let strings st =
       ( 2,
         fun () ->
           tok "DCS"
-            ("\027P" ^ pick st [ "q"; "$q\"q"; "1;2|x"; "" ] ^ body () ^ term ())
-      );
+            (* Not [$q]: DECRQSS, outside matrix's functions. *)
+            ("\027P" ^ pick st [ "q"; "1;2|x"; "" ] ^ body () ^ term ()) );
       (1, fun () -> tok "APC" ("\027_" ^ body () ^ term ()));
       (1, fun () -> tok "PM" ("\027^" ^ body () ^ term ()));
       (1, fun () -> tok "SOS" ("\027X" ^ body () ^ term ()));
@@ -487,13 +487,15 @@ let malformed st cfg =
             ("\027[" ^ p ()
             ^ utf8 (pick st [ 0xC1; 0xE8; 0xED; 0x100; 0x4E00 ])
             ^ "A") );
+      (* Not [m]: [CSI ? Ps m] and [CSI > Ps m] are xterm's XTQMODKEYS and
+         XTMODKEYS, outside matrix's functions. *)
       ( 1,
         fun () ->
           tok "bad.marker"
             ("\027["
             ^ pick st [ "<"; "="; ">"; "?" ]
             ^ p ()
-            ^ pick st [ "A"; "H"; "J"; "m"; "@" ]) );
+            ^ pick st [ "A"; "H"; "J"; "@" ]) );
       ( 1,
         fun () ->
           tok "bad.intermediate"
@@ -518,7 +520,9 @@ let malformed st cfg =
       ( 1,
         fun () ->
           tok "bad.esc-intermediate"
-            ("\027" ^ pick st [ " F"; " G"; "%G"; "%@"; "#3"; "#6"; "(%5" ]) );
+            (* Not [#3] to [#6]: line attributes (DECDHL, DECSWL, DECDWL),
+               outside matrix's functions. *)
+            ("\027" ^ pick st [ " F"; " G"; "%G"; "%@"; "#0"; "#9"; "(%5" ]) );
     ]
     ()
 

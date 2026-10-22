@@ -19,7 +19,9 @@ X=_build/default/matrix/test/xterm_diff/xterm_diff.exe
 
 $X fuzz --seed 1 --count 5000 --out /tmp/xd      # a campaign
 $X case 'a\e[2@b' --out /tmp/xd                   # one case, both screens
+$X case @cases.txt --out /tmp/xd                  # one case per line
 $X matrix 'a\e[2@b'                               # matrix only, no X needed
+$X gen --seed 1 --start 1129 --count 1            # print a campaign's case
 ```
 
 If xterm is not on `PATH`, pass `--xterm PATH` or set `XTERM_DIFF_XTERM`. For
@@ -58,6 +60,9 @@ agent mode, so that the agent's standard input and output are xterm's pty. The
 agent puts the tty in raw mode and, for each case, writes in one go:
 
 1. `ESC c` (RIS): xterm's power-up state; the matrix side is a fresh VTE.
+   xterm's RIS leaves the alternate screen's saved cursor (DECSC) as it was,
+   so the agent also saves the home cursor there (`CSI ? 47 h`, `ESC 7`,
+   `CSI ? 47 l`), on the xterm side only.
 2. The case, then `ESC \` (ST), which ends any sequence or string the case left
    open. Both sides receive it.
 3. `CSI 6 n`: the cursor.
@@ -96,8 +101,9 @@ minimization included.
 |---|---|---|
 | `decTerminalID` | 100 | DA1 `CSI ? 1 ; 2 c`, matrix's identity. xterm then acts as a VT100 (see below). |
 | `utf8` | true | UTF-8 in and out. |
+| `utf8Weblike` | true | One U+FFFD per maximal subpart of ill-formed UTF-8 (Unicode §3.9) for overlong forms, surrogates and code points past U+10FFFF, as matrix. By default xterm makes one U+FFFD of each. |
 | `precompose` | false | xterm composes combining sequences to NFC by default; matrix never does. |
-| `combiningChars` | 10 | Default 2; keep every mark of a cluster. |
+| `combiningChars` | 10 | Default 2; xterm clamps it to 5 marks per cell (matrix keeps any number; the generator writes at most 3). |
 | `mkWidth` / `cjkWidth` | true / false | xterm's built-in width table, independent of the host's C library. |
 | `autoWrap` / `reverseWrap` / `titeInhibit` | true / false / false | Matrix's power-up modes; the alternate screen allowed. |
 | `boldColors`, `colorBDMode`, `colorULMode`, `colorBLMode`, `colorRVMode`, `colorITMode`, `colorAttrMode` | false | Attributes stay attributes; bold does not brighten colours. |
@@ -140,3 +146,14 @@ Tab stops are xterm's default, every 8 columns, as in matrix.
   controller mode around a form feed) so that it stays open.
 - **xterm removes `XTERM_*` variables** from its child's environment; the
   agent's I/O trace is `XDIFF_TRACE=FILE`.
+- **xterm crashes.** xterm 398 dies of SIGSEGV on a few inputs (6 cases in
+  24,000; whether it does depends on its memory layout, so a case that crashes
+  in a campaign may not crash alone). The parent then starts a new xterm after
+  that case.
+- **Rows a scroll brings in.** xterm stores their cells with no character, and
+  its print skips the SGR of such cells, so their colour (BCE) is not
+  compared. In general a space with no SGR before it in the print is compared
+  by its text only.
+- **Orphan halves.** xterm can keep the U+FFFF of a wide character whose
+  first half was overwritten (after RI or DL); it draws nothing there and the
+  decoder reads it as a space.
