@@ -1261,9 +1261,23 @@ let close_string t ending =
   | _ -> ());
   osc_drop t
 
+(* ECMA-48 §5.4.2 lets a parameter be a string of sub-parameters, separated by
+   colons, whose meaning the function defines. Only SGR defines any here (T.416
+   colours, underline styles): in any other control sequence a parameter with
+   sub-parameters makes the sequence malformed, so it has no effect, as one the
+   parser rejects has none. xterm, a datapoint, does the same (charproc.c,
+   "reject any controls that do not accept subparameters"). *)
+let malformed (s : Ansi.Parser.sequence) =
+  (not (s.marker = None && s.intermediates = "" && s.final = 'm'))
+  &&
+  let p = s.params in
+  let rec go i = i < Params.count p && (Params.fields p i > 1 || go (i + 1)) in
+  go 0
+
 (* Every token but text ends the unit in progress. REP reads it first. *)
 let handle_token t = function
   | Ansi.Parser.Text s -> print t s
+  | Csi s when malformed s -> ()
   | Csi { marker = None; intermediates = ""; final = 'b'; params } ->
       rep t (Params.pn params 0 ~default:1);
       close t

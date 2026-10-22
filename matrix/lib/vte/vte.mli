@@ -126,6 +126,11 @@
     (VT510 §4.3.3). A count acts only as far as it can: [CSI 99999 C] stops at
     the right margin.
 
+    A parameter may be a string of sub-parameters separated by colons, whose
+    meaning the function defines (ECMA-48 §5.4.2). Only SGR defines any: in any
+    other control sequence one makes the sequence malformed, and it has no
+    effect, so [CSI 2:3 H] does not move the cursor.
+
     {2:replies Replies}
 
     The terminal answers:

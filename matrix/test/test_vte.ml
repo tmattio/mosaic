@@ -1828,6 +1828,24 @@ let huge_parameters () =
   equal ~msg:"IL" string "    \n    " (text ("\x1b[" ^ big ^ "L"));
   equal ~msg:"SU" string "    \n    " (text ("\x1b[" ^ big ^ "S"))
 
+(* A parameter with sub-parameters makes a sequence other than SGR malformed
+   (ECMA-48 §5.4.2): it has no effect, and the unit in progress goes on. *)
+let sub_parameters () =
+  let vte s = screen_of ~rows:2 ~cols:6 [ s ] in
+  let pos s = Vte.cursor_pos (vte s) in
+  equal ~msg:"CUP 2:3" (pair int int) (0, 1) (pos "a\x1b[2:3H");
+  equal ~msg:"CUF 1:2" (pair int int) (0, 1) (pos "a\x1b[1:2C");
+  equal ~msg:"CUP 2;3:1" (pair int int) (0, 1) (pos "a\x1b[2;3:1H");
+  equal ~msg:"ED 2:0" string "a     \n      " (Vte.to_string (vte "a\x1b[2:0J"));
+  equal ~msg:"REP 2:1" string "a     \n      "
+    (Vte.to_string (vte "a\x1b[2:1b"));
+  is_true ~msg:"DECRST 7:1" (Vte.modes (vte "\x1b[?7:1l")).auto_wrap;
+  equal ~msg:"the unit goes on" string "e\u{301}"
+    (Grid.get_text (Vte.grid (vte "e\x1b[1:2C\u{301}")) 0);
+  let g = Vte.grid (vte "\x1b[38:5:1ma") in
+  is_true ~msg:"SGR takes sub-parameters"
+    (Ansi.Color.equal (Grid.get_fg g 0) (Ansi.Color.of_palette_index 1))
+
 (* The control functions of the parser's probes, at the VTE. *)
 let parser_probes () =
   let vte s = screen_of ~rows:2 ~cols:8 [ s ] in
@@ -2122,6 +2140,7 @@ let tests =
     test "wrap marks" wrap_marks;
     test "huge parameters" huge_parameters;
     test "parser probes" parser_probes;
+    test "sub-parameters outside SGR" sub_parameters;
     test "DECALN resets" decaln_resets;
     test "DECSTR resets both slots" decstr_slots;
     test "more character sets" more_character_sets;
