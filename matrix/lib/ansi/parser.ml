@@ -76,77 +76,16 @@ type token =
 (* Formatting, in ECMA-48's notation *)
 
 let c0_names =
-  [|
-    "NUL";
-    "SOH";
-    "STX";
-    "ETX";
-    "EOT";
-    "ENQ";
-    "ACK";
-    "BEL";
-    "BS";
-    "HT";
-    "LF";
-    "VT";
-    "FF";
-    "CR";
-    "SO";
-    "SI";
-    "DLE";
-    "DC1";
-    "DC2";
-    "DC3";
-    "DC4";
-    "NAK";
-    "SYN";
-    "ETB";
-    "CAN";
-    "EM";
-    "SUB";
-    "ESC";
-    "IS4";
-    "IS3";
-    "IS2";
-    "IS1";
-  |]
+  Array.of_list
+    (String.split_on_char ' '
+       "NUL SOH STX ETX EOT ENQ ACK BEL BS HT LF VT FF CR SO SI DLE DC1 DC2 \
+        DC3 DC4 NAK SYN ETB CAN EM SUB ESC IS4 IS3 IS2 IS1")
 
 (* ECMA-48's C1 set; 08/04 is DEC's IND, which ECMA-48 withdrew. *)
 let c1_names =
-  [|
-    "";
-    "";
-    "BPH";
-    "NBH";
-    "IND";
-    "NEL";
-    "SSA";
-    "ESA";
-    "HTS";
-    "HTJ";
-    "VTS";
-    "PLD";
-    "PLU";
-    "RI";
-    "SS2";
-    "SS3";
-    "DCS";
-    "PU1";
-    "PU2";
-    "STS";
-    "CCH";
-    "MW";
-    "SPA";
-    "EPA";
-    "SOS";
-    "";
-    "SCI";
-    "CSI";
-    "ST";
-    "OSC";
-    "PM";
-    "APC";
-  |]
+  Array.of_list
+    (String.split_on_char ','
+       ",,BPH,NBH,IND,NEL,SSA,ESA,HTS,HTJ,VTS,PLD,PLU,RI,SS2,SS3,DCS,PU1,PU2,STS,CCH,MW,SPA,EPA,SOS,,SCI,CSI,ST,OSC,PM,APC")
 
 let pp_byte ppf c =
   if c = ' ' then Format.pp_print_string ppf "SP"
@@ -220,13 +159,7 @@ type state =
 
 type t = {
   mutable state : state;
-  (* The UTF-8 character in progress: [need] continuation bytes still to
-     come, the range the next one must be in (Unicode Table 3-7), the code
-     point so far, and the bytes of it received by earlier calls. *)
-  mutable need : int;
-  mutable lo : int;
-  mutable hi : int;
-  mutable cp : int;
+  (* The first bytes of a UTF-8 character that an earlier call cut. *)
   held : Bytes.t;
   mutable held_len : int;
   (* The header in progress. [marker] is '\000' for none; [current] is the
@@ -252,11 +185,7 @@ type t = {
 let create () =
   {
     state = Ground;
-    need = 0;
-    lo = 0;
-    hi = 0;
-    cp = 0;
-    held = Bytes.create 3;
+    held = Bytes.create 4;
     held_len = 0;
     marker = '\000';
     malformed = false;
@@ -275,7 +204,6 @@ let create () =
 
 let reset p =
   p.state <- Ground;
-  p.need <- 0;
   p.held_len <- 0;
   p.string <- None
 
@@ -454,39 +382,31 @@ let emit_run p s emit =
 let[@inline] byte b k = Char.code (Bytes.unsafe_get b k)
 let[@inline] is_cont b k = byte b k land 0xC0 = 0x80
 
-(* The length of the well-formed UTF-8 character at [i], which must end
-   before [stop] and not be U+0080..U+009F; 0 if there is none. *)
-let graphic_utf_8 b i stop =
+(* The UTF-8 character at [i], whose first byte is not ASCII: [n > 0] for a
+   well-formed character of [n] bytes, [-k] for an ill-formed subsequence
+   whose maximal subpart, one U+FFFD, is [k] bytes (Unicode §3.9), and [0]
+   when [stop] cuts a character that may still be well formed. Unicode Table
+   3-7: the first byte gives the length and the range of the second; the
+   others are 0x80..0xBF. *)
+let utf_8 b i stop =
   let c = byte b i in
-  if c < 0xC2 then 0
-  else if c <= 0xDF then
-    if i + 1 < stop && is_cont b (i + 1) && (c > 0xC2 || byte b (i + 1) >= 0xA0)
-    then 2
-    else 0
-  else if c <= 0xEF then
-    if
-      i + 2 < stop
-      &&
-      let c1 = byte b (i + 1) in
-      (if c = 0xE0 then c1 >= 0xA0 && c1 <= 0xBF
-       else if c = 0xED then c1 >= 0x80 && c1 <= 0x9F
-       else c1 land 0xC0 = 0x80)
-      && is_cont b (i + 2)
-    then 3
-    else 0
-  else if c <= 0xF4 then
-    if
-      i + 3 < stop
-      &&
-      let c1 = byte b (i + 1) in
-      (if c = 0xF0 then c1 >= 0x90 && c1 <= 0xBF
-       else if c = 0xF4 then c1 >= 0x80 && c1 <= 0x8F
-       else c1 land 0xC0 = 0x80)
-      && is_cont b (i + 2)
-      && is_cont b (i + 3)
-    then 4
-    else 0
-  else 0
+  if c < 0xC2 || c > 0xF4 then -1
+  else if i + 1 >= stop then 0
+  else
+    let c1 = byte b (i + 1) in
+    let lo = if c = 0xE0 then 0xA0 else if c = 0xF0 then 0x90 else 0x80 in
+    let hi = if c = 0xED then 0x9F else if c = 0xF4 then 0x8F else 0xBF in
+    if c1 < lo || c1 > hi then -1
+    else if c <= 0xDF then 2
+    else if i + 2 >= stop then 0
+    else if not (is_cont b (i + 2)) then -2
+    else if c <= 0xEF then 3
+    else if i + 3 >= stop then 0
+    else if not (is_cont b (i + 3)) then -3
+    else 4
+
+(* The well-formed character at [i] is U+0080..U+009F. *)
+let[@inline] is_c1 b i = byte b i = 0xC2 && byte b (i + 1) < 0xA0
 
 (* The end of the run of text, or of string content, from [i]. *)
 let rec scan b i stop ~content =
@@ -496,32 +416,27 @@ let rec scan b i stop ~content =
     if (c >= 0x20 && c < 0x7F) || (content && c >= 0x08 && c <= 0x0D) then
       scan b (i + 1) stop ~content
     else if c >= 0x80 then
-      let n = graphic_utf_8 b i stop in
-      if n > 0 then scan b (i + n) stop ~content else i
+      let n = utf_8 b i stop in
+      if n > 0 && not (is_c1 b i) then scan b (i + n) stop ~content else i
     else i
 
-(* Starts the character whose first byte is [c], false if no character
-   starts with [c] (Unicode Table 3-7). *)
-let start_char p c =
-  if c >= 0xC2 && c <= 0xDF then (
-    p.need <- 1;
-    p.cp <- c land 0x1F;
-    p.lo <- 0x80;
-    p.hi <- 0xBF;
-    true)
-  else if c >= 0xE0 && c <= 0xEF then (
-    p.need <- 2;
-    p.cp <- c land 0x0F;
-    p.lo <- (if c = 0xE0 then 0xA0 else 0x80);
-    p.hi <- (if c = 0xED then 0x9F else 0xBF);
-    true)
-  else if c >= 0xF0 && c <= 0xF4 then (
-    p.need <- 3;
-    p.cp <- c land 0x07;
-    p.lo <- (if c = 0xF0 then 0x90 else 0x80);
-    p.hi <- (if c = 0xF4 then 0x8F else 0xBF);
-    true)
-  else false
+(* The character begun by an earlier call, completed from the first bytes of
+   [b]: the number of bytes of [b] it takes. *)
+let complete_held p b off len emit =
+  let held = p.held_len in
+  let k = min (Bytes.length p.held - held) len in
+  Bytes.blit b off p.held held k;
+  let n = utf_8 p.held 0 (held + k) in
+  if n = 0 then (
+    p.held_len <- held + k;
+    k)
+  else (
+    p.held_len <- 0;
+    (match p.state with
+    | (Ground | String) when n > 0 && not (is_c1 p.held 0) ->
+        emit_run p (Bytes.sub_string p.held 0 n) emit
+    | _ -> non_ascii p ~replace:(n < 0) emit);
+    abs n - held)
 
 let feed p b ~off ~len emit =
   if off < 0 || len < 0 || off > Bytes.length b - len then
@@ -534,42 +449,11 @@ let feed p b ~off ~len emit =
       if i > !run then emit_run p (Bytes.sub_string b !run (i - !run)) emit;
       run := -1)
   in
-  (* [start] is where the character in progress began in [b]; when it began
-     in an earlier call, its first bytes are in [p.held]. *)
-  let start = ref off in
-  let finish_char next ~valid =
-    let graphic = valid && p.cp > 0x9F in
-    (match p.state with
-    | (Ground | String) when graphic ->
-        if p.held_len = 0 then (if !run < 0 then run := !start)
-        else
-          emit_run p
-            (Bytes.sub_string p.held 0 p.held_len
-            ^ Bytes.sub_string b off (next - off))
-            emit
-    | Ground | String ->
-        flush !start;
-        non_ascii p ~replace:(not valid) emit
-    | _ -> non_ascii p ~replace:(not valid) emit);
-    p.held_len <- 0
-  in
   let i = ref off in
+  if p.held_len > 0 then i := off + complete_held p b off len emit;
   while !i < stop do
     let c = Char.code (Bytes.unsafe_get b !i) in
-    if p.need > 0 then
-      if c >= p.lo && c <= p.hi then (
-        p.cp <- (p.cp lsl 6) lor (c land 0x3F);
-        p.need <- p.need - 1;
-        p.lo <- 0x80;
-        p.hi <- 0xBF;
-        incr i;
-        if p.need = 0 then finish_char !i ~valid:true)
-      else (
-        (* The bytes so far are a maximal subpart: one U+FFFD, then [c] is
-           read again. *)
-        p.need <- 0;
-        finish_char !i ~valid:false)
-    else if c < 0x80 then (
+    if c < 0x80 then (
       match p.state with
       | Ground when c >= 0x20 && c < 0x7F ->
           if !run < 0 then run := !i;
@@ -587,28 +471,26 @@ let feed p b ~off ~len emit =
       | Escape | String_esc ->
           step p c emit;
           incr i)
-    else if
-      (p.state = Ground || p.state = String) && graphic_utf_8 b !i stop > 0
-    then (
-      if !run < 0 then run := !i;
-      i := scan b !i stop ~content:(p.state = String))
-    else (
-      start := !i;
-      incr i;
-      if not (start_char p c) then finish_char !i ~valid:false)
+    else
+      let n = utf_8 b !i stop in
+      if n > 0 && (p.state = Ground || p.state = String) && not (is_c1 b !i)
+      then (
+        if !run < 0 then run := !i;
+        i := scan b (!i + n) stop ~content:(p.state = String))
+      else (
+        flush !i;
+        if n = 0 then (
+          Bytes.blit b !i p.held 0 (stop - !i);
+          p.held_len <- stop - !i;
+          i := stop)
+        else (
+          non_ascii p ~replace:(n < 0) emit;
+          i := !i + abs n))
   done;
-  if p.need > 0 then
-    if p.held_len = 0 then (
-      flush !start;
-      Bytes.blit b !start p.held 0 (stop - !start);
-      p.held_len <- stop - !start)
-    else (
-      Bytes.blit b off p.held p.held_len len;
-      p.held_len <- p.held_len + len)
-  else flush stop
+  flush stop
 
 let finish p emit =
-  if p.need > 0 then non_ascii p ~replace:true emit;
+  if p.held_len > 0 then non_ascii p ~replace:true emit;
   (match p.state with String | String_esc -> close p `Aborted emit | _ -> ());
   reset p
 

@@ -36,18 +36,18 @@ styled/render_log_segments	wall_time	batch=4096	n=20	1.308e-06	1.275e-06 1.277e-
 # host: fudge · Intel(R) Core(TM) Ultra 5 235 · x86_64 · linux
 # ocaml: 5.5.1 · 64-bit · release
 
-strip_parse/parse_ansi_block	alloc_words	exact	24106
-strip_parse/parse_ansi_block	wall_time	batch=128	n=20	4.512e-05	4.403e-05 4.449e-05 4.471e-05 4.483e-05 4.491e-05 4.491e-05 4.496e-05 4.498e-05 4.504e-05 4.507e-05 4.516e-05 4.523e-05 4.534e-05 4.535e-05 4.567e-05 4.568e-05 4.575e-05 4.578e-05 4.585e-05 4.621e-05
+strip_parse/parse_ansi_block	alloc_words	exact	24102
+strip_parse/parse_ansi_block	wall_time	batch=128	n=20	4.802e-05	4.684e-05 4.727e-05 4.727e-05 4.742e-05 4.745e-05 4.752e-05 4.763e-05 4.771e-05 4.796e-05 4.800e-05 4.804e-05 4.805e-05 4.813e-05 4.820e-05 4.843e-05 4.856e-05 4.868e-05 4.893e-05 4.951e-05 5.063e-05
 strip_parse/parse_ansi_block_iter	alloc_words	exact	14351
-strip_parse/parse_ansi_block_iter	wall_time	batch=128	n=20	3.506e-05	3.402e-05 3.421e-05 3.424e-05 3.428e-05 3.433e-05 3.437e-05 3.444e-05 3.471e-05 3.472e-05 3.504e-05 3.507e-05 3.510e-05 3.523e-05 3.557e-05 3.572e-05 3.585e-05 3.595e-05 3.673e-05 3.763e-05 3.787e-05
-strip_parse/parse_tui_frame	alloc_words	exact	2794
-strip_parse/parse_tui_frame	wall_time	batch=1024	n=20	4.338e-06	4.162e-06 4.198e-06 4.238e-06 4.270e-06 4.273e-06 4.274e-06 4.285e-06 4.301e-06 4.311e-06 4.323e-06 4.352e-06 4.369e-06 4.416e-06 4.423e-06 4.433e-06 4.447e-06 4.480e-06 4.480e-06 4.500e-06 4.641e-06
+strip_parse/parse_ansi_block_iter	wall_time	batch=128	n=20	3.755e-05	3.710e-05 3.711e-05 3.712e-05 3.717e-05 3.719e-05 3.727e-05 3.732e-05 3.735e-05 3.736e-05 3.743e-05 3.766e-05 3.767e-05 3.770e-05 3.772e-05 3.777e-05 3.778e-05 3.782e-05 3.784e-05 3.785e-05 3.799e-05
+strip_parse/parse_tui_frame	alloc_words	exact	2790
+strip_parse/parse_tui_frame	wall_time	batch=1024	n=20	4.627e-06	4.562e-06 4.586e-06 4.595e-06 4.603e-06 4.607e-06 4.608e-06 4.611e-06 4.611e-06 4.617e-06 4.625e-06 4.629e-06 4.630e-06 4.639e-06 4.643e-06 4.655e-06 4.658e-06 4.670e-06 4.684e-06 4.708e-06 4.728e-06
 strip_parse/parse_tui_frame_iter	alloc_words	exact	1511
-strip_parse/parse_tui_frame_iter	wall_time	batch=1024	n=20	3.822e-06	3.779e-06 3.793e-06 3.795e-06 3.802e-06 3.805e-06 3.809e-06 3.815e-06 3.816e-06 3.817e-06 3.821e-06 3.823e-06 3.835e-06 3.844e-06 3.850e-06 3.873e-06 3.919e-06 3.921e-06 3.940e-06 3.970e-06 4.213e-06
-strip_parse/strip_ansi_block	alloc_words	exact	18771
-strip_parse/strip_ansi_block	wall_time	batch=128	n=20	4.018e-05	3.906e-05 3.930e-05 3.932e-05 3.959e-05 3.966e-05 3.978e-05 3.979e-05 3.991e-05 3.998e-05 4.001e-05 4.035e-05 4.060e-05 4.086e-05 4.087e-05 4.126e-05 4.146e-05 4.158e-05 4.179e-05 4.183e-05 4.296e-05
+strip_parse/parse_tui_frame_iter	wall_time	batch=1024	n=20	4.215e-06	4.181e-06 4.190e-06 4.198e-06 4.201e-06 4.205e-06 4.207e-06 4.208e-06 4.210e-06 4.211e-06 4.213e-06 4.217e-06 4.223e-06 4.225e-06 4.226e-06 4.231e-06 4.234e-06 4.254e-06 4.283e-06 4.285e-06 4.294e-06
+strip_parse/strip_ansi_block	alloc_words	exact	18767
+strip_parse/strip_ansi_block	wall_time	batch=128	n=20	4.054e-05	3.972e-05 3.984e-05 3.990e-05 3.993e-05 3.993e-05 3.995e-05 3.997e-05 4.036e-05 4.045e-05 4.053e-05 4.054e-05 4.056e-05 4.063e-05 4.077e-05 4.084e-05 4.093e-05 4.103e-05 4.115e-05 4.134e-05 4.142e-05
 strip_parse/strip_plain_block	alloc_words	exact	0
-strip_parse/strip_plain_block	wall_time	batch=1024	n=20	6.203e-06	6.180e-06 6.182e-06 6.188e-06 6.189e-06 6.191e-06 6.193e-06 6.196e-06 6.198e-06 6.201e-06 6.203e-06 6.203e-06 6.207e-06 6.208e-06 6.209e-06 6.214e-06 6.218e-06 6.223e-06 6.307e-06 6.353e-06 6.459e-06
+strip_parse/strip_plain_block	wall_time	batch=1024	n=20	6.206e-06	6.192e-06 6.192e-06 6.195e-06 6.197e-06 6.197e-06 6.199e-06 6.200e-06 6.201e-06 6.201e-06 6.205e-06 6.208e-06 6.211e-06 6.212e-06 6.213e-06 6.213e-06 6.222e-06 6.228e-06 6.234e-06 6.303e-06 6.427e-06
 
 # machine: ca352e279bc47cb1
 # host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
