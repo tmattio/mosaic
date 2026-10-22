@@ -177,16 +177,20 @@ let clip_rect_to_grid t r =
       | None -> None
       | Some i -> clip_to_bounds t.width t.height i)
 
-(** Reset a cell to a space, releasing its grapheme tracker entry. *)
-let[@inline] clear_cell t idx =
+(* Blanks. A blank is a space with the default foreground, no attributes and
+   no link, on a background chosen by the operation that makes it. *)
+
+(** Turn a cell into a blank on [bg], releasing its grapheme tracker entry. *)
+let[@inline] blank_cell t idx bg =
   let code = Buf.get_cell t.chars idx in
-  if code <> space_cell then (
+  if code <> space_cell then begin
     Grapheme_tracker.remove t.grapheme_tracker code;
-    Buf.set_cell t.chars idx space_cell;
-    Buf.set t.attrs idx 0;
-    set_link t idx no_link;
-    Buf.set t.fg_color idx default_fg_packed;
-    Buf.set t.bg_color idx default_bg_packed)
+    Buf.set_cell t.chars idx space_cell
+  end;
+  Buf.set t.attrs idx 0;
+  set_link t idx no_link;
+  Buf.set t.fg_color idx default_fg_packed;
+  Buf.set t.bg_color idx bg
 
 let[@inline] reset_cell_no_tracker t idx =
   Buf.set_cell t.chars idx space_cell;
@@ -195,49 +199,47 @@ let[@inline] reset_cell_no_tracker t idx =
   Buf.set t.fg_color idx default_fg_packed;
   Buf.set t.bg_color idx default_bg_packed
 
-(** Clean up grapheme spans when overwriting a cell. Replaces neighboring
-    continuation/start cells with spaces and releases store references. *)
-let cleanup_grapheme_at t idx =
-  let code = Buf.get_cell t.chars idx in
-  if Packed_cell.is_inline code then begin
-    let w = Packed_cell.cell_width code in
-    if w > 1 then
-      let limit = Buf.dim t.chars in
-      for i = 1 to w - 1 do
-        let ni = idx + i in
-        if ni < limit then clear_cell t ni
-      done
-  end
-  else
-    let left = Packed_cell.left_extent code in
-    let right = Packed_cell.right_extent code in
-    if left > 0 || right > 0 then
-      let start_idx = idx - left in
-      let end_idx = idx + right in
-      let limit = Buf.dim t.chars in
-      if start_idx >= 0 && end_idx < limit then
-        for i = start_idx to end_idx do
-          if i <> idx then clear_cell t i
-        done
+(* The distances from [idx] to the first and last cells of its grapheme. *)
+let[@inline] span_left code =
+  if Packed_cell.is_inline code then 0 else Packed_cell.left_extent code
 
-let cleanup_overwritten_cell t idx =
+let[@inline] span_right code =
+  if Packed_cell.is_inline code then max 0 (Packed_cell.cell_width code - 1)
+  else Packed_cell.right_extent code
+
+(** Blank the other cells of the grapheme at [idx] on [bg], so that overwriting
+    [idx] leaves no part of it. *)
+let cleanup_grapheme_at t idx bg =
+  let code = Buf.get_cell t.chars idx in
+  let start_idx = idx - span_left code and end_idx = idx + span_right code in
+  if start_idx >= 0 && end_idx < Buf.dim t.chars then
+    for i = start_idx to end_idx do
+      if i <> idx then blank_cell t i bg
+    done
+
+(** Blank every cell of the grapheme at [idx] on [bg]. *)
+let blank_grapheme t idx bg =
+  cleanup_grapheme_at t idx bg;
+  blank_cell t idx bg
+
+let cleanup_overwritten_cell t idx bg =
   let old = Buf.get_cell t.chars idx in
   if old <> space_cell then begin
     if (not (Packed_cell.is_inline old)) || Packed_cell.cell_width old > 1 then
-      cleanup_grapheme_at t idx;
+      cleanup_grapheme_at t idx bg;
     Grapheme_tracker.remove t.grapheme_tracker old
   end
 
-(** Write a cell code into a cell, cleaning up the previous occupant and
-    maintaining grapheme tracker state. This is the factored-out core of
-    set_cell_internal's cell update logic. *)
-let[@inline] write_cell t idx code =
+(** Write a cell code into a cell, blanking the rest of the grapheme it
+    overwrites on [bg] and maintaining grapheme tracker state. This is the
+    factored-out core of set_cell_internal's cell update logic. *)
+let[@inline] write_cell t idx code bg =
   let old = Buf.get_cell t.chars idx in
   if old <> code then begin
     let old_inline = Packed_cell.is_inline old in
     let new_inline = Packed_cell.is_inline code in
     if (not old_inline) || Packed_cell.cell_width old > 1 then
-      cleanup_grapheme_at t idx;
+      cleanup_grapheme_at t idx bg;
     (match (old_inline, new_inline) with
     | true, true -> ()
     | true, false -> Grapheme_tracker.add t.grapheme_tracker code
@@ -574,7 +576,7 @@ let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~blending =
       Buf.set t.fg_color idx
         (Color_packed.blend ~src:bg_color ~dst:(Buf.get t.fg_color idx))
     else begin
-      write_cell t idx code;
+      write_cell t idx code blended_bg;
       Buf.set t.attrs idx attrs;
       Buf.set t.fg_color idx (Color_packed.blend ~src:fg_color ~dst:blended_bg)
     end;
@@ -582,7 +584,7 @@ let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~blending =
     Buf.set t.bg_color idx blended_bg
   end
   else begin
-    write_cell t idx code;
+    write_cell t idx code bg_color;
     Buf.set t.attrs idx attrs;
     set_link t idx link;
     Buf.set t.fg_color idx fg_color;
@@ -632,7 +634,7 @@ let fill_opaque_rect t ~x0 ~y0 ~width ~height ~bg_color =
       let start_idx = (row * t.width) + x0 in
       let end_idx = start_idx + width - 1 in
       for i = start_idx to end_idx do
-        cleanup_overwritten_cell t i
+        cleanup_overwritten_cell t i bg_color
       done;
       Buf.fill_cell_range t.chars ~pos:start_idx ~len:width space_cell;
       Buf.fill_range t.attrs ~pos:start_idx ~len:width 0;
@@ -732,6 +734,71 @@ let bulk_update_graphemes t ~src_idx ~dst_idx ~len =
     done
   end
 
+(* Move a rectangle within [t], both positions within bounds, without
+   blending. A grapheme cut by the edge of the source or of the destination
+   becomes blanks on [repair]. *)
+let move_within t ~src_x ~src_y ~width ~height ~dst_x ~dst_y ~repair =
+  if src_x = 0 && dst_x = 0 && width = t.width then begin
+    (* Full rows cut no grapheme: one bulk copy. *)
+    let si = src_y * t.width in
+    let di = dst_y * t.width in
+    let len = width * height in
+    bulk_update_graphemes t ~src_idx:si ~dst_idx:di ~len;
+    Buf.blit
+      (Bigarray.Array1.sub t.chars si len)
+      (Bigarray.Array1.sub t.chars di len);
+    Buf.blit
+      (Bigarray.Array1.sub t.attrs si len)
+      (Bigarray.Array1.sub t.attrs di len);
+    blit_links ~src:t ~dst:t si di len;
+    Buf.blit
+      (Bigarray.Array1.sub t.fg_color si len)
+      (Bigarray.Array1.sub t.fg_color di len);
+    Buf.blit
+      (Bigarray.Array1.sub t.bg_color si len)
+      (Bigarray.Array1.sub t.bg_color di len)
+  end
+  else begin
+    (* Move storage before repairing edges: per-cell span cleanup could erase
+       source cells that an overlapping move has not read yet. *)
+    let y_start, y_limit, y_step =
+      if src_y < dst_y then (height - 1, -1, -1) else (0, height, 1)
+    in
+    let row = ref y_start in
+    while !row <> y_limit do
+      let si = ((src_y + !row) * t.width) + src_x in
+      let di = ((dst_y + !row) * t.width) + dst_x in
+      let last = di + width - 1 in
+      let old_start = di - span_left (Buf.get_cell t.chars di) in
+      let old_end = last + span_right (Buf.get_cell t.chars last) in
+      bulk_update_graphemes t ~src_idx:si ~dst_idx:di ~len:width;
+      Buf.blit_cell_range t.chars ~src_pos:si t.chars ~dst_pos:di ~len:width;
+      Buf.blit_range t.attrs ~src_pos:si t.attrs ~dst_pos:di ~len:width;
+      blit_links ~src:t ~dst:t si di width;
+      Buf.blit_range t.fg_color ~src_pos:si t.fg_color ~dst_pos:di ~len:width;
+      Buf.blit_range t.bg_color ~src_pos:si t.bg_color ~dst_pos:di ~len:width;
+      (* What the destination's edges cut of the graphemes it overwrote. *)
+      for i = old_start to di - 1 do
+        blank_cell t i repair
+      done;
+      for i = last + 1 to old_end do
+        blank_cell t i repair
+      done;
+      (* What the source's edges cut of the graphemes it moved. *)
+      let first = Buf.get_cell t.chars di in
+      let final = Buf.get_cell t.chars last in
+      if Packed_cell.is_continuation first then
+        for i = di to min last (di + Packed_cell.right_extent first) do
+          blank_cell t i repair
+        done;
+      if span_right final > 0 then
+        for i = max di (last - span_left final) to last do
+          blank_cell t i repair
+        done;
+      row := !row + y_step
+    done
+  end
+
 let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
     =
   let width = max 0 width and height = max 0 height in
@@ -779,81 +846,9 @@ let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
           else (0, height, 1)
         in
 
-        (* Full-width self-blit (scrolling) uses fast bulk copy *)
-        if
-          (not blend) && same_grid && src_x = 0 && dst_x = 0
-          && width = src.width
-        then begin
-          let si = src_y * src.width in
-          let di = dst_y * dst.width in
-          let len = width * height in
-          bulk_update_graphemes src ~src_idx:si ~dst_idx:di ~len;
-          Buf.blit
-            (Bigarray.Array1.sub src.chars si len)
-            (Bigarray.Array1.sub dst.chars di len);
-          Buf.blit
-            (Bigarray.Array1.sub src.attrs si len)
-            (Bigarray.Array1.sub dst.attrs di len);
-          blit_links ~src ~dst si di len;
-          Buf.blit
-            (Bigarray.Array1.sub src.fg_color si len)
-            (Bigarray.Array1.sub dst.fg_color di len);
-          Buf.blit
-            (Bigarray.Array1.sub src.bg_color si len)
-            (Bigarray.Array1.sub dst.bg_color di len)
-        end
-        else if (not blend) && same_grid then begin
-          (* Move storage before repairing edges: per-cell span cleanup could
-             erase source cells that an overlapping move has not read yet. *)
-          let row = ref y_start in
-          while !row <> y_limit do
-            let si = ((src_y + !row) * src.width) + src_x in
-            let di = ((dst_y + !row) * dst.width) + dst_x in
-            let last = di + width - 1 in
-            let left = Buf.get_cell dst.chars di in
-            let right = Buf.get_cell dst.chars last in
-            let old_start = di - Packed_cell.left_extent left in
-            let old_end =
-              last
-              +
-              if Packed_cell.is_inline right then
-                max 0 (Packed_cell.cell_width right - 1)
-              else Packed_cell.right_extent right
-            in
-            bulk_update_graphemes src ~src_idx:si ~dst_idx:di ~len:width;
-            Buf.blit_cell_range src.chars ~src_pos:si dst.chars ~dst_pos:di
-              ~len:width;
-            Buf.blit_range src.attrs ~src_pos:si dst.attrs ~dst_pos:di
-              ~len:width;
-            blit_links ~src ~dst si di width;
-            Buf.blit_range src.fg_color ~src_pos:si dst.fg_color ~dst_pos:di
-              ~len:width;
-            Buf.blit_range src.bg_color ~src_pos:si dst.bg_color ~dst_pos:di
-              ~len:width;
-            for i = old_start to di - 1 do
-              clear_cell dst i
-            done;
-            for i = last + 1 to old_end do
-              clear_cell dst i
-            done;
-            let first = Buf.get_cell dst.chars di in
-            let final = Buf.get_cell dst.chars last in
-            if Packed_cell.is_continuation first then
-              for i = di to min last (di + Packed_cell.right_extent first) do
-                clear_cell dst i
-              done;
-            let right_extent =
-              if Packed_cell.is_inline final then
-                max 0 (Packed_cell.cell_width final - 1)
-              else Packed_cell.right_extent final
-            in
-            if right_extent > 0 then
-              for i = max di (last - Packed_cell.left_extent final) to last do
-                clear_cell dst i
-              done;
-            row := !row + y_step
-          done
-        end
+        if (not blend) && same_grid then
+          move_within src ~src_x ~src_y ~width ~height ~dst_x ~dst_y
+            ~repair:default_bg_packed
         else begin
           (* General blit: cell-by-cell with cross-store support *)
           let copy_cell =
@@ -946,27 +941,52 @@ let draw_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y =
       ~dst_y
   end
 
-(* {1 Scrolling} *)
+(* {1 Shifting} *)
 
-let scroll t ~top ~bottom n =
-  if n = 0 || top > bottom then ()
-  else
-    let region_h = bottom - top + 1 in
-    let abs_n = abs n in
-    if abs_n >= region_h then
-      clear_rect t ~x:0 ~y:top ~width:t.width ~height:region_h
-    else
-      let copy_h = region_h - abs_n in
-      if n > 0 then (
-        (* Scroll up: shift content up, blank at bottom *)
-        blit_region ~src:t ~dst:t ~src_x:0 ~src_y:(top + abs_n) ~width:t.width
-          ~height:copy_h ~dst_x:0 ~dst_y:top;
-        clear_rect t ~x:0 ~y:(bottom - abs_n + 1) ~width:t.width ~height:abs_n)
-      else (
-        (* Scroll down: shift content down, blank at top *)
-        blit_region ~src:t ~dst:t ~src_x:0 ~src_y:top ~width:t.width
-          ~height:copy_h ~dst_x:0 ~dst_y:(top + abs_n);
-        clear_rect t ~x:0 ~y:top ~width:t.width ~height:abs_n)
+(* Blank on [bg] every grapheme that crosses a vertical edge of [r]. *)
+let blank_cut_edges t (r : region) bg =
+  for y = r.y to r.y + r.height - 1 do
+    let first = (y * t.width) + r.x in
+    let last = first + r.width - 1 in
+    if span_left (Buf.get_cell t.chars first) > 0 then blank_grapheme t first bg;
+    if span_right (Buf.get_cell t.chars last) > 0 then blank_grapheme t last bg
+  done
+
+let shift t (r : region) ~dx ~dy ~color =
+  match Rect.clip_to_bounds t.width t.height r with
+  | None -> ()
+  | Some _ when dx = 0 && dy = 0 -> ()
+  | Some r ->
+      let bg = Color_packed.encode color in
+      let blank (b : region) =
+        if b.width > 0 && b.height > 0 then
+          fill_opaque_rect t ~x0:b.x ~y0:b.y ~width:b.width ~height:b.height
+            ~bg_color:bg
+      in
+      blank_cut_edges t r bg;
+      if abs dx >= r.width || abs dy >= r.height then blank r
+      else begin
+        let width = r.width - abs dx and height = r.height - abs dy in
+        let src_x = if dx < 0 then r.x - dx else r.x in
+        let src_y = if dy < 0 then r.y - dy else r.y in
+        let dst_x = src_x + dx and dst_y = src_y + dy in
+        move_within t ~src_x ~src_y ~width ~height ~dst_x ~dst_y ~repair:bg;
+        (* What the move uncovered. *)
+        let rows_x = r.x and rows_w = r.width in
+        if dy > 0 then
+          blank { x = rows_x; y = r.y; width = rows_w; height = dy }
+        else if dy < 0 then
+          blank
+            {
+              x = rows_x;
+              y = r.y + r.height + dy;
+              width = rows_w;
+              height = -dy;
+            };
+        if dx > 0 then blank { x = r.x; y = dst_y; width = dx; height }
+        else if dx < 0 then
+          blank { x = r.x + r.width + dx; y = dst_y; width = -dx; height }
+      end
 
 (* {1 Text rendering} *)
 

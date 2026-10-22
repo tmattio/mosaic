@@ -665,7 +665,7 @@ let shift_rows bytes ~stride ~top ~bottom n =
     Bytes.fill bytes (top * stride) (k * stride) '\000')
 
 (* Move the wrap marks and the protection of the scroll region's rows by [n]
-   rows, as Grid.scroll moves the cells. *)
+   rows, as [shift_region] moves the cells. *)
 let scroll_marks t n =
   let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
   shift_rows (wrapped_rows t) ~stride:1 ~top ~bottom n;
@@ -679,6 +679,14 @@ let fill_scrolled_in t ~y ~height =
       erase_region t ~x:0 ~y ~width:t.cols ~height
   | Some _ | None -> ()
 
+(* Move the scroll region's rows up by [n] rows, or down for [n < 0]. The
+   rows brought in are transparent, then [fill_scrolled_in] colours them. *)
+let shift_region t n =
+  let top = t.scroll_region.top and bottom = t.scroll_region.bottom in
+  Grid.shift t.active_grid
+    { x = 0; y = top; width = t.cols; height = bottom - top + 1 }
+    ~dx:0 ~dy:(-n) ~color:Ansi.Color.transparent
+
 let scroll_up t n =
   if n <= 0 then ()
   else
@@ -691,9 +699,7 @@ let scroll_up t n =
         push_to_scrollback t (t.scroll_region.top + i)
       done;
 
-    (* Use Grid's optimized scroll operation *)
-    Grid.scroll t.active_grid ~top:t.scroll_region.top
-      ~bottom:t.scroll_region.bottom n;
+    shift_region t n;
     scroll_marks t n;
     fill_scrolled_in t ~y:(t.scroll_region.bottom - n + 1) ~height:n;
 
@@ -704,9 +710,7 @@ let scroll_down t n =
   else
     let n = min n (t.scroll_region.bottom - t.scroll_region.top + 1) in
 
-    (* Use Grid's optimized scroll operation *)
-    Grid.scroll t.active_grid ~top:t.scroll_region.top
-      ~bottom:t.scroll_region.bottom (-n);
+    shift_region t (-n);
     scroll_marks t (-n);
     fill_scrolled_in t ~y:t.scroll_region.top ~height:n;
 

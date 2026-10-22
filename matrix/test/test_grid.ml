@@ -83,6 +83,12 @@ let trim_right s =
 
 let row_trimmed grid y = trim_right (row_to_string grid y)
 
+(* Scroll rows [top] to [bottom] up by [n], as a terminal does. *)
+let scroll grid ~top ~bottom n =
+  Grid.shift grid
+    { x = 0; y = top; width = Grid.width grid; height = bottom - top + 1 }
+    ~dx:0 ~dy:(-n) ~color:Ansi.Color.transparent
+
 let expect_invalid_arg msg f =
   match f () with
   | () -> fail (msg ^ ": expected Invalid_argument")
@@ -289,8 +295,8 @@ let grapheme_store_churn_stays_balanced () =
       Grid.draw_text grid ~x ~y ~text:(flag (Random.State.int rng 120))
     done;
     (match frame mod 7 with
-    | 0 -> Grid.scroll grid ~top:0 ~bottom:(height - 1) 1
-    | 1 -> Grid.scroll grid ~top:0 ~bottom:(height - 1) (-2)
+    | 0 -> scroll grid ~top:0 ~bottom:(height - 1) 1
+    | 1 -> scroll grid ~top:0 ~bottom:(height - 1) (-2)
     | 2 ->
         Grid.resize grid ~width:(width - 4) ~height;
         Grid.resize grid ~width ~height
@@ -965,8 +971,14 @@ let replace_wide_grapheme_clears_continuation_colors () =
   Grid.draw_text grid ~x:0 ~y:0 ~text:"😊" ~style;
   Grid.draw_text grid ~x:0 ~y:0 ~text:"A";
   equal ~msg:"continuation cleared to space" int 32 (read_char grid 1 0);
-  equal ~msg:"continuation bg reset" rgba
-    (0, (0, (0, 0)))
+  (* "A" on a transparent background keeps the background below it; the
+     blank it leaves takes that written background. *)
+  equal ~msg:"the written cell keeps the bg below" rgba
+    (120, (40, (10, 255)))
+    (let r, g, b, a = read_bg grid 0 0 in
+     (r, (g, (b, a))));
+  equal ~msg:"continuation bg is the written bg" rgba
+    (120, (40, (10, 255)))
     (let r, g, b, a = read_bg grid 1 0 in
      (r, (g, (b, a))));
   equal ~msg:"continuation fg reset" rgba
@@ -1048,7 +1060,7 @@ let scroll_uses_transparent_background () =
   let grid = Grid.create ~width:2 ~height:2 () in
   (* Write something on the first row to force a scroll source. *)
   Grid.draw_text grid ~x:0 ~y:0 ~text:"AA";
-  Grid.scroll grid ~top:0 ~bottom:1 1;
+  scroll grid ~top:0 ~bottom:1 1;
   (* Bottom row is newly cleared; its background should stay transparent. *)
   let r, g, b, a = read_bg grid 0 1 in
   equal ~msg:"transparent bg" rgba (0, (0, (0, 0))) (r, (g, (b, a)));
@@ -1064,7 +1076,7 @@ let scroll_single_row_clears_only_that_row () =
       Grid.draw_text
         ~style:(Ansi.Style.make ~link:"https://example.com" ())
         grid ~x:0 ~y:1 ~text:"🇫🇷";
-      Grid.scroll grid ~top:1 ~bottom:1 amount;
+      scroll grid ~top:1 ~bottom:1 amount;
       equal ~msg:"one-row scroll clears its row in either direction" string
         "keep\n\nkeep" (Grid.to_text grid);
       equal ~msg:"scrolled row releases its hyperlink" string ""
@@ -1076,9 +1088,9 @@ let scroll_single_row_clears_only_that_row () =
 let scroll_keeps_multi_codepoint_graphemes () =
   let grid = Grid.create ~width:4 ~height:3 () in
   Grid.draw_text grid ~x:0 ~y:1 ~text:"e\u{301}";
-  Grid.scroll grid ~top:0 ~bottom:2 1;
+  scroll grid ~top:0 ~bottom:2 1;
   equal ~msg:"moved up" string "e\u{301}" (Grid.get_text grid (idx grid 0 0));
-  Grid.scroll grid ~top:0 ~bottom:2 (-2);
+  scroll grid ~top:0 ~bottom:2 (-2);
   equal ~msg:"moved down" string "e\u{301}" (Grid.get_text grid (idx grid 0 2))
 
 let draw_text_overwrite_clears_span () =
@@ -1615,6 +1627,114 @@ let max_width_bounds_grid () =
   expect_invalid_arg "resize" (fun () ->
       Grid.resize grid ~width:(Grid.max_width + 1) ~height:1)
 
+(* Blanks and shifts *)
+
+let red = Ansi.Color.of_rgb 200 0 0
+
+(* A row of four wide characters in green on blue, linked. *)
+let wide_rows ?(width = 8) ?(height = 1) () =
+  let grid = Grid.create ~width ~height () in
+  let style =
+    Ansi.Style.make ~fg:Ansi.Color.green ~bg:Ansi.Color.blue
+      ~link:"https://example.com" ~bold:true ()
+  in
+  for y = 0 to height - 1 do
+    Grid.draw_text grid ~x:0 ~y ~style ~text:"中文中文"
+  done;
+  grid
+
+(* Every space of [grid] is the one blank on [color]. *)
+let assert_one_blank ~msg grid color =
+  assert_valid_spans grid;
+  for i = 0 to (Grid.width grid * Grid.height grid) - 1 do
+    if Grid.get_text grid i = " " then begin
+      let at = Printf.sprintf "%s: cell %d" msg i in
+      is_true ~msg:(at ^ " bg") (Ansi.Color.equal color (Grid.get_bg grid i));
+      is_true ~msg:(at ^ " fg")
+        (Ansi.Color.equal Ansi.Color.default_fg (Grid.get_fg grid i));
+      equal ~msg:(at ^ " attrs") int 0 (Grid.get_attrs grid i);
+      equal ~msg:(at ^ " link") string "" (Grid.get_link grid i)
+    end
+  done
+
+let region x y width height : Grid.region = { x; y; width; height }
+
+(* Each operation that cuts graphemes at both ends of its rectangle leaves
+   one kind of blank, cut halves included. *)
+let one_operation_one_blank () =
+  let ops =
+    [
+      ( "clear_rect",
+        fun g -> Grid.clear_rect ~color:red g ~x:1 ~y:0 ~width:4 ~height:1 );
+      ( "fill_rect",
+        fun g -> Grid.fill_rect g ~x:1 ~y:0 ~width:4 ~height:1 ~color:red );
+      ( "shift left",
+        fun g -> Grid.shift g (region 1 0 6 1) ~dx:(-2) ~dy:0 ~color:red );
+      ( "shift right",
+        fun g -> Grid.shift g (region 1 0 6 1) ~dx:3 ~dy:0 ~color:red );
+      ( "shift down",
+        fun g -> Grid.shift g (region 1 0 4 2) ~dx:0 ~dy:1 ~color:red );
+      ( "shift up",
+        fun g -> Grid.shift g (region 3 0 4 2) ~dx:0 ~dy:(-1) ~color:red );
+      ( "shift diagonal",
+        fun g -> Grid.shift g (region 1 0 6 2) ~dx:1 ~dy:1 ~color:red );
+      ( "shift out",
+        fun g -> Grid.shift g (region 1 0 4 2) ~dx:4 ~dy:0 ~color:red );
+    ]
+  in
+  List.iter
+    (fun (name, op) ->
+      let grid = wide_rows ~height:2 () in
+      op grid;
+      assert_one_blank ~msg:name grid red)
+    ops
+
+let clear_rect_clears_whole_graphemes () =
+  let grid = wide_rows () in
+  Grid.clear_rect ~color:red grid ~x:1 ~y:0 ~width:4 ~height:1;
+  equal ~msg:"three graphemes cleared whole" string "      文"
+    (Grid.to_text grid);
+  assert_one_blank ~msg:"clear_rect" grid red
+
+let write_repairs_with_written_bg () =
+  let grid = wide_rows () in
+  Grid.set_uchar grid ~x:1 ~y:0 ~uchar:(Uchar.of_char 'x') ~fg:Ansi.Color.white
+    ~bg:red ~attrs:Ansi.Attr.empty ();
+  equal ~msg:"text" string " x文中文" (Grid.to_text grid);
+  assert_one_blank ~msg:"set_uchar" grid red
+
+let shift_moves_cells () =
+  let grid = Grid.create ~width:6 ~height:3 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"abcdef";
+  Grid.draw_text grid ~x:0 ~y:1 ~text:"ghijkl";
+  Grid.draw_text grid ~x:0 ~y:2 ~text:"mnopqr";
+  Grid.shift grid (region 1 0 4 3) ~dx:(-1) ~dy:1 ~color:red;
+  equal ~msg:"moved left and down" string "a    f\ngcde l\nmijk r"
+    (Grid.to_text ~trim:false grid);
+  is_true ~msg:"uncovered cell is a blank on color"
+    (Ansi.Color.equal red (Grid.get_bg grid (idx grid 4 1)));
+  let grid = Grid.create ~width:4 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"abcd";
+  Grid.shift grid (region 0 0 4 1) ~dx:0 ~dy:0 ~color:red;
+  equal ~msg:"a null shift changes nothing" string "abcd" (Grid.to_text grid);
+  Grid.shift grid (region (-2) 0 4 1) ~dx:1 ~dy:0 ~color:red;
+  equal ~msg:"the region is clipped to the grid" string " acd"
+    (Grid.to_text ~trim:false grid);
+  Grid.clip grid (region 0 0 1 1) (fun () ->
+      Grid.shift grid (region 0 0 4 1) ~dx:(-1) ~dy:0 ~color:red);
+  equal ~msg:"the scissor does not apply" string "acd "
+    (Grid.to_text ~trim:false grid)
+
+let shift_carries_cell_contents () =
+  let grid = wide_rows ~width:10 () in
+  Grid.shift grid (region 0 0 10 1) ~dx:2 ~dy:0 ~color:red;
+  let i = idx grid 2 0 in
+  equal ~msg:"text" string "中" (Grid.get_text grid i);
+  equal ~msg:"link" string "https://example.com" (Grid.get_link grid i);
+  is_true ~msg:"bg" (Ansi.Color.equal Ansi.Color.blue (Grid.get_bg grid i));
+  is_true ~msg:"attrs" (Grid.get_attrs grid i <> 0);
+  assert_valid_spans grid
+
 let tests =
   [
     test "overwritten hyperlinks are collected"
@@ -1628,6 +1748,11 @@ let tests =
     test "wide span beyond four cells" wide_span_beyond_four_cells;
     test "wide span survives moves" wide_span_survives_moves;
     test "max width bounds the grid" max_width_bounds_grid;
+    test "one operation, one blank" one_operation_one_blank;
+    test "clear_rect clears whole graphemes" clear_rect_clears_whole_graphemes;
+    test "a write repairs with the written bg" write_repairs_with_written_bg;
+    test "shift moves cells" shift_moves_cells;
+    test "shift carries cell contents" shift_carries_cell_contents;
     test "create defaults" create_defaults;
     test "create with configuration" create_with_configuration;
     test "set width method" set_width_method_updates;

@@ -558,6 +558,19 @@ let erase_keeps_background_index () =
   equal ~msg:"LF scroll" (option int) (Some 1) (bg "\x1b[41m\n\n" 1);
   equal ~msg:"RI scroll" (option int) (Some 1) (bg "\x1b[41m\x1bM" 0)
 
+let erase_cutting_wide_takes_background () =
+  (* An erasure from the right half of a wide character blanks its left half
+     in the erasure's colour, as the cells it erases. *)
+  let bg s =
+    let vte = Vte.create ~rows:1 ~cols:4 () in
+    Vte.feed_string vte ("\xe4\xb8\xad\x1b[1;2H\x1b[41m" ^ s);
+    match Ansi.Color.intent (Grid.get_bg (Vte.grid vte) 0) with
+    | Indexed i -> Some i
+    | Default | Rgb -> None
+  in
+  equal ~msg:"EL" (option int) (Some 1) (bg "\x1b[K");
+  equal ~msg:"ECH" (option int) (Some 1) (bg "\x1b[X")
+
 let terminal_defaults_replace_cells () =
   (* With the terminal-default colours as both defaults, erasing and printing
      replace the cells instead of blending over them. *)
@@ -1499,6 +1512,8 @@ let tests =
     test "delete characters wide grapheme" delete_characters_wide;
     test "insert characters wide boundary" insert_characters_wide_boundary;
     test "edit on wide right half" edit_on_wide_right_half;
+    test "erase cutting wide takes background"
+      erase_cutting_wide_takes_background;
     test "DCH ending on wide left half" dch_ending_on_wide_left_half;
     test "shift wide over wide" shift_wide_over_wide;
     test "SGR bold" sgr_bold;

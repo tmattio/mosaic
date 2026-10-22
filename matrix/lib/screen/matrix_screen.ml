@@ -340,7 +340,14 @@ let apply_scroll_hint ~(writer : Ansi.writer) ~row_offset ~height ~current hint
   | Some (top, bottom, delta, row_offset) ->
       (* Shift the previous buffer to match the hardware scroll. After this,
          the diff loop sees only the newly-revealed edge rows as changes. *)
-      Grid.scroll current ~top ~bottom delta;
+      Grid.shift current
+        {
+          x = 0;
+          y = top;
+          width = Grid.width current;
+          height = bottom - top + 1;
+        }
+        ~dx:0 ~dy:(-delta) ~color:Ansi.Color.transparent;
       (* Tell the terminal to perform the same shift via DECSTBM. *)
       Ansi.emit
         (Ansi.set_scrolling_region

@@ -10,6 +10,15 @@
     by continuation markers. A grapheme may span a whole row: its width is
     bounded by the grid's width alone.
 
+    A grapheme is never stored in part. An operation that writes, erases or
+    moves some of a grapheme's cells turns the rest of them into blanks: spaces
+    with the default foreground, no attributes and no link, on the background
+    the operation writes. That is the written cell's background for a write, and
+    the [color] of {!clear_rect}, {!fill_rect} and {!shift}, so one of these
+    operations never leaves two kinds of blank. A terminal needs this: ECMA-48
+    puts the positions an erasure or a deletion vacates "into the erased state"
+    (§8.3.26), and the half of a wide character they cut is such a position.
+
     Drawing composites colors with source-over alpha blending; copying preserves
     stored colors. A stack of {e scissor} clipping regions constrains drawing.
     Wide characters are span-atomic: if the start cell is accepted by a clipping
@@ -207,15 +216,16 @@ val fill_rect :
 (** [fill_rect g ~x ~y ~width ~height ~color] fills a rectangle:
     - Transparent (alpha = 0): leaves cells unchanged.
     - Semi-transparent: blends over existing background.
-    - Opaque: overwrites entirely (space cell, terminal-default foreground,
-      [color] background).
+    - Opaque: overwrites entirely with blanks on [color], clearing whole every
+      grapheme with a cell in the rectangle, as {!clear_rect} does.
 
     Clipped to grid bounds and scissor. *)
 
 val clear_rect :
   ?color:Ansi.Color.t -> t -> x:int -> y:int -> width:int -> height:int -> unit
-(** [clear_rect g ~x ~y ~width ~height] clears a rectangle to spaces, default
-    foreground, and [color] background. [color] defaults to transparent.
+(** [clear_rect g ~x ~y ~width ~height] clears a rectangle to blanks on [color],
+    which defaults to transparent. A grapheme with a cell in the rectangle is
+    cleared whole, also outside it.
 
     Clipped to grid bounds and scissor. *)
 
@@ -375,12 +385,19 @@ val current_opacity : t -> float
 (** [current_opacity g] is the product of all stacked opacities, or [1.0] if the
     stack is empty. *)
 
-(** {1:scrolling Scrolling} *)
+(** {1:shifting Shifting} *)
 
-val scroll : t -> top:int -> bottom:int -> int -> unit
-(** [scroll g ~top ~bottom n] scrolls rows \[[top]..[bottom]\] by [n] lines.
-    Positive [n] scrolls content up (new blank lines at bottom). Negative [n]
-    scrolls down. Zero is a no-op. *)
+val shift : t -> region -> dx:int -> dy:int -> color:Ansi.Color.t -> unit
+(** [shift g r ~dx ~dy ~color] moves the contents of [r] by [dx] columns and
+    [dy] rows, within [r]: what leaves [r] is lost, and the cells the move
+    uncovers become blanks on [color]. Text, colors, attributes and links move
+    together. A grapheme cut by an edge of [r], before or after the move,
+    becomes blanks on [color] whole, also outside [r]. A shift by [0] and [0]
+    changes nothing.
+
+    A terminal's scrolls, line and character insertions and deletions, and
+    column shifts are all shifts of a region by its margins. [r] is clipped to
+    the grid; the scissor and the opacity do not apply. *)
 
 (** {1:diagnostics Diagnostics} *)
 

@@ -117,7 +117,9 @@ let scroll_terminal_region =
     (fun grid ->
       (* Simulate a burst of log lines arriving. *)
       for _ = 1 to iterations do
-        Grid.scroll grid ~top ~bottom 1;
+        Grid.shift grid
+          { x = 0; y = top; width = grid_width; height = bottom - top + 1 }
+          ~dx:0 ~dy:(-1) ~color:C.transparent;
         Grid.draw_text ~style:ascii_style grid ~x:0 ~y:bottom ~text:scroll_seed
       done)
 
