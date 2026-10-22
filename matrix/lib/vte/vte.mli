@@ -100,6 +100,11 @@
     cell holds a control character: U+0080 to U+009F are not controls in UTF-8
     and never reach a cell ({!Ansi.Parser}).
 
+    CAN ends the sequence or string in progress and shows nothing (VT220
+    Programmer Reference Manual ch. 4: "No error character is displayed"). SUB
+    ends it too, and, as anywhere, shows the error character, a reversed
+    question mark U+2E2E (VT510 Programmer Information ch. 4).
+
     REP repeats the unit printed just before it, if nothing came between them
     (ECMA-48 §8.3.103), as many times as asked, each repetition a unit of its
     own. Its work is bounded by the screen and the scrollback, whatever the

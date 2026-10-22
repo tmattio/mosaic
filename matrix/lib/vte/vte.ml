@@ -1119,6 +1119,16 @@ let decsca t = function
   | 1 -> t.pen <- { t.pen with protected = true }
   | _ -> ()
 
+(* CAN and SUB end the sequence or string in progress (the parser does it).
+   CAN shows nothing; SUB, here or in a sequence, shows the error character,
+   a reversed question mark (VT510 Programmer Information ch. 4; VT220
+   Programmer Reference Manual ch. 4: CAN displays "No error character").
+   xterm, a datapoint, shows a checkerboard for both at VT100 level and a
+   SUB symbol for SUB above it. *)
+let sub t =
+  print t "\u{2E2E}";
+  close t
+
 let control t = function
   | '\x08' -> cub t 1
   | '\x09' -> cht t 1
@@ -1126,6 +1136,7 @@ let control t = function
   | '\x0d' -> goto t ~row:t.cursor.row ~col:0
   | '\x0e' -> ls t 1
   | '\x0f' -> ls t 0
+  | '\x1a' -> sub t
   | '\x84' -> index t
   | '\x85' ->
       index t;

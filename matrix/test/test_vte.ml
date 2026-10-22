@@ -1949,6 +1949,21 @@ let resize_keeps_text () =
   equal ~msg:"the unit in progress is ended" string "e\xcc\x81"
     (Grid.get_text (Vte.grid vte) 0)
 
+(* CAN ends a sequence or string and shows nothing; SUB shows the error
+   character, also in the ground state. *)
+let can_and_sub () =
+  let line s =
+    List.hd
+      (String.split_on_char '\n'
+         (Vte.to_string (screen_of ~rows:2 ~cols:8 [ s ])))
+  in
+  equal ~msg:"CAN shows nothing" string "a       " (line "\x1b[3\x18a");
+  equal ~msg:"CAN ends an OSC" string "abc     " (line "\x1b]0;t\x18abc");
+  equal ~msg:"SUB shows the error character" string "\u{2E2E}a\u{2E2E}     "
+    (line "\x1b[3\x1aa\x1a");
+  equal ~msg:"SUB ends a DCS" string "\u{2E2E}abc    " (line "\x1bPq\x1aabc");
+  equal ~msg:"SUB ends an OSC" string "\u{2E2E}       " (line "\x1b]0;t\x1a")
+
 (* National replacement sets need national mode (DECNRCM). *)
 let national_mode () =
   let line s = Vte.to_string (screen_of [ s ]) in
@@ -2111,6 +2126,7 @@ let tests =
     test "DECSTR resets both slots" decstr_slots;
     test "more character sets" more_character_sets;
     test "resize keeps text" resize_keeps_text;
+    test "CAN and SUB" can_and_sub;
     test "national mode" national_mode;
   ]
 
