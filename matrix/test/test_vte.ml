@@ -1555,7 +1555,12 @@ let last_column_flag () =
         (pos (f ^ "X")))
     [ "\x1b[3J"; "\x1b[4J"; "\x1b[3K" ];
   let vte = screen_of ~rows:2 ~cols:4 [ "abcd\x1b[?7lX" ] in
-  equal ~msg:"inert with autowrap off" string "abcX\n    " (Vte.to_string vte)
+  equal ~msg:"inert with autowrap off" string "abcX\n    " (Vte.to_string vte);
+  let vte = screen_of ~rows:2 ~cols:4 [ "abcd\x1b7\x1b[?7l\x1b8" ] in
+  is_false ~msg:"DECRC with autowrap off restores no flag" (Vte.last_column vte);
+  feed vte "\x1b[?7hX";
+  equal ~msg:"so the next character replaces the last column" string
+    "abcX\n    " (Vte.to_string vte)
 
 (* VPR stops at the bottom margin in origin mode. *)
 let vpr_in_origin_mode () =

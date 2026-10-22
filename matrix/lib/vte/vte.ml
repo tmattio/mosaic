@@ -947,7 +947,8 @@ let decsc t =
       origin = t.modes.origin;
     }
 
-(* DECRC restores the Last Column Flag with the position. *)
+(* DECRC restores the Last Column Flag with the position, unless autowrap is
+   off, which never leaves the flag set. *)
 let decrc t =
   let s = (screen t).saved in
   t.pen <- s.pen;
@@ -957,7 +958,8 @@ let decrc t =
     if s.origin then max t.margins.top (min t.margins.bottom s.cursor.row)
     else s.cursor.row
   in
-  set_cursor t ~row ~col:s.cursor.col ~last_column:s.cursor.last_column
+  set_cursor t ~row ~col:s.cursor.col
+    ~last_column:(s.cursor.last_column && t.modes.auto_wrap)
 
 let set_cursor_visible t visible =
   if t.modes.cursor_visible <> visible then (

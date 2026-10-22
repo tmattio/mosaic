@@ -26,7 +26,8 @@
 
     DECSC saves exactly this and DECRC restores it. Autowrap (DECAWM) is a
     setting, not part of it: DEC's VT220, VT420 and VT510, measured, restore the
-    flag and not the mode.
+    flag and not the mode. With autowrap off the flag is never set (below), so
+    DECRC then restores the position without it.
 
     A character printed into the last column with autowrap on leaves the cursor
     on it with the Last Column Flag set; the next character first moves to the
