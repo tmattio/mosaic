@@ -34,11 +34,11 @@ type style = style_key -> Ansi.Style.t
 (** The type for style resolvers. Maps a {!style_key} to the {!Ansi.Style.t} to
     apply when rendering that element.
 
-    {b Identity matters.} Style resolvers — like the [code_syntax] hook — are
-    compared by {e physical} equality. Define them once (at module level or
-    memoized) and reuse the same closure across renders; a resolver rebuilt
-    inside a view function makes every reconcile look like a style change and
-    re-renders every block each frame. *)
+    {b Identity matters.} Style resolvers are functions, compared by
+    {e physical} equality. Define them once (at module level or memoized) and
+    reuse the same closure across renders; a resolver rebuilt inside a view
+    function makes every reconcile look like a style change and re-renders every
+    block each frame. *)
 
 val default_style : style
 (** [default_style] is the built-in terminal style resolver. The mapping is:
@@ -70,8 +70,8 @@ module Props : sig
     ?selectable:bool ->
     ?selection_bg:Ansi.Color.t ->
     ?selection_fg:Ansi.Color.t ->
-    ?code_syntax:
-      (language:string option -> content:string -> Code.syntax option) ->
+    ?highlighter:Code.Highlighter.t ->
+    ?syntax_style:Syntax_style.t ->
     unit ->
     t
   (** [make ()] is a props value. With:
@@ -84,8 +84,10 @@ module Props : sig
         to [true].
       - [selection_bg]: background color for selected text.
       - [selection_fg]: foreground color for selected text.
-      - [code_syntax]: a syntax-highlighting hook for fenced code blocks,
-        matching the [code_syntax] argument of {!create}. Defaults to [None]. *)
+      - [highlighter]: the highlighter for fenced code blocks, matching the
+        [highlighter] argument of {!create}. Defaults to [None].
+      - [syntax_style]: the style of highlighted fenced code blocks. Defaults to
+        {!Syntax_style.default}. *)
 
   val default : t
   (** [default] is the default props value, equivalent to [make ()]. *)
@@ -122,7 +124,8 @@ val create :
     language:string option ->
     content:string ->
     Renderable.t) ->
-  ?code_syntax:(language:string option -> content:string -> Code.syntax option) ->
+  ?highlighter:Code.Highlighter.t ->
+  ?syntax_style:Syntax_style.t ->
   unit ->
   t
 (** [create ~parent ()] is a markdown display widget attached to [parent]. With:
@@ -147,12 +150,18 @@ val create :
       [render_node]. Receives the optional language tag and the code content.
       The returned renderable must be attached to [parent]. Use this for full
       control over code block rendering.
-    - [code_syntax]: a syntax-highlighting hook called for fenced code blocks
-      when [render_code] is not set. Receives the optional language tag and the
-      code content, and returns the {!Code.syntax} configuration to highlight
-      the block with, or [None] for no highlighting. The block is rendered as a
-      borderless {!Code} view. Use this to integrate syntax highlighting without
-      taking over layout. *)
+    - [highlighter]: highlights fenced code blocks when [render_code] is not
+      set. Each fenced block is rendered as a borderless {!Code} view. A block
+      whose info string names a language is highlighted by [highlighter], which
+      receives that language and the block's content in each request and
+      interprets the language name itself; a block without a language is shown
+      plain. [highlighter] is a resource compared by identity (see
+      {!Code.Highlighter.t}): create it once and reuse it. Defaults to [None],
+      which renders fenced blocks as bordered plain blocks.
+    - [syntax_style]: maps the highlighter's scopes to terminal styles. Defaults
+      to {!Syntax_style.default}. Styles compare by value, so rebuilding an
+      equal style changes nothing, and a changed style restyles the blocks
+      without highlighting them again. *)
 
 val node : t -> Renderable.t
 (** [node t] is the underlying {!Renderable.t} for [t]. *)
@@ -183,14 +192,17 @@ val set_style : t -> style -> unit
     Re-parsing is skipped when blocks already exist; leaf blocks are updated in
     place without destroying their renderables. *)
 
-val set_code_syntax :
-  t ->
-  (language:string option -> content:string -> Code.syntax option) option ->
-  unit
-(** [set_code_syntax t f] changes the syntax-highlighting hook of [t] to [f]
-    (see the [code_syntax] argument of {!create}) and re-renders. [None] falls
-    back to the default bordered code block. Re-parsing is skipped when blocks
-    already exist. *)
+val set_highlighter : t -> Code.Highlighter.t option -> unit
+(** [set_highlighter t h] changes the fenced-code highlighter of [t] to [h] (see
+    the [highlighter] argument of {!create}) and re-renders. [None] falls back
+    to the default bordered code block. Re-parsing is skipped when blocks
+    already exist. No-op when [h] is physically equal to the current
+    highlighter. *)
+
+val set_syntax_style : t -> Syntax_style.t -> unit
+(** [set_syntax_style t style] changes the style of highlighted fenced code
+    blocks and restyles them without highlighting them again. No-op when [style]
+    equals the current style. *)
 
 val set_conceal : t -> bool -> unit
 (** [set_conceal t v] sets whether [t] hides markdown syntax characters.

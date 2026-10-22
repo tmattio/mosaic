@@ -27,39 +27,30 @@ uses this complete glue:
 
 ```ocaml
 let highlight ~language ~content =
-  (match language with
-    | "ocaml" | "ml" -> Some Tree_sitter_ocaml.highlight
-    | "mli" -> Some Tree_sitter_ocaml.highlight_interface
-    | "json" -> Some Tree_sitter_json.highlight
-    | _ -> None)
-  |> Option.map (fun f -> Mosaic.Syntax_highlight.of_triples ~content (f content))
+  let captures =
+    match language with
+    | "ocaml" | "ml" -> Tree_sitter_ocaml.highlight content
+    | "mli" -> Tree_sitter_ocaml.highlight_interface content
+    | "json" -> Tree_sitter_json.highlight content
+    | _ -> []
+  in
+  Mosaic.Syntax_highlight.of_triples ~content captures
 
-let highlighter =
-  Mosaic.Code.Highlighter.threaded (fun ~language ~content ->
-      match highlight ~language ~content with
-      | Some captures -> captures
-      | None -> Mosaic.Syntax_highlight.make ~content [])
+let highlighter = Mosaic.Code.Highlighter.threaded highlight
 
 let code_view src =
   Mosaic.code
     ~syntax:(Mosaic.Code.with_highlighter ~language:"ocaml" highlighter)
     src
 
-let markdown_view md =
-  Mosaic.markdown
-    ~code_syntax:(fun ~language ~content ->
-      Option.bind language (fun language ->
-          highlight ~language ~content
-          |> Option.map (fun ranges -> Mosaic.Code.syntax ~language ranges)))
-    md
+let markdown_view md = Mosaic.markdown ~highlighter md
 ```
 
-The code view uses the worker. The Markdown example computes pre-existing
-ranges synchronously per fence and leaves unknown languages plain. A fence
-resolver can instead return `Code.with_highlighter ~language highlighter` to
-schedule work asynchronously. Language aliases, filename extensions, and
-caching on `(language, content)` belong in the application. Bound caches by
-size; skip work for fences whose content is still streaming when appropriate.
+Both views share one worker. Markdown renders each fenced block as a `Code`
+view and passes the language its info string names to the highlighter;
+fences without one stay plain, and the resolver above leaves unknown languages
+plain. Language aliases, filename extensions, and caching on
+`(language, content)` belong in the application. Bound caches by size.
 
 ## Worker lifetime
 

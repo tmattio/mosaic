@@ -211,41 +211,52 @@ hello
 ```|};
   [%expect {|CUSTOM: hello|}]
 
-let%expect_test "code_syntax renders a borderless code view" =
-  (* Returning [None] still routes the block through the [Code] view, so it is
-     drawn without the default left border. *)
+let keyword_highlighter =
+  Code.Highlighter.sync (fun ~language:_ ~content ->
+      Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
+
+let%expect_test "highlighter renders a borderless code view" =
+  (* An unknown language still routes the block through the [Code] view, so it
+     is drawn without the default left border. *)
   render_markdown
-    ~code_syntax:(fun ~language:_ ~content:_ -> None)
+    ~highlighter:
+      (Code.Highlighter.sync (fun ~language:_ ~content ->
+           Syntax_highlight.make ~content []))
     {|```ocaml
 let x = 1
 ```|};
   [%expect {|let x = 1|}]
 
-let%expect_test "code_syntax threads through the declarative element" =
+let%expect_test "highlighter threads through the declarative element" =
   render ~width:40 ~height:4
-    (Vnode.markdown
-       ~code_syntax:(fun ~language:_ ~content:_ -> None)
-       {|```ocaml
+    (Vnode.markdown ~highlighter:keyword_highlighter {|```ocaml
 let x = 1
 ```|});
   [%expect {|let x = 1|}]
 
-let%expect_test "code_syntax highlighting is applied" =
-  (* A returned [Code.syntax] must reach the [Code] view: the highlighted span
-     carries the resolved ANSI style. *)
-  render_ansi ~width:10 ~height:3
-    (Vnode.markdown
-       ~code_syntax:(fun ~language:_ ~content ->
-         let highlights =
-           Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ]
-         in
-         Some (Code.syntax ~style:Syntax_style.default highlights))
-       {|```
+let%expect_test "highlighting is applied with the syntax style" =
+  (* The highlighter's ranges reach the [Code] view: the highlighted span
+     carries the style's resolved ANSI style. *)
+  let fence = {|```ocaml
 let x
-```|});
+```|} in
+  render_ansi ~width:10 ~height:3
+    (Vnode.markdown ~highlighter:keyword_highlighter fence);
   [%expect
     {|
     [0;38;2;255;151;0;1mlet[39;22m x     [0m
+    [0m          [0m
+    [0m          [0m
+    |}];
+  let blue =
+    Syntax_style.make ~base:Ansi.Style.default
+      [ ("keyword", Ansi.Style.fg Ansi.Color.blue Ansi.Style.default) ]
+  in
+  render_ansi ~width:10 ~height:3
+    (Vnode.markdown ~highlighter:keyword_highlighter ~syntax_style:blue fence);
+  [%expect
+    {|
+    [0;38;5;4mlet[39m x     [0m
     [0m          [0m
     [0m          [0m
     |}]

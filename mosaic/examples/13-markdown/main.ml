@@ -140,15 +140,11 @@ let update msg scroll =
   | Quit -> (scroll, Cmd.quit)
   | Scrolled scroll -> (scroll, Cmd.none)
 
-(* Syntax-highlight OCaml fenced code blocks with a small lexical highlighter. Markdown renders
-   the block as a borderless [Code] view using the returned syntax config. *)
-let code_syntax ~language ~content =
-  match language with
-  | Some "ocaml" ->
-      let highlights = Toy_highlighter.highlight ~language:"ocaml" ~content in
-      Some
-        (Code.syntax ~language:"ocaml" ~style:Syntax_style.default highlights)
-  | _ -> None
+(* Fenced code blocks are highlighted by a small lexical highlighter. Markdown
+   renders each fenced block as a borderless [Code] view and passes the fence's
+   language to the highlighter, which leaves unknown languages plain. The
+   highlighter is created once and reused across renders. *)
+let highlighter = Code.Highlighter.sync Toy_highlighter.highlight
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100
@@ -178,7 +174,7 @@ let view scroll =
             ~on_scroll:(fun value -> Scrolled value)
             ~size:{ width = pct 100; height = pct 100 }
             ~scroll_y:true ~scroll_x:false
-            [ markdown ~code_syntax markdown_content ];
+            [ markdown ~highlighter markdown_content ];
         ];
       (* Footer *)
       box ~padding:(padding 1) ~background:footer_bg

@@ -8,10 +8,12 @@ let render_frame renderer =
     ~delta:16.;
   ignore (Renderer.render renderer : string)
 
-(* A code-syntax hook that keeps code blocks on the Code-widget path without
-   pulling in a highlighter. Shared between create and props so physical
-   equality holds, as the API requires. *)
-let hook ~language:_ ~content:_ = None
+(* A highlighter that keeps code blocks on the Code-widget path without
+   computing highlights. A highlighter is a resource, so create and props share
+   one. *)
+let highlighter =
+  Code.Highlighter.sync (fun ~language:_ ~content ->
+      Syntax_highlight.make ~content [])
 
 let chunk i =
   Printf.sprintf
@@ -45,7 +47,7 @@ let make_stream () =
   let base = transcript (Thumper.black_box 16) in
   let md =
     Markdown.create ~parent:(Renderer.root renderer) ~content:base
-      ~streaming:true ~code_syntax:hook ()
+      ~streaming:true ~highlighter ()
   in
   render_frame renderer;
   {
@@ -65,7 +67,7 @@ let streaming_append st =
   Markdown.apply_props st.md
     (Markdown.Props.make
        ~content:(if st.flip then st.appended else st.base)
-       ~streaming:true ~code_syntax:hook ());
+       ~streaming:true ~highlighter ());
   render_frame st.renderer
 
 let steady_stream =

@@ -1072,7 +1072,8 @@ val markdown :
   ?selectable:bool ->
   ?selection_bg:Ansi.Color.t ->
   ?selection_fg:Ansi.Color.t ->
-  ?code_syntax:(language:string option -> content:string -> Code.syntax option) ->
+  ?highlighter:Code.Highlighter.t ->
+  ?syntax_style:Syntax_style.t ->
   ?on_selection:(string option -> 'msg option) ->
   string ->
   'msg t
@@ -1091,11 +1092,11 @@ val markdown :
     - [selectable] controls text selection on rendered text children. Defaults
       to [true].
     - [selection_bg] and [selection_fg] are the selection colours.
-    - [code_syntax] is a syntax-highlighting hook for fenced code blocks, called
-      with the optional language tag and the code content. It returns the
-      {!Code.syntax} configuration to highlight the block with, or [None] for no
-      highlighting; the block is rendered as a borderless {!Code} view. Use it
-      to integrate syntax highlighting.
+    - [highlighter] highlights fenced code blocks that name a language; each
+      fenced block is rendered as a borderless {!Code} view. It is a resource
+      compared by identity: create it once. See {!Markdown.create}.
+    - [syntax_style] maps highlight scopes to styles. Defaults to
+      {!Syntax_style.default}.
     - [on_selection] is called with selected rendered text, or [None] when no
       text is selected. *)
 

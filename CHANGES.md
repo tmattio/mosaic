@@ -14,7 +14,7 @@
 - `scroll_bar` and `diff` widgets; `diff` renders unified and split patches with per-line signs, highlighted source lines, sub-line highlight spans, line click hits, and source-row reveal
 - `Mosaic.viewport_switch` picks a subtree by terminal width before layout, keeping compatible keyed children across the switch
 - `scroll_box` takes keyed one-shot `?reveal`, `?scroll_by`, and `?reset_sticky` requests with `?on_scroll_by_applied` / `?on_reset_sticky_applied` acknowledgements, plus `?show_scrollbars` for a bare scrolling surface
-- `markdown` takes a `?code_syntax` hook that highlights fenced code blocks, and `?on_selection` reporting the selected rendered text
+- `markdown` takes a `?highlighter` and a `?syntax_style` that highlight fenced code blocks, and `?on_selection` reporting the selected rendered text
 - `table` gains passive selection, overflow indicators, hover and activation callbacks, and PageUp/PageDown paging over its measured visible rows
 - A drag that reaches a scroll box edge auto-scrolls and keeps the selection in sync with the new viewport
 - Viewport culling for scroll containers and a clean-frame layout skip: off-screen children are neither laid out nor rendered, and layout recomputes only when the tree is dirty

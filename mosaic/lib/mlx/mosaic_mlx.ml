@@ -150,8 +150,8 @@ let markdown ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
     ?on_click ?on_focus_request ?on_size ?focused ?md_style ?conceal ?streaming
-    ?selectable ?selection_bg ?selection_fg ?code_syntax ?on_selection
-    ?(children = []) () =
+    ?selectable ?selection_bg ?selection_fg ?highlighter ?syntax_style
+    ?on_selection ?(children = []) () =
   Mosaic.markdown ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
     ?size ?min_size ?max_size ?aspect_ratio ?gap ?padding ?margin ?border_width
@@ -161,7 +161,8 @@ let markdown ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
     ?on_click ?on_focus_request ?on_size ?focused ?md_style ?conceal ?streaming
-    ?selectable ?selection_bg ?selection_fg ?code_syntax ?on_selection
+    ?selectable ?selection_bg ?selection_fg ?highlighter ?syntax_style
+    ?on_selection
     (String.concat "" children)
 
 let input ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width

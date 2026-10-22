@@ -787,11 +787,12 @@ let markdown ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
     ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
     ?on_click ?on_focus_request ?on_size ?md_style ?conceal ?streaming
-    ?selectable ?selection_bg ?selection_fg ?code_syntax ?on_selection content =
+    ?selectable ?selection_bg ?selection_fg ?highlighter ?syntax_style
+    ?on_selection content =
   let kind =
     Markdown
       (Markdown.Props.make ~content ?style:md_style ?conceal ?streaming
-         ?selectable ?selection_bg ?selection_fg ?code_syntax ())
+         ?selectable ?selection_bg ?selection_fg ?highlighter ?syntax_style ())
   in
   let attrs =
     {

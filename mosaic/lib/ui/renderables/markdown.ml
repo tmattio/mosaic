@@ -58,13 +58,13 @@ module Props = struct
     selectable : bool;
     selection_bg : Ansi.Color.t option;
     selection_fg : Ansi.Color.t option;
-    code_syntax :
-      (language:string option -> content:string -> Code.syntax option) option;
+    highlighter : Code.Highlighter.t option;
+    syntax_style : Syntax_style.t;
   }
 
   let make ?(content = "") ?(conceal = true) ?(streaming = false)
       ?(style = default_style) ?(selectable = true) ?selection_bg ?selection_fg
-      ?code_syntax () =
+      ?highlighter ?(syntax_style = Syntax_style.default) () =
     {
       content;
       conceal;
@@ -73,7 +73,8 @@ module Props = struct
       selectable;
       selection_bg;
       selection_fg;
-      code_syntax;
+      highlighter;
+      syntax_style;
     }
 
   let default = make ()
@@ -84,7 +85,8 @@ module Props = struct
     && a.selectable = b.selectable
     && Option.equal Ansi.Color.equal a.selection_bg b.selection_bg
     && Option.equal Ansi.Color.equal a.selection_fg b.selection_fg
-    && Option.equal ( == ) a.code_syntax b.code_syntax
+    && Option.equal ( == ) a.highlighter b.highlighter
+    && Syntax_style.equal a.syntax_style b.syntax_style
 end
 
 (* ───── Hooks ───── *)
@@ -144,8 +146,8 @@ type render_env = {
     content:string ->
     Renderable.t)
     option;
-  code_syntax :
-    (language:string option -> content:string -> Code.syntax option) option;
+  highlighter : Code.Highlighter.t option;
+  syntax_style : Syntax_style.t;
 }
 
 (* ───── Types ───── *)
@@ -174,8 +176,8 @@ type t = {
     content:string ->
     Renderable.t)
     option;
-  mutable code_syntax :
-    (language:string option -> content:string -> Code.syntax option) option;
+  mutable highlighter : Code.Highlighter.t option;
+  mutable syntax_style : Syntax_style.t;
 }
 
 let node t = t.node
@@ -480,13 +482,20 @@ let render_code_block_default ~(env : render_env) ~parent ?index ~is_last
     ast = empty_ast;
   }
 
-(* Render a fenced code block as a borderless {!Code} view, using the syntax
-   configuration returned by the [code_syntax] hook. *)
-let render_code_highlighted ~parent ?index ~is_last code_syntax
+(* A fence names its language in its info string; a fence without one is
+   shown plain. *)
+let fence_syntax ~(env : render_env) highlighter cb =
+  Option.map
+    (fun language ->
+      Code.with_highlighter ~language ~style:env.syntax_style highlighter)
+    (code_block_language cb)
+
+(* Render a fenced code block as a borderless {!Code} view highlighted by
+   [highlighter]. *)
+let render_code_highlighted ~env ~parent ?index ~is_last highlighter
     (cb : Cmarkit.Block.Code_block.t) =
   let content = code_block_text cb in
-  let language = code_block_language cb in
-  let syntax = code_syntax ~language ~content in
+  let syntax = fence_syntax ~env highlighter cb in
   let code =
     Code.create ~parent ?index ~content ?syntax ~style:(block_style ~is_last) ()
   in
@@ -808,9 +817,10 @@ and render_block_dispatch ~(env : render_env) ~parent ?index ~is_last
         }
   | _ -> (
       (* 2. Highlighted code block *)
-      match (env.code_syntax, block) with
-      | Some code_syntax, Cmarkit.Block.Code_block (cb, _meta) ->
-          Some (render_code_highlighted ~parent ?index ~is_last code_syntax cb)
+      match (env.highlighter, block) with
+      | Some highlighter, Cmarkit.Block.Code_block (cb, _meta) ->
+          Some
+            (render_code_highlighted ~env ~parent ?index ~is_last highlighter cb)
       | _ ->
           (* 3. General render hook *)
           general_render ~env ~parent ?index ~is_last block)
@@ -940,7 +950,7 @@ let update_leaf_in_place ~(env : render_env) ~is_last (tb : tagged_block)
   | ( Code_tag,
       Cmarkit.Block.Code_block (cb, _),
       Box_widget (box, [ Text_widget text ]) )
-    when Option.is_none env.render_code && Option.is_none env.code_syntax ->
+    when Option.is_none env.render_code && Option.is_none env.highlighter ->
       let code_text = code_block_text cb in
       let title = code_block_language cb in
       Text.set_content text code_text;
@@ -951,11 +961,10 @@ let update_leaf_in_place ~(env : render_env) ~is_last (tb : tagged_block)
       true
   | Code_tag, Cmarkit.Block.Code_block (cb, _), Code_widget code
     when Option.is_none env.render_code -> (
-      match env.code_syntax with
-      | Some code_syntax ->
+      match env.highlighter with
+      | Some highlighter ->
           let content = code_block_text cb in
-          let language = code_block_language cb in
-          let syntax = code_syntax ~language ~content in
+          let syntax = fence_syntax ~env highlighter cb in
           (* Code.apply_props reconciles content and syntax in place, so the
              widget's streaming anti-flash state survives the update. *)
           Code.apply_props code (Code.Props.make ~content ?syntax ());
@@ -1034,7 +1043,8 @@ let render_env t defs =
        else None);
     render_node = t.render_node;
     render_code = t.render_code;
-    code_syntax = t.code_syntax;
+    highlighter = t.highlighter;
+    syntax_style = t.syntax_style;
   }
 
 (* ───── Reconciliation ───── *)
@@ -1191,7 +1201,8 @@ let rerender_blocks t =
 let create ~parent ?index ?id ?(layout_style = column_style) ?visible ?z_index
     ?opacity ?(content = "") ?(style = default_style) ?(conceal = true)
     ?(streaming = false) ?(selectable = true) ?selection_bg ?selection_fg
-    ?on_selection ?render_node ?render_code ?code_syntax () =
+    ?on_selection ?render_node ?render_code ?highlighter
+    ?(syntax_style = Syntax_style.default) () =
   let node =
     Renderable.create ~parent ?index ?id ~style:layout_style ?visible ?z_index
       ?opacity ()
@@ -1219,7 +1230,8 @@ let create ~parent ?index ?id ?(layout_style = column_style) ?visible ?z_index
       last_defs = Cmarkit.Label.Map.empty;
       render_node;
       render_code;
-      code_syntax;
+      highlighter;
+      syntax_style;
     }
   in
   if content <> "" then update_blocks t;
@@ -1250,9 +1262,15 @@ let set_style t f =
     if t.blocks <> [] then rerender_blocks t else update_blocks t
   end
 
-let set_code_syntax t f =
-  if not (Option.equal ( == ) t.code_syntax f) then begin
-    t.code_syntax <- f;
+let set_highlighter t highlighter =
+  if not (Option.equal ( == ) t.highlighter highlighter) then begin
+    t.highlighter <- highlighter;
+    if t.blocks <> [] then rerender_blocks t else update_blocks t
+  end
+
+let set_syntax_style t style =
+  if not (Syntax_style.equal t.syntax_style style) then begin
+    t.syntax_style <- style;
     if t.blocks <> [] then rerender_blocks t else update_blocks t
   end
 
@@ -1308,14 +1326,16 @@ let apply_props t (props : Props.t) =
      change must not re-render twice. *)
   let presentation_changed =
     t.style != props.style
-    || (not (Option.equal ( == ) t.code_syntax props.code_syntax))
+    || (not (Option.equal ( == ) t.highlighter props.highlighter))
+    || (not (Syntax_style.equal t.syntax_style props.syntax_style))
     || t.conceal <> props.conceal
     || t.streaming <> props.streaming
   in
   let content_changed = not (String.equal t.content props.content) in
   let old_content = t.content in
   t.style <- props.style;
-  t.code_syntax <- props.code_syntax;
+  t.highlighter <- props.highlighter;
+  t.syntax_style <- props.syntax_style;
   t.conceal <- props.conceal;
   t.streaming <- props.streaming;
   t.content <- props.content;

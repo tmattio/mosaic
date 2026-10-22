@@ -6,13 +6,13 @@ open Test_harness
 
 let dispatch_mouse r ev = ignore (Renderer.dispatch_mouse r ev : Event.mouse)
 
-let make_md ?content ?conceal ?streaming ?render_node ?render_code ?code_syntax
-    () =
+let make_md ?content ?conceal ?streaming ?render_node ?render_code ?highlighter
+    ?syntax_style () =
   let t = make_ctx () in
   let root = make_root t in
   let md =
     Markdown.create ~parent:root ?content ?conceal ?streaming ?render_node
-      ?render_code ?code_syntax ()
+      ?render_code ?highlighter ?syntax_style ()
   in
   (t, md)
 
@@ -89,17 +89,25 @@ let set_style_custom () =
   in
   Markdown.set_style md custom_style
 
-let set_code_syntax_rerenders_existing_block () =
+(* A synchronous highlighter that records its requests and styles the first
+   three bytes as a keyword. *)
+let recording_highlighter () =
+  let requests = ref [] in
+  let highlighter =
+    Code.Highlighter.sync (fun ~language ~content ->
+        requests := (language, content) :: !requests;
+        Syntax_highlight.of_triples ~content
+          [ (0, min 3 (String.length content), "keyword") ])
+  in
+  (requests, highlighter)
+
+let set_highlighter_rerenders_existing_block () =
   (* The code block is first rendered with the default renderer, then
-     [set_code_syntax] must re-render it through the highlighting hook. *)
+     [set_highlighter] must re-render it through the highlighter. *)
   let _t, md = make_md ~content:"```ocaml\ncode\n```" () in
-  let used = ref false in
-  Markdown.set_code_syntax md
-    (Some
-       (fun ~language:_ ~content:_ ->
-         used := true;
-         None));
-  is_true ~msg:"code_syntax called on re-render" !used
+  let requests, highlighter = recording_highlighter () in
+  Markdown.set_highlighter md (Some highlighter);
+  equal ~msg:"highlighter called on re-render" int 1 (List.length !requests)
 
 let selection_callback_reports_rendered_text () =
   let renderer = Renderer.create () in
@@ -172,34 +180,68 @@ let create_custom_render_code () =
   in
   is_true ~msg:"render_code called" !used
 
-let create_custom_code_syntax () =
-  let seen_language = ref None in
+let highlighter_receives_fence_language () =
+  let requests, highlighter = recording_highlighter () in
   let _t, _md =
-    make_md ~content:"```ocaml\ncode\n```"
-      ~code_syntax:(fun ~language ~content:_ ->
-        seen_language := language;
-        None)
-      ()
+    make_md ~content:"```ocaml\ncode\n```\n\n```\nplain\n```" ~highlighter ()
   in
-  equal ~msg:"code_syntax receives language" (option string) (Some "ocaml")
-    !seen_language
+  equal ~msg:"only the fence naming a language is highlighted"
+    (list (pair string string))
+    [ ("ocaml", "code") ]
+    !requests
 
-let render_code_takes_precedence_over_code_syntax () =
-  (* When both hooks are set, [render_code] wins for code blocks. *)
+let render_code_takes_precedence_over_highlighter () =
+  (* When both are set, [render_code] wins for code blocks. *)
   let render_code_used = ref false in
-  let code_syntax_used = ref false in
+  let requests, highlighter = recording_highlighter () in
   let _t, _md =
     make_md ~content:"```ocaml\ncode\n```"
       ~render_code:(fun ~parent ~language:_ ~content:_ ->
         render_code_used := true;
         Renderable.create ~parent ())
-      ~code_syntax:(fun ~language:_ ~content:_ ->
-        code_syntax_used := true;
-        None)
-      ()
+      ~highlighter ()
   in
   is_true ~msg:"render_code used" !render_code_used;
-  is_false ~msg:"code_syntax not used" !code_syntax_used
+  equal ~msg:"highlighter not used" int 0 (List.length !requests)
+
+(* Fences highlighted by one highlighter, rebuilt by a view on every refresh,
+   with a style the view takes from its model. *)
+let fences n =
+  String.concat "\n"
+    (List.init n (fun i ->
+         Printf.sprintf "Block %d\n\n```ocaml\nlet x%d = %d\n```\n" i i i))
+
+let view_refreshes_do_not_highlight_again () =
+  let requests, highlighter = recording_highlighter () in
+  let theme () =
+    Syntax_style.make ~base:Ansi.Style.default
+      [ ("keyword", Ansi.Style.fg Ansi.Color.red Ansi.Style.default) ]
+  in
+  let props () =
+    Markdown.Props.make ~content:(fences 20) ~highlighter
+      ~syntax_style:(theme ()) ()
+  in
+  let _t, md = make_md () in
+  for _ = 1 to 5 do
+    Markdown.apply_props md (props ())
+  done;
+  equal ~msg:"each fence highlighted once over five refreshes" int 20
+    (List.length !requests)
+
+let style_change_restyles_without_highlighting () =
+  let requests, highlighter = recording_highlighter () in
+  let style color =
+    Syntax_style.make ~base:Ansi.Style.default
+      [ ("keyword", Ansi.Style.fg color Ansi.Style.default) ]
+  in
+  let _t, md =
+    make_md ~content:"```ocaml\nlet x\n```" ~highlighter
+      ~syntax_style:(style Ansi.Color.red) ()
+  in
+  Markdown.set_syntax_style md (style Ansi.Color.red);
+  Markdown.set_syntax_style md (style Ansi.Color.blue);
+  equal ~msg:"a style change does not highlight again" int 1
+    (List.length !requests)
 
 (* ── Incremental updates ── *)
 
@@ -214,16 +256,16 @@ let apply_props_same_content_no_rerender () =
 let streaming_append_reuses_prefix_blocks () =
   (* Quote, list, and highlighted code blocks in the unchanged prefix must
      keep their widgets across a streaming append; only the tail may change. *)
-  let hook ~language:_ ~content:_ = None in
+  let _requests, highlighter = recording_highlighter () in
   let base =
     "> quoted\n\n- item one\n- item two\n\n```ocaml\nlet x = 1\n```\n\ntail"
   in
-  let _t, md = make_md ~content:base ~streaming:true ~code_syntax:hook () in
+  let _t, md = make_md ~content:base ~streaming:true ~highlighter () in
   let before = Renderable.children (Markdown.node md) in
   Markdown.apply_props md
     (Markdown.Props.make
        ~content:(base ^ " more\n\nanother paragraph")
-       ~streaming:true ~code_syntax:hook ());
+       ~streaming:true ~highlighter ());
   let after = Renderable.children (Markdown.node md) in
   equal ~msg:"one block appended" int
     (List.length before + 1)
@@ -269,8 +311,8 @@ let () =
           test "set_streaming toggles" set_streaming_toggles;
           test "set_streaming same no-op" set_streaming_same_is_noop;
           test "set_style custom" set_style_custom;
-          test "set_code_syntax re-renders existing block"
-            set_code_syntax_rerenders_existing_block;
+          test "set_highlighter re-renders existing block"
+            set_highlighter_rerenders_existing_block;
           test "selection callback reports rendered text"
             selection_callback_reports_rendered_text;
           test "selection disabled suppresses callback"
@@ -283,9 +325,14 @@ let () =
           test "custom render_node returning None"
             create_custom_render_node_none;
           test "custom render_code" create_custom_render_code;
-          test "custom code_syntax" create_custom_code_syntax;
-          test "render_code takes precedence over code_syntax"
-            render_code_takes_precedence_over_code_syntax;
+          test "highlighter receives fence language"
+            highlighter_receives_fence_language;
+          test "render_code takes precedence over highlighter"
+            render_code_takes_precedence_over_highlighter;
+          test "view refreshes do not highlight again"
+            view_refreshes_do_not_highlight_again;
+          test "style change restyles without highlighting"
+            style_change_restyles_without_highlighting;
           test "pp does not crash" pp_does_not_crash;
         ];
       group "Incremental updates"
