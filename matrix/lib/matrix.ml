@@ -112,6 +112,14 @@ type app = {
   mutable height : int;
   (* Primary mode layout *)
   mutable primary : Primary.t;
+  (* Layout operations [primary] already counts, sent with the next frame. *)
+  mutable layout_ops : Primary.terminal_op list;
+  (* The live row the last frame left the cursor on, in [`Primary] mode:
+     after a resize, where the cursor went shows where the live region went.
+     [None] when unknown. *)
+  mutable cursor_live_row : int option;
+  (* A resize moved the live region somewhere a cursor report can tell. *)
+  mutable reanchor : bool;
   (* Scroll optimisation *)
   mutable scroll_hint : Screen.scroll_hint option;
   (* Cursor state tracking — visual caches are valid only while the cursor is
@@ -306,7 +314,7 @@ let force_full_redraw t = t.force_full_next_frame <- true
 let size t =
   match t.config.mode with
   | `Alt -> (t.width, t.height)
-  | `Primary -> Primary.size t.primary ~width:t.width
+  | `Primary -> (t.width, (Primary.live_region t.primary).height)
 
 let full_size t = (t.width, t.height)
 let mode t = t.config.mode
@@ -315,6 +323,10 @@ let terminal t = t.terminal
 let capabilities t = Terminal.capabilities t.terminal
 let running t = t.running
 let render_eligible t = t.running && t.lifecycle = `Ready
+
+(* A cursor report needs a terminal on the input side, in raw mode. *)
+let can_query_cursor t =
+  t.backend.input_is_tty && t.config.raw_mode && not t.input_ended
 
 let cadence_active t =
   render_eligible t
@@ -384,21 +396,22 @@ let refresh_after_capability_change t before =
     force_full_redraw t;
     request_redraw t)
 
+(* Adopts a primary layout transition: its operations go out with the next
+   frame, and a frame after operations or a move of the live region redraws
+   it whole. *)
+let relayout t (primary, ops) =
+  if ops <> [] || Primary.live_region primary <> Primary.live_region t.primary
+  then force_full_redraw t;
+  t.primary <- primary;
+  t.layout_ops <- t.layout_ops @ ops
+
 let refresh_render_region ?(effective = false) t =
   match t.config.mode with
   | `Alt ->
       Screen.set_row_offset t.screen 0;
       Screen.resize t.screen ~width:t.width ~height:t.height
   | `Primary ->
-      (* Resize plans carry no terminal ops (see Primary.resize); the layout
-         sync below covers [region_changed], so only the redraw flags need
-         routing. *)
-      let primary, plan =
-        Primary.resize t.primary ~terminal_height:(max 1 t.height)
-      in
-      t.primary <- primary;
-      if plan.invalidate_presented then Screen.invalidate_presented t.screen;
-      if plan.force_full_redraw then force_full_redraw t;
+      relayout t (Primary.resize t.primary ~terminal_height:(max 1 t.height));
       if effective then (
         let region = Primary.effective_region t.primary in
         Screen.set_row_offset t.screen region.row_offset;
@@ -437,49 +450,35 @@ let reset_scroll_region_seq = Ansi.(to_string reset_scrolling_region)
 let buf_cursor_position buf ~row ~col =
   Ansi.cursor_position ~row:(max 1 row) ~col:(max 1 col) buf
 
-let buf_erase_line buf = Ansi.Writer.write_string buf erase_entire_line
-
 let apply_primary_op buf = function
   | Primary.Move_cursor { row; col } -> buf_cursor_position buf ~row ~col
   | Primary.Reset_sgr -> Ansi.Writer.write_string buf sgr_reset
   | Primary.Write s -> Ansi.Writer.write_string buf s
-  | Primary.Erase_line -> buf_erase_line buf
-  | Primary.Erase_below -> Ansi.Writer.write_string buf erase_below_seq
   | Primary.Clear_and_home -> Ansi.Writer.write_string buf clear_and_home_seq
   | Primary.Clear_scrollback ->
       Ansi.Writer.write_string buf clear_scrollback_seq
-  | Primary.Scroll_up n -> Ansi.scroll_up ~n buf
-  | Primary.Set_scroll_region { top; bottom } ->
-      Ansi.set_scrolling_region ~top ~bottom buf
-  | Primary.Reset_scroll_region ->
-      Ansi.Writer.write_string buf reset_scroll_region_seq
 
-let apply_primary_plan ?(resize_screen = true) t ~buf (plan : Primary.plan) =
-  List.iter (apply_primary_op buf) plan.terminal_ops;
-  if plan.invalidate_presented then Screen.invalidate_presented t.screen;
-  if plan.region_changed then
-    begin if resize_screen then sync_primary_layout t ~resize:true
-    else
-      let region = Primary.live_region t.primary in
-      Screen.set_row_offset t.screen region.row_offset
-    end;
-  if plan.force_full_redraw then t.force_full_next_frame <- true
+(* Emits a transition planned inside the frame. The live grid is already
+   built at its size, so only the screen's row offset follows the region. *)
+let apply_in_frame t ~buf transition =
+  relayout t transition;
+  List.iter (apply_primary_op buf) t.layout_ops;
+  t.layout_ops <- [];
+  Screen.set_row_offset t.screen (Primary.render_offset t.primary)
 
-(* Apply queued primary static writes before the live viewport render. The
-   Primary planner owns the viewport movement, DECSTBM lifetime, and baseline
-   invalidation decisions. *)
-let flush_static_queue ?(resize_screen = true) t ~buf =
-  let primary, plan = Primary.flush_static t.primary in
-  t.primary <- primary;
-  if plan.terminal_ops <> [] then (
-    Ansi.Writer.write_string buf "\027[?7l";
-    apply_primary_plan ~resize_screen t ~buf plan;
-    Ansi.Writer.write_string buf "\027[?7h")
+(* Apply queued primary static writes before the live viewport render. Static
+   rows never wrap: a row wider than a terminal narrowed since the snapshot
+   overwrites its last column. *)
+let flush_static_queue t ~buf =
+  let ((_, ops) as transition) = Primary.flush_static t.primary in
+  if ops <> [] then Ansi.Writer.write_string buf "\027[?7l";
+  apply_in_frame t ~buf transition;
+  if ops <> [] then Ansi.Writer.write_string buf "\027[?7h"
 
 let effective_size t =
   match t.config.mode with
   | `Alt -> (t.width, t.height)
-  | `Primary -> Primary.effective_size t.primary ~width:t.width
+  | `Primary -> (t.width, (Primary.effective_region t.primary).height)
 
 let static_snapshot t ?rows grid =
   if Grid.width grid > t.width then
@@ -511,13 +510,16 @@ let static_replace ?(preserve_live_region = false) ?rows t grid =
 let static_clear t =
   if t.config.mode = `Alt then ()
   else
-    let primary, plan = Primary.clear_static t.primary in
+    let primary, ops = Primary.clear_static t.primary in
     t.primary <- primary;
+    (* The erase supersedes the layout operations not yet sent. *)
+    t.layout_ops <- [];
     let buf = Ansi.Writer.create 16 in
-    List.iter (apply_primary_op buf) plan.terminal_ops;
+    List.iter (apply_primary_op buf) ops;
     Terminal.send t.terminal (Ansi.Writer.contents buf);
-    if plan.invalidate_presented then Screen.invalidate_presented t.screen;
-    if plan.force_full_redraw then force_full_redraw t;
+    t.last_cursor_position <- Some (1, 1);
+    t.cursor_live_row <- Some 0;
+    force_full_redraw t;
     let cols, rows = t.backend.terminal_size () in
     t.width <- max 1 cols;
     t.height <- max 1 rows;
@@ -574,49 +576,34 @@ let current_grid t = Screen.current_grid t.screen
 let hits t = Screen.next_hit_grid t.screen
 let screen t = t.screen
 
-(* Ensure primary layout stays consistent. Grows the dynamic region when
-   content or hints require more rows than the live viewport. Returns a render
-   height when the grid still exceeds the available space. *)
+(* Grows the live region when the frame asks for more rows than it has. *)
 let adjust_primary_layout t ~buf ~required_rows_hint =
-  let active_rows = max 1 (Screen.active_height t.screen) in
-  let primary, plan, render_height =
-    Primary.apply_required_rows t.primary ~active_rows
-      ~required_rows:required_rows_hint
+  let rows =
+    max
+      (Screen.active_height t.screen)
+      (Option.value required_rows_hint ~default:0)
   in
-  t.primary <- primary;
-  apply_primary_plan ~resize_screen:false t ~buf plan;
-  match render_height with
-  | Some _ as limit -> limit
-  | None ->
-      let live_height = (Primary.live_region t.primary).height in
-      let grid_h = Grid.height (Screen.next_grid t.screen) in
-      if grid_h > live_height then Some live_height else None
+  apply_in_frame t ~buf (Primary.require_rows t.primary ~rows)
 
 (* Apply cursor position, style, and color into the frame buffer.
    Style and color are only emitted when they differ from the last frame. *)
 let cursor_shape (cursor : Screen.cursor) : Ansi.cursor_shape =
   Ansi.cursor_shape_of_style ~style:cursor.style ~blinking:cursor.blinking
 
+(* In [`Primary] mode the cursor always ends a frame at a known place, so
+   that after a resize, where the terminal took it shows where the live
+   region went. Hidden, it waits at the top of the live region: a terminal
+   that shrinks drops the rows below its cursor first, which there are only
+   live rows. *)
 let cursor_output_position t ~(cursor : Screen.cursor) ~cursor_max_row =
-  match cursor.position with
-  | Some (x, y) ->
-      let row =
-        match t.config.mode with
-        | `Primary ->
-            Primary.terminal_cursor_row t.primary ~live_row:y
-              ~live_height:cursor_max_row
-        | `Alt -> clamp 0 (cursor_max_row - 1) y + 1
-      in
-      Some (row, max 1 (x + 1))
-  | None when cursor.visible -> (
-      match t.config.mode with
-      | `Primary ->
-          Some
-            ( Primary.default_terminal_cursor_row t.primary
-                ~live_height:cursor_max_row,
-              1 )
-      | `Alt -> Some (cursor_max_row, 1))
-  | None -> None
+  match (cursor.position, t.config.mode) with
+  | Some (x, y), `Primary ->
+      Some (Primary.terminal_cursor_row t.primary ~live_row:y, max 1 (x + 1))
+  | Some (x, y), `Alt -> Some (clamp 0 (cursor_max_row - 1) y + 1, max 1 (x + 1))
+  | None, `Primary ->
+      let live_row = if cursor.visible then cursor_max_row - 1 else 0 in
+      Some (Primary.terminal_cursor_row t.primary ~live_row, 1)
+  | None, `Alt -> if cursor.visible then Some (cursor_max_row, 1) else None
 
 (* Allocation-free "changed since last frame" checks: comparing through the
    stored options directly avoids wrapping the current value in [Some]. *)
@@ -680,25 +667,9 @@ let submit ?primary_required_rows t =
        cursor_position for every run it touches, so anything written between
        the preamble capture and the skip check would defeat the
        unchanged-frame write skip. *)
-    let render_height =
-      match t.config.mode with
-      | `Primary ->
-          adjust_primary_layout t ~buf ~required_rows_hint:primary_required_rows
-      | `Alt -> None
-    in
-    if t.config.mode = `Primary then
-      flush_static_queue ~resize_screen:false t ~buf;
-    let render_height =
-      match t.config.mode with
-      | `Alt -> render_height
-      | `Primary ->
-          let live_height = (Primary.live_region t.primary).height in
-          Some
-            (match render_height with
-            | Some limit -> min limit live_height
-            | None -> live_height)
-    in
-
+    if t.config.mode = `Primary then (
+      adjust_primary_layout t ~buf ~required_rows_hint:primary_required_rows;
+      flush_static_queue t ~buf);
     let forced_full =
       let ff = t.force_full_next_frame in
       if ff then t.force_full_next_frame <- false;
@@ -709,35 +680,27 @@ let submit ?primary_required_rows t =
       t.scroll_hint <- None;
       match t.config.mode with `Alt -> h | `Primary -> None
     in
-    (* In full mode on primary screen, cap to active_height to skip blank
-       rows and erase below content to clear stale rows. *)
-    let active_h =
-      if forced_full && t.config.mode = `Primary then
-        Some (max 1 (Screen.active_height t.screen))
-      else None
-    in
-    let render_height =
-      match active_h with
-      | Some active -> (
-          match render_height with
-          | Some limit -> Some (min limit active)
-          | None -> Some active)
-      | None -> render_height
-    in
-    let viewport =
-      match render_height with
-      | None -> None
-      | Some height ->
-          Some { Screen.y = Primary.render_offset t.primary; height }
+    (* In [`Primary] mode the frame paints the live region. A full redraw
+       paints it down to its last row that shows anything, and erases the
+       rest. *)
+    let viewport, erase_from =
+      match t.config.mode with
+      | `Alt -> (None, None)
+      | `Primary ->
+          let y = Primary.render_offset t.primary in
+          let live = (Primary.live_region t.primary).height in
+          if forced_full then
+            let height = min live (max 1 (Screen.active_height t.screen)) in
+            ( Some { Screen.y; height },
+              if height < live then Some (y + height + 1) else None )
+          else (Some { Screen.y; height = live }, None)
     in
     Screen.render_into ~full:forced_full ?scroll_hint ?viewport t.screen buf;
-    (match active_h with
-    | Some active ->
-        let offset = Primary.render_offset t.primary in
-        if offset + active < t.height then (
-          buf_cursor_position buf ~row:(offset + active + 1) ~col:1;
-          Ansi.Writer.write_string buf erase_below_seq)
-    | None -> ());
+    Option.iter
+      (fun row ->
+        buf_cursor_position buf ~row ~col:1;
+        Ansi.Writer.write_string buf erase_below_seq)
+      erase_from;
 
     (* Skip the write when nothing beyond the preamble was produced and cursor
        state is unchanged. The cursor lives in the live region, whichever of
@@ -752,6 +715,10 @@ let submit ?primary_required_rows t =
     then begin
       if t.config.mode = `Alt then Ansi.cursor_position ~row:t.height ~col:1 buf;
       apply_cursor_state t ~buf ~cursor ~position;
+      (match (t.config.mode, position) with
+      | `Primary, Some (row, _) ->
+          t.cursor_live_row <- Some (row - 1 - Primary.render_offset t.primary)
+      | _ -> ());
       if use_sync then Ansi.Writer.write_string buf sync_output_off;
 
       t.frame_modes_armed <- true;
@@ -817,6 +784,8 @@ let suspend ?(leave_alt = false) t =
     (* The suspended program owns the terminal; whatever cursor state it leaves
        behind is unknown, so the first frame after resume must re-emit. *)
     t.last_cursor_position <- None;
+    t.cursor_live_row <- None;
+    t.reanchor <- false;
     t.last_cursor_visible <- None;
     t.last_cursor_shape <- None;
     t.last_cursor_color <- None;
@@ -842,7 +811,6 @@ let resume t =
       t.suspend_left_alt <- false;
       try Terminal.enter_alternate_screen t.terminal with _ -> ());
     (if t.config.mode = `Primary then
-       let height = max 1 t.height in
        match
          Backend.query_cursor_position ~terminal:t.terminal ~parser:t.parser
            ~timeout:0.1
@@ -854,13 +822,10 @@ let resume t =
            t.backend
        with
        | Some (row, col) ->
-           let anchor =
-             Primary.anchor_of_cursor ~terminal_height:height ~row ~col
-           in
-           if anchor.scroll_bottom then Terminal.send t.terminal "\r\n";
-           t.primary <-
-             Primary.reanchor t.primary ~render_offset:anchor.render_offset
-               ~static_needs_newline:anchor.static_needs_newline
+           (* What the suspended program left on the screen voids the
+              operations planned before it ran. *)
+           t.layout_ops <- [];
+           relayout t (Primary.anchor t.primary ~row ~col)
        | None -> ());
     force_full_redraw t;
     apply_config t;
@@ -925,8 +890,35 @@ let apply_resize t cols rows now =
     Terminal.query_pixel_resolution t.terminal;
     force_full_redraw t;
     refresh_render_region t;
+    (* A terminal moves its rows as it resizes, by rules of its own; the
+       cursor moves with its row. The loop asks where it went before the next
+       frame. *)
+    if t.config.mode = `Primary && can_query_cursor t then t.reanchor <- true;
     t.last_resize_apply_time <- now;
     request_redraw t)
+
+(* Re-anchors the live region after a resize from where the cursor went: the
+   last frame left it on a known live row. Input read while waiting for the
+   report is replayed. Without a report the layout stays as {!Primary.resize}
+   planned it. *)
+let reanchor t =
+  t.reanchor <- false;
+  match t.cursor_live_row with
+  | None -> ()
+  | Some live_row -> (
+      match
+        Backend.query_cursor_position ~terminal:t.terminal ~parser:t.parser
+          ~timeout:0.1
+          ~on_event:(fun event ->
+            t.pending_startup_events <- t.pending_startup_events @ [ event ])
+          t.backend
+      with
+      | Some (row, _) ->
+          (* The planned operations assumed the rows had not moved. *)
+          t.layout_ops <- [];
+          relayout t (Primary.anchor t.primary ~row:(row - live_row) ~col:1);
+          sync_primary_layout t ~resize:true
+      | None -> ())
 
 let handle_resize t cols rows =
   if t.lifecycle <> `Ready then t.pending_resize <- Some (cols, rows)
@@ -1010,10 +1002,7 @@ let close t =
              let render_offset =
                clamp 0 (height - 1) (Primary.render_offset t.primary)
              in
-             let start_row =
-               if Primary.static_needs_newline t.primary then render_offset + 1
-               else max 1 render_offset
-             in
+             let start_row = render_offset + 1 in
              for row = start_row to height do
                Terminal.move_cursor t.terminal ~row ~col:1
                  ~visible:(Terminal.cursor_visible t.terminal);
@@ -1105,31 +1094,24 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       let cols, rows = backend.terminal_size () in
       let width = max 1 cols in
       let height = max 1 rows in
-      let render_offset, static_needs_newline =
+      let primary =
+        Primary.create ~terminal_height:height
+          ~min_live_height:config.min_tui_height
+      in
+      let anchored =
         if
           mode = `Primary && backend.input_is_tty && raw_mode
           && not !input_ended
         then
-          match
-            Backend.query_cursor_position ~terminal ~parser ~timeout:0.1
-              ~on_event:queue_startup_event
-              { backend with read_input }
-          with
-          | Some (row, col) ->
-              let anchor =
-                Primary.anchor_of_cursor ~terminal_height:height ~row ~col
-              in
-              if anchor.scroll_bottom then Terminal.send terminal "\r\n";
-              (anchor.render_offset, anchor.static_needs_newline)
-          | None -> (0, false)
-        else (0, false)
+          Option.map
+            (fun (row, col) -> Primary.anchor primary ~row ~col)
+            (Backend.query_cursor_position ~terminal ~parser ~timeout:0.1
+               ~on_event:queue_startup_event
+               { backend with read_input })
+        else None
       in
+      let primary, layout_ops = Option.value anchored ~default:(primary, []) in
       let app =
-        let primary =
-          Primary.create ~terminal_height:height
-            ~min_live_height:config.min_tui_height ~render_offset
-            ~static_needs_newline
-        in
         let caps = Terminal.capabilities terminal in
         let screen =
           Screen.create ~width_method:caps.unicode_width ~cursor_visible
@@ -1155,6 +1137,9 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           width;
           height;
           primary;
+          layout_ops;
+          cursor_live_row = None;
+          reanchor = false;
           scroll_hint = None;
           last_cursor_position = None;
           last_cursor_visible = None;
@@ -1479,6 +1464,9 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
       if t.pending_resize <> None then (
         maybe_apply_pending_resize t;
         if t.pending_resize = None then notify_resize ~initial:false);
+      if t.reanchor && render_eligible t then (
+        reanchor t;
+        notify_resize ~initial:false);
       let now = t.backend.now () in
       (* A due one-shot wakeup runs the frame callback without a render: it
          exists so time-based work (timers) can advance off the clock while

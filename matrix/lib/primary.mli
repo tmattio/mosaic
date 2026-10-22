@@ -1,176 +1,112 @@
-(** Primary-screen viewport state.
+(** Primary-screen layout.
 
-    [Primary] models Matrix's primary-screen layout as an inline live viewport
-    with static transcript rows above it. It is a pure state machine: it never
-    writes to a terminal, mutates a {!Matrix_screen.t}, or owns I/O resources.
+    In [`Primary] mode Matrix shares the terminal's normal screen with the
+    shell. The screen's rows are a {e transcript}, the shell's output and then
+    the static rows the application writes, above a {e live region} that the
+    application redraws every frame and that ends at the bottom row. A row
+    leaves the transcript only by scrolling off the top of the screen into the
+    terminal's scrollback, so every transcript row stays, once and in order,
+    either in the scrollback or on the screen.
 
-    The runtime interprets returned plans inside a frame transaction. *)
+    The live region grows by scrolling: a line feed on the bottom row moves the
+    whole screen up and its top row into the scrollback, so the region claims
+    rows without covering a transcript row. Every terminal with a scrollback
+    does this, and it needs no scrolling margins.
+
+    [Primary] is a pure state machine: it never writes to a terminal. A
+    transition returns the terminal operations that realise it, which the
+    runtime emits, in order, before it next draws the live region. After
+    operations, or a move of the live region, the runtime redraws the live
+    region whole. *)
 
 type t
-(** Primary-screen state.
+(** The type for layouts.
 
-    Invariant:
-    - terminal height is at least [1];
-    - minimum live height is in \[[1];[terminal_height t]\];
-    - [render_offset t >= 0];
-    - [live_region t].row_offset = [render_offset t];
-    - [live_region t].height >= [min_live_height t];
-    - [render_offset t + (live_region t).height = terminal_height t]. *)
+    Invariant: [0 <= render_offset t < h], where [h >= 1] is the terminal
+    height, and the live region is the [h - render_offset t] rows from
+    [render_offset t]. After a transition other than {!enqueue_static} and
+    {!replace_static} it has at least [min h m] rows, where [m] is the minimum
+    live height. *)
 
-(** Terminal operations produced by primary-screen planning.
-
-    Operations are terminal-shaped, but still inert. The Matrix runtime is
-    responsible for encoding them as ANSI inside the current frame buffer. *)
+(** The type for terminal operations. *)
 type terminal_op =
   | Move_cursor of { row : int; col : int }
-      (** Move the terminal cursor to one-based coordinates. *)
-  | Reset_sgr  (** Reset SGR attributes before writing static text. *)
-  | Write of string  (** Write literal bytes. *)
-  | Erase_line  (** Erase the current terminal row. *)
-  | Erase_below  (** Erase from cursor to the end of the screen. *)
-  | Clear_and_home  (** Clear the screen and move the cursor home. *)
-  | Clear_scrollback  (** Clear the terminal's native scrollback. *)
-  | Scroll_up of int  (** Scroll the current terminal viewport up by rows. *)
-  | Set_scroll_region of { top : int; bottom : int }
-      (** Set DECSTBM to one-based inclusive rows. *)
-  | Reset_scroll_region  (** Reset DECSTBM to the full screen. *)
-
-type plan = {
-  terminal_ops : terminal_op list;
-      (** Terminal operations in the order the runtime must emit them. *)
-  region_changed : bool;
-      (** [true] iff the live viewport row offset or height may have changed. *)
-  invalidate_presented : bool;
-      (** [true] iff the {!Screen} presented baseline must be invalidated. *)
-  force_full_redraw : bool;
-      (** [true] iff the next live viewport render must be full. *)
-}
-(** A planned primary-screen transition. *)
+      (** Move the cursor to one-based coordinates. *)
+  | Reset_sgr  (** Reset SGR attributes. *)
+  | Write of string  (** Write the bytes. *)
+  | Clear_and_home  (** Erase the screen and move the cursor home. *)
+  | Clear_scrollback  (** Erase the terminal's scrollback. *)
 
 type region = { row_offset : int; height : int }
-(** A live viewport region.
-
-    [row_offset] is zero-based. [height] is the number of live viewport rows. *)
+(** The type for live regions: [height] rows from the zero-based row
+    [row_offset]. *)
 
 type static_write = { text : string; rows : int; preserve_live_region : bool }
-(** A pending static write.
+(** The type for static writes. [text] is [rows] rows, each ending in CRLF and
+    each replacing the whole terminal row it lands on. When
+    [preserve_live_region] is [true], the live region keeps its height: the rows
+    above it, the new rows included, scroll up to make room. Otherwise the live
+    region gives up rows to the new ones, down to its minimum height. *)
 
-    [text] is a serialized snapshot of [rows] complete grid rows, each ending in
-    CRLF. Matrix derives both from the same grid. When [preserve_live_region] is
-    [true], the write scrolls directly into history without shrinking the live
-    region. Preservation is honored only when no static rows sit above the live
-    region and every write queued in the same flush preserves; any other layout
-    grows the static area as usual so content is never dropped. *)
-
-type cursor_anchor = {
-  render_offset : int;
-  static_needs_newline : bool;
-  scroll_bottom : bool;
-}
-(** Primary state derived from a cursor position report.
-
-    [scroll_bottom] is [true] iff the cursor was on the bottom terminal row and
-    the runtime must first write a newline to move that row into scrollback. *)
-
-val create :
-  terminal_height:int ->
-  min_live_height:int ->
-  render_offset:int ->
-  static_needs_newline:bool ->
-  t
-(** [create ~terminal_height ~min_live_height ~render_offset
-     ~static_needs_newline] is primary state for a terminal of [terminal_height]
-    rows.
-
-    [min_live_height] is clamped to \[[1];[terminal_height]\]. [render_offset]
-    is clamped so the live viewport keeps at least the clamped minimum height.
+val create : terminal_height:int -> min_live_height:int -> t
+(** [create ~terminal_height ~min_live_height] is the layout of a terminal of
+    [terminal_height] rows with a live region of at least [min_live_height]
+    rows, both at least [1], and no transcript: the live region is the screen.
 *)
 
-val anchor_of_cursor :
-  terminal_height:int -> row:int -> col:int -> cursor_anchor
-(** [anchor_of_cursor ~terminal_height ~row ~col] is the primary state implied
-    by a cursor position report.
+val anchor : t -> row:int -> col:int -> t * terminal_op list
+(** [anchor t ~row ~col] starts the live region at the cursor, reported at the
+    one-based [(row, col)], clamped to the screen: on the cursor's row when the
+    cursor is in the first column, where the row holds nothing yet, and on the
+    next row otherwise, below the shell's prompt. The rows above it are
+    transcript. *)
 
-    [row] and [col] are one-based terminal coordinates. The runtime owns the
-    terminal write described by [scroll_bottom]. *)
-
-val render_offset : t -> int
-(** [render_offset t] is the number of terminal rows above the live viewport. *)
-
-val static_needs_newline : t -> bool
-(** [static_needs_newline t] is [true] iff the next static write must first move
-    to a fresh row to preserve the shell-owned row at the startup anchor. *)
-
-val live_region : t -> region
-(** [live_region t] is the current live viewport region. *)
-
-val effective_region : t -> region
-(** [effective_region t] is the live viewport region that will be in effect
-    after pending static writes are flushed.
-
-    This must stay in lockstep with {!flush_static}. *)
-
-val size : t -> width:int -> int * int
-(** [size t ~width] is the current live viewport size as [(width, rows)]. *)
-
-val effective_size : t -> width:int -> int * int
-(** [effective_size t ~width] is the live viewport size that will be in effect
-    after pending static writes are flushed.
-
-    This must stay in lockstep with {!flush_static}. *)
-
-val resize : t -> terminal_height:int -> t * plan
-(** [resize t ~terminal_height] updates terminal height and clamps the live
-    viewport if needed. The returned plan never carries terminal operations; it
-    only flags redraw effects. *)
-
-val reanchor : t -> render_offset:int -> static_needs_newline:bool -> t
-(** [reanchor t ~render_offset ~static_needs_newline] updates the live viewport
-    anchor without changing pending static writes. *)
+val resize : t -> terminal_height:int -> t * terminal_op list
+(** [resize t ~terminal_height] is the layout after the terminal changed its
+    height, if its rows kept their places counted from the top. A terminal may
+    instead move them, dropping the rows below its cursor or pulling rows back
+    from its scrollback: a runtime that can ask where the cursor went uses
+    {!anchor} instead. *)
 
 val enqueue_static : t -> static_write -> t
-(** [enqueue_static t write] queues [write] for the next static flush. Empty
-    text is ignored. Raises [Invalid_argument] if [write.rows < 0]. *)
+(** [enqueue_static t w] queues [w] for the next {!flush_static}. A write with
+    no text is ignored.
+
+    Raises [Invalid_argument] if [w.rows < 0]. *)
 
 val replace_static : t -> static_write -> t
-(** [replace_static t write] queues an atomic replacement of all static
-    primary-screen content for the next flush. The replacement may be empty.
-    Raises [Invalid_argument] if [write.rows < 0]. *)
+(** [replace_static t w] queues, for the next {!flush_static}, the replacement
+    of the whole transcript, the terminal's scrollback included, by [w], which
+    may have no rows.
 
-val flush_static : t -> t * plan
-(** [flush_static t] plans all pending static writes and returns the updated
-    state.
+    Raises [Invalid_argument] if [w.rows < 0]. *)
 
-    The returned plan may physically change terminal rows outside the live
-    viewport. The runtime must interpret it before rendering the next live
-    frame.
+val flush_static : t -> t * terminal_op list
+(** [flush_static t] writes the queued static rows, in order, at the top of the
+    live region, which then starts below them. *)
 
-    If the live viewport already occupies the full terminal height, static rows
-    are scrolled directly into terminal history and the live viewport is left at
-    the same size. *)
+val clear_static : t -> t * terminal_op list
+(** [clear_static t] erases the screen, drops the queued writes, and makes the
+    live region the whole screen. *)
 
-val clear_static : t -> t * plan
-(** [clear_static t] resets primary static state and returns the terminal plan
-    for clearing the primary screen. *)
+val require_rows : t -> rows:int -> t * terminal_op list
+(** [require_rows t ~rows] grows the live region to [rows] rows, at most the
+    terminal's height, if it is smaller. *)
 
-val apply_required_rows :
-  t -> active_rows:int -> required_rows:int option -> t * plan * int option
-(** [apply_required_rows t ~active_rows ~required_rows] grows the live viewport
-    if the current frame needs more rows.
+val render_offset : t -> int
+(** [render_offset t] is the number of rows above the live region. *)
 
-    The returned [int option] is the maximum live viewport height to render.
-    [None] means the full live viewport can be rendered. *)
+val live_region : t -> region
+(** [live_region t] is the live region. *)
 
-val terminal_cursor_row : t -> live_row:int -> live_height:int -> int
-(** [terminal_cursor_row t ~live_row ~live_height] maps a zero-based live
-    viewport cursor row to a one-based terminal row, clamped to [live_height].
-*)
+val effective_region : t -> region
+(** [effective_region t] is the live region after the next {!flush_static}. *)
 
-val default_terminal_cursor_row : t -> live_height:int -> int
-(** [default_terminal_cursor_row t ~live_height] is the terminal row used when
-    the live cursor has no explicit position in primary mode. *)
+val terminal_cursor_row : t -> live_row:int -> int
+(** [terminal_cursor_row t ~live_row] is the one-based terminal row of the
+    zero-based live row [live_row], clamped to the live region. *)
 
 val map_mouse_y : t -> int -> int
-(** [map_mouse_y t y] maps a one-based terminal mouse row to the live viewport
-    coordinate expected by Matrix input handlers. Rows above the live viewport
-    map to [-1]. *)
+(** [map_mouse_y t y] maps a one-based terminal mouse row to the live region
+    coordinate Matrix input handlers expect. Rows above the live region map to
+    [-1]. *)

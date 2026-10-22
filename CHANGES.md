@@ -75,6 +75,7 @@
 - Backtrace recording policy is left to the application; the runtime prints a backtrace on an uncaught exception rather than enabling recording itself
 - `Screen.render_to_bytes` removed (no consumers); `render_to_buffer` is the per-frame eliminator
 - Vendored uuseg stripped to its boundary core; one shared grapheme-width state machine
+- **Primary layout by scrolling** – the live region claims rows only by scrolling the rows above it into the terminal's scrollback, and static rows go at its top, so a transcript row is never overwritten. No scrolling margins (DECSTBM) are set, no blank row separates static output from the live region, and `static_write ~preserve_live_region` keeps the live height whatever is above it
 - `Grid.active_height` counts every row that shows something a terminal's erase does not: a space with a background, an attribute or a hyperlink counts, not only a character. A primary-mode full redraw no longer erases a trailing row of background, and a static commit keeps it
 
 #### Fixed
@@ -97,6 +98,7 @@
 - `matrix.text` measures 897 East_Asian_Width N pictographs as one cell, as UAX #11 and terminals do, instead of two: emoji without Emoji_Presentation such as ❤ U+2764 and ⚠ U+26A0, and symbols such as mahjong tiles, dominoes, alchemical symbols and chess pieces. VS16 still widens an emoji to two cells
 - Charts: sub-cell circle rasterization, zoomed y-axis labels, candlestick hit-testing, charset-faithful glyphs
 - Grapheme storage no longer leaks ids for clipped draws
+- Primary mode follows the terminal through a resize: the runtime finds the live region again from a cursor position report, where it overwrote transcript rows or left a stale copy of the UI. A minimum height that does not fit below the prompt scrolls the shell's rows up instead of covering them, `min_tui_height` survives a terminal shorter than it, and a static area of one row no longer raises
 - `Screen` keeps apart two cells the terminal would read as one grapheme, such as a letter and a lone emoji modifier or a Prepend character and a letter, which shifted the rest of the row
 - After a resize, `Screen` paints every cell of its next frame; its blank baseline skipped the cells blank in the new frame and left the old frame's there, as on the frame after a primary live region grows
 - A visible cursor without a position shows in alt mode, at the bottom-left; in primary mode a cursor below the painted rows of a full redraw keeps its row instead of rising to the last one

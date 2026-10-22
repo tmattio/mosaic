@@ -48,7 +48,9 @@ type mode = [ `Alt | `Primary ]
       screen; content is restored on exit.
     - [`Primary] renders an inline live viewport on the primary screen. Rows
       above the viewport are static transcript rows and enter native scrollback.
-*)
+      When the input is a terminal, the viewport starts at the cursor, and after
+      a resize or a {!resume} the runtime finds it again from a cursor position
+      report: terminals move their rows as they resize. *)
 
 (** Backend I/O. Matrix owns input parsing, protocol negotiation, and frame
     scheduling. Backends provide device operations and a wait that can also
@@ -274,7 +276,8 @@ val submit : ?primary_required_rows:int -> app -> unit
     In [`Primary] mode, [primary_required_rows] requests a live viewport height
     for this frame. The request is clamped to the terminal height and never
     shrinks below [min_tui_height]. Growing the live viewport claims rows from
-    the static transcript area before rendering.
+    the static transcript area before rendering, scrolling them into the
+    terminal's scrollback.
 
     {b Note.} Called automatically by {!run}. *)
 
@@ -402,9 +405,10 @@ val capabilities : app -> Terminal.capabilities
 
     Static output is primary-screen transcript output placed before the live
     viewport. Insertion may move the live viewport downward until it reaches its
-    minimum height. Once pinned, inserted rows scroll only the rows above the
-    viewport and leave the live viewport intact. These functions are ignored in
-    [`Alt] mode. *)
+    minimum height. Once pinned, inserted rows push the rows above the viewport
+    into the terminal's scrollback and leave the viewport its height. Transcript
+    rows are never overwritten: they leave the screen only into the scrollback.
+    These functions are ignored in [`Alt] mode. *)
 
 val static_write :
   ?preserve_live_region:bool -> ?rows:int -> app -> Grid.t -> unit
@@ -419,11 +423,10 @@ val static_write :
     Raises [Invalid_argument] if the grid is wider than the current terminal, or
     [rows] is outside the grid height. [rows = 0] queues nothing.
 
-    When [preserve_live_region] is [true], the rows scroll directly into
-    terminal history and the live region keeps its current height. Preservation
-    requires a live region that starts at the top of the terminal — for example
-    after {!static_replace} or {!static_clear} — and that every write queued in
-    the same frame preserves. Otherwise the static area grows normally. *)
+    When [preserve_live_region] is [true], the live region keeps its current
+    height: the transcript, these rows included, scrolls up into terminal
+    history to make room. Otherwise the rows take theirs from the live region,
+    down to [min_tui_height]. *)
 
 val static_replace :
   ?preserve_live_region:bool -> ?rows:int -> app -> Grid.t -> unit

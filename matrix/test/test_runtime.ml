@@ -227,7 +227,7 @@ let set_sync_capable app =
    none. *)
 type term = {
   vte : Vte.t;
-  size : int * int;
+  mutable size : int * int;
   replies : Buffer.t;
   mutable script : (on_event:(Matrix.Input.t -> unit) -> unit) list;
 }
@@ -295,6 +295,32 @@ let present ?required app rows =
   Matrix.prepare app;
   draw_rows app rows;
   Matrix.submit ?primary_required_rows:required app
+
+let rtrim s =
+  let n = ref (String.length s) in
+  while !n > 0 && s.[!n - 1] = ' ' do
+    decr n
+  done;
+  String.sub s 0 !n
+
+let screen_rows term =
+  List.map rtrim (String.split_on_char '\n' (Vte.to_string term.vte))
+
+(* The rows above the live region, after those in the scrollback: what the
+   transcript has become. *)
+let transcript app term =
+  let _, rows = Matrix.full_size app and _, live = Matrix.size app in
+  Vte.scrollback_lines term.vte
+  @ List.filteri (fun y _ -> y < rows - live) (screen_rows term)
+
+let live_rows app term =
+  let _, rows = Matrix.full_size app and _, live = Matrix.size app in
+  List.filteri (fun y _ -> y >= rows - live) (screen_rows term)
+
+let resize_step term ~cols ~rows ~on_event =
+  Vte.resize term.vte ~rows ~cols;
+  term.size <- (cols, rows);
+  on_event (Matrix.Input.Resize (cols, rows))
 
 let test_request_redraw_while_paused () =
   let app, _state =
@@ -1031,17 +1057,17 @@ let test_resume_reanchors_primary_from_bottom_cursor () =
   let app, state =
     make_app ~mode:`Primary ~terminal_tty:true ~target_fps:None
       ~input_timeout:(Some 0.)
-      ~query_cursor_position:(fun ~timeout:_ -> Some (24, 1))
+      ~query_cursor_position:(fun ~timeout:_ -> Some (24, 3))
       ()
   in
   Matrix.suspend app;
-  Buffer.clear state.output;
   Matrix.resume app;
-  contains ~msg:"bottom-row resume writes newline before reanchoring"
-    ~sub:"\r\n"
-    (Buffer.contents state.output);
-  equal ~msg:"bottom-row cursor anchors one-row live viewport" (pair int int)
-    (80, 1) (Matrix.size app)
+  equal ~msg:"a prompt on the bottom row leaves a one-row live viewport"
+    (pair int int) (80, 1) (Matrix.size app);
+  Buffer.clear state.output;
+  Matrix.submit app;
+  contains ~msg:"the next frame scrolls the prompt up first"
+    ~sub:"\027[24;1H\r\n" (output state)
 
 let test_resume_preserves_resize_during_cursor_query () =
   let app, state =
@@ -1569,7 +1595,7 @@ let test_partial_frame_restores_transient_modes () =
           Matrix.close app;
           is_true ~msg:"backend cleanup still runs" !cleaned)
         [ false; true ])
-    [ ("\027[?2026h", false); ("\027[?7l", false); ("\027[1;23r", true) ]
+    [ ("\027[?2026h", false); ("\027[?7l", false); ("row", true) ]
 
 let test_primary_effective_size_tracks_pending_static () =
   let app, _state =
@@ -1579,7 +1605,7 @@ let test_primary_effective_size_tracks_pending_static () =
   Matrix.static_write app (static_grid "alpha\nbeta\n");
   let effective = Matrix.effective_size app in
   equal ~msg:"pending static write reduces effective height" (pair int int)
-    (80, 21) effective;
+    (80, 22) effective;
   Matrix.submit app;
   equal ~msg:"submit applies pending effective size" (pair int int) effective
     (Matrix.size app)
@@ -1645,109 +1671,45 @@ let test_static_clear_is_immediate_and_forces_full_repaint () =
   not_contains ~msg:"the immediate clear is not queued again into the frame"
     ~sub:"\027[H\027[2J" (output state)
 
-let test_pinned_static_write_uses_bounded_scroll_region () =
-  let app, state =
-    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
-      ~target_fps:None ~input_timeout:(Some 0.) ()
-  in
-  Matrix.submit app;
-  Buffer.clear state.output;
+(* A screen full of shell output, the prompt on the bottom row: static rows
+   push the transcript up into the scrollback, and the live region keeps the
+   bottom row. *)
+let full_shell = "$0\r\n$1\r\n$2\r\n$ app"
+
+let test_pinned_static_write_scrolls_transcript () =
+  let app, term = vte_app ~shell:full_shell ~cols:8 ~rows:4 () in
+  present app [ "live" ];
   Matrix.static_write app (static_grid "pinned\n");
-  Matrix.submit app;
-  let output = output state in
-  contains ~msg:"pinned append sets upper-pane scroll region" ~sub:"\027[1;23r"
-    output;
-  contains ~msg:"pinned append resets scroll region" ~sub:"\027[r" output;
-  in_order ~msg:"scroll region is set before payload"
-    ~subs:[ "\027[1;23r"; "pinned" ] output;
-  in_order ~msg:"scroll region reset follows payload"
-    ~subs:[ "pinned"; "\027[r" ] output;
-  not_contains ~msg:"pinned append does not use broad erase" ~sub:"\027[J"
-    output
+  present app [ "live" ];
+  equal ~msg:"static row joins the transcript" (list string)
+    [ "$0"; "$1"; "$2"; "$ app"; "pinned" ]
+    (transcript app term);
+  equal ~msg:"live region keeps the bottom row" (list string) [ "live" ]
+    (live_rows app term)
 
-let test_pinned_static_write_resets_scroll_region_before_live_render () =
-  let app, state =
-    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
-      ~target_fps:None ~input_timeout:(Some 0.) ()
-  in
-  Matrix.submit app;
-  Buffer.clear state.output;
-  Matrix.static_write app (static_grid "pinned\n");
-  Matrix.prepare app;
-  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
-  Matrix.submit app;
-  let output = output state in
-  in_order ~msg:"static payload appears before live render"
-    ~subs:[ "pinned"; "live" ] output;
-  in_order ~msg:"scroll region resets before live render"
-    ~subs:[ "\027[r"; "live" ] output
-
-let test_pinned_static_write_repaints_unchanged_live_view () =
-  let app, state =
-    make_app ~mode:`Primary ~startup_cursor:(24, 1) ~min_tui_height:1
-      ~target_fps:None ~input_timeout:(Some 0.) ()
-  in
-  Matrix.prepare app;
-  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"prompt";
-  Matrix.submit app;
-  Buffer.clear state.output;
-  Matrix.static_write app (static_grid "static\n");
-  Matrix.prepare app;
-  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"prompt";
-  Matrix.submit app;
-  let output = output state in
-  in_order ~msg:"static payload appears before live repaint"
-    ~subs:[ "static"; "prompt" ] output;
-  in_order ~msg:"scroll region resets before unchanged live repaint"
-    ~subs:[ "\027[r"; "prompt" ] output
-
-let test_multiline_static_write_uses_scroll_region_when_it_reaches_pin () =
-  let app, state =
-    make_app ~mode:`Primary ~startup_cursor:(23, 1) ~min_tui_height:1
-      ~target_fps:None ~input_timeout:(Some 0.) ()
-  in
-  Matrix.submit app;
-  Buffer.clear state.output;
+let test_multiline_static_write_at_the_pin () =
+  let app, term = vte_app ~shell:full_shell ~cols:8 ~rows:4 () in
+  present app [ "live" ];
   Matrix.static_write app (static_grid "line-a\nline-b\n");
-  Matrix.prepare app;
-  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
-  Matrix.submit app;
-  let output = output state in
-  equal ~msg:"multiline append reaches pinned live viewport" (pair int int)
-    (80, 1) (Matrix.size app);
-  contains ~msg:"pinning append sets bounded scroll region" ~sub:"\027[1;23r"
-    output;
-  contains ~msg:"pinning append resets bounded scroll region" ~sub:"\027[r"
-    output;
-  in_order ~msg:"bounded scroll region is active before payload"
-    ~subs:[ "\027[1;23r"; "line-a" ] output;
-  in_order ~msg:"bounded scroll region resets before live repaint"
-    ~subs:[ "\027[r"; "live" ] output
+  present app [ "live" ];
+  equal ~msg:"both rows join the transcript in order" (list string)
+    [ "$0"; "$1"; "$2"; "$ app"; "line-a"; "line-b" ]
+    (transcript app term);
+  equal ~msg:"live region keeps its row" (pair int int) (8, 1) (Matrix.size app);
+  equal ~msg:"live region keeps the bottom row" (list string) [ "live" ]
+    (live_rows app term)
 
-let test_unpinned_static_write_settles_without_scroll_region () =
-  let app, state =
-    make_app ~mode:`Primary ~startup_cursor:(2, 1) ~min_tui_height:1
-      ~target_fps:None ~input_timeout:(Some 0.) ()
-  in
-  Matrix.submit app;
-  Buffer.clear state.output;
+let test_static_write_moves_live_region_down () =
+  let app, term = vte_app ~shell:"$ cmd\r\n" ~cols:8 ~rows:6 () in
+  present app [ "live" ];
   Matrix.static_write app (static_grid "settle\n");
-  Matrix.prepare app;
-  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
-  Matrix.submit app;
-  let output = output state in
-  (* The startup cursor row belongs to the shell. Its separating newline and
-     the static line consume two rows before the live viewport. *)
-  in_order ~msg:"static output preserves the startup cursor row"
-    ~subs:[ "\r\n"; "settle" ] output;
-  equal ~msg:"static output moves live region downward" (pair int int) (80, 21)
+  present app [ "live" ];
+  equal ~msg:"static row follows the shell's" (list string)
+    [ "$ cmd"; "settle" ] (transcript app term);
+  equal ~msg:"live region gives up the row" (pair int int) (8, 4)
     (Matrix.size app);
-  in_order ~msg:"static payload appears before live repaint"
-    ~subs:[ "settle"; "live" ] output;
-  not_contains ~msg:"settling static output avoids pinned DECSTBM"
-    ~sub:"\027[1;23r" output;
-  not_contains ~msg:"settling static output does not reset DECSTBM"
-    ~sub:"\027[r" output
+  equal ~msg:"live region follows the static row" (list string)
+    [ "live"; ""; ""; "" ] (live_rows app term)
 
 let test_static_write_and_live_repaint_share_sync_frame () =
   let app, state =
@@ -1765,10 +1727,8 @@ let test_static_write_and_live_repaint_share_sync_frame () =
   in_order ~msg:"synchronized output begins before static payload"
     ~subs:[ "\027[?2026h"; "pinned" ]
     output;
-  in_order ~msg:"static payload appears before DECSTBM reset"
-    ~subs:[ "pinned"; "\027[r" ] output;
-  in_order ~msg:"DECSTBM resets before live repaint" ~subs:[ "\027[r"; "live" ]
-    output;
+  in_order ~msg:"static payload appears before live repaint"
+    ~subs:[ "pinned"; "live" ] output;
   in_order ~msg:"live repaint is inside synchronized output"
     ~subs:[ "live"; "\027[?2026l" ] output
 
@@ -1799,44 +1759,25 @@ let test_primary_required_rows_apply_before_static_flush () =
   Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
   Matrix.submit app ~primary_required_rows:20;
   let output = output state in
-  (* Growth reserves twenty rows, then the shell-row separator and prompt
-     consume two of them. *)
-  in_order ~msg:"prompt preserves the shell-owned startup row"
-    ~subs:[ "\r\n"; "prompt" ] output;
+  (* Growth reserves twenty rows, then the static row takes one of them. *)
   equal ~msg:"static output settles against the expanded primary region"
-    (pair int int) (80, 18) (Matrix.size app);
+    (pair int int) (80, 19) (Matrix.size app);
   in_order ~msg:"primary growth happens before static output is flushed"
     ~subs:[ "\027[24;1H"; "prompt" ] output
 
 let test_full_height_static_write_scrolls_into_scrollback () =
-  let app, state =
-    make_app ~mode:`Primary ~min_tui_height:24 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
-  in
-  let before = Matrix.size app in
-  equal ~msg:"full-height live viewport starts at terminal height"
-    (pair int int) (80, 24) before;
-  Matrix.submit app;
-  Buffer.clear state.output;
+  let app, term = vte_app ~min_tui_height:4 ~cols:12 ~rows:4 () in
+  present app [ "live" ];
   Matrix.static_write app (static_grid "INSERTED00\nINSERTED01\n");
-  Matrix.prepare app;
-  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
-  Matrix.submit app;
-  let output = output state in
-  contains ~msg:"full-height static payload is emitted" ~sub:"INSERTED00" output;
-  contains ~msg:"full-height static rows are scrolled into history"
-    ~sub:"\027[2S" output;
-  in_order ~msg:"payload is emitted before the hardware scroll"
-    ~subs:[ "INSERTED01"; "\027[2S" ]
-    output;
-  in_order ~msg:"live viewport repaints after static rows are scrolled"
-    ~subs:[ "\027[2S"; "live" ] output;
-  not_contains ~msg:"full-height path does not use bounded DECSTBM"
-    ~sub:"\027[r" output;
-  not_contains ~msg:"full-height path does not use the old broad-erase preflush"
-    ~sub:"\027[1;1H\027[J" output;
-  equal ~msg:"full-height static write keeps live size" (pair int int) before
-    (Matrix.size app)
+  equal ~msg:"pending write keeps the full-height live region" (pair int int)
+    (12, 4)
+    (Matrix.effective_size app);
+  present app [ "live" ];
+  equal ~msg:"static rows go straight to the scrollback" (list string)
+    [ "INSERTED00"; "INSERTED01" ]
+    (Vte.scrollback_lines term.vte);
+  equal ~msg:"live region keeps the screen" (list string) [ "live"; ""; ""; "" ]
+    (live_rows app term)
 
 let test_static_snapshots_scroll_exactly_once_per_row () =
   List.iter
@@ -1904,104 +1845,66 @@ let test_queued_static_snapshot_keeps_row_count_after_resize () =
       not_contains ~msg:"snapshot replaces stale row content" ~sub:"old" row)
     history
 
-let test_primary_column_one_anchor_preserves_current_row () =
-  let app, state =
-    make_app ~mode:`Primary ~terminal_tty:true ~target_fps:None
-      ~input_timeout:(Some 0.) ~startup_cursor:(1, 1) ()
-  in
-  Buffer.clear state.output;
+let test_primary_column_one_anchor_starts_at_cursor_row () =
+  let app, term = vte_app ~shell:"$ cmd\r\n" ~cols:10 ~rows:4 () in
   Matrix.static_write app (static_grid "HEADER\n");
-  Matrix.submit app;
-  let output = output state in
-  contains ~msg:"static payload is emitted" ~sub:"HEADER" output;
-  in_order ~msg:"column-one anchor preserves the shell-owned row"
-    ~subs:[ "\r\n"; "HEADER" ] output
+  present app [ "live" ];
+  equal ~msg:"the static row follows the shell's" (list string)
+    [ "$ cmd"; "HEADER" ] (transcript app term);
+  equal ~msg:"the live region follows it" (list string) [ "live"; "" ]
+    (live_rows app term)
 
 let test_preserved_static_write_keeps_live_region () =
-  let app, state =
-    make_app ~mode:`Primary ~min_tui_height:1 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
-  in
-  let before = Matrix.size app in
-  Matrix.submit app;
-  Buffer.clear state.output;
+  let app, term = vte_app ~cols:12 ~rows:4 () in
+  present app [ "live" ];
   Matrix.static_write ~preserve_live_region:true app
     (static_grid "PRESERVED00\nPRESERVED01\n");
   equal ~msg:"pending preserved write keeps effective live size" (pair int int)
-    before
+    (12, 4)
     (Matrix.effective_size app);
-  Matrix.submit app;
-  let output = output state in
-  contains ~msg:"preserved rows scroll directly into terminal history"
-    ~sub:"\027[2S" output;
-  equal ~msg:"preserved write keeps live region" (pair int int) before
+  present app [ "live" ];
+  equal ~msg:"preserved rows scroll into the scrollback" (list string)
+    [ "PRESERVED00"; "PRESERVED01" ]
+    (Vte.scrollback_lines term.vte);
+  equal ~msg:"preserved write keeps live region" (pair int int) (12, 4)
     (Matrix.size app)
 
-let test_preserved_static_write_grows_after_static_rows () =
-  let app, state =
-    make_app ~mode:`Primary ~startup_cursor:(4, 1) ~min_tui_height:5
-      ~target_fps:None ~input_timeout:(Some 0.) ()
+let test_preserved_static_write_after_transcript_rows () =
+  let app, term =
+    vte_app ~shell:"$0\r\n$1\r\n$2\r\n" ~min_tui_height:2 ~cols:8 ~rows:6 ()
   in
-  Matrix.submit app;
-  Buffer.clear state.output;
+  present app [ "live" ];
   Matrix.static_write ~preserve_live_region:true app
     (static_grid "AAAA\nBBBB\n");
-  (* Three preceding rows, the shell-row separator, and two static rows
-     leave eighteen rows for the live region. *)
-  equal ~msg:"pending preserved write projects the grown live size"
-    (pair int int) (80, 18)
+  equal ~msg:"pending preserved write keeps the live size" (pair int int) (8, 3)
     (Matrix.effective_size app);
-  Matrix.submit app;
-  let output = output state in
-  in_order ~msg:"content is written, not dropped"
-    ~subs:[ "\r\n"; "AAAA"; "\r\n"; "BBBB" ]
-    output;
-  not_contains ~msg:"partial layout does not scroll into history" ~sub:"\027[2S"
-    output;
-  equal ~msg:"write grows the static area instead" (pair int int) (80, 18)
+  present app [ "live" ];
+  equal ~msg:"rows follow the transcript, which scrolls up" (list string)
+    [ "$0"; "$1"; "$2"; "AAAA"; "BBBB" ]
+    (transcript app term);
+  equal ~msg:"live region keeps its height" (pair int int) (8, 3)
     (Matrix.size app)
 
-let test_mixed_static_writes_fall_back_to_growth () =
-  let app, state =
-    make_app ~mode:`Primary ~min_tui_height:5 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
-  in
-  Matrix.submit app;
-  Buffer.clear state.output;
+let test_mixed_static_writes () =
+  let app, term = vte_app ~min_tui_height:5 ~cols:8 ~rows:6 () in
+  present app [ "live" ];
   Matrix.static_write ~preserve_live_region:true app (static_grid "KEEP\n");
   Matrix.static_write app (static_grid "GROW\n");
-  Matrix.submit app;
-  let output = output state in
-  in_order ~msg:"first write is not overwritten" ~subs:[ "KEEP"; "GROW" ] output;
-  contains ~msg:"second write lands on the next row" ~sub:"\027[2;1H" output;
-  not_contains ~msg:"mixed queue does not scroll into history" ~sub:"\027[1S"
-    output
-
-(* Leftmost, non-overlapping occurrence count; [contains ~sub] never counts. *)
-let count_occurrences ~sub s =
-  let n = String.length sub in
-  let rec go i acc =
-    if n = 0 || i + n > String.length s then acc
-    else if String.sub s i n = sub then go (i + n) (acc + 1)
-    else go (i + 1) acc
-  in
-  go 0 0
+  present app [ "live" ];
+  equal ~msg:"both rows join the transcript in order" (list string)
+    [ "KEEP"; "GROW" ] (transcript app term);
+  equal ~msg:"only the second takes a live row" (pair int int) (8, 5)
+    (Matrix.size app)
 
 let test_full_height_consecutive_static_writes_scroll_once_per_row () =
-  let app, state =
-    make_app ~mode:`Primary ~min_tui_height:24 ~target_fps:None
-      ~input_timeout:(Some 0.) ()
-  in
-  Matrix.submit app;
-  Buffer.clear state.output;
+  let app, term = vte_app ~min_tui_height:4 ~cols:8 ~rows:4 () in
+  present app [ "live" ];
   Matrix.static_write app (static_grid "first");
   Matrix.static_write app (static_grid "second\n");
-  Matrix.submit app;
-  let output = output state in
-  in_order ~msg:"consecutive full-height writes stay ordered"
-    ~subs:[ "first"; "second" ] output;
-  equal ~msg:"full-height writes scroll once per consumed row" int 2
-    (count_occurrences ~sub:"\027[1S" output)
+  present app [ "live" ];
+  equal ~msg:"each row reaches the scrollback once, in order" (list string)
+    [ "first"; "second" ]
+    (Vte.scrollback_lines term.vte)
 
 let test_static_write_ignored_in_alt_mode () =
   let app, state =
@@ -2022,8 +1925,8 @@ let test_static_clear_resets_primary_layout () =
   equal ~msg:"attached primary starts below transcript" (pair int int) (80, 14)
     (Matrix.size app);
   Matrix.static_write app (static_grid "pending\n");
-  (* Pending output reserves the shell-owned cursor row and its own line. *)
-  equal ~msg:"pending output affects effective size" (pair int int) (80, 12)
+  (* Pending output takes its row from the live region. *)
+  equal ~msg:"pending output affects effective size" (pair int int) (80, 13)
     (Matrix.effective_size app);
   Buffer.clear state.output;
   Matrix.static_clear app;
@@ -2164,6 +2067,82 @@ let test_primary_full_redraw_paints_background_rows () =
     (Matrix.Ansi.Color.equal
        (Matrix.Grid.get_bg g (Matrix.Grid.idx g ~x:5 ~y:1))
        Matrix.Ansi.Color.blue)
+
+let test_primary_anchor_scrolls_shell_rows () =
+  (* The minimum live height does not fit below the prompt: the shell's rows
+     scroll into the scrollback rather than being overwritten. *)
+  let app, term =
+    vte_app ~shell:"$0\r\n$1" ~min_tui_height:3 ~cols:4 ~rows:4 ()
+  in
+  present app [ "live" ];
+  equal ~msg:"the shell's rows stay in the transcript" (list string)
+    [ "$0"; "$1" ] (transcript app term);
+  equal ~msg:"the live region has its minimum height" (pair int int) (4, 3)
+    (Matrix.size app)
+
+let test_primary_one_row_static_area () =
+  let app, term = vte_app ~cols:4 ~rows:2 () in
+  present app [ "live" ];
+  Matrix.static_write app (static_grid "S0\n");
+  present app [ "live" ];
+  equal ~msg:"the static row is above the live region" (list string) [ "S0" ]
+    (transcript app term);
+  equal ~msg:"the live region keeps its row" (list string) [ "live" ]
+    (live_rows app term)
+
+let test_primary_minimum_height_survives_shrink () =
+  let app, term = vte_app ~min_tui_height:3 ~cols:8 ~rows:8 () in
+  term.script <-
+    [
+      (fun ~on_event -> resize_step term ~cols:8 ~rows:2 ~on_event);
+      (fun ~on_event -> resize_step term ~cols:8 ~rows:8 ~on_event);
+      (fun ~on_event:_ ->
+        Matrix.static_write app
+          (static_grid
+             (String.concat "\n" (List.init 8 (Printf.sprintf "S%d"))));
+        Matrix.request_redraw app);
+      (fun ~on_event:_ ->
+        equal ~msg:"static rows leave the minimum to the live region"
+          (pair int int) (8, 3) (Matrix.size app));
+    ];
+  Matrix.run app ~on_render:(fun app -> draw_rows app [ "live" ])
+
+(* A shell's history fills the screen and the application's three rows sit
+   at the bottom. A terminal that grows pulls history back from its
+   scrollback, and one that shrinks drops the rows below its cursor and then
+   moves the top ones into its scrollback: the live region moves with the
+   rows. *)
+let test_primary_resize_keeps_live_region_below_transcript () =
+  let history = List.init 12 (Printf.sprintf "history %d") in
+  let shell =
+    String.concat "" (List.map (fun line -> line ^ "\r\n") history) ^ "$ app"
+  in
+  let app, term = vte_app ~shell ~cols:16 ~rows:8 () in
+  let ui = [ "+------+"; "| UI   |"; "+------+" ] in
+  let expect what =
+    equal
+      ~msg:(what ^ ": the transcript is whole")
+      (list string) (history @ [ "$ app" ]) (transcript app term);
+    equal
+      ~msg:(what ^ ": the live region shows the frame")
+      (list string) ui (live_rows app term)
+  in
+  let redraw ~on_event:_ = Matrix.request_redraw app in
+  term.script <-
+    [
+      redraw;
+      (fun ~on_event ->
+        expect "before";
+        resize_step term ~cols:16 ~rows:11 ~on_event);
+      (fun ~on_event ->
+        expect "grown";
+        resize_step term ~cols:16 ~rows:6 ~on_event);
+      redraw;
+      (fun ~on_event:_ -> expect "shrunk");
+    ];
+  Matrix.run app
+    ~primary_required_rows:(fun _ -> Some 3)
+    ~on_render:(fun app -> draw_rows app ui)
 
 let test_primary_mouse_event_is_offset_into_live_region () =
   let app, _state =
@@ -2444,20 +2423,17 @@ let () =
             test_static_writes_are_flushed_fifo;
           test "static write snapshots selected complete rows"
             test_static_write_snapshots_selected_rows;
-          test "column-one anchor preserves current row"
-            test_primary_column_one_anchor_preserves_current_row;
+          test "column-one anchor starts at the cursor row"
+            test_primary_column_one_anchor_starts_at_cursor_row;
           test "static_clear is immediate and forces a full repaint"
             test_static_clear_is_immediate_and_forces_full_repaint;
-          test "pinned static write uses bounded scroll region"
-            test_pinned_static_write_uses_bounded_scroll_region;
-          test "pinned static write resets scroll region before live render"
-            test_pinned_static_write_resets_scroll_region_before_live_render;
-          test "pinned static write repaints unchanged live view"
-            test_pinned_static_write_repaints_unchanged_live_view;
-          test "multiline static write uses scroll region when it reaches pin"
-            test_multiline_static_write_uses_scroll_region_when_it_reaches_pin;
-          test "unpinned static write settles without scroll region"
-            test_unpinned_static_write_settles_without_scroll_region;
+          test "pinned static write scrolls the transcript"
+            test_pinned_static_write_scrolls_transcript;
+          test "multiline static write at the pin"
+            test_multiline_static_write_at_the_pin;
+          test "static write moves the live region down"
+            test_static_write_moves_live_region_down;
+          test "one-row static area" test_primary_one_row_static_area;
           test "static write and live repaint share sync frame"
             test_static_write_and_live_repaint_share_sync_frame;
           test "pinned static write keeps live size"
@@ -2476,10 +2452,9 @@ let () =
             test_static_snapshot_clears_suffixes_and_keeps_blank_rows;
           test "preserved static write keeps live region"
             test_preserved_static_write_keeps_live_region;
-          test "preserved static write grows after static rows"
-            test_preserved_static_write_grows_after_static_rows;
-          test "mixed static writes fall back to growth"
-            test_mixed_static_writes_fall_back_to_growth;
+          test "preserved static write after transcript rows"
+            test_preserved_static_write_after_transcript_rows;
+          test "mixed static writes" test_mixed_static_writes;
           test "full-height consecutive static writes scroll once per row"
             test_full_height_consecutive_static_writes_scroll_once_per_row;
           test "static_write is ignored in alt mode"
@@ -2492,6 +2467,12 @@ let () =
             test_primary_full_redraw_keeps_cursor_row;
           test "full redraw paints background rows"
             test_primary_full_redraw_paints_background_rows;
+          test "anchor scrolls shell rows for the minimum height"
+            test_primary_anchor_scrolls_shell_rows;
+          test "minimum height survives a shrink"
+            test_primary_minimum_height_survives_shrink;
+          test "resize keeps the live region below the transcript"
+            test_primary_resize_keeps_live_region_below_transcript;
         ];
       group "Primary input"
         [
