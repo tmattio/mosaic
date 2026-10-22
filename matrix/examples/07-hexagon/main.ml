@@ -176,9 +176,8 @@ let () =
     ~on_frame:(fun _ ~dt -> state := update ~dt !state)
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Char u; _ }
-        when Uchar.to_int u = Char.code ' ' ->
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Char u; _ } when Uchar.to_int u = Char.code ' ' ->
           (* Reset ball with random velocity *)
           state :=
             {

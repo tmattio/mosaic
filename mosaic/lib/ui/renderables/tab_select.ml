@@ -17,7 +17,7 @@ let default_bindings =
       (char '[', Move_left);
       (char ']', Move_right);
       (enter, Activate);
-      (key Matrix_input.Key.Line_feed, Activate);
+      (ctrl 'j', Activate);
     ]
 
 let default_keymap = Keymap.make ~defaults:default_bindings ()

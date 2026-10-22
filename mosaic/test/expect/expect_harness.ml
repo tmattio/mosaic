@@ -178,23 +178,36 @@ let focus app node = ignore (Renderer.focus app.renderer node : bool)
 
 (* The node of the reconciled element: the root's only child. *)
 let mounted app = List.hd (Renderable.children (Renderer.root app.renderer))
-let no_mod = Matrix_input.Modifier.none
+let no_mod = Matrix_input.Keystroke.no_mods
+
+(* A key as the terminal reports it: a character types itself unless a chord
+   modifier is held. *)
+let keystroke ?(mods = no_mod) key : Matrix_input.Keystroke.t =
+  let text =
+    match (key : Matrix_input.Keystroke.key) with
+    | Char c when not (mods.ctrl || mods.alt || mods.super || mods.hyper) ->
+        let b = Buffer.create 4 in
+        Buffer.add_utf_8_uchar b c;
+        Buffer.contents b
+    | _ -> ""
+  in
+  { key; mods; text; base = None; keypad = false; repeat = false }
 
 let send_char app c =
-  let text = String.make 1 c in
   ignore
-    (Renderer.dispatch_key app.renderer
-       (Matrix_input.Key.of_char ~associated_text:text c)
+    (Renderer.dispatch_key app.renderer (keystroke (Char (Uchar.of_char c)))
       : Event.key)
 
 let send_key app key =
-  ignore
-    (Renderer.dispatch_key app.renderer (Matrix_input.Key.make key) : Event.key)
+  ignore (Renderer.dispatch_key app.renderer (keystroke key) : Event.key)
 
 let send_key_with_mod app ~modifier key =
   ignore
-    (Renderer.dispatch_key app.renderer (Matrix_input.Key.make ~modifier key)
+    (Renderer.dispatch_key app.renderer (keystroke ~mods:modifier key)
       : Event.key)
+
+let mouse_report ~x ~y kind : Matrix_input.Mouse_report.t =
+  { kind; x; y; shift = false; alt = false; ctrl = false }
 
 (* ── Canvas Helpers ── *)
 

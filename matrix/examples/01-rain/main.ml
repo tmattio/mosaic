@@ -135,13 +135,11 @@ let () =
     ~on_frame:(fun _ ~dt:_ -> state := step !state)
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Char uchar; modifier; _ } ->
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Char uchar; mods; _ } ->
           let code = Uchar.to_int uchar in
-          if
-            code = 3
-            || (modifier.ctrl && (code = Char.code 'c' || code = Char.code 'C'))
-          then Matrix.stop app
+          if mods.ctrl && (code = Char.code 'c' || code = Char.code 'C') then
+            Matrix.stop app
           else if code = Char.code ' ' then
             let cols, rows = Matrix.size app in
             state := gen (cols, rows)

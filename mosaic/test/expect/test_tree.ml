@@ -141,7 +141,7 @@ let%expect_test "navigation Down moves selection" =
   let app = make_app () in
   let refresh = mount_tree app ~expanded:[ "src"; "test" ] () in
   frame app ~width:30 ~height:10;
-  send_key app Matrix_input.Key.Down;
+  send_key app Matrix_input.Keystroke.Down;
   refresh ();
   frame app ~width:30 ~height:10;
   [%expect_exact
@@ -171,7 +171,7 @@ let%expect_test "Right expands collapsed node" =
   let app = make_app () in
   let refresh = mount_tree app () in
   frame app ~width:30 ~height:10;
-  send_key app Matrix_input.Key.Right;
+  send_key app Matrix_input.Keystroke.Right;
   refresh ();
   frame app ~width:30 ~height:10;
   [%expect_exact
@@ -201,7 +201,7 @@ let%expect_test "Left collapses expanded node" =
   let app = make_app () in
   let refresh = mount_tree app ~expanded:[ "src"; "test" ] () in
   frame app ~width:30 ~height:10;
-  send_key app Matrix_input.Key.Left;
+  send_key app Matrix_input.Keystroke.Left;
   refresh ();
   frame app ~width:30 ~height:10;
   [%expect_exact

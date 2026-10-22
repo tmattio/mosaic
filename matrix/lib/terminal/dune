@@ -6,7 +6,6 @@
  (name matrix_terminal)
  (public_name matrix.terminal)
  (libraries unix matrix.ansi matrix.input matrix.text)
- (private_modules caps)
  (foreign_stubs
   (language c)
   (names terminal_stubs)))

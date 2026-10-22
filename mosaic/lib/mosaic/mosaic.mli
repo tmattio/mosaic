@@ -883,6 +883,8 @@ module Sub : sig
     | On_key_all of (Event.key -> 'msg option)
         (** [On_key_all f] delivers all key events, consumed or not. [f] returns
             [None] to ignore an event. *)
+    | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
+        (** [On_key_release f] delivers key releases. *)
     | On_mouse of (Event.mouse -> 'msg option)
         (** [On_mouse f] delivers mouse events the UI tree did not consume. *)
     | On_mouse_all of (Event.mouse -> 'msg option)
@@ -935,13 +937,18 @@ module Sub : sig
   val on_keys : (Shortcut.t * 'msg) list -> 'msg t
   (** [on_keys bindings] dispatches the message bound to the event and prevents
       its default action. Later equivalent shortcuts override earlier ones.
-      Resolution prefers the direct key, then its lowercase ASCII form, then the
-      base-layout key, as widget bindings do. Key releases are ignored. See
-      {!Shortcut} for modifier and keypad matching. *)
+      Resolution tries the key, then the base-layout key, as widget bindings do.
+      See {!Shortcut} for how keys and modifiers match. *)
 
   val on_key_all : (Event.key -> 'msg option) -> 'msg t
   (** [on_key_all f] is like {!val-on_key} but delivers all key events
       regardless of which element has focus. *)
+
+  val on_key_release : (Matrix.Input.Keystroke.release -> 'msg option) -> 'msg t
+  (** [on_key_release f] delivers key releases to [f], which no widget sees. A
+      terminal reports releases only under the kitty keyboard protocol, when the
+      runtime asks for them ({!Matrix.create}'s [key_releases], given through
+      {!run}'s [matrix]). *)
 
   val on_mouse : (Event.mouse -> 'msg option) -> 'msg t
   (** [on_mouse f] delivers mouse events the UI tree did not consume: an event a
@@ -954,7 +961,10 @@ module Sub : sig
 
   val on_paste : (Event.paste -> 'msg option) -> 'msg t
   (** [on_paste f] runs before the focused editor's paste handler. Call
-      {!Event.Paste.prevent_default} to suppress insertion. *)
+      {!Event.Paste.prevent_default} to suppress insertion. A bracketed paste is
+      delivered whole once its end marker arrives, and dropped when cut short
+      ({!Matrix.abort_paste}, or the end of the input). Text a terminal reports
+      without a key, such as an input method's, is delivered as a paste too. *)
 
   val on_paste_all : (Event.paste -> 'msg option) -> 'msg t
   (** [on_paste_all f] is like {!val-on_paste} but delivers all paste events,

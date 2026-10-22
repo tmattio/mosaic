@@ -1,7 +1,18 @@
 open Windtrap
 open Mosaic_ui
-module Key = Matrix_input.Key
-module Modifier = Matrix_input.Modifier
+module Key = Matrix_input.Keystroke
+
+let keystroke ?(mods = Key.no_mods) ?(repeat = false) ?base ?(keypad = false)
+    key : Key.t =
+  let text =
+    match key with
+    | Key.Char c when not (mods.ctrl || mods.alt || mods.hyper) ->
+        let b = Buffer.create 4 in
+        Buffer.add_utf_8_uchar b c;
+        Buffer.contents b
+    | _ -> ""
+  in
+  { key; mods; text; base; keypad; repeat }
 
 type bindings = Default | Override | Replace | Precedence
 
@@ -71,9 +82,9 @@ let tree ~mlx ~mode ~selected ~prevent =
 
 let widgets =
   [
-    ("tabs", tabs, Key.Right, Key.KP_right);
-    ("table", table, Key.Down, Key.KP_down);
-    ("tree", tree, Key.Down, Key.KP_down);
+    ("tabs", tabs, Key.Right);
+    ("table", table, Key.Down);
+    ("tree", tree, Key.Down);
   ]
 
 let fixture build ~mlx =
@@ -92,10 +103,10 @@ let fixture build ~mlx =
     | None -> failwith "navigation fixture has no focused widget");
     Renderer.render_frame renderer ~width:30 ~height:6 ~delta:0.
   in
-  let send ?modifier ?event_type ?base_key key =
+  let send ?mods ?repeat ?base ?keypad key =
     ignore
       (Renderer.dispatch_key renderer
-         (Key.make ?modifier ?event_type ?base_key key)
+         (keystroke ?mods ?repeat ?base ?keypad key)
         : Event.key)
   in
   let take () =
@@ -105,26 +116,28 @@ let fixture build ~mlx =
   in
   (render, send, take)
 
-let exact_matching_and_accepted_state build forward keypad ~mlx =
+(* A release is not a key event: widgets never see one. *)
+let exact_matching_and_accepted_state build forward ~mlx =
   let render, send, take = fixture build ~mlx in
   render ();
   List.iter
-    (fun modifier ->
-      send ~modifier forward;
-      send ~modifier (Key.Char (Uchar.of_char 'j'));
+    (fun mods ->
+      send ~mods forward;
+      if not mods.ctrl then send ~mods (Key.Char (Uchar.of_char 'j'));
       equal ~msg:"modified navigation has no action" (list string) [] (take ()))
     [
-      { Modifier.none with ctrl = true };
-      { Modifier.none with alt = true; meta = true };
-      { Modifier.none with hyper = true };
+      { Key.no_mods with ctrl = true };
+      { Key.no_mods with alt = true };
+      { Key.no_mods with hyper = true };
     ];
-  send ~event_type:Release forward;
-  equal ~msg:"release has no action" (list string) [] (take ());
-  send ~event_type:Repeat forward;
-  send ~event_type:Repeat forward;
+  send ~mods:{ Key.no_mods with ctrl = true } (Key.Char (Uchar.of_char 'j'));
+  equal ~msg:"Ctrl+J, a line feed, activates as Enter does" (list string)
+    [ "activate:B" ] (take ());
+  send ~repeat:true forward;
+  send ~repeat:true forward;
   equal ~msg:"each repeat proposes from accepted selection" (list string)
     [ "change:C"; "change:C" ] (take ());
-  send Key.KP_enter;
+  send ~keypad:true Key.Enter;
   equal ~msg:"unaccepted proposals do not alter activation" (list string)
     [ "activate:B" ] (take ());
   render ~selected:"C" ();
@@ -132,7 +145,7 @@ let exact_matching_and_accepted_state build forward keypad ~mlx =
   equal ~msg:"accepted declaration changes activation" (list string)
     [ "activate:C" ] (take ());
   render ();
-  send keypad;
+  send ~keypad:true forward;
   equal ~msg:"keypad navigation shares typed matching" (list string)
     [ "change:C" ] (take ());
   render ~prevent:true ();
@@ -149,7 +162,7 @@ let custom_binding_lifecycle build forward ~mlx =
     (take ());
   send (Key.Char (Uchar.of_char 'n'));
   equal ~msg:"custom binding adds a key" (list string) [ "change:C" ] (take ());
-  send ~base_key:(Uchar.of_char 'n') (Key.Char (Uchar.of_int 0x043d));
+  send ~base:(Uchar.of_char 'n') (Key.Char (Uchar.of_int 0x043d));
   equal ~msg:"custom binding uses base-layout fallback" (list string)
     [ "change:C" ] (take ());
   render ~mode:Replace ();
@@ -179,25 +192,24 @@ let subscriptions_and_widgets_agree build ~mlx =
     | _ -> fail "expected key subscription"
   in
   List.iter
-    (fun (key, base_key, event_type) ->
-      let data = Key.make ?base_key ~event_type key in
+    (fun (key, base, repeat) ->
+      let data = keystroke ?base ~repeat key in
       let expected = dispatch (Event.Key.of_input data) in
-      send ?base_key ~event_type key;
+      send ?base ~repeat key;
       equal ~msg:"subscription and compiled widget resolve the same binding"
         (list string) (Option.to_list expected) (take ()))
     [
-      (Key.Char (Uchar.of_char 'q'), None, Press);
-      (Key.Char (Uchar.of_char 'Q'), None, Repeat);
-      (Key.Char (Uchar.of_char 'x'), Some (Uchar.of_char 'q'), Press);
-      (Key.Char (Uchar.of_char 'X'), Some (Uchar.of_char 'q'), Press);
-      (Key.Char (Uchar.of_int 0x0441), Some (Uchar.of_char 'Q'), Press);
-      (Key.Char (Uchar.of_char 'q'), None, Release);
+      (Key.Char (Uchar.of_char 'q'), None, false);
+      (Key.Char (Uchar.of_char 'Q'), None, true);
+      (Key.Char (Uchar.of_char 'x'), Some (Uchar.of_char 'q'), false);
+      (Key.Char (Uchar.of_char 'X'), Some (Uchar.of_char 'q'), false);
+      (Key.Char (Uchar.of_int 0x0441), Some (Uchar.of_char 'Q'), false);
     ]
 
 let () =
   run "mosaic.navigation-keys"
     (List.concat_map
-       (fun (name, build, forward, keypad) ->
+       (fun (name, build, forward) ->
          List.map
            (fun mlx ->
              let api = if mlx then "MLX" else "Mosaic" in
@@ -205,7 +217,7 @@ let () =
                (name ^ " " ^ api)
                [
                  test "matching, interception and model ownership" (fun () ->
-                     exact_matching_and_accepted_state build forward keypad ~mlx);
+                     exact_matching_and_accepted_state build forward ~mlx);
                  test "custom binding lifecycle" (fun () ->
                      custom_binding_lifecycle build forward ~mlx);
                  test "subscription and widget resolution agree" (fun () ->

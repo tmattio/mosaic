@@ -110,24 +110,52 @@ let make_grid ?(width = 80) ?(height = 24) ?(width_method = `Unicode) () =
 
 (* Every widget test driving the keyboard wrote this record out by hand, all
    eight modifier fields included, once per file. The defaults are "no
-   modifier, a press, no associated text" — what a test means by "the user
-   pressed this key" — so the exceptions name only what differs. *)
-let make_key ?(ctrl = false) ?(alt = false) ?(shift = false) ?(super = false)
-    ?(hyper = false) ?(meta = false) ?(caps_lock = false) ?(num_lock = false)
-    ?(event_type = Matrix_input.Key.Press) ?(associated_text = "") ?shifted_key
-    ?base_key key : Matrix_input.Key.event =
-  {
-    key;
-    modifier = { ctrl; alt; shift; super; hyper; meta; caps_lock; num_lock };
-    event_type;
-    associated_text;
-    shifted_key;
-    base_key;
-  }
+   modifier, a press, the text the key types" — what a test means by "the user
+   pressed this key" — so the exceptions name only what differs. A [Char]
+   types its character unless a chord modifier is held or it is a control,
+   as the decoder reports it; other keys type nothing. *)
+let mods ?(ctrl = false) ?(alt = false) ?(shift = false) ?(super = false)
+    ?(hyper = false) ?(meta = false) ?(caps_lock = false) ?(num_lock = false) ()
+    : Matrix_input.Keystroke.mods =
+  { shift; alt; ctrl; super; hyper; meta; caps_lock; num_lock }
+
+let typed (mods : Matrix_input.Keystroke.mods)
+    (key : Matrix_input.Keystroke.key) =
+  match key with
+  | Char c
+    when (not (mods.ctrl || mods.alt || mods.super || mods.hyper || mods.meta))
+         && Uchar.to_int c >= 0x20
+         && Uchar.to_int c <> 0x7f
+         && not (Uchar.to_int c >= 0x80 && Uchar.to_int c < 0xa0) ->
+      let b = Buffer.create 4 in
+      Buffer.add_utf_8_uchar b c;
+      Buffer.contents b
+  | _ -> ""
+
+let keystroke ?(mods = Matrix_input.Keystroke.no_mods) ?(repeat = false) ?text
+    ?base ?(keypad = false) key : Matrix_input.Keystroke.t =
+  let text = match text with Some t -> t | None -> typed mods key in
+  { key; mods; text; base; keypad; repeat }
+
+let make_key ?ctrl ?alt ?shift ?super ?hyper ?meta ?caps_lock ?num_lock ?repeat
+    ?text ?base ?keypad key =
+  keystroke
+    ~mods:(mods ?ctrl ?alt ?shift ?super ?hyper ?meta ?caps_lock ?num_lock ())
+    ?repeat ?text ?base ?keypad key
+
+let char_key ?ctrl ?alt ?shift ?super ?hyper ?meta ?repeat ?text ?base c =
+  make_key ?ctrl ?alt ?shift ?super ?hyper ?meta ?repeat ?text ?base
+    (Char (Uchar.of_char c))
+
+(* Mouse reports as the terminal sends them, for tests that dispatch through
+   the renderer. *)
+let mouse_report ?(shift = false) ?(alt = false) ?(ctrl = false) ~x ~y kind :
+    Matrix_input.Mouse_report.t =
+  { kind; x; y; shift; alt; ctrl }
 
 (* UI-layer mouse events (Event.Mouse). Widget tests that work at the input
-   layer instead — Matrix_input.Mouse, as text_input and textarea do — build
-   their own; the two layers are different types, not duplicates. *)
+   layer instead — Matrix_input.Mouse_report — build their own; the two
+   layers are different types, not duplicates. *)
 let no_mod = Event.Mouse.no_modifier
 
 let mouse_down ~x ~y =

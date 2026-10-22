@@ -10,7 +10,7 @@ type trace = {
 
 type step =
   | Bytes of string
-  | Key of Matrix.Input.Key.event
+  | Key of Matrix.event
   | Check of (trace -> Matrix_test.t -> unit)
 
 let button focused disabled =
@@ -29,7 +29,7 @@ let drive ?(focused = true) ?(disabled = false) ?(accept_focus = true)
         steps := rest;
         match step with
         | Bytes bytes -> Matrix_test.feed terminal bytes
-        | Key key -> Matrix_test.feed_event terminal (Matrix.Input.Key key)
+        | Key event -> Matrix_test.feed_event terminal event
         | Check check -> check trace terminal)
   in
   let map_message message =
@@ -68,21 +68,35 @@ let activation_count trace =
   List.length
     (List.filter (function Activate -> true | Focus -> false) trace.messages)
 
+let press ?mods key = Key (Matrix.Key (Test_harness.keystroke ?mods key))
+
 let key_presses_only () =
-  let keys = Matrix.Input.Key.[ Enter; KP_enter; Char (Uchar.of_char ' ') ] in
+  let keys =
+    Matrix.Input.Keystroke.
+      [ (Enter, false); (Enter, true); (Char (Uchar.of_char ' '), false) ]
+  in
   let steps =
     List.concat_map
-      (fun key ->
-        List.map
-          (fun event_type -> Key (Matrix.Input.Key.make ~event_type key))
-          Matrix.Input.Key.[ Press; Repeat; Release ])
+      (fun (key, keypad) ->
+        [
+          Key (Matrix.Key (Test_harness.keystroke ~keypad key));
+          Key (Matrix.Key (Test_harness.keystroke ~keypad ~repeat:true key));
+          Key
+            (Matrix.Key_release
+               {
+                 key;
+                 mods = Matrix.Input.Keystroke.no_mods;
+                 base = None;
+                 keypad;
+               });
+        ])
       keys
   in
   let trace = drive button steps in
   equal ~msg:"one activation per press" int 3 (activation_count trace)
 
 let modifiers_and_capture () =
-  let none = Matrix.Input.Modifier.none in
+  let none = Matrix.Input.Keystroke.no_mods in
   let modified =
     [
       { none with ctrl = true };
@@ -94,31 +108,21 @@ let modifiers_and_capture () =
     ]
   in
   let trace =
-    drive button
-      (List.map
-         (fun modifier -> Key (Matrix.Input.Key.make ~modifier Enter))
-         modified)
+    drive button (List.map (fun mods -> press ~mods Enter) modified)
   in
   equal int 0 (activation_count trace);
   let trace =
     drive button
-      [
-        Key
-          (Matrix.Input.Key.make
-             ~modifier:{ none with caps_lock = true; num_lock = true }
-             Enter);
-      ]
+      [ press ~mods:{ none with caps_lock = true; num_lock = true } Enter ]
   in
   equal ~msg:"locks do not change activation" int 1 (activation_count trace);
-  let trace =
-    drive ~capture:true button [ Key (Matrix.Input.Key.make Enter) ]
-  in
+  let trace = drive ~capture:true button [ press Enter ] in
   equal ~msg:"global capture prevents activation" int 0 (activation_count trace)
 
 let pointer_focus_before_activation () =
   let trace =
     drive ~focused:false button
-      [ Bytes "\027[<0;2;1M\027[<0;2;1m"; Key (Matrix.Input.Key.make Enter) ]
+      [ Bytes "\027[<0;2;1M\027[<0;2;1m"; press Enter ]
   in
   equal (list string)
     [ "focus"; "activate"; "activate" ]
@@ -128,7 +132,7 @@ let pointer_focus_before_activation () =
   is_true trace.focused;
   let rejected =
     drive ~focused:false ~accept_focus:false button
-      [ Bytes "\027[<0;2;1M\027[<0;2;1m"; Key (Matrix.Input.Key.make Enter) ]
+      [ Bytes "\027[<0;2;1M\027[<0;2;1m"; press Enter ]
   in
   is_false rejected.focused;
   equal int 0 (activation_count rejected)
@@ -155,8 +159,8 @@ let disabled_blocks_input () =
     drive ~disabled:true button
       [
         Bytes "\027[<0;2;1M\027[<0;2;1m";
-        Key (Matrix.Input.Key.make Enter);
-        Key (Matrix.Input.Key.of_char ' ');
+        press Enter;
+        press (Char (Uchar.of_char ' '));
       ]
   in
   equal ~msg:"no activation or focus request" int 0 (List.length trace.messages)

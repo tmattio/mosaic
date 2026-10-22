@@ -4,8 +4,18 @@ open Mosaic_ui
 
 (* ── Helpers ── *)
 
-let key_ev_a = Input.Key.of_char 'a'
-let key_ev_b = Input.Key.of_char 'b'
+let key c : Input.Keystroke.t =
+  {
+    key = Char (Uchar.of_char c);
+    mods = Input.Keystroke.no_mods;
+    text = String.make 1 c;
+    base = None;
+    keypad = false;
+    repeat = false;
+  }
+
+let key_ev_a = key 'a'
+let key_ev_b = key 'b'
 let no_mod = Event.Mouse.no_modifier
 
 let mouse_down ?(x = 0) ?(y = 0) ?target () =
@@ -15,8 +25,7 @@ let mouse_down ?(x = 0) ?(y = 0) ?target () =
 
 let key_of_input_roundtrip () =
   let ev = Event.Key.of_input key_ev_a in
-  is_true ~msg:"data roundtrip"
-    (Input.Key.equal_event (Event.Key.data ev) key_ev_a)
+  is_true ~msg:"data roundtrip" (Event.Key.data ev = key_ev_a)
 
 let key_fresh_default () =
   let ev = Event.Key.of_input key_ev_a in

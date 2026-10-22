@@ -13,7 +13,6 @@ val make : defaults:'a binding list -> ?custom:'a binding list -> unit -> 'a t
 (** [make ~defaults ?custom ()] compiles bindings. Later bindings override
     earlier equivalent shortcuts; [custom] follows [defaults]. *)
 
-val action : 'a t -> Matrix_input.Key.event -> 'a option
+val action : 'a t -> Matrix_input.Keystroke.t -> 'a option
 (** [action t ev] is the bound action, if any. Lookup uses {!Shortcut} matching
-    rules, preferring an exact character to its lowercase form, then the
-    base-layout fallback. Release events have no action. *)
+    rules: the key exactly, then the base-layout key. *)

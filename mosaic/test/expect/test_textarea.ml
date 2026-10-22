@@ -53,7 +53,7 @@ let%expect_test "content after typing with newlines" =
   frame app ~width:20 ~height:5;
   send_char app 'a';
   send_char app 'b';
-  send_key app Matrix_input.Key.Enter;
+  send_key app Matrix_input.Keystroke.Enter;
   send_char app 'c';
   send_char app 'd';
   frame app ~width:20 ~height:5;
@@ -75,9 +75,9 @@ let%expect_test "after backspace line join" =
   focus app (mounted app);
   frame app ~width:20 ~height:5;
   (* Move cursor to start of second line and backspace to join *)
-  send_key app Matrix_input.Key.Home;
-  send_key app Matrix_input.Key.Down;
-  send_key app Matrix_input.Key.Backspace;
+  send_key app Matrix_input.Keystroke.Home;
+  send_key app Matrix_input.Keystroke.Down;
+  send_key app Matrix_input.Keystroke.Backspace;
   frame app ~width:20 ~height:5;
   [%expect_exact {|
 abc
@@ -106,9 +106,9 @@ let%expect_test "ctrl+u clears to line start" =
   focus app (mounted app);
   frame app ~width:20 ~height:5;
   (* Cursor is at buffer end (after 'f'); Ctrl+U deletes to line start *)
-  let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true } in
+  let ctrl_mod = { no_mod with Matrix_input.Keystroke.ctrl = true } in
   send_key_with_mod app ~modifier:ctrl_mod
-    (Matrix_input.Key.Char (Uchar.of_char 'u'));
+    (Matrix_input.Keystroke.Char (Uchar.of_char 'u'));
   frame app ~width:20 ~height:5;
   [%expect_exact {|
 abc

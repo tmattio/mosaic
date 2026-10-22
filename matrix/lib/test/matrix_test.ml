@@ -1,4 +1,4 @@
-type entry = Chunk of string | Event of Matrix.Input.t
+type entry = Chunk of string | Event of Matrix.event
 
 type t = {
   mutable now : float;
@@ -15,9 +15,8 @@ type t = {
    extensions. Pinned so rendering never depends on the ambient $TERM. *)
 let capabilities : Matrix.Terminal.capabilities =
   {
-    term = "matrix-test";
     rgb = true;
-    kitty_keyboard = false;
+    kitty_keyboard = None;
     kitty_graphics = false;
     bracketed_paste = true;
     focus_tracking = true;
@@ -30,6 +29,9 @@ let capabilities : Matrix.Terminal.capabilities =
     sixel = false;
     sync = false;
     hyperlinks = false;
+    meta_sends_escape = None;
+    multiplexer = None;
+    identity = None;
   }
 
 let app t =
@@ -43,7 +45,7 @@ let feed_event t event = Queue.push (Event event) t.queue
 let resize t ~width ~height =
   t.width <- width;
   t.height <- height;
-  feed_event t (Matrix.Input.Resize (width, height))
+  feed_event t (Matrix.Resize (width, height))
 
 let now t = t.now
 let set_now t time = t.now <- time
@@ -121,12 +123,13 @@ let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
           Queue.clear t.queue;
           t.input_offset <- 0);
       cleanup = (fun () -> ());
+      env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
     }
   in
   let app =
     Matrix.attach ~mode ~target_fps:(Some target_fps) ~exit_on_ctrl_c
       ~input_timeout:None ~resize_debounce:(Some 0.) ~start_idle:true
-      ~pace_redraws:false ~initial_caps:capabilities ~backend ()
+      ~pace_redraws:false ~caps:capabilities ~backend ()
   in
   t.app <- Some app;
   t

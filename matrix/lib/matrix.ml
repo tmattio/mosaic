@@ -7,9 +7,40 @@ module Text = Matrix_text
 
 (* Types *)
 
-type kitty_keyboard = [ `Auto | `Disabled | `Enabled of int ]
+type kitty_keyboard = [ `Auto | `Off ]
 type mode = [ `Alt | `Primary ]
 type debug_overlay_corner = Debug_overlay.corner
+
+type event =
+  | Key of Input.Keystroke.t
+  | Key_release of Input.Keystroke.release
+  | Text of string
+  | Mouse of Input.Mouse_report.t
+  | Paste_start
+  | Paste_data of string
+  | Paste_end of [ `Complete | `Cut ]
+  | Focus_in
+  | Focus_out
+  | Resize of int * int
+  | Color_scheme of [ `Dark | `Light ]
+  | Invalid of string
+
+let pp_event ppf = function
+  | Key k -> Format.fprintf ppf "Key %a" Input.Keystroke.pp k
+  | Key_release r ->
+      Format.fprintf ppf "Key_release %a" Input.Keystroke.pp_release r
+  | Text s -> Format.fprintf ppf "Text %S" s
+  | Mouse m -> Format.fprintf ppf "Mouse %a" Input.Mouse_report.pp m
+  | Paste_start -> Format.pp_print_string ppf "Paste_start"
+  | Paste_data s -> Format.fprintf ppf "Paste_data %S" s
+  | Paste_end `Complete -> Format.pp_print_string ppf "Paste_end Complete"
+  | Paste_end `Cut -> Format.pp_print_string ppf "Paste_end Cut"
+  | Focus_in -> Format.pp_print_string ppf "Focus_in"
+  | Focus_out -> Format.pp_print_string ppf "Focus_out"
+  | Resize (cols, rows) -> Format.fprintf ppf "Resize %dx%d" cols rows
+  | Color_scheme `Dark -> Format.pp_print_string ppf "Color_scheme Dark"
+  | Color_scheme `Light -> Format.pp_print_string ppf "Color_scheme Light"
+  | Invalid s -> Format.fprintf ppf "Invalid %S" s
 
 module Backend = struct
   type t = {
@@ -17,7 +48,7 @@ module Backend = struct
     wake : unit -> unit;
     write_output : bytes -> int -> int -> unit;
     read_input : bytes -> int -> int -> int;
-    wait : timeout:float option -> on_event:(Input.t -> unit) -> bool;
+    wait : timeout:float option -> on_event:(event -> unit) -> bool;
     input_is_tty : bool;
     output_is_tty : bool;
     terminal_size : unit -> int * int;
@@ -25,52 +56,8 @@ module Backend = struct
     flush_input : unit -> unit;
     protect : (unit -> unit) -> unit;
     cleanup : unit -> unit;
+    env : Terminal.Caps.env;
   }
-
-  (* The runtime's protocol policy for terminal replies, handed to
-     the shared parser so every backend routes responses identically. *)
-  let dispatch_response ~terminal ~on_event = function
-    | Input.Response.Capability event -> (
-        Terminal.apply_capability_event terminal event;
-        match event with
-        | Input.Response.Color_scheme ((`Dark | `Light) as scheme) ->
-            on_event (Input.Color_scheme scheme)
-        | _ -> ())
-    | Input.Response.Clipboard _ | Input.Response.Osc _
-    | Input.Response.Unknown _ ->
-        ()
-
-  let query_cursor_position ~terminal ~parser ~timeout ~on_event t =
-    Terminal.send terminal Ansi.(to_string (query Cursor_position));
-    let result = ref None in
-    let on_response = function
-      | Input.Response.Capability (Input.Response.Cursor_position (row, col)) ->
-          result := Some (row, col)
-      | Input.Response.Capability event ->
-          Terminal.apply_capability_event terminal event
-      | Input.Response.Clipboard _ | Input.Response.Osc _
-      | Input.Response.Unknown _ ->
-          ()
-    in
-    let buf = Bytes.create 512 in
-    let deadline = t.now () +. timeout in
-    let rec loop () =
-      if Option.is_some !result then ()
-      else
-        let remaining = deadline -. t.now () in
-        if remaining > 0. then
-          if t.wait ~timeout:(Some remaining) ~on_event then (
-            match t.read_input buf 0 (Bytes.length buf) with
-            | 0 -> ()
-            | n when n < 0 -> loop ()
-            | n ->
-                Input.Parser.feed parser buf 0 n ~now:(t.now ()) ~on_event
-                  ~on_response;
-                loop ())
-          else loop ()
-    in
-    loop ();
-    !result
 end
 
 type demand = [ `Auto | `Continuous | `Paused ]
@@ -81,8 +68,8 @@ type config = {
   raw_mode : bool;
   mouse_mode : Terminal.mouse_mode option;
   bracketed_paste : bool;
-  focus_reporting : bool;
   kitty_keyboard : kitty_keyboard;
+  key_releases : bool;
   exit_on_ctrl_c : bool;
   target_fps : float option;
   explicit_width : bool;
@@ -93,19 +80,41 @@ type config = {
   pace_redraws : bool;
 }
 
+(* Queries sent together, which the terminal answers in order. A batch of
+   capability queries ends with DA1; a cursor batch is one position report,
+   its own answer. *)
+type question = Capabilities of Terminal.Caps.batch | Cursor
+
+type batch = {
+  question : question;
+  owed : Input.Decoder.owed;
+  sent : float;
+  mutable reports : int;  (** Cursor reports received. *)
+  mutable cursor : (int * int) option;  (** A cursor batch's answer. *)
+  mutable settled : bool;
+}
+
 type app = {
   terminal : Terminal.t;
-  parser : Input.Parser.t;
+  decoder : Input.Decoder.t;
   input_buffer : bytes;
-  input_ended : bool;
+  mutable input_ended : bool;
+  (* When input last arrived, from which silence is measured. *)
+  mutable last_input : float;
+  (* The round trip of the startup probe, 0 until measured. *)
+  mutable rtt : float;
+  mutable evidence : Terminal.Caps.evidence;
+  (* Batches not yet settled, oldest first. *)
+  mutable batches : batch list;
+  (* Events decoded and not yet delivered. *)
+  events : event Queue.t;
+  (* The size the last resize event reported. *)
+  mutable reported_size : int * int;
   config : config;
   backend : Backend.t;
   screen : Screen.t;
   (* One retained writer owns the complete terminal frame. *)
   submit_buf : Ansi.Writer.t;
-  (* Input events captured during startup (probe, primary anchor), replayed
-     before the first backend read. *)
-  mutable pending_startup_events : Input.t list;
   mutable running : bool;
   redraw_state : [ `Disabled | `Clean | `Dirty ] Atomic.t;
   mutable width : int;
@@ -150,7 +159,6 @@ type app = {
   mutable frame_modes_armed : bool;
   mutable live_requests : int;
   mutable restore_modes_on_next_focus : bool;
-  mutable capability_window_until : float option;
   (* Whether the current suspend left the alternate-screen buffer, so [resume]
      re-enters it. [false] outside a [~leave_alt:true] suspend. *)
   mutable suspend_left_alt : bool;
@@ -286,7 +294,7 @@ let wait_input_unix ~input_fd ~wakeup_r ~output_fd =
     if !winch_received then (
       winch_received := false;
       let cols, rows = Terminal.size output_fd in
-      on_event (Input.Resize (cols, rows)));
+      on_event (Resize (cols, rows)));
     List.mem input_fd readable
 
 let rec read_input_unix ~input_fd buf off len =
@@ -385,33 +393,215 @@ let refresh_capabilities t =
   if m <> Grid.width_method (Screen.current_grid t.screen) then
     set_width_method t m
 
-let startup_capability_window_s = 5.
+(* Input modes follow the configuration and the capabilities, and are set
+   again whenever the capabilities change: setting a mode a terminal has is
+   idempotent, so this is the difference between what the modes were and what
+   they must be. Focus, color scheme and resize reports are set without asking:
+   a terminal ignores a mode it does not have. The kitty keyboard flags are
+   pushed once the terminal has answered its query, then asked for again, so
+   that the capabilities say which flags hold. *)
 
-let capability_parser_context : Input.Parser.protocol_context =
-  {
-    kitty_keyboard = true;
-    explicit_width_cpr = true;
-    startup_cursor_cpr = true;
-    pixel_resolution = true;
-    private_capability_replies = true;
-  }
+let kitty_flags t = if t.config.key_releases then 0b11111 else 0b00101
+let keyboard_flags_query = Ansi.(to_string (query Csi_u_support))
 
-let update_capability_parser_context t ~now =
-  match t.capability_window_until with
-  | Some deadline when now <= deadline ->
-      Input.Parser.set_protocol_context t.parser capability_parser_context
-  | Some _ ->
-      t.capability_window_until <- None;
-      Input.Parser.set_protocol_context t.parser
-        Input.Parser.default_protocol_context
+let apply_modes t =
+  let terminal = t.terminal in
+  let caps = Terminal.capabilities terminal in
+  Terminal.set_mouse_mode terminal
+    (Option.value t.config.mouse_mode ~default:`Off);
+  Terminal.enable_bracketed_paste terminal t.config.bracketed_paste;
+  Terminal.enable_focus_reporting terminal true;
+  Terminal.enable_color_scheme_reports terminal true;
+  Terminal.enable_resize_reports terminal true;
+  Terminal.enable_meta_sends_escape terminal
+    (caps.meta_sends_escape = Some false);
+  let kitty =
+    t.config.kitty_keyboard = `Auto && Option.is_some caps.kitty_keyboard
+  in
+  if kitty && not (Terminal.kitty_keyboard_enabled terminal) then (
+    Terminal.enable_kitty_keyboard ~flags:(kitty_flags t) terminal true;
+    Terminal.send terminal keyboard_flags_query)
+  else if not kitty then Terminal.enable_kitty_keyboard terminal false;
+  Terminal.enable_modify_other_keys terminal (not kitty);
+  set_width_method t (width_method t)
+
+let update_capabilities t =
+  let caps = Terminal.Caps.derive t.evidence in
+  if caps <> Terminal.capabilities t.terminal then (
+    Terminal.set_capabilities t.terminal caps;
+    if t.lifecycle = `Ready then (
+      apply_modes t;
+      refresh_capabilities t;
+      force_full_redraw t;
+      request_redraw t))
+
+(* Input
+
+   The decoder holds no clock: the runtime says when the terminal has been
+   silent. Silence is measured from the last bytes read, and only a wait that
+   read nothing ends it; how long a wait must be scales with the round trip
+   of the startup probe, the time a terminal takes to write what it began. An
+   ESC that may begin a sequence waits max(50 ms, 2 RTT), the 50 ms that
+   libtermkey and neovim wait; a sequence begun, which a terminal writes
+   whole, waits max(500 ms, 4 RTT). A batch of queries is settled once, when
+   its DA1 is answered or after max(500 ms, 4 RTT). *)
+
+let silence t =
+  match Input.Decoder.pending t.decoder with
+  | Nothing -> None
+  | Ambiguous -> Some (Float.max 0.05 (2. *. t.rtt))
+  | Sequence -> Some (Float.max 0.5 (4. *. t.rtt))
+
+let expiry t = Float.max 0.5 (4. *. t.rtt)
+
+let push t event =
+  (match event with
+  | Resize (cols, rows) -> t.reported_size <- (cols, rows)
+  | _ -> ());
+  Queue.push event t.events
+
+let settle t b =
+  if not b.settled then (
+    b.settled <- true;
+    Input.Decoder.settle t.decoder b.owed;
+    t.batches <- List.filter (fun b' -> b' != b) t.batches)
+
+let send_batch t question (bytes, owed) =
+  Terminal.send t.terminal bytes;
+  Input.Decoder.expect t.decoder owed;
+  let b =
+    {
+      question;
+      owed;
+      sent = now t;
+      reports = 0;
+      cursor = None;
+      settled = false;
+    }
+  in
+  t.batches <- t.batches @ [ b ];
+  b
+
+let ask t batch =
+  ignore
+    (send_batch t (Capabilities batch) (Terminal.Caps.ask t.evidence batch)
+      : batch)
+
+let ask_cursor t =
+  send_batch t Cursor
+    ( Ansi.(to_string (query Cursor_position)),
+      { Input.Decoder.cursor_reports = 1; string_replies = 0 } )
+
+(* A cursor report answers the oldest batch still owed one. *)
+let cursor_report t ~row ~col =
+  match
+    List.find_opt
+      (fun b -> b.reports < b.owed.Input.Decoder.cursor_reports)
+      t.batches
+  with
   | None -> ()
+  | Some b -> (
+      let index = b.reports in
+      b.reports <- index + 1;
+      match b.question with
+      | Capabilities q ->
+          t.evidence <- Terminal.Caps.cursor t.evidence q ~index ~row ~col
+      | Cursor ->
+          b.cursor <- Some (row, col);
+          settle t b)
 
-let refresh_after_capability_change t before =
-  let after = Terminal.capabilities t.terminal in
-  if after <> before then (
-    refresh_capabilities t;
-    force_full_redraw t;
-    request_redraw t)
+(* A DA1 reply ends the oldest batch that asked for one. *)
+let attributes_report t attributes =
+  match
+    List.find_opt
+      (fun b ->
+        match b.question with Capabilities _ -> true | Cursor -> false)
+      t.batches
+  with
+  | Some ({ question = Capabilities q; _ } as b) ->
+      settle t b;
+      if q = Probe then t.rtt <- now t -. b.sent;
+      t.evidence <- Terminal.Caps.answered t.evidence q ~attributes;
+      Option.iter (ask t) (Terminal.Caps.next t.evidence q)
+  | Some { question = Cursor; _ } | None -> ()
+
+let reply t (r : Input.Reply.t) =
+  (match r with
+  | Cursor { row; col } -> cursor_report t ~row ~col
+  | Primary_attributes attributes -> attributes_report t attributes
+  | Color_scheme scheme -> push t (Color_scheme scheme)
+  | Resize { rows; cols; height; width } ->
+      Terminal.set_pixel_resolution t.terminal (Some (width, height));
+      (* The report often follows the window-size signal of the same resize,
+         and comes once when the mode is set. *)
+      if t.reported_size <> (cols, rows) then push t (Resize (cols, rows))
+  | Text_area_pixels { height; width } ->
+      Terminal.set_pixel_resolution t.terminal (Some (width, height))
+  | r -> t.evidence <- Terminal.Caps.add t.evidence r);
+  update_capabilities t
+
+let decoded t : Input.Decoder.event -> unit = function
+  | Reply r -> reply t r
+  | Key k -> push t (Key k)
+  | Key_release r -> push t (Key_release r)
+  | Text s -> push t (Text s)
+  | Mouse m -> push t (Mouse m)
+  | Focus_in -> push t Focus_in
+  | Focus_out -> push t Focus_out
+  | Paste_start -> push t Paste_start
+  | Paste_data s -> push t (Paste_data s)
+  | Paste_end ending -> push t (Paste_end ending)
+  | Invalid s -> push t (Invalid s)
+
+let expire t =
+  let now = now t and expiry = expiry t in
+  List.iter (fun b -> if now >= b.sent +. expiry then settle t b) t.batches
+
+(* The time until the input needs attention, as a timeout. *)
+let input_timeout t =
+  let now = now t in
+  let after deadline = Some (Float.max 0. (deadline -. now)) in
+  let silence =
+    Option.bind (silence t) (fun wait -> after (t.last_input +. wait))
+  in
+  match t.batches with
+  | [] -> silence
+  | b :: _ -> (
+      let expiry = after (b.sent +. expiry t) in
+      match (silence, expiry) with
+      | Some a, Some b -> Some (Float.min a b)
+      | None, x | x, None -> x)
+
+(* Waits for input at most [timeout], passing the backend's own events to
+   [native], and decodes what came. A wait that read nothing is silence,
+   which decides what the decoder holds once it has lasted. *)
+let read_input t ~timeout ~native =
+  let ready = t.backend.wait ~timeout ~on_event:native in
+  let n =
+    if ready && (not t.input_ended) && t.lifecycle <> `Closed then
+      t.backend.read_input t.input_buffer 0 (Bytes.length t.input_buffer)
+    else -1
+  in
+  (if n = 0 then (
+     t.input_ended <- true;
+     Input.Decoder.finish t.decoder (decoded t))
+   else if n > 0 then (
+     t.last_input <- now t;
+     Input.Decoder.feed t.decoder t.input_buffer ~off:0 ~len:n (decoded t))
+   else
+     match silence t with
+     | Some wait when now t >= t.last_input +. wait ->
+         Input.Decoder.idle t.decoder (decoded t)
+     | _ -> ());
+  expire t
+
+(* Reads input until [b] is settled or the input ends. *)
+let await t b =
+  while (not b.settled) && not t.input_ended do
+    read_input t ~timeout:(input_timeout t) ~native:(push t)
+  done
+
+let abort_paste t = Input.Decoder.cut_paste t.decoder (decoded t)
 
 (* Adopts a primary layout transition: its operations go out with the next
    frame, and a frame after operations or a move of the live region redraws
@@ -531,7 +721,6 @@ let set_scroll_hint t hint = t.scroll_hint <- Some hint
 let apply_config t =
   refresh_capabilities t;
   let terminal = t.terminal in
-  let caps = Terminal.capabilities terminal in
   t.backend.set_raw_mode t.config.raw_mode;
   if t.config.mode = `Alt then (
     Terminal.enter_alternate_screen terminal;
@@ -539,19 +728,7 @@ let apply_config t =
     Screen.set_cursor t.screen { cursor with visible = false })
   else Terminal.leave_alternate_screen terminal;
   t.force_full_next_frame <- true;
-  (match t.config.mouse_mode with
-  | Some mode -> Terminal.set_mouse_mode terminal mode
-  | None -> Terminal.set_mouse_mode terminal `Off);
-  Terminal.enable_bracketed_paste terminal t.config.bracketed_paste;
-  Terminal.enable_focus_reporting terminal
-    (caps.focus_tracking && t.config.focus_reporting);
-  (match t.config.kitty_keyboard with
-  | `Disabled -> Terminal.enable_kitty_keyboard terminal false
-  | `Auto -> Terminal.enable_kitty_keyboard terminal caps.kitty_keyboard
-  | `Enabled flags -> Terminal.enable_kitty_keyboard ~flags terminal true);
-  Terminal.enable_modify_other_keys terminal
-    (not (Terminal.kitty_keyboard_enabled terminal));
-  set_width_method t (width_method t);
+  apply_modes t;
   refresh_render_region t
 
 (* Lifecycle: Prepare / Grid / Submit *)
@@ -773,17 +950,13 @@ let reanchor t =
   match t.cursor_live_row with
   | None -> ()
   | Some live_row -> (
-      match
-        Backend.query_cursor_position ~terminal:t.terminal ~parser:t.parser
-          ~timeout:0.1
-          ~on_event:(fun event ->
-            t.pending_startup_events <- t.pending_startup_events @ [ event ])
-          t.backend
-      with
+      let b = ask_cursor t in
+      await t b;
+      match b.cursor with
       | Some (row, _) ->
           (* The planned operations assumed the rows had not moved. *)
           t.layout_ops <- [];
-          relayout t (Primary.anchor t.primary ~row:(row - live_row) ~col:1);
+          relayout t (Primary.anchor t.primary ~row:(row + 1 - live_row) ~col:1);
           sync_primary_layout t ~resize:true
       | None -> ())
 
@@ -819,7 +992,9 @@ let suspend ?(leave_alt = false) t =
     Atomic.set t.redraw_state `Disabled;
     t.lifecycle <- `Suspended;
     update_cadence t;
-    Input.Parser.reset t.parser;
+    (* A paste the application has begun to receive ends. *)
+    Input.Decoder.cut_paste t.decoder (decoded t);
+    Input.Decoder.reset t.decoder;
     force_full_redraw t;
     (* The suspended program owns the terminal; whatever cursor state it leaves
        behind is unknown, so the first frame after resume must re-emit. *)
@@ -836,6 +1011,9 @@ let suspend ?(leave_alt = false) t =
     (try Terminal.enable_focus_reporting t.terminal false with _ -> ());
     (try Terminal.enable_kitty_keyboard t.terminal false with _ -> ());
     (try Terminal.enable_modify_other_keys t.terminal false with _ -> ());
+    (try Terminal.enable_color_scheme_reports t.terminal false with _ -> ());
+    (try Terminal.enable_resize_reports t.terminal false with _ -> ());
+    (try Terminal.enable_meta_sends_escape t.terminal false with _ -> ());
     (try t.backend.set_raw_mode false with _ -> ());
     t.suspend_left_alt <- leave_alt;
     (if leave_alt then
@@ -847,27 +1025,33 @@ let resume t =
   else (
     (if t.config.raw_mode then try t.backend.set_raw_mode true with _ -> ());
     (try t.backend.flush_input () with _ -> ());
-    Input.Parser.reset t.parser;
+    Input.Decoder.reset t.decoder;
     if t.suspend_left_alt then (
       t.suspend_left_alt <- false;
       try Terminal.enter_alternate_screen t.terminal with _ -> ());
-    (if t.config.mode = `Primary then
-       match
-         Backend.query_cursor_position ~terminal:t.terminal ~parser:t.parser
-           ~timeout:0.1
-           ~on_event:(function
-             | Input.Resize _ as event ->
-                 t.pending_startup_events <-
-                   t.pending_startup_events @ [ event ]
-             | _ -> ())
-           t.backend
-       with
-       | Some (row, col) ->
-           (* What the suspended program left on the screen voids the
+    if t.config.mode = `Primary && can_query_cursor t then (
+      (* Input read while waiting is stale, but for resizes. *)
+      let kept = Queue.length t.events in
+      let b = ask_cursor t in
+      await t b;
+      let stale = Queue.create () in
+      Queue.transfer t.events stale;
+      ignore
+        (Queue.fold
+           (fun i event ->
+             (match event with
+             | Resize _ -> Queue.push event t.events
+             | _ -> if i < kept then Queue.push event t.events);
+             i + 1)
+           0 stale
+          : int);
+      match b.cursor with
+      | Some (row, col) ->
+          (* What the suspended program left on the screen voids the
               operations planned before it ran. *)
-           t.layout_ops <- [];
-           relayout t (Primary.anchor t.primary ~row ~col)
-       | None -> ());
+          t.layout_ops <- [];
+          relayout t (Primary.anchor t.primary ~row:(row + 1) ~col:(col + 1))
+      | None -> ());
     force_full_redraw t;
     apply_config t;
     Grid.clear (Screen.next_grid t.screen);
@@ -969,38 +1153,30 @@ let adjust_event_for_offset t =
     let map_y = Primary.map_mouse_y t.primary in
     fun event ->
       match event with
-      | Input.Mouse mouse ->
-          Input.Mouse { mouse with Input.Mouse.y = map_y mouse.y }
+      | Mouse mouse -> Mouse { mouse with y = map_y mouse.y }
       | event -> event
+
+(* Ctrl+C, pressed: a release never closes, and Shift is consumed into the
+   key under the kitty protocol's alternate keys. *)
+let is_ctrl_c (k : Input.Keystroke.t) =
+  k.mods.ctrl
+  && (k.key = Char (Uchar.of_char 'c') || k.key = Char (Uchar.of_char 'C'))
 
 let classify_event t evt =
   match evt with
-  | Input.Resize (cols, rows) ->
+  | Resize (cols, rows) ->
       handle_resize t cols rows;
       Some (`Resize (cols, rows))
-  | Input.Focus ->
+  | Focus_in ->
       if t.restore_modes_on_next_focus && t.lifecycle = `Ready then (
         t.restore_modes_on_next_focus <- false;
         Terminal.restore_modes t.terminal);
-      let adjusted = adjust_event_for_offset t evt in
-      Some (`Input adjusted)
-  | Input.Blur ->
+      Some (`Input evt)
+  | Focus_out ->
       t.restore_modes_on_next_focus <- true;
-      let adjusted = adjust_event_for_offset t evt in
-      Some (`Input adjusted)
-  | evt ->
-      let adjusted = adjust_event_for_offset t evt in
-      if t.config.exit_on_ctrl_c then
-        match adjusted with
-        | Input.Key { key = Input.Key.Char u; modifier; _ } ->
-            let cp = Uchar.to_int u in
-            if
-              (modifier.ctrl && (cp = Char.code 'c' || cp = Char.code 'C'))
-              || cp = 0x03
-            then None
-            else Some (`Input adjusted)
-        | _ -> Some (`Input adjusted)
-      else Some (`Input adjusted)
+      Some (`Input evt)
+  | Key k when t.config.exit_on_ctrl_c && is_ctrl_c k -> None
+  | evt -> Some (`Input (adjust_event_for_offset t evt))
 
 (* Close *)
 
@@ -1041,14 +1217,14 @@ let close t =
 
 let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(mouse_enabled = true) ?(mouse = None) ?(bracketed_paste = true)
-    ?(focus_reporting = true) ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true)
+    ?(kitty_keyboard = `Auto) ?(key_releases = false) ?(exit_on_ctrl_c = true)
     ?(debug_overlay = false) ?(debug_overlay_corner = `Bottom_right)
     ?(debug_overlay_capacity = 120) ?(frame_dump_every = 0) ?frame_dump_dir
     ?frame_dump_pattern ?(frame_dump_hits = false)
     ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
     ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(min_tui_height = 1)
-    ?(start_idle = false) ?(pace_redraws = true) ?initial_caps
-    ~(backend : Backend.t) () =
+    ?(start_idle = false) ?(pace_redraws = true) ?caps ~(backend : Backend.t) ()
+    =
   let config =
     let effective_mouse_mode =
       if mouse_enabled then Some (Option.value ~default:`Sgr_any mouse)
@@ -1059,8 +1235,8 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       raw_mode;
       mouse_mode = effective_mouse_mode;
       bracketed_paste;
-      focus_reporting;
       kitty_keyboard;
+      key_releases;
       exit_on_ctrl_c;
       target_fps;
       explicit_width;
@@ -1071,14 +1247,19 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       pace_redraws;
     }
   in
+  let evidence =
+    match caps with
+    | Some caps -> Terminal.Caps.assume caps
+    | None -> Terminal.Caps.evidence backend.env
+  in
   let terminal =
     with_rollback
       ~rollback:(fun () -> backend.protect backend.cleanup)
       (fun () ->
-        Terminal.make ~tty:backend.output_is_tty ?initial_caps
+        Terminal.make ~tty:backend.output_is_tty
           ~output:(fun s ->
             backend.write_output (Bytes.unsafe_of_string s) 0 (String.length s))
-          ())
+          (Terminal.Caps.derive evidence))
   in
   let app_ref = ref None in
   let rollback () =
@@ -1091,70 +1272,36 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
             backend.cleanup ())
   in
   with_rollback ~rollback (fun () ->
-      let parser = Input.Parser.create () in
-      let input_ended = ref false in
-      let read_input buf off len =
-        let n = if !input_ended then 0 else backend.read_input buf off len in
-        if n = 0 then input_ended := true;
-        n
-      in
-      if backend.input_is_tty && raw_mode then backend.set_raw_mode true;
-      let startup_events = ref [] in
-      let queue_startup_event event =
-        startup_events := event :: !startup_events
-      in
-      if backend.input_is_tty && raw_mode then
-        Terminal.probe ~timeout:0.5 ~now:backend.now
-          ~on_event:queue_startup_event ~read_into:read_input
-          ~wait_readable:(fun ~timeout ->
-            backend.wait ~timeout:(Some timeout) ~on_event:queue_startup_event)
-          ~parser terminal;
       let cols, rows = backend.terminal_size () in
-      let width = max 1 cols in
-      let height = max 1 rows in
-      let primary =
-        Primary.create ~terminal_height:height
-          ~min_live_height:config.min_tui_height
+      let width = max 1 cols and height = max 1 rows in
+      let screen =
+        Screen.create ~cursor_visible ~explicit_width:config.explicit_width
+          ~clock:backend.now ()
       in
-      let anchored =
-        if
-          mode = `Primary && backend.input_is_tty && raw_mode
-          && not !input_ended
-        then
-          Option.map
-            (fun (row, col) -> Primary.anchor primary ~row ~col)
-            (Backend.query_cursor_position ~terminal ~parser ~timeout:0.1
-               ~on_event:queue_startup_event
-               { backend with read_input })
-        else None
-      in
-      let primary, layout_ops = Option.value anchored ~default:(primary, []) in
       let app =
-        let screen =
-          Screen.create ~cursor_visible ~explicit_width:config.explicit_width
-            ~clock:backend.now ()
-        in
-        let capability_window_until =
-          if config.raw_mode && Terminal.tty terminal then
-            Some (backend.now () +. startup_capability_window_s)
-          else None
-        in
         {
           terminal;
-          parser;
+          decoder = Input.Decoder.create ();
           input_buffer = Bytes.create 4096;
-          input_ended = !input_ended;
+          input_ended = false;
+          last_input = backend.now ();
+          rtt = 0.;
+          evidence;
+          batches = [];
+          events = Queue.create ();
+          reported_size = (width, height);
           config;
           backend;
           screen;
           submit_buf = Ansi.Writer.create 4096;
-          pending_startup_events = List.rev !startup_events;
           running = true;
           redraw_state = Atomic.make `Clean;
           width;
           height;
-          primary;
-          layout_ops;
+          primary =
+            Primary.create ~terminal_height:height
+              ~min_live_height:config.min_tui_height;
+          layout_ops = [];
           cursor_live_row = None;
           reanchor = false;
           scroll_hint = None;
@@ -1177,7 +1324,8 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           frame_dump_pattern;
           frame_dump_hits;
           frame_dump_counter = 0;
-          lifecycle = `Ready;
+          (* Startup applies no mode until the configuration is applied. *)
+          lifecycle = `Suspended;
           frame_modes_armed = false;
           demand =
             (if start_idle then `Auto
@@ -1187,11 +1335,38 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
                | _ -> `Auto);
           live_requests = 0;
           restore_modes_on_next_focus = false;
-          capability_window_until;
           suspend_left_alt = false;
         }
       in
       app_ref := Some app;
+      (* A terminal answers queries only on a raw input: the probe waits for
+         its answers, input that comes meanwhile is kept for the run. *)
+      if backend.input_is_tty && raw_mode then (
+        backend.set_raw_mode true;
+        let probe =
+          send_batch app (Capabilities Probe)
+            (Terminal.Caps.ask app.evidence Probe)
+        in
+        await app probe;
+        let cols, rows = backend.terminal_size () in
+        app.width <- max 1 cols;
+        app.height <- max 1 rows;
+        app.reported_size <- (app.width, app.height);
+        app.primary <-
+          Primary.create ~terminal_height:app.height
+            ~min_live_height:config.min_tui_height;
+        if mode = `Primary && not app.input_ended then (
+          let b = ask_cursor app in
+          await app b;
+          Option.iter
+            (fun (row, col) ->
+              let primary, ops =
+                Primary.anchor app.primary ~row:(row + 1) ~col:(col + 1)
+              in
+              app.primary <- primary;
+              app.layout_ops <- ops)
+            b.cursor));
+      app.lifecycle <- `Ready;
       apply_config app;
       Terminal.query_pixel_resolution terminal;
       app)
@@ -1200,14 +1375,14 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
 
 let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(mouse_enabled = true) ?(mouse = None) ?(bracketed_paste = true)
-    ?(focus_reporting = true) ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true)
+    ?(kitty_keyboard = `Auto) ?(key_releases = false) ?(exit_on_ctrl_c = true)
     ?(debug_overlay = false) ?(debug_overlay_corner = `Bottom_right)
     ?(debug_overlay_capacity = 120) ?(frame_dump_every = 0) ?frame_dump_dir
     ?frame_dump_pattern ?(frame_dump_hits = false)
     ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
     ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(output = `Stdout)
-    ?(signal_handlers = true) ?initial_caps ?(min_tui_height = 1)
-    ?(start_idle = false) ?(pace_redraws = true) () =
+    ?(signal_handlers = true) ?caps ?(min_tui_height = 1) ?(start_idle = false)
+    ?(pace_redraws = true) () =
   let output_fd = match output with `Stdout -> Unix.stdout | `Fd fd -> fd in
   let input_fd = Unix.stdin in
   let output_is_tty = Terminal.is_tty output_fd in
@@ -1278,15 +1453,16 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
             (fun () -> if input_is_tty then Terminal.flush_input input_fd);
           protect = (fun f -> f ());
           cleanup = cleanup_backend;
+          env = Terminal.Caps.env Sys.getenv_opt ~win32:Sys.win32;
         }
       in
       let app =
         attach ~mode ~raw_mode ~target_fps ~mouse_enabled ~mouse
-          ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
+          ~bracketed_paste ~kitty_keyboard ~key_releases ~exit_on_ctrl_c
           ~debug_overlay ~debug_overlay_corner ~debug_overlay_capacity
           ~frame_dump_every ?frame_dump_dir ?frame_dump_pattern ~frame_dump_hits
-          ~cursor_visible ~explicit_width ~input_timeout ~resize_debounce
-          ?initial_caps ~min_tui_height ~start_idle ~pace_redraws ~backend ()
+          ~cursor_visible ~explicit_width ~input_timeout ~resize_debounce ?caps
+          ~min_tui_height ~start_idle ~pace_redraws ~backend ()
       in
       app_ref := Some app;
       let shutdown_fn () = close app in
@@ -1348,13 +1524,7 @@ let compute_timeout t ~now =
         if dt <= 0. then Some 0. else Some dt
     | None -> None
   in
-  let parser_timeout =
-    match Input.Parser.deadline t.parser with
-    | Some dl ->
-        let dt = dl -. now in
-        if dt <= 0. then Some 0. else Some dt
-    | None -> None
-  in
+  let input_timeout = input_timeout t in
   let redraw_timeout =
     if redraw_requested t && not (cadence_active t) then
       if not t.config.pace_redraws then Some 0.
@@ -1369,7 +1539,7 @@ let compute_timeout t ~now =
     (min_timeout wakeup_timeout
        (min_timeout
           (min_timeout deadline_timeout t.config.input_timeout)
-          (min_timeout pending_timeout parser_timeout)))
+          (min_timeout pending_timeout input_timeout)))
 
 let should_render_now t ~now =
   render_eligible t
@@ -1422,53 +1592,20 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
       | None -> close t
       | Some (`Resize (cols, rows)) ->
           notify_resize ~initial:false;
-          Option.iter (fun f -> f t (Input.Resize (cols, rows))) on_input;
+          Option.iter (fun f -> f t (Resize (cols, rows))) on_input;
           request_redraw t
       | Some (`Input event) ->
           Option.iter (fun f -> f t event) on_input;
           request_redraw t
   in
-  (* Built once: [handle_event] is stable for the whole run, so allocating the
-     response dispatcher per read would be pure per-iteration churn. *)
-  let on_response =
-    Backend.dispatch_response ~terminal:t.terminal ~on_event:handle_event
-  in
-  let read_events ~now ~timeout =
-    update_capability_parser_context t ~now;
-    let caps_before = Terminal.capabilities t.terminal in
-    let result =
-      match t.pending_startup_events with
-      | [] ->
-          if t.input_ended then `End
-          else
-            let ready = t.backend.wait ~timeout ~on_event:handle_event in
-            if t.lifecycle = `Closed then `Continue
-            else
-              let n =
-                if ready then
-                  t.backend.read_input t.input_buffer 0
-                    (Bytes.length t.input_buffer)
-                else -1
-              in
-              if n = 0 then `End
-              else (
-                if n > 0 then
-                  Input.Parser.feed t.parser t.input_buffer 0 n
-                    ~now:(t.backend.now ()) ~on_event:handle_event ~on_response;
-                Input.Parser.drain t.parser ~now:(t.backend.now ())
-                  ~on_event:handle_event ~on_response;
-                `Continue)
-      | events ->
-          t.pending_startup_events <- [];
-          List.iter handle_event events;
-          `Continue
-    in
-    refresh_after_capability_change t caps_before;
-    match result with
-    | `Continue -> ()
-    | `End ->
-        Input.Parser.finish t.parser ~on_event:handle_event;
-        close t
+  (* Events decoded before the run, during startup, are delivered first. *)
+  let read_events ~timeout =
+    if Queue.is_empty t.events && not t.input_ended then
+      read_input t ~timeout ~native:handle_event;
+    while not (Queue.is_empty t.events) do
+      handle_event (Queue.pop t.events)
+    done;
+    if t.input_ended && t.lifecycle <> `Closed then close t
   in
 
   let rec loop last_time =
@@ -1513,11 +1650,11 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
              | None -> Some render_end
            else None);
         let timeout = compute_timeout t ~now:render_end in
-        if t.running then read_events ~now:render_end ~timeout;
+        if t.running then read_events ~timeout;
         loop last_time)
       else
         let timeout = compute_timeout t ~now in
-        if t.running then read_events ~now ~timeout;
+        if t.running then read_events ~timeout;
         loop last_time)
   in
   let start_time = t.backend.now () in

@@ -239,6 +239,7 @@ module Sub = struct
     | On_tick of string * (dt:float -> 'msg)
     | On_key of (Event.key -> 'msg option)
     | On_key_all of (Event.key -> 'msg option)
+    | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
     | On_mouse of (Event.mouse -> 'msg option)
     | On_mouse_all of (Event.mouse -> 'msg option)
     | On_paste of (Event.paste -> 'msg option)
@@ -271,6 +272,7 @@ module Sub = struct
         message)
 
   let on_key_all f = On_key_all f
+  let on_key_release f = On_key_release f
   let on_mouse f = On_mouse f
   let on_mouse_all f = On_mouse_all f
   let on_paste f = On_paste f
@@ -288,6 +290,7 @@ module Sub = struct
     | On_tick (id, g) -> On_tick (id, fun ~dt -> f (g ~dt))
     | On_key g -> On_key (fun ev -> Option.map f (g ev))
     | On_key_all g -> On_key_all (fun ev -> Option.map f (g ev))
+    | On_key_release g -> On_key_release (fun ev -> Option.map f (g ev))
     | On_mouse g -> On_mouse (fun ev -> Option.map f (g ev))
     | On_mouse_all g -> On_mouse_all (fun ev -> Option.map f (g ev))
     | On_paste g -> On_paste (fun ev -> Option.map f (g ev))
@@ -355,6 +358,8 @@ type ('model, 'msg) runtime = {
   renderer : Renderer.t;
   reconciler : Reconciler.t;
   mutable key_subs : (bool * (Event.key -> 'msg option)) list;
+  mutable key_release_subs :
+    (Matrix.Input.Keystroke.release -> 'msg option) list;
   mutable mouse_subs : (bool * (Event.mouse -> 'msg option)) list;
   mutable paste_subs : (bool * (Event.paste -> 'msg option)) list;
   mutable resize_sub : (width:int -> height:int -> 'msg) list;
@@ -364,6 +369,8 @@ type ('model, 'msg) runtime = {
   mutable blur_sub : 'msg list;
   mutable color_scheme_sub : ([ `Dark | `Light ] -> 'msg option) list;
   mutable sub_live_active : bool;
+  (* The bracketed paste being received, assembled for the widgets. *)
+  mutable paste : Buffer.t option;
 }
 
 (* Push [msg] and wake the loop. Safe from any thread: the CAS retries until
@@ -457,6 +464,8 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   | Sub.On_tick (id, f) -> runtime.tick_sub <- (id, f) :: runtime.tick_sub
   | Sub.On_key f -> runtime.key_subs <- (false, f) :: runtime.key_subs
   | Sub.On_key_all f -> runtime.key_subs <- (true, f) :: runtime.key_subs
+  | Sub.On_key_release f ->
+      runtime.key_release_subs <- f :: runtime.key_release_subs
   | Sub.On_mouse f -> runtime.mouse_subs <- (false, f) :: runtime.mouse_subs
   | Sub.On_mouse_all f -> runtime.mouse_subs <- (true, f) :: runtime.mouse_subs
   | Sub.On_paste f -> runtime.paste_subs <- (false, f) :: runtime.paste_subs
@@ -483,6 +492,7 @@ let arm_every_wakeup runtime =
 let update_subscriptions runtime =
   let prev_every = runtime.every_subs in
   runtime.key_subs <- [];
+  runtime.key_release_subs <- [];
   runtime.mouse_subs <- [];
   runtime.paste_subs <- [];
   runtime.resize_sub <- [];
@@ -493,6 +503,7 @@ let update_subscriptions runtime =
   runtime.color_scheme_sub <- [];
   collect_subs runtime (runtime.app.subscriptions runtime.model);
   runtime.key_subs <- List.rev runtime.key_subs;
+  runtime.key_release_subs <- List.rev runtime.key_release_subs;
   runtime.mouse_subs <- List.rev runtime.mouse_subs;
   runtime.paste_subs <- List.rev runtime.paste_subs;
   runtime.resize_sub <- List.rev runtime.resize_sub;
@@ -651,29 +662,47 @@ let handle_every_subs runtime =
         else timer)
       runtime.every_subs
 
-let handle_input runtime input =
+let dispatch_paste runtime text =
+  ignore
+    (Renderer.dispatch_paste ~capture:(handle_paste runtime) runtime.renderer
+       text
+      : Event.paste)
+
+(* A paste arrives in pieces and reaches widgets whole, once it completes; a
+   cut paste is dropped. Text a terminal reports without a key, such as an
+   input method's, is inserted as a paste is. *)
+let handle_input runtime (input : Matrix.event) =
   synchronize runtime;
   (match input with
-  | Matrix.Input.Focus -> List.iter (deliver runtime) runtime.focus_sub
-  | Matrix.Input.Blur -> List.iter (deliver runtime) runtime.blur_sub
-  | Matrix.Input.Color_scheme scheme ->
+  | Focus_in -> List.iter (deliver runtime) runtime.focus_sub
+  | Focus_out -> List.iter (deliver runtime) runtime.blur_sub
+  | Color_scheme scheme ->
       List.iter
         (fun f -> Option.iter (deliver runtime) (f scheme))
         runtime.color_scheme_sub
-  | Matrix.Input.Key key_event ->
+  | Key key_event ->
       ignore
         (Renderer.dispatch_key ~capture:(handle_key runtime) runtime.renderer
            key_event
           : Event.key)
-  | Matrix.Input.Mouse mouse_event ->
+  | Key_release release ->
+      List.iter
+        (fun f -> Option.iter (deliver runtime) (f release))
+        runtime.key_release_subs
+  | Mouse mouse_event ->
       let event = Renderer.dispatch_mouse runtime.renderer mouse_event in
       handle_mouse runtime event
-  | Matrix.Input.Paste text ->
-      ignore
-        (Renderer.dispatch_paste ~capture:(handle_paste runtime)
-           runtime.renderer text
-          : Event.paste)
-  | _ -> ());
+  | Paste_start -> runtime.paste <- Some (Buffer.create 256)
+  | Paste_data data ->
+      Option.iter (fun b -> Buffer.add_string b data) runtime.paste
+  | Paste_end `Complete ->
+      Option.iter
+        (fun b -> dispatch_paste runtime (Buffer.contents b))
+        runtime.paste;
+      runtime.paste <- None
+  | Paste_end `Cut -> runtime.paste <- None
+  | Text text -> dispatch_paste runtime text
+  | Resize _ | Invalid _ -> ());
   synchronize runtime
 
 let render runtime = synchronize runtime
@@ -752,6 +781,8 @@ let run ?matrix
       key_subs = [];
       mouse_subs = [];
       paste_subs = [];
+      key_release_subs = [];
+      paste = None;
       resize_sub = [];
       tick_sub = [];
       every_subs = [];
@@ -999,7 +1030,7 @@ let button ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     if
       (not disabled)
       && (not (Event.Key.default_prevented event))
-      && (Event.Key.data event).event_type = Matrix.Input.Key.Press
+      && (not (Event.Key.data event).repeat)
       && (Shortcut.matches Shortcut.enter event
          || Shortcut.matches Shortcut.space event)
     then begin

@@ -154,12 +154,12 @@ let%expect_test "accepted scrolling leaves follow until the model follows again"
   in
   show "initial tail" (view 12);
   focus app (mounted app);
-  send_key app Matrix_input.Key.Page_up;
+  send_key app Matrix_input.Keystroke.Page_up;
   show "page up" (view 12);
   show "append stays parked" (view 16);
   scroll := Scroll.follow `Bottom !scroll;
   show "model follows again" (view 16);
-  send_key app Matrix_input.Key.Page_up;
+  send_key app Matrix_input.Keystroke.Page_up;
   show "manual page after following" (view 16);
   show "accepted position stays parked" (view 20);
   scroll := Scroll.follow `Bottom !scroll;

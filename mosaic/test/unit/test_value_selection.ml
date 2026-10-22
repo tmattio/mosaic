@@ -52,9 +52,18 @@ let tree ?key ~equal:_ ~selected values =
 
 let widgets =
   [
-    ("select", select ?key:None, Matrix_input.Key.Down, Matrix_input.Key.Up);
-    ("tabs", tabs ?key:None, Matrix_input.Key.Right, Matrix_input.Key.Left);
-    ("table", table ?key:None, Matrix_input.Key.Down, Matrix_input.Key.Up);
+    ( "select",
+      select ?key:None,
+      Matrix_input.Keystroke.Down,
+      Matrix_input.Keystroke.Up );
+    ( "tabs",
+      tabs ?key:None,
+      Matrix_input.Keystroke.Right,
+      Matrix_input.Keystroke.Left );
+    ( "table",
+      table ?key:None,
+      Matrix_input.Keystroke.Down,
+      Matrix_input.Keystroke.Up );
   ]
 
 let fixture build =
@@ -78,7 +87,7 @@ let fixture build =
   in
   let key key =
     ignore
-      (Renderer.dispatch_key renderer (Matrix_input.Key.make key) : Event.key)
+      (Renderer.dispatch_key renderer (Test_harness.keystroke key) : Event.key)
   in
   let take () =
     let result = List.rev !messages in
@@ -125,9 +134,7 @@ let viewport_fixture build =
   let wheel direction =
     ignore
       (Renderer.dispatch_mouse renderer
-         (Matrix_input.Mouse.make ~x:2 ~y:2
-            ~modifiers:Matrix_input.Modifier.none
-            (Scroll { direction; delta = 1 }))
+         (Test_harness.mouse_report ~x:2 ~y:2 (Scroll direction))
         : Event.mouse);
     let proposed = !messages in
     messages := [];
@@ -142,7 +149,7 @@ let viewport_follows_value ~wheel_proposes build =
   let shown = render ~key:"a" "v15" in
   equal ~msg:"remounted widget keeps its viewport" string shown
     (render ~key:"b" "v15");
-  let proposed = wheel Matrix_input.Mouse.Scroll_down in
+  let proposed = wheel `Down in
   equal ~msg:"rejected wheel proposal does not scroll" string shown
     (render ~key:"b" "v15");
   if wheel_proposes then begin
@@ -263,10 +270,7 @@ let table_press_reconciliation ~trigger ~replacement expected =
   render (Some [ "A"; "B" ]);
   Renderer.render_frame renderer ~width:24 ~height:6 ~delta:0.;
   ignore (Renderer.render ~full:true renderer : string);
-  let mouse =
-    Matrix_input.Mouse.make ~x:1 ~y:1 ~modifiers:Matrix_input.Modifier.none
-      (Down { button = Left })
-  in
+  let mouse = Test_harness.mouse_report ~x:1 ~y:1 (Press Left) in
   ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   equal (list string) expected (List.rev !messages)
 

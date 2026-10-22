@@ -559,9 +559,8 @@ let rtrim s =
 
 let capabilities case : Matrix.Terminal.capabilities =
   {
-    term = "xterm-256color";
     rgb = true;
-    kitty_keyboard = false;
+    kitty_keyboard = None;
     kitty_graphics = false;
     bracketed_paste = false;
     focus_tracking = false;
@@ -578,6 +577,9 @@ let capabilities case : Matrix.Terminal.capabilities =
     sixel = false;
     sync = case.sync;
     hyperlinks = true;
+    meta_sends_escape = None;
+    multiplexer = None;
+    identity = None;
   }
 
 type run = {
@@ -759,7 +761,7 @@ let start_frame r app ~on_event (frame : frame) =
       Vte.resize r.vte ~rows ~cols;
       r.pushed <- r.pushed + max 0 (Vte.scrollback_size r.vte - before);
       r.size <- (cols, rows);
-      on_event (Matrix.Input.Resize (cols, rows))
+      on_event (Matrix.Resize (cols, rows))
   | _ -> ());
   Option.iter
     (fun { leave_alt; child } ->
@@ -911,14 +913,14 @@ let run_case case =
       flush_input = ignore;
       protect = (fun f -> f ());
       cleanup = ignore;
+      env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
     }
   in
   let app =
     Matrix.attach ~mode:case.mode ~target_fps:None ~mouse_enabled:false
-      ~bracketed_paste:false ~focus_reporting:false ~kitty_keyboard:`Disabled
-      ~exit_on_ctrl_c:false ~input_timeout:None ~resize_debounce:None
-      ~min_tui_height:case.min_live ~pace_redraws:false
-      ~initial_caps:(capabilities case) ~backend ()
+      ~bracketed_paste:false ~kitty_keyboard:`Off ~exit_on_ctrl_c:false
+      ~input_timeout:None ~resize_debounce:None ~min_tui_height:case.min_live
+      ~pace_redraws:false ~caps:(capabilities case) ~backend ()
   in
   r.app <- Some app;
   Matrix.run app

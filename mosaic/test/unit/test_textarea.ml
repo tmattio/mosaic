@@ -92,14 +92,14 @@ let render_textarea ta ~width ~height =
   Renderable.Private.render_full node ~grid ~delta:0.;
   grid
 
-let no_mod = Matrix_input.Modifier.none
+let no_mod = Matrix_input.Keystroke.no_mods
 
-let send_key ta key =
-  let ev = Event.Key.of_input (Matrix_input.Key.make key) in
+let send_key ?keypad ta key =
+  let ev = Event.Key.of_input (Test_harness.keystroke ?keypad key) in
   Renderable.Private.emit_default_key (Textarea.node ta) ev
 
 let send_key_with_mod ta ~modifier key =
-  let ev = Event.Key.of_input (Matrix_input.Key.make ~modifier key) in
+  let ev = Event.Key.of_input (Test_harness.keystroke ~mods:modifier key) in
   Renderable.Private.emit_default_key (Textarea.node ta) ev
 
 let send_input_event ta data =
@@ -109,12 +109,15 @@ let send_input_event ta data =
 let send_char ta c =
   let text = String.make 1 c in
   let ev =
-    Event.Key.of_input (Matrix_input.Key.of_char ~associated_text:text c)
+    Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char c)))
   in
   Renderable.Private.emit_default_key (Textarea.node ta) ev
 
 let send_char_with_mod ta ~modifier c =
-  let ev = Event.Key.of_input (Matrix_input.Key.of_char ~modifier c) in
+  let ev =
+    Event.Key.of_input
+      (Test_harness.keystroke ~mods:modifier (Char (Uchar.of_char c)))
+  in
   Renderable.Private.emit_default_key (Textarea.node ta) ev
 
 let focus_textarea t ta =
@@ -135,25 +138,16 @@ let render_frame r ~width ~height =
   Renderer.render_frame r ~width ~height ~delta:0.;
   ignore (Renderer.render ~full:true r : string)
 
-let mouse_down ~x ~y =
-  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
-    (Down { button = Left })
+let mouse kind : Matrix_input.Mouse_report.t =
+  { kind; x = 0; y = 0; shift = false; alt = false; ctrl = false }
 
-let mouse_drag ~x ~y =
-  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
-    (Drag { button = Left })
-
-let mouse_up ~x ~y =
-  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
-    (Up { button = Some Left })
-
-let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true }
-let shift_mod = { no_mod with Matrix_input.Modifier.shift = true }
-let alt_mod = { no_mod with Matrix_input.Modifier.alt = true; meta = true }
-let super_mod = { no_mod with Matrix_input.Modifier.super = true }
-
-let ctrl_shift_mod =
-  { no_mod with Matrix_input.Modifier.ctrl = true; shift = true }
+let mouse_down ~x ~y = { (mouse (Press Left)) with x; y }
+let mouse_drag ~x ~y = { (mouse (Motion (Some Left))) with x; y }
+let mouse_up ~x ~y = { (mouse (Release (Some Left))) with x; y }
+let ctrl_mod = { no_mod with Matrix_input.Keystroke.ctrl = true }
+let shift_mod = { no_mod with Matrix_input.Keystroke.shift = true }
+let alt_mod = { no_mod with Matrix_input.Keystroke.alt = true }
+let super_mod = { no_mod with Matrix_input.Keystroke.super = true }
 
 (* ── Props ── *)
 
@@ -349,7 +343,7 @@ let changes_propose_complete_state () =
       ~on_change:(fun state -> proposals := state :: !proposals)
       ()
   in
-  send_key ta Matrix_input.Key.Left;
+  send_key ta Matrix_input.Keystroke.Left;
   send_char ta 'x';
   match !proposals with
   | [ edited; moved ] ->
@@ -385,7 +379,7 @@ let rejected_cursor_does_not_affect_next_edit () =
       ~on_change:(fun state -> proposals := state :: !proposals)
       ()
   in
-  send_key ta Matrix_input.Key.Left;
+  send_key ta Matrix_input.Keystroke.Left;
   send_char ta 'x';
   equal int 2 (Textarea.cursor ta);
   equal string "abx" (Editor.text (List.hd !proposals))
@@ -398,19 +392,19 @@ let rejected_movement_preserves_preferred_column () =
       ()
   in
   ignore (render_textarea ta ~width:20 ~height:3 : Matrix_grid.t);
-  send_key ta Matrix_input.Key.Down;
+  send_key ta Matrix_input.Keystroke.Down;
   equal ~msg:"short row clamps the caret" int 7 (Editor.cursor !proposal);
   update_editor ta (fun current -> Editor.accept ~current !proposal);
   let accepted = Textarea.state ta in
-  send_key ta Matrix_input.Key.Down;
+  send_key ta Matrix_input.Keystroke.Down;
   equal ~msg:"vertical proposal restores desired column" int 12
     (Editor.cursor !proposal);
   is_true ~msg:"rejected vertical proposal leaves state intact"
     (Textarea.state ta == accepted);
-  send_key ta Matrix_input.Key.Left;
+  send_key ta Matrix_input.Keystroke.Left;
   equal ~msg:"horizontal proposal starts from accepted short row" int 6
     (Editor.cursor !proposal);
-  send_key ta Matrix_input.Key.Up;
+  send_key ta Matrix_input.Keystroke.Up;
   equal ~msg:"rejected movement preserves desired column" int 4
     (Editor.cursor !proposal);
   is_true ~msg:"proposal still derives from accepted state"
@@ -460,7 +454,7 @@ let on_submit_fires_on_meta_enter () =
   let count = ref 0 in
   let t, ta = make_textarea ~on_submit:(fun _ -> incr count) () in
   focus_textarea t ta;
-  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Key.Enter;
+  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Keystroke.Enter;
   equal ~msg:"fired" int 1 !count
 
 let on_submit_receives_current_value () =
@@ -469,7 +463,7 @@ let on_submit_receives_current_value () =
     make_textarea ~value:"hello" ~on_submit:(fun s -> fired := s :: !fired) ()
   in
   focus_textarea t ta;
-  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Key.Enter;
+  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Keystroke.Enter;
   match !fired with
   | v :: _ -> equal ~msg:"received value" string "hello" v
   | [] -> fail "on_submit not fired"
@@ -479,14 +473,14 @@ let set_on_submit_none_disables () =
   let t, ta = make_textarea ~on_submit:(fun _ -> incr count) () in
   focus_textarea t ta;
   Textarea.set_on_submit ta None;
-  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Key.Enter;
+  send_key_with_mod ta ~modifier:ctrl_mod Matrix_input.Keystroke.Enter;
   equal ~msg:"disabled" int 0 !count
 
 let enter_does_not_fire_submit () =
   let count = ref 0 in
   let t, ta = make_textarea ~on_submit:(fun _ -> incr count) () in
   focus_textarea t ta;
-  send_key ta Matrix_input.Key.Enter;
+  send_key ta Matrix_input.Keystroke.Enter;
   equal ~msg:"submit not fired" int 0 !count
 
 (* ── Key Handling ── *)
@@ -503,7 +497,7 @@ let key_enter_inserts_newline () =
   let t, ta = make_textarea () in
   focus_textarea t ta;
   send_char ta 'a';
-  send_key ta Matrix_input.Key.Enter;
+  send_key ta Matrix_input.Keystroke.Enter;
   send_char ta 'b';
   equal ~msg:"newline" string "a\nb" (Textarea.value ta)
 
@@ -511,7 +505,17 @@ let key_kp_enter_inserts_newline () =
   let t, ta = make_textarea () in
   focus_textarea t ta;
   send_char ta 'a';
-  send_key ta Matrix_input.Key.KP_enter;
+  send_key ~keypad:true ta Matrix_input.Keystroke.Enter;
+  send_char ta 'b';
+  equal ~msg:"newline" string "a\nb" (Textarea.value ta)
+
+(* A line feed, 0x0A, is Ctrl+J: Enter under a terminal that translates
+   carriage returns. *)
+let ctrl_j_inserts_newline () =
+  let t, ta = make_textarea () in
+  focus_textarea t ta;
+  send_char ta 'a';
+  send_char_with_mod ta ~modifier:ctrl_mod 'j';
   send_char ta 'b';
   equal ~msg:"newline" string "a\nb" (Textarea.value ta)
 
@@ -519,16 +523,16 @@ let key_left_right_moves_cursor () =
   let t, ta = make_textarea ~value:"ab" () in
   focus_textarea t ta;
   equal ~msg:"cursor at end" int 2 (Editor.cursor (Textarea.state ta));
-  send_key ta Matrix_input.Key.Left;
+  send_key ta Matrix_input.Keystroke.Left;
   equal ~msg:"cursor moved left" int 1 (Editor.cursor (Textarea.state ta));
-  send_key ta Matrix_input.Key.Right;
+  send_key ta Matrix_input.Keystroke.Right;
   equal ~msg:"cursor moved right" int 2 (Editor.cursor (Textarea.state ta))
 
 let key_up_moves_to_previous_line () =
   let t, ta = make_textarea ~value:"one\ntwo" () in
   focus_textarea t ta;
   ignore (render_textarea ta ~width:20 ~height:2 : Matrix_grid.t);
-  send_key ta Matrix_input.Key.Up;
+  send_key ta Matrix_input.Keystroke.Up;
   equal ~msg:"cursor" int 3 (Textarea.cursor ta)
 
 let key_down_moves_to_next_line () =
@@ -536,27 +540,27 @@ let key_down_moves_to_next_line () =
   focus_textarea t ta;
   ignore (render_textarea ta ~width:20 ~height:2 : Matrix_grid.t);
   update_editor ta (Editor.set_cursor 0);
-  send_key ta Matrix_input.Key.Down;
+  send_key ta Matrix_input.Keystroke.Down;
   equal ~msg:"cursor" int 4 (Textarea.cursor ta)
 
 let key_backspace_deletes_backward () =
   let t, ta = make_textarea ~value:"abc" () in
   focus_textarea t ta;
-  send_key ta Matrix_input.Key.Backspace;
+  send_key ta Matrix_input.Keystroke.Backspace;
   equal ~msg:"deleted" string "ab" (Textarea.value ta)
 
 let key_backspace_at_line_start_joins () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   update_editor ta (Editor.set_cursor 4);
-  send_key ta Matrix_input.Key.Backspace;
+  send_key ta Matrix_input.Keystroke.Backspace;
   equal ~msg:"joined" string "abcdef" (Textarea.value ta)
 
 let key_delete_deletes_forward () =
   let t, ta = make_textarea ~value:"abc" () in
   focus_textarea t ta;
   update_editor ta Editor.move_home;
-  send_key ta Matrix_input.Key.Delete;
+  send_key ta Matrix_input.Keystroke.Delete;
   equal ~msg:"deleted forward" string "bc" (Textarea.value ta)
 
 (* ── Emacs Keybindings ── *)
@@ -568,21 +572,23 @@ let ctrl_a_moves_to_line_start () =
   send_char_with_mod ta ~modifier:ctrl_mod 'a';
   equal ~msg:"cursor at line start" int 4 (Editor.cursor (Textarea.state ta))
 
-let ctrl_a_uppercase_from_parser_moves_to_line_start () =
+let ctrl_shift_a_selects_to_line_start () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   update_editor ta (Editor.set_cursor 6);
-  (* Runtime parser emits Ctrl+A as 'A' with ctrl=true. *)
+  (* Ctrl+Shift+a, its Shift consumed into the key: it selects. *)
   send_char_with_mod ta ~modifier:ctrl_mod 'A';
-  equal ~msg:"cursor at line start" int 4 (Editor.cursor (Textarea.state ta))
+  equal ~msg:"cursor at line start" int 4 (Editor.cursor (Textarea.state ta));
+  is_true ~msg:"selection"
+    (Option.is_some (Editor.selection (Textarea.state ta)))
 
 let ctrl_a_base_key_moves_to_line_start () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   update_editor ta (Editor.set_cursor 6);
   let data =
-    Matrix_input.Key.make ~modifier:ctrl_mod ~base_key:(Uchar.of_char 'a')
-      (Matrix_input.Key.Char (Uchar.of_int 0x314a))
+    Test_harness.keystroke ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
+      (Matrix_input.Keystroke.Char (Uchar.of_int 0x314a))
   in
   send_input_event ta data;
   equal ~msg:"cursor at line start" int 4 (Editor.cursor (Textarea.state ta))
@@ -650,7 +656,7 @@ let ctrl_shift_d_deletes_line () =
   let t, ta = make_textarea ~value:"abc\ndef\nghi" () in
   focus_textarea t ta;
   update_editor ta (Editor.set_cursor 5);
-  send_char_with_mod ta ~modifier:ctrl_shift_mod 'd';
+  send_char_with_mod ta ~modifier:ctrl_mod 'D';
   equal ~msg:"line deleted" string "abc\nghi" (Textarea.value ta)
 
 (* ── Alt Keybindings ── *)
@@ -664,7 +670,7 @@ let alt_b_moves_word_backward () =
 let meta_only_does_not_match_alt_binding () =
   let t, ta = make_textarea ~value:"hello world" () in
   focus_textarea t ta;
-  let meta_mod = { no_mod with Matrix_input.Modifier.meta = true } in
+  let meta_mod = { no_mod with Matrix_input.Keystroke.meta = true } in
   send_char_with_mod ta ~modifier:meta_mod 'b';
   equal ~msg:"Meta alone does not match Alt" int 11 (Textarea.cursor ta)
 
@@ -689,7 +695,7 @@ let super_left_moves_to_visual_line_start () =
   focus_textarea t ta;
   ignore (render_textarea ta ~width:40 ~height:10 : Matrix_grid.t);
   update_editor ta (Editor.set_cursor 6);
-  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Left;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Keystroke.Left;
   equal ~msg:"cursor at visual line start" int 4
     (Editor.cursor (Textarea.state ta))
 
@@ -698,21 +704,21 @@ let super_right_moves_to_visual_line_end () =
   focus_textarea t ta;
   ignore (render_textarea ta ~width:40 ~height:10 : Matrix_grid.t);
   update_editor ta (Editor.set_cursor 4);
-  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Right;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Keystroke.Right;
   equal ~msg:"cursor at visual line end" int 7
     (Editor.cursor (Textarea.state ta))
 
 let super_up_moves_to_buffer_start () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
-  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Up;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Keystroke.Up;
   equal ~msg:"cursor at start" int 0 (Editor.cursor (Textarea.state ta))
 
 let super_down_moves_to_buffer_end () =
   let t, ta = make_textarea ~value:"abc\ndef" () in
   focus_textarea t ta;
   update_editor ta Editor.move_home;
-  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Down;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Keystroke.Down;
   equal ~msg:"cursor at end" int 7 (Editor.cursor (Textarea.state ta))
 
 (* ── Selection Keybindings ── *)
@@ -721,7 +727,7 @@ let shift_right_creates_selection () =
   let t, ta = make_textarea ~value:"hello" () in
   focus_textarea t ta;
   update_editor ta Editor.move_home;
-  send_key_with_mod ta ~modifier:shift_mod Matrix_input.Key.Right;
+  send_key_with_mod ta ~modifier:shift_mod Matrix_input.Keystroke.Right;
   is_true ~msg:"has selection"
     (Option.is_some (Editor.selection (Textarea.state ta)))
 
@@ -757,7 +763,7 @@ let ctrl_shift_z_redoes () =
   send_char ta 'a';
   send_char_with_mod ta ~modifier:ctrl_mod 'z';
   equal ~msg:"after undo" string "" (Textarea.value ta);
-  send_char_with_mod ta ~modifier:ctrl_shift_mod 'z';
+  send_char_with_mod ta ~modifier:ctrl_mod 'Z';
   equal ~msg:"after redo" string "a" (Textarea.value ta)
 
 (* ── Visual Line Navigation ── *)
@@ -821,8 +827,8 @@ let alt_enter_fires_submit () =
   let on_submit v = received := v in
   let t, ta = make_textarea ~value:"hello" ~on_submit () in
   focus_textarea t ta;
-  let alt_mod = { no_mod with Matrix_input.Modifier.alt = true; meta = true } in
-  send_key_with_mod ta ~modifier:alt_mod Matrix_input.Key.Enter;
+  let alt_mod = { no_mod with Matrix_input.Keystroke.alt = true } in
+  send_key_with_mod ta ~modifier:alt_mod Matrix_input.Keystroke.Enter;
   equal ~msg:"submit fired" string "hello" !received
 
 (* ── Ctrl+K at Line End ── *)
@@ -975,7 +981,7 @@ let resize_after_newline_clamps_scroll_y () =
   send_char ta 'e';
   send_char ta 's';
   send_char ta 't';
-  send_key ta Matrix_input.Key.Enter;
+  send_key ta Matrix_input.Keystroke.Enter;
   equal ~msg:"scroll_y before growth" int 1
     (Text_surface.scroll_y (Textarea.surface ta));
   ignore (render_textarea ta ~width:20 ~height:2 : Matrix_grid.t);
@@ -1037,7 +1043,7 @@ let apply_props_echoed_value_preserves_cursor () =
   let t, ta = make_textarea ~value:"aaa\nbbb\nccc" () in
   focus_textarea t ta;
   update_editor ta (Editor.set_cursor 5);
-  send_char_with_mod ta ~modifier:ctrl_shift_mod 'd';
+  send_char_with_mod ta ~modifier:ctrl_mod 'D';
   let cursor_before = Editor.cursor (Textarea.state ta) in
   lt ~msg:"cursor before the end of the buffer, pre apply_props"
     ~than:(Editor.length (Textarea.state ta))
@@ -1088,14 +1094,14 @@ let render_zero_size_no_crash () =
 let operations_on_empty_textarea_are_safe () =
   let t, ta = make_textarea () in
   focus_textarea t ta;
-  send_key ta Matrix_input.Key.Backspace;
-  send_key ta Matrix_input.Key.Delete;
-  send_key ta Matrix_input.Key.Left;
-  send_key ta Matrix_input.Key.Right;
-  send_key ta Matrix_input.Key.Up;
-  send_key ta Matrix_input.Key.Down;
-  send_key ta Matrix_input.Key.Home;
-  send_key ta Matrix_input.Key.End;
+  send_key ta Matrix_input.Keystroke.Backspace;
+  send_key ta Matrix_input.Keystroke.Delete;
+  send_key ta Matrix_input.Keystroke.Left;
+  send_key ta Matrix_input.Keystroke.Right;
+  send_key ta Matrix_input.Keystroke.Up;
+  send_key ta Matrix_input.Keystroke.Down;
+  send_key ta Matrix_input.Keystroke.Home;
+  send_key ta Matrix_input.Keystroke.End;
   send_char_with_mod ta ~modifier:ctrl_mod 'w';
   send_char_with_mod ta ~modifier:ctrl_mod 'k';
   send_char_with_mod ta ~modifier:ctrl_mod 'u';
@@ -1132,11 +1138,11 @@ let visual_end_keeps_previous_wrapped_row () =
   focus_textarea t ta;
   ignore (render_textarea ta ~width:3 ~height:2 : Matrix_grid.t);
   update_editor ta (Editor.set_cursor 1);
-  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Right;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Keystroke.Right;
   let caret = Editor.caret (Textarea.state ta) in
   equal int 3 caret.grapheme;
   is_true (caret.affinity = Matrix_text.Layout.Upstream);
-  send_key_with_mod ta ~modifier:super_mod Matrix_input.Key.Left;
+  send_key_with_mod ta ~modifier:super_mod Matrix_input.Keystroke.Left;
   equal int 0 (Editor.cursor (Textarea.state ta))
 
 let () =
@@ -1210,6 +1216,7 @@ let () =
           test "character input inserts text" key_char_inserts_text;
           test "Enter inserts newline" key_enter_inserts_newline;
           test "keypad Enter inserts newline" key_kp_enter_inserts_newline;
+          test "Ctrl+J inserts newline" ctrl_j_inserts_newline;
           test "Left/Right moves cursor" key_left_right_moves_cursor;
           test "Up moves to previous line" key_up_moves_to_previous_line;
           test "Down moves to next line" key_down_moves_to_next_line;
@@ -1220,8 +1227,8 @@ let () =
       group "Emacs keybindings"
         [
           test "Ctrl+A moves to line start" ctrl_a_moves_to_line_start;
-          test "Ctrl+A uppercase from parser moves to line start"
-            ctrl_a_uppercase_from_parser_moves_to_line_start;
+          test "Ctrl+Shift+A selects to line start"
+            ctrl_shift_a_selects_to_line_start;
           test "Ctrl+A base key moves to line start"
             ctrl_a_base_key_moves_to_line_start;
           test "Ctrl+E moves to line end" ctrl_e_moves_to_line_end;

@@ -243,8 +243,8 @@ let burst_at state ~x ~y ~count =
 
 let handle_input state event =
   match event with
-  | Input.Key { key = Input.Key.Escape; _ } -> `Quit
-  | Input.Key { key = Input.Key.Char u; _ } -> (
+  | Key { key = Escape; _ } -> `Quit
+  | Key { key = Char u; _ } -> (
       let c = Uchar.to_int u in
       match Char.chr c with
       | 'q' | 'Q' -> `Quit
@@ -285,20 +285,20 @@ let handle_input state event =
           state.particles <- [];
           `Continue
       | _ -> `Continue)
-  | Input.Mouse { Input.Mouse.x; y; kind = Down { button = Left }; _ } ->
+  | Mouse { x; y; kind = Press Left; _ } ->
       state.mouse_x <- x;
       state.mouse_y <- y;
       state.mouse_emitter <- true;
       burst_at state ~x ~y ~count:30;
       `Continue
-  | Input.Mouse { kind = Up { button = Some Left }; _ } ->
+  | Mouse { kind = Release (Some Left | None); _ } ->
       state.mouse_emitter <- false;
       `Continue
-  | Input.Mouse { Input.Mouse.x; y; kind; _ } ->
+  | Mouse { x; y; kind; _ } ->
       state.mouse_x <- x;
       state.mouse_y <- y;
       state.mouse_emitter <-
-        (match kind with Drag { button = Left } -> true | _ -> false);
+        (match kind with Motion (Some Left) -> true | _ -> false);
       `Continue
   | _ -> `Continue
 

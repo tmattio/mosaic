@@ -286,15 +286,15 @@ let cancel_drag state =
 
 let handle_input state event =
   match event with
-  | Input.Key { key = Input.Key.Escape; _ } ->
+  | Key { key = Escape; _ } ->
       if Option.is_some state.dragging then (
         cancel_drag state;
         `Continue)
       else `Quit
-  | Input.Key { key = Input.Key.Char u; _ }
+  | Key { key = Char u; _ }
     when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
       `Quit
-  | Input.Mouse { Input.Mouse.x; y; kind = Down { button = Left }; _ } ->
+  | Mouse { x; y; kind = Press Left; _ } ->
       state.mouse_x <- x;
       state.mouse_y <- y;
       state.mouse_left <- true;
@@ -302,17 +302,17 @@ let handle_input state event =
       | Some item -> start_drag state item ~mouse_x:x ~mouse_y:y
       | None -> ());
       `Continue
-  | Input.Mouse { Input.Mouse.x; y; kind = Up { button = Some Left }; _ } ->
+  | Mouse { x; y; kind = Release (Some Left | None); _ } ->
       state.mouse_x <- x;
       state.mouse_y <- y;
       state.mouse_left <- false;
       end_drag state;
       `Continue
-  | Input.Mouse { Input.Mouse.x; y; kind; _ } ->
+  | Mouse { x; y; kind; _ } ->
       state.mouse_x <- x;
       state.mouse_y <- y;
       let left_drag =
-        match kind with Drag { button = Left } -> true | _ -> false
+        match kind with Motion (Some Left) -> true | _ -> false
       in
       state.mouse_left <- left_drag;
       if left_drag then update_drag state ~mouse_x:x ~mouse_y:y;

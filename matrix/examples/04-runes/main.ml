@@ -195,14 +195,13 @@ let draw _app ctx () =
 
 let update app event () =
   match event with
-  | Input.Key { key = Input.Key.Escape; _ } ->
+  | Key { key = Escape; _ } ->
       stop app;
       `Stop
-  | Input.Key { key = Input.Key.Char uchar; modifier; _ } ->
+  | Key { key = Char uchar; mods; _ } ->
       let code = Uchar.to_int uchar in
       let ctrl_c =
-        modifier.Input.Modifier.ctrl
-        && (code = Char.code 'c' || code = Char.code 'C')
+        mods.ctrl && (code = Char.code 'c' || code = Char.code 'C')
       in
       if ctrl_c then (
         stop app;

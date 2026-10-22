@@ -66,7 +66,7 @@ val feed : t -> string -> unit
     deadline and resolve once {!set_now} moves virtual time past it — the
     deadline is surfaced through [on_idle]'s [timeout]. *)
 
-val feed_event : t -> Matrix.Input.t -> unit
+val feed_event : t -> Matrix.event -> unit
 (** [feed_event t event] queues an already-decoded input event, bypassing the
     parser. *)
 

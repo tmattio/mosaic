@@ -58,18 +58,18 @@ type action =
 module Action = struct
   let defaults =
     [
-      (Shortcut.key Matrix_input.Key.Left, Move_left);
-      (Shortcut.key Matrix_input.Key.Right, Move_right);
-      (Shortcut.key Matrix_input.Key.Up, Move_up);
-      (Shortcut.key Matrix_input.Key.Down, Move_down);
-      (Shortcut.key ~shift:true Matrix_input.Key.Left, Select_left);
-      (Shortcut.key ~shift:true Matrix_input.Key.Right, Select_right);
-      (Shortcut.key ~shift:true Matrix_input.Key.Up, Select_up);
-      (Shortcut.key ~shift:true Matrix_input.Key.Down, Select_down);
-      (Shortcut.key Matrix_input.Key.Home, Buffer_home);
-      (Shortcut.key Matrix_input.Key.End, Buffer_end);
-      (Shortcut.key ~shift:true Matrix_input.Key.Home, Select_buffer_home);
-      (Shortcut.key ~shift:true Matrix_input.Key.End, Select_buffer_end);
+      (Shortcut.key Matrix_input.Keystroke.Left, Move_left);
+      (Shortcut.key Matrix_input.Keystroke.Right, Move_right);
+      (Shortcut.key Matrix_input.Keystroke.Up, Move_up);
+      (Shortcut.key Matrix_input.Keystroke.Down, Move_down);
+      (Shortcut.key ~shift:true Matrix_input.Keystroke.Left, Select_left);
+      (Shortcut.key ~shift:true Matrix_input.Keystroke.Right, Select_right);
+      (Shortcut.key ~shift:true Matrix_input.Keystroke.Up, Select_up);
+      (Shortcut.key ~shift:true Matrix_input.Keystroke.Down, Select_down);
+      (Shortcut.key Matrix_input.Keystroke.Home, Buffer_home);
+      (Shortcut.key Matrix_input.Keystroke.End, Buffer_end);
+      (Shortcut.key ~shift:true Matrix_input.Keystroke.Home, Select_buffer_home);
+      (Shortcut.key ~shift:true Matrix_input.Keystroke.End, Select_buffer_end);
       (Shortcut.char ~ctrl:true 'a', Line_home);
       (Shortcut.char ~ctrl:true 'e', Line_end);
       (Shortcut.char ~ctrl:true ~shift:true 'a', Select_line_home);
@@ -81,26 +81,27 @@ module Action = struct
       (Shortcut.char ~ctrl:true 'f', Move_right);
       (Shortcut.char ~ctrl:true 'b', Move_left);
       (Shortcut.char ~ctrl:true 'w', Delete_word_backward);
-      (Shortcut.key ~ctrl:true Matrix_input.Key.Backspace, Delete_word_backward);
+      ( Shortcut.key ~ctrl:true Matrix_input.Keystroke.Backspace,
+        Delete_word_backward );
       (Shortcut.char ~alt:true 'd', Delete_word_forward);
-      (Shortcut.key ~alt:true Matrix_input.Key.Delete, Delete_word_forward);
-      (Shortcut.key ~ctrl:true Matrix_input.Key.Delete, Delete_word_forward);
+      (Shortcut.key ~alt:true Matrix_input.Keystroke.Delete, Delete_word_forward);
+      ( Shortcut.key ~ctrl:true Matrix_input.Keystroke.Delete,
+        Delete_word_forward );
       (Shortcut.char ~ctrl:true ~shift:true 'd', Delete_line);
       (Shortcut.char ~ctrl:true 'k', Delete_to_line_end);
       (Shortcut.char ~ctrl:true 'u', Delete_to_line_start);
-      (Shortcut.key Matrix_input.Key.Backspace, Backspace);
-      (Shortcut.key ~shift:true Matrix_input.Key.Backspace, Backspace);
+      (Shortcut.key Matrix_input.Keystroke.Backspace, Backspace);
+      (Shortcut.key ~shift:true Matrix_input.Keystroke.Backspace, Backspace);
       (Shortcut.char ~ctrl:true 'd', Delete);
-      (Shortcut.key Matrix_input.Key.Delete, Delete);
-      (Shortcut.key ~shift:true Matrix_input.Key.Delete, Delete);
-      (Shortcut.key Matrix_input.Key.Enter, Newline);
-      (Shortcut.key Matrix_input.Key.Line_feed, Newline);
-      (Shortcut.key ~alt:true Matrix_input.Key.Enter, Submit);
-      (Shortcut.key ~ctrl:true Matrix_input.Key.Enter, Submit);
-      (Shortcut.key ~super:true Matrix_input.Key.Enter, Submit);
-      (Shortcut.key ~alt:true Matrix_input.Key.Line_feed, Submit);
-      (Shortcut.key ~ctrl:true Matrix_input.Key.Line_feed, Submit);
-      (Shortcut.key ~super:true Matrix_input.Key.Line_feed, Submit);
+      (Shortcut.key Matrix_input.Keystroke.Delete, Delete);
+      (Shortcut.key ~shift:true Matrix_input.Keystroke.Delete, Delete);
+      (Shortcut.key Matrix_input.Keystroke.Enter, Newline);
+      (Shortcut.char ~ctrl:true 'j', Newline);
+      (Shortcut.key ~alt:true Matrix_input.Keystroke.Enter, Submit);
+      (Shortcut.key ~ctrl:true Matrix_input.Keystroke.Enter, Submit);
+      (Shortcut.key ~super:true Matrix_input.Keystroke.Enter, Submit);
+      (Shortcut.char ~ctrl:true ~alt:true 'j', Submit);
+      (Shortcut.char ~ctrl:true ~super:true 'j', Submit);
       (Shortcut.char ~ctrl:true '-', Undo);
       (Shortcut.char ~ctrl:true '.', Redo);
       (Shortcut.char ~ctrl:true 'z', Undo);
@@ -109,36 +110,37 @@ module Action = struct
       (Shortcut.char ~super:true ~shift:true 'z', Redo);
       (Shortcut.char ~alt:true 'f', Word_forward);
       (Shortcut.char ~alt:true 'b', Word_backward);
-      (Shortcut.key ~alt:true Matrix_input.Key.Right, Word_forward);
-      (Shortcut.key ~alt:true Matrix_input.Key.Left, Word_backward);
-      (Shortcut.key ~ctrl:true Matrix_input.Key.Right, Word_forward);
-      (Shortcut.key ~ctrl:true Matrix_input.Key.Left, Word_backward);
+      (Shortcut.key ~alt:true Matrix_input.Keystroke.Right, Word_forward);
+      (Shortcut.key ~alt:true Matrix_input.Keystroke.Left, Word_backward);
+      (Shortcut.key ~ctrl:true Matrix_input.Keystroke.Right, Word_forward);
+      (Shortcut.key ~ctrl:true Matrix_input.Keystroke.Left, Word_backward);
       (Shortcut.char ~alt:true ~shift:true 'f', Select_word_forward);
       (Shortcut.char ~alt:true ~shift:true 'b', Select_word_backward);
-      ( Shortcut.key ~alt:true ~shift:true Matrix_input.Key.Right,
+      ( Shortcut.key ~alt:true ~shift:true Matrix_input.Keystroke.Right,
         Select_word_forward );
-      ( Shortcut.key ~alt:true ~shift:true Matrix_input.Key.Left,
+      ( Shortcut.key ~alt:true ~shift:true Matrix_input.Keystroke.Left,
         Select_word_backward );
-      (Shortcut.key ~alt:true Matrix_input.Key.Backspace, Delete_word_backward);
-      (Shortcut.key ~super:true Matrix_input.Key.Left, Visual_line_home);
-      (Shortcut.key ~super:true Matrix_input.Key.Right, Visual_line_end);
-      (Shortcut.key ~super:true Matrix_input.Key.Up, Buffer_home);
-      (Shortcut.key ~super:true Matrix_input.Key.Down, Buffer_end);
-      ( Shortcut.key ~super:true ~shift:true Matrix_input.Key.Left,
+      ( Shortcut.key ~alt:true Matrix_input.Keystroke.Backspace,
+        Delete_word_backward );
+      (Shortcut.key ~super:true Matrix_input.Keystroke.Left, Visual_line_home);
+      (Shortcut.key ~super:true Matrix_input.Keystroke.Right, Visual_line_end);
+      (Shortcut.key ~super:true Matrix_input.Keystroke.Up, Buffer_home);
+      (Shortcut.key ~super:true Matrix_input.Keystroke.Down, Buffer_end);
+      ( Shortcut.key ~super:true ~shift:true Matrix_input.Keystroke.Left,
         Select_visual_line_home );
-      ( Shortcut.key ~super:true ~shift:true Matrix_input.Key.Right,
+      ( Shortcut.key ~super:true ~shift:true Matrix_input.Keystroke.Right,
         Select_visual_line_end );
-      ( Shortcut.key ~super:true ~shift:true Matrix_input.Key.Up,
+      ( Shortcut.key ~super:true ~shift:true Matrix_input.Keystroke.Up,
         Select_buffer_home );
-      ( Shortcut.key ~super:true ~shift:true Matrix_input.Key.Down,
+      ( Shortcut.key ~super:true ~shift:true Matrix_input.Keystroke.Down,
         Select_buffer_end );
       (Shortcut.char ~super:true 'a', Select_all);
     ]
 
   let input_overrides =
     [
-      (Shortcut.key Matrix_input.Key.Enter, Submit);
-      (Shortcut.key Matrix_input.Key.Line_feed, Submit);
+      (Shortcut.key Matrix_input.Keystroke.Enter, Submit);
+      (Shortcut.char ~ctrl:true 'j', Submit);
     ]
 
   let multiline = Keymap.make ~defaults ()
@@ -630,22 +632,6 @@ let line_end t ~select =
   then Editor.move_right ~select next
   else next
 
-let regular_text data c =
-  let m = data.Matrix_input.Key.modifier in
-  if m.ctrl || m.alt || m.super || m.meta || m.hyper then None
-  else
-    let text =
-      if String.length data.associated_text > 0 then data.associated_text
-      else
-        let buf = Buffer.create 4 in
-        Buffer.add_utf_8_uchar buf c;
-        Buffer.contents buf
-    in
-    if String.length text = 0 then None
-    else
-      let code = Char.code text.[0] in
-      if code < 32 || code = 127 then None else Some text
-
 let run_action t action =
   let base = t.props.state in
   match action with
@@ -694,34 +680,26 @@ let run_action t action =
   | Delete_word_backward -> Some (Editor.delete_word_backward base)
   | Select_all -> Some (Editor.select_all base)
 
-let key_result_of_event t data =
+(* An unbound key inserts the text it types, which is empty for a chord, a
+   control and a key that types nothing. *)
+let key_result_of_event t (data : Matrix_input.Keystroke.t) =
   match Keymap.action t.keymap data with
   | Some action -> run_action t action
-  | None -> (
-      match data.Matrix_input.Key.key with
-      | Matrix_input.Key.Char c -> (
-          match regular_text data c with
-          | Some text ->
-              Some (Editor.insert (sanitize_text t text) t.props.state)
-          | None -> None)
-      | _ -> None)
+  | None when data.text <> "" ->
+      Some (Editor.insert (sanitize_text t data.text) t.props.state)
+  | None -> None
 
 let handle_key t (ev : Event.key) =
-  let data = Event.Key.data ev in
-  let open Matrix_input.Key in
-  match data.event_type with
-  | Release -> ()
-  | _ when Event.Key.default_prevented ev -> ()
-  | _ -> (
-      let base = t.props.state in
-      match key_result_of_event t data with
-      | None -> ()
-      | Some next ->
-          Event.Key.prevent_default ev;
-          let next =
-            Editor.propose ~base ~preferred_col:(Editor.preferred_col next) next
-          in
-          propose t ~base next)
+  if not (Event.Key.default_prevented ev) then
+    let base = t.props.state in
+    match key_result_of_event t (Event.Key.data ev) with
+    | None -> ()
+    | Some next ->
+        Event.Key.prevent_default ev;
+        let next =
+          Editor.propose ~base ~preferred_col:(Editor.preferred_col next) next
+        in
+        propose t ~base next
 
 (* Mouse handling *)
 
@@ -733,7 +711,7 @@ let handle_scroll t direction delta =
   let clamp maximum v = Int.max 0 (Int.min maximum v) in
   let x, y =
     match direction with
-    | Matrix_input.Mouse.Scroll_up -> (sx, sy - delta)
+    | Event.Mouse.Scroll_up -> (sx, sy - delta)
     | Scroll_down -> (sx, sy + delta)
     | Scroll_left when Text_surface.wrap t.surface = `None -> (sx - delta, sy)
     | Scroll_right when Text_surface.wrap t.surface = `None -> (sx + delta, sy)

@@ -14,15 +14,16 @@ module Key : sig
   type t
   (** The type for keyboard events.
 
-      Wraps an {!Matrix_input.Key.event} with a default-prevention flag
-      consulted while dispatching to the focused renderable. *)
+      Wraps a key press or repeat ({!Matrix_input.Keystroke.t}) with a
+      default-prevention flag consulted while dispatching to the focused
+      renderable. Releases are not key events: widgets never see them. *)
 
-  val of_input : Matrix_input.Key.event -> t
+  val of_input : Matrix_input.Keystroke.t -> t
   (** [of_input ev] is a keyboard event wrapping [ev]. The default-prevention
       flag starts as [false]. *)
 
-  val data : t -> Matrix_input.Key.event
-  (** [data t] is the underlying terminal key event. *)
+  val data : t -> Matrix_input.Keystroke.t
+  (** [data t] is the underlying keystroke. *)
 
   val prevent_default : t -> unit
   (** [prevent_default t] marks [t] as consumed: the default key action is
@@ -116,18 +117,19 @@ module Mouse : sig
   val pp_button : Format.formatter -> button -> unit
   (** [pp_button] formats a {!button} value. *)
 
-  type modifier = Matrix_input.Modifier.t = {
-    ctrl : bool;  (** Control key held. *)
-    alt : bool;  (** Alt / Option key held. *)
+  type modifier = Matrix_input.Keystroke.mods = {
     shift : bool;  (** Shift key held. *)
+    alt : bool;  (** Alt / Option key held. *)
+    ctrl : bool;  (** Control key held. *)
     super : bool;  (** Super / Windows / Command key held. *)
     hyper : bool;  (** Hyper key held. *)
     meta : bool;  (** Meta key held. *)
     caps_lock : bool;  (** Caps Lock active. *)
     num_lock : bool;  (** Num Lock active. *)
   }
-  (** The type for modifier key state. Re-exported from
-      {!Matrix_input.Modifier.t}. *)
+  (** The type for modifier key state, re-exported from
+      {!Matrix_input.Keystroke.mods}. A mouse report carries Shift, Alt and Ctrl
+      only. *)
 
   val no_modifier : modifier
   (** [no_modifier] is the modifier state with every field set to [false]. *)
@@ -139,9 +141,8 @@ module Mouse : sig
   val pp_modifier : Format.formatter -> modifier -> unit
   (** [pp_modifier] formats a {!modifier} value. *)
 
-  (** The type for scroll-wheel directions. Re-exported from
-      {!Matrix_input.Mouse.scroll_direction}. *)
-  type scroll_direction = Matrix_input.Mouse.scroll_direction =
+  (** The type for scroll-wheel directions. *)
+  type scroll_direction =
     | Scroll_up  (** Scroll towards the top of the content. *)
     | Scroll_down  (** Scroll towards the bottom of the content. *)
     | Scroll_left  (** Scroll towards the left of the content. *)

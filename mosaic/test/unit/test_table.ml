@@ -314,7 +314,7 @@ let kp_enter_fires_on_activate () =
   in
   let log = ref [] in
   Table.set_on_activate tbl (Some (fun i -> log := i :: !log));
-  emit_key tbl (make_key KP_enter);
+  emit_key tbl (make_key ~keypad:true Enter);
   equal ~msg:"activated" (list int) [ 1 ] !log
 
 let on_change_fires_on_key_navigation () =

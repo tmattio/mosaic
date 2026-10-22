@@ -1004,13 +1004,13 @@ let view (m : model) =
 let subscriptions (_m : model) =
   Sub.on_key (fun ev ->
       let data = Event.Key.data ev in
-      let step = if data.modifier.shift then 18 else 8 in
+      let step = if data.mods.shift then 18 else 8 in
       match data.key with
       | Char c when Uchar.equal c (Uchar.of_char 'q') -> Some Quit
       | Escape -> Some Quit
       (* Chart switching *)
-      | Tab when not data.modifier.shift -> Some Next_chart
-      | Tab when data.modifier.shift -> Some Prev_chart
+      | Tab when not data.mods.shift -> Some Next_chart
+      | Tab when data.mods.shift -> Some Prev_chart
       | Char c when Uchar.equal c (Uchar.of_char '>') -> Some Next_chart
       | Char c when Uchar.equal c (Uchar.of_char '<') -> Some Prev_chart
       (* Zoom *)

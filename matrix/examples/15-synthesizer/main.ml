@@ -414,8 +414,8 @@ let () =
     ~on_frame:(fun _ ~dt:_ -> ())
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Char u; _ } -> (
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Char u; _ } -> (
           let c = Uchar.to_int u in
           match Char.chr c with
           | 'q' | 'Q' -> Matrix.stop app
@@ -445,7 +445,7 @@ let () =
               let dur = max 0.1 (!state.duration -. 0.1) in
               state := regenerate_samples { !state with duration = dur }
           | _ -> ())
-      | Input.Key { key = Input.Key.Tab; _ } ->
+      | Key { key = Tab; _ } ->
           let idx = (!state.waveform_idx + 1) mod Array.length all_waveforms in
           state := regenerate_samples { !state with waveform_idx = idx }
       | _ -> ())

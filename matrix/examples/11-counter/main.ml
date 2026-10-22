@@ -77,8 +77,8 @@ let () =
   Matrix.run app
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Char u; _ } -> (
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Char u; _ } -> (
           match Uchar.to_int u with
           | c when c = Char.code 'q' || c = Char.code 'Q' -> Matrix.stop app
           | c when c = Char.code '+' || c = Char.code '=' ->

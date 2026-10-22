@@ -131,12 +131,10 @@ let draw_help grid ~rows state =
           ~text:line)
       help_lines
 
-let handle_key state key modifier =
-  let open Input.Key in
+let handle_key state (key : Input.Keystroke.key) (mods : Input.Keystroke.mods) =
   match key with
-  | Char u -> (
-      let code = Uchar.to_int u in
-      match Char.chr code with
+  | Char u when Uchar.is_char u -> (
+      match Uchar.to_char u with
       | '1' .. '9' as c ->
           let idx = Char.code c - Char.code '1' in
           if idx < Array.length palette_colors then
@@ -158,7 +156,7 @@ let handle_key state key modifier =
       | 'z' | 'Z' ->
           let new_alpha = max 0.1 (state.brush.alpha -. 0.1) in
           { state with brush = { state.brush with alpha = new_alpha } }
-      | ('c' | 'C') when not modifier.Input.Modifier.ctrl ->
+      | ('c' | 'C') when not mods.ctrl ->
           state (* Clear is handled separately *)
       | 'p' | 'P' -> { state with show_palette = not state.show_palette }
       | 'h' | 'H' -> { state with show_help = not state.show_help }
@@ -181,33 +179,20 @@ let () =
   Matrix.run app
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Char u; modifier; _ }
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Char u; mods; _ }
         when (Uchar.to_int u = Char.code 'c' || Uchar.to_int u = Char.code 'C')
-             && not modifier.Input.Modifier.ctrl -> (
+             && not mods.ctrl -> (
           (* Clear canvas *)
           match !canvas_grid with
           | Some cg -> Grid.clear ~color:Ansi.Color.black cg
           | None -> ())
-      | Input.Key { key; modifier; _ } ->
-          state := handle_key !state key modifier
-      | Input.Mouse
-          {
-            Input.Mouse.x;
-            y;
-            kind = Down { button = Left } | Drag { button = Left };
-            _;
-          } -> (
+      | Key { key; mods; _ } -> state := handle_key !state key mods
+      | Mouse { x; y; kind = Press Left | Motion (Some Left); _ } -> (
           match !canvas_grid with
           | Some cg -> draw_brush cg ~cx:x ~cy:y ~brush:!state.brush
           | None -> ())
-      | Input.Mouse
-          {
-            Input.Mouse.x;
-            y;
-            kind = Down { button = Right } | Drag { button = Right };
-            _;
-          } -> (
+      | Mouse { x; y; kind = Press Right | Motion (Some Right); _ } -> (
           (* Erase with right click *)
           match !canvas_grid with
           | Some cg ->

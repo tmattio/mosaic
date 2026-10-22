@@ -190,7 +190,7 @@ val render_frame_until_settled :
 (** {1:events Event dispatch} *)
 
 val dispatch_key :
-  ?capture:(Event.key -> unit) -> t -> Matrix_input.Key.event -> Event.key
+  ?capture:(Event.key -> unit) -> t -> Matrix_input.Keystroke.t -> Event.key
 (** [dispatch_key ?capture t key] calls [capture] before the focused handler,
     then sends [key] to the focused renderable and returns the resulting event.
 
@@ -199,7 +199,7 @@ val dispatch_key :
     node's handler; callers can inspect it to determine whether the key was
     consumed. *)
 
-val dispatch_mouse : t -> Matrix_input.Mouse.event -> Event.mouse
+val dispatch_mouse : t -> Matrix_input.Mouse_report.t -> Event.mouse
 (** [dispatch_mouse t mouse] runs the full mouse dispatch pipeline:
     - Updates pointer state.
     - Requests focus for a primary press (see below).

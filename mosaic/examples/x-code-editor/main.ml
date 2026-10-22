@@ -242,40 +242,38 @@ let rec take n xs =
 
 let editor_on_key model ev =
   let data = Event.Key.data ev in
-  if data.event_type = Release then None
-  else
-    let m = data.modifier in
-    match data.key with
-    | Escape when model.popup_open ->
-        Event.Key.prevent_default ev;
-        Some Dismiss_completion
-    | Enter when model.popup_open && not (m.ctrl || m.alt || m.super || m.shift)
-      ->
-        Event.Key.prevent_default ev;
-        Some Accept_completion
-    | Tab when model.popup_open && m.shift ->
-        Event.Key.prevent_default ev;
-        Some Prev_completion
-    | Tab when model.popup_open ->
-        Event.Key.prevent_default ev;
-        Some Accept_completion
-    | Tab when Option.is_none (Editor.selection model.editor) ->
-        Event.Key.prevent_default ev;
-        Some Trigger_completion
-    | Char c
-      when model.popup_open && m.ctrl
-           && lowercase_codepoint (Uchar.to_int c) = Char.code 'n' ->
-        Event.Key.prevent_default ev;
-        Some Next_completion
-    | Char c
-      when model.popup_open && m.ctrl
-           && lowercase_codepoint (Uchar.to_int c) = Char.code 'p' ->
-        Event.Key.prevent_default ev;
-        Some Prev_completion
-    | Char c when m.ctrl && Uchar.to_int c = Char.code ' ' ->
-        Event.Key.prevent_default ev;
-        Some Trigger_completion
-    | _ -> None
+  let m = data.mods in
+  match data.key with
+  | Escape when model.popup_open ->
+      Event.Key.prevent_default ev;
+      Some Dismiss_completion
+  | Enter when model.popup_open && not (m.ctrl || m.alt || m.super || m.shift)
+    ->
+      Event.Key.prevent_default ev;
+      Some Accept_completion
+  | Tab when model.popup_open && m.shift ->
+      Event.Key.prevent_default ev;
+      Some Prev_completion
+  | Tab when model.popup_open ->
+      Event.Key.prevent_default ev;
+      Some Accept_completion
+  | Tab when Option.is_none (Editor.selection model.editor) ->
+      Event.Key.prevent_default ev;
+      Some Trigger_completion
+  | Char c
+    when model.popup_open && m.ctrl
+         && lowercase_codepoint (Uchar.to_int c) = Char.code 'n' ->
+      Event.Key.prevent_default ev;
+      Some Next_completion
+  | Char c
+    when model.popup_open && m.ctrl
+         && lowercase_codepoint (Uchar.to_int c) = Char.code 'p' ->
+      Event.Key.prevent_default ev;
+      Some Prev_completion
+  | Char c when m.ctrl && Uchar.to_int c = Char.code ' ' ->
+      Event.Key.prevent_default ev;
+      Some Trigger_completion
+  | _ -> None
 
 let init () =
   ( {

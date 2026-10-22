@@ -56,8 +56,8 @@ let%expect_test "cursor in middle of text" =
   reconcile app (input ~app ~value:"hello" ());
   focus app (mounted app);
   frame app ~width:20 ~height:1;
-  send_key app Matrix_input.Key.Left;
-  send_key app Matrix_input.Key.Left;
+  send_key app Matrix_input.Keystroke.Left;
+  send_key app Matrix_input.Keystroke.Left;
   frame app ~width:20 ~height:1;
   [%expect_exact {|
 hello
@@ -68,9 +68,9 @@ let%expect_test "selection highlight" =
   reconcile app (input ~app ~value:"hello" ());
   focus app (mounted app);
   frame app ~width:20 ~height:1;
-  let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true } in
+  let ctrl_mod = { no_mod with Matrix_input.Keystroke.ctrl = true } in
   send_key_with_mod app ~modifier:ctrl_mod
-    (Matrix_input.Key.Char (Uchar.of_char 'a'));
+    (Matrix_input.Keystroke.Char (Uchar.of_char 'a'));
   frame_ansi app ~width:20 ~height:1;
   [%expect_exact {|
 hello
@@ -97,7 +97,7 @@ let%expect_test "after backspace" =
   reconcile app (input ~app ~value:"abc" ());
   focus app (mounted app);
   frame app ~width:20 ~height:1;
-  send_key app Matrix_input.Key.Backspace;
+  send_key app Matrix_input.Keystroke.Backspace;
   frame app ~width:20 ~height:1;
   [%expect_exact {|
 abc
@@ -108,9 +108,9 @@ let%expect_test "after ctrl u clear to start" =
   reconcile app (input ~app ~value:"hello world" ());
   focus app (mounted app);
   frame app ~width:20 ~height:1;
-  let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true } in
+  let ctrl_mod = { no_mod with Matrix_input.Keystroke.ctrl = true } in
   send_key_with_mod app ~modifier:ctrl_mod
-    (Matrix_input.Key.Char (Uchar.of_char 'u'));
+    (Matrix_input.Keystroke.Char (Uchar.of_char 'u'));
   frame app ~width:20 ~height:1;
   [%expect_exact {|
 hello world

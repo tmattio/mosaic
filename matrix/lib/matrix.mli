@@ -20,7 +20,7 @@ module Grid = Matrix_grid
 (** Cell-based drawing grid. *)
 
 module Input = Matrix_input
-(** Terminal input event parsing. *)
+(** Terminal input decoding. *)
 
 module Screen = Matrix_screen
 (** Double-buffered frame rendering. *)
@@ -33,14 +33,13 @@ module Text = Matrix_text
 
 (** {1:types Types} *)
 
-type kitty_keyboard = [ `Auto | `Disabled | `Enabled of int ]
-(** The type for Kitty keyboard protocol configurations.
-    - [`Auto] enables the protocol when the terminal advertises support; falls
-      back to modify-other-keys for Ctrl+Alt chords on legacy terminals.
-    - [`Disabled] never negotiates the protocol.
-    - [`Enabled flags] forces activation with the given bitmask. See the
-      {{:https://sw.kovidgoyal.net/kitty/keyboard-protocol/}Kitty keyboard
-       protocol specification} for flag values. *)
+type kitty_keyboard = [ `Auto | `Off ]
+(** The type for kitty keyboard protocol configurations.
+    - [`Auto] pushes the protocol's flags once the terminal answers its query,
+      and asks for the flags again so that {!capabilities} says which hold.
+      Without an answer the runtime sets xterm's modifyOtherKeys instead, so
+      that chords such as Ctrl+Alt with a letter stay distinct.
+    - [`Off] never uses the protocol. *)
 
 type mode = [ `Alt | `Primary ]
 (** The type for presentation modes.
@@ -52,7 +51,45 @@ type mode = [ `Alt | `Primary ]
       a resize or a {!resume} the runtime finds it again from a cursor position
       report: terminals move their rows as they resize. *)
 
-(** Backend I/O. Matrix owns input parsing, protocol negotiation, and frame
+(** {1:events Events} *)
+
+(** The type for what the terminal says to the application. The input is decoded
+    by {!Input.Decoder}; replies to the runtime's queries never reach the
+    application, but those that are application facts do, as {!Resize} and
+    {!Color_scheme}. *)
+type event =
+  | Key of Input.Keystroke.t  (** A key pressed or auto-repeated. *)
+  | Key_release of Input.Keystroke.release
+      (** A key released, reported only when {!create}'s [key_releases] asks. *)
+  | Text of string
+      (** Text the terminal reports without a key, such as text an input method
+          composed. *)
+  | Mouse of Input.Mouse_report.t
+      (** A mouse report. In [`Primary] mode its row counts from the top of the
+          live region. *)
+  | Paste_start  (** A bracketed paste begins. *)
+  | Paste_data of string
+      (** Content of the paste, exactly as sent, in pieces as it arrives. The
+          runtime holds none of it and sets it no limit: the application keeps
+          what it wants. *)
+  | Paste_end of [ `Complete | `Cut ]
+      (** The paste ends at its end marker ([`Complete]), or is cut by the end
+          of the input or {!abort_paste}. *)
+  | Focus_in  (** The terminal window gained focus. *)
+  | Focus_out  (** The terminal window lost focus. *)
+  | Resize of int * int
+      (** The terminal's size, as [(cols, rows)]: from the backend's window-size
+          signal, each time, or from the terminal's own report (mode 2048) when
+          it differs from the size last reported. *)
+  | Color_scheme of [ `Dark | `Light ]
+      (** The terminal's color scheme, in reply to a query or on a change. *)
+  | Invalid of string
+      (** Bytes that are not UTF-8, one ill-formed subsequence. *)
+
+val pp_event : Format.formatter -> event -> unit
+(** [pp_event] formats an event for debugging. *)
+
+(** Backend I/O. Matrix owns input decoding, protocol negotiation, and frame
     scheduling. Backends provide device operations and a wait that can also
     deliver native events such as window resizes. *)
 module Backend : sig
@@ -72,13 +109,14 @@ module Backend : sig
             [off]. Called only after [wait] reports readable input. [0] denotes
             permanent end-of-input; [-1] means input is no longer ready.
             Positive results denote bytes read. *)
-    wait : timeout:float option -> on_event:(Input.t -> unit) -> bool;
+    wait : timeout:float option -> on_event:(event -> unit) -> bool;
         (** [wait ~timeout ~on_event] waits for readable input, a wakeup, native
             events, or the timeout in seconds. [None] has no timeout; [Some 0.]
-            polls without blocking. Native events are passed to [on_event].
-            Returns [true] iff [read_input] can proceed without waiting. Matrix
-            parses bytes and drains expired parser deadlines after the wait; the
-            backend never parses terminal input. *)
+            polls without blocking. Native events, such as {!Resize}, are passed
+            to [on_event]. Returns [true] iff [read_input] can proceed without
+            waiting. Matrix decodes the bytes, and a wait that returns with
+            nothing to read tells it how long the terminal has been silent; the
+            backend never decodes terminal input. *)
     input_is_tty : bool;  (** Whether the input device is a terminal. *)
     output_is_tty : bool;
         (** Whether the output device accepts terminal modes. *)
@@ -97,6 +135,9 @@ module Backend : sig
     cleanup : unit -> unit;
         (** [cleanup ()] releases resources owned by the backend. Matrix calls
             it once on failed attachment or close. *)
+    env : Terminal.Caps.env;
+        (** The environment of the session the terminal runs, from which the
+            runtime guesses what the terminal can do until it answers. *)
   }
   (** The I/O operations and device properties supplied to {!attach}. *)
 end
@@ -118,8 +159,8 @@ val create :
   ?mouse_enabled:bool ->
   ?mouse:Terminal.mouse_mode option ->
   ?bracketed_paste:bool ->
-  ?focus_reporting:bool ->
   ?kitty_keyboard:kitty_keyboard ->
+  ?key_releases:bool ->
   ?exit_on_ctrl_c:bool ->
   ?debug_overlay:bool ->
   ?debug_overlay_corner:debug_overlay_corner ->
@@ -134,7 +175,7 @@ val create :
   ?resize_debounce:float option ->
   ?output:[ `Stdout | `Fd of Unix.file_descr ] ->
   ?signal_handlers:bool ->
-  ?initial_caps:Terminal.capabilities ->
+  ?caps:Terminal.capabilities ->
   ?min_tui_height:int ->
   ?start_idle:bool ->
   ?pace_redraws:bool ->
@@ -184,11 +225,15 @@ val create :
     - [mouse] explicit mouse tracking mode. Defaults to [None] (selects
       [`Sgr_any] when [mouse_enabled] is [true]).
     - [bracketed_paste] whether to enable bracketed paste. Defaults to [true].
-    - [focus_reporting] whether to enable focus-in/focus-out events. Defaults to
-      [true].
     - [kitty_keyboard] Kitty keyboard protocol configuration. Defaults to
       [`Auto].
-    - [exit_on_ctrl_c] whether Ctrl+C exits. Defaults to [true].
+    - [key_releases] whether to ask the kitty keyboard protocol for key releases
+      ({!Key_release}), which also has every key reported as a sequence.
+      Defaults to [false].
+    - [exit_on_ctrl_c] whether pressing Ctrl+C exits. Defaults to [true].
+
+    Focus reports (mode 1004), color scheme reports (2031) and resize reports
+    (2048) are always set: a terminal ignores a mode it does not have.
     - [input_timeout] timeout in seconds for input polling when no cadence is
       active. Defaults to [None] (block indefinitely).
 
@@ -199,7 +244,9 @@ val create :
       on close. Defaults to [true]. Signal dispositions are process-global, so
       simultaneously live applications must be closed in reverse construction
       order.
-    - [initial_caps] seed capabilities passed to {!Terminal.make}.
+    - [caps] the capabilities to assume where the terminal does not answer, in
+      place of what the environment says ({!Terminal.Caps.assume}). By default
+      the environment is read once, at creation.
 
     {b Diagnostics:}
     - [debug_overlay] show the debug overlay. Defaults to [false].
@@ -212,7 +259,7 @@ val create :
 
 val run :
   ?on_frame:(app -> dt:float -> unit) ->
-  ?on_input:(app -> Input.t -> unit) ->
+  ?on_input:(app -> event -> unit) ->
   ?on_resize:(app -> cols:int -> rows:int -> unit) ->
   ?primary_required_rows:(app -> int option) ->
   on_render:(app -> unit) ->
@@ -236,14 +283,14 @@ val run :
     once before the first render and then whenever the applied size changes,
     including debounced resizes applied after their event; resize reports that
     do not change the applied size produce no callback. [on_input] still
-    receives raw {!Input.Resize} terminal dimensions.
+    receives raw {!Resize} terminal dimensions.
 
     The loop exits when {!running} becomes [false]. Calling [run] on an already
     stopped application closes it without restarting; call {!start} first to
     restart an open application. Closed applications remain closed. Stopping or
     suspending in [on_frame] skips [on_render]; doing so in [on_render] skips
     presentation. Pausing permits the current frame to finish. Permanent
-    end-of-input finalizes the input parser and closes the runtime. Exceptions
+    end-of-input finalizes the input decoder and closes the runtime. Exceptions
     close the runtime before propagating. *)
 
 (** {1:frame Frame building} *)
@@ -308,8 +355,9 @@ val pause : app -> unit
 
 val suspend : ?leave_alt:bool -> app -> unit
 (** [suspend app] pauses rendering and restores the terminal to cooked mode
-    (mouse, bracketed paste, focus reporting, kitty keyboard, and
-    modify-other-keys off; raw mode off; pending input flushed). When
+    (mouse, bracketed paste, focus, color scheme and resize reports, kitty
+    keyboard, modify-other-keys and metaSendsEscape off; raw mode off; pending
+    input flushed, and a paste in progress ended with [Paste_end `Cut]). When
     [leave_alt] is [true] (default [false], preserving existing callers) it also
     exits the alternate-screen buffer, so a full-screen foreground child owns
     the primary screen and its scrollback. {!resume} reapplies configuration.
@@ -378,6 +426,13 @@ val redraw_requested : app -> bool
 (** [redraw_requested app] is [true] iff a redraw is pending. Lets an alternate
     backend distinguish a frame gated on the render cadence from a loop with no
     pending work. *)
+
+val abort_paste : app -> unit
+(** [abort_paste app] ends the bracketed paste in progress, if any, with
+    [Paste_end `Cut], for an application that will wait no longer for its end
+    marker: a terminal that stalls mid-paste stops the data, and the paste goes
+    on until its end marker or the end of the input. The bytes after it are
+    decoded as input. *)
 
 val request_immediate_redraw : app -> unit
 (** [request_immediate_redraw app] requests a one-shot frame without waiting for
@@ -518,8 +573,8 @@ val attach :
   ?mouse_enabled:bool ->
   ?mouse:Terminal.mouse_mode option ->
   ?bracketed_paste:bool ->
-  ?focus_reporting:bool ->
   ?kitty_keyboard:kitty_keyboard ->
+  ?key_releases:bool ->
   ?exit_on_ctrl_c:bool ->
   ?debug_overlay:bool ->
   ?debug_overlay_corner:debug_overlay_corner ->
@@ -535,13 +590,13 @@ val attach :
   ?min_tui_height:int ->
   ?start_idle:bool ->
   ?pace_redraws:bool ->
-  ?initial_caps:Terminal.capabilities ->
+  ?caps:Terminal.capabilities ->
   backend:Backend.t ->
   unit ->
   app
 (** [attach ~backend ()] creates an application over [backend]. It owns the
-    parser and terminal protocol state, negotiates capabilities, obtains the
-    initial dimensions, and preserves input received during startup.
+    input decoder and terminal protocol state, negotiates capabilities, obtains
+    the initial dimensions, and preserves input received during startup.
 
     Optional parameters have the same meaning as in {!create}. Raw mode and
     startup queries require [backend.input_is_tty] and [raw_mode]; terminal mode

@@ -299,12 +299,9 @@ let reset st =
     palette_shift = 0;
   }
 
-let handle_char app st uchar modifier =
+let handle_char app st uchar (mods : Input.Keystroke.mods) =
   let code = Uchar.to_int uchar in
-  let ctrl_c =
-    modifier.Input.Modifier.ctrl
-    && (code = Char.code 'c' || code = Char.code 'C')
-  in
+  let ctrl_c = mods.ctrl && (code = Char.code 'c' || code = Char.code 'C') in
   if ctrl_c then (
     stop app;
     `Stop)
@@ -333,7 +330,7 @@ let handle_char app st uchar modifier =
 
 let update app event st =
   match event with
-  | Input.Mouse { x; y; kind = Scroll { direction = dir; delta }; _ } ->
+  | Mouse { x; y; kind = Scroll dir; _ } ->
       let fractal_rows, _ = layout st in
       if fractal_rows <= 0 then `Continue st
       else
@@ -348,37 +345,29 @@ let update app event st =
               fallback_y,
               { st with pointer = (fallback_x, fallback_y) } )
         in
-        let steps = max 1 (abs delta) in
-        let factor_pow base = Float.pow base (float steps) in
         let new_state =
           match dir with
-          | Input.Mouse.Scroll_up ->
-              zoom_at st ~x:focus_x ~y:focus_y
-                ~factor:(factor_pow zoom_in_factor)
-          | Input.Mouse.Scroll_down ->
-              zoom_at st ~x:focus_x ~y:focus_y
-                ~factor:(factor_pow (1. /. zoom_in_factor))
-          | Input.Mouse.Scroll_left ->
-              pan ~fraction:scroll_pan_fraction st (float (-steps)) 0.
-          | Input.Mouse.Scroll_right ->
-              pan ~fraction:scroll_pan_fraction st (float steps) 0.
+          | `Up -> zoom_at st ~x:focus_x ~y:focus_y ~factor:zoom_in_factor
+          | `Down ->
+              zoom_at st ~x:focus_x ~y:focus_y ~factor:(1. /. zoom_in_factor)
+          | `Left -> pan ~fraction:scroll_pan_fraction st (-1.) 0.
+          | `Right -> pan ~fraction:scroll_pan_fraction st 1. 0.
         in
         with_redraw app new_state
-  | Input.Mouse { x; y; _ } ->
+  | Mouse { x; y; _ } ->
       let fractal_rows, _ = layout st in
       if pointer_in_fractal st.dims fractal_rows x y then
         `Continue { st with pointer = (x, y) }
       else `Continue st
-  | Input.Key { key = Input.Key.Escape; _ } ->
+  | Key { key = Escape; _ } ->
       stop app;
       `Stop
-  | Input.Key { key = Input.Key.Char uchar; modifier; _ } ->
-      handle_char app st uchar modifier
-  | Input.Key { key = Input.Key.Left; _ } -> with_redraw app (pan st (-1.) 0.)
-  | Input.Key { key = Input.Key.Right; _ } -> with_redraw app (pan st 1. 0.)
-  | Input.Key { key = Input.Key.Up; _ } -> with_redraw app (pan st 0. (-1.))
-  | Input.Key { key = Input.Key.Down; _ } -> with_redraw app (pan st 0. 1.)
-  | Input.Resize (cols, rows) -> with_redraw app (resize st ~cols ~rows)
+  | Key { key = Char uchar; mods; _ } -> handle_char app st uchar mods
+  | Key { key = Left; _ } -> with_redraw app (pan st (-1.) 0.)
+  | Key { key = Right; _ } -> with_redraw app (pan st 1. 0.)
+  | Key { key = Up; _ } -> with_redraw app (pan st 0. (-1.))
+  | Key { key = Down; _ } -> with_redraw app (pan st 0. 1.)
+  | Resize (cols, rows) -> with_redraw app (resize st ~cols ~rows)
   | _ -> `Continue st
 
 let () =

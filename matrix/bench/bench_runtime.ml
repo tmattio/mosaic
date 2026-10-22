@@ -1,8 +1,8 @@
 let make_app () =
   let app =
     Matrix.attach ~mode:`Alt ~raw_mode:false ~target_fps:None
-      ~mouse_enabled:false ~bracketed_paste:false ~focus_reporting:false
-      ~kitty_keyboard:`Disabled ~cursor_visible:false
+      ~mouse_enabled:false ~bracketed_paste:false ~kitty_keyboard:`Off
+      ~cursor_visible:false
       ~backend:
         {
           now = (fun () -> 0.);
@@ -17,6 +17,7 @@ let make_app () =
           flush_input = (fun () -> ());
           cleanup = (fun () -> ());
           protect = (fun f -> f ());
+          env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
         }
       ()
   in

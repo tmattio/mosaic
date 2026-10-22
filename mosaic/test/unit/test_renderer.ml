@@ -30,23 +30,29 @@ let make_child ~parent ~x ~y ~w ~h ?focusable () =
   | None -> ());
   child
 
-let mouse_press ?(button = Matrix_input.Mouse.Left)
-    ?(modifiers = Matrix_input.Modifier.none) ~x ~y () =
-  Matrix_input.Mouse.make ~x ~y ~modifiers (Down { button })
+let mouse ?(modifiers = Matrix_input.Keystroke.no_mods) ~x ~y kind :
+    Matrix_input.Mouse_report.t =
+  {
+    kind;
+    x;
+    y;
+    shift = modifiers.shift;
+    alt = modifiers.alt;
+    ctrl = modifiers.ctrl;
+  }
 
-let mouse_release ?(button = Matrix_input.Mouse.Left)
-    ?(modifiers = Matrix_input.Modifier.none) ~x ~y () =
-  Matrix_input.Mouse.make ~x ~y ~modifiers (Up { button = Some button })
+let mouse_press ?(button = Matrix_input.Mouse_report.Left) ?modifiers ~x ~y () =
+  mouse ?modifiers ~x ~y (Press button)
 
-let mouse_motion ?(left = false) ?(modifiers = Matrix_input.Modifier.none) ~x ~y
-    () =
-  let kind = if left then Matrix_input.Mouse.Drag { button = Left } else Move in
-  Matrix_input.Mouse.make ~x ~y ~modifiers kind
+let mouse_release ?(button = Matrix_input.Mouse_report.Left) ?modifiers ~x ~y ()
+    =
+  mouse ?modifiers ~x ~y (Release (Some button))
+
+let mouse_motion ?(left = false) ?modifiers ~x ~y () =
+  mouse ?modifiers ~x ~y (Motion (if left then Some Left else None))
 
 let mouse_scroll ?modifiers ~x ~y direction =
-  match Matrix_input.mouse_scroll ?modifiers x y direction with
-  | Matrix_input.Mouse mouse -> mouse
-  | _ -> assert false
+  mouse ?modifiers ~x ~y (Scroll direction)
 
 (* Unit-returning dispatch wrappers: these tests assert via tree state, not
    the event [Renderer.dispatch_mouse]/[dispatch_paste] return. *)
@@ -65,7 +71,7 @@ let record_keys node =
   Renderable.on_key node (fun ev -> log := ev :: !log);
   log
 
-let key_a = Matrix_input.Key.of_char 'a'
+let key_a = Test_harness.keystroke (Char (Uchar.of_char 'a'))
 
 (* ── Lifecycle ── *)
 
@@ -1051,7 +1057,7 @@ let shift_left_click_preserves_existing_focus () =
   in
   do_frame t;
   ignore (Renderer.focus t composer : bool);
-  let modifiers = { Matrix_input.Modifier.none with shift = true } in
+  let modifiers = { Matrix_input.Keystroke.no_mods with shift = true } in
   dispatch_mouse t (mouse_press ~modifiers ~x:25 ~y:2 ());
   match Renderer.focused t with
   | Some n -> is_true ~msg:"composer remains focused" (n == composer)
@@ -1267,7 +1273,7 @@ let mouse_event_has_correct_modifiers () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
-  let mods = { Matrix_input.Modifier.none with shift = true } in
+  let mods = { Matrix_input.Keystroke.no_mods with shift = true } in
   do_frame t;
   dispatch_mouse t (mouse_press ~modifiers:mods ~x:7 ~y:7 ());
   satisfies ~claim:"at least one event received" int
@@ -1365,7 +1371,7 @@ let scroll_dispatches_to_hit_target () =
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
   do_frame t;
-  dispatch_mouse t (mouse_scroll ~x:7 ~y:7 Matrix_input.Mouse.Scroll_up);
+  dispatch_mouse t (mouse_scroll ~x:7 ~y:7 `Up);
   let found_scroll =
     List.exists
       (fun ev -> match Event.Mouse.kind ev with Scroll _ -> true | _ -> false)
@@ -1377,10 +1383,9 @@ let scroll_with_modifiers () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   let log = record_mouse child in
-  let mods = { Matrix_input.Modifier.none with shift = true } in
+  let mods = { Matrix_input.Keystroke.no_mods with shift = true } in
   do_frame t;
-  dispatch_mouse t
-    (mouse_scroll ~modifiers:mods ~x:7 ~y:7 Matrix_input.Mouse.Scroll_down);
+  dispatch_mouse t (mouse_scroll ~modifiers:mods ~x:7 ~y:7 `Down);
   satisfies ~claim:"at least one event received" int
     (fun n -> n > 0)
     (List.length !log);
@@ -1392,7 +1397,7 @@ let scroll_on_empty_area () =
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
   (* Should not crash *)
-  dispatch_mouse t (mouse_scroll ~x:0 ~y:0 Matrix_input.Mouse.Scroll_up)
+  dispatch_mouse t (mouse_scroll ~x:0 ~y:0 `Up)
 
 (* ── Drag ── *)
 
@@ -1495,9 +1500,7 @@ let right_button_does_not_capture () =
   let _child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
   do_frame t;
   (* Right button motion *)
-  dispatch_mouse t
-    (Matrix_input.Mouse.make ~x:7 ~y:7 ~modifiers:Matrix_input.Modifier.none
-       (Drag { button = Right }));
+  dispatch_mouse t (mouse ~x:7 ~y:7 (Motion (Some Right)));
   is_none ~msg:"no capture from right" (Renderer.captured t)
 
 (* ── Selection ── *)
@@ -1562,15 +1565,14 @@ let unrelated_button_release_preserves_selection_drag () =
     ~clear:(fun () -> ())
     ~get_text:(fun () -> "");
   do_frame t;
-  let parser = Matrix_input.Parser.create () in
+  let decoder = Matrix_input.Decoder.create () in
   let feed sequence =
     let bytes = Bytes.of_string sequence in
-    Matrix_input.Parser.feed parser bytes 0 (Bytes.length bytes) ~now:0.
-      ~on_event:(function
-        | Matrix_input.Mouse mouse -> dispatch_mouse t mouse
-        | event -> failf "unexpected input: %a" Matrix_input.pp event)
-      ~on_response:(fun response ->
-        failf "unexpected response: %a" Matrix_input.Response.pp response)
+    Matrix_input.Decoder.feed decoder bytes ~off:0 ~len:(Bytes.length bytes)
+      (function
+      | Mouse mouse -> dispatch_mouse t mouse
+      | event ->
+          failf "unexpected input: %a" Matrix_input.Decoder.pp_event event)
   in
   feed "\027[<0;8;8M\027[<32;10;8M\027[<2;10;8M\027[<2;10;8m";
   let sel =
@@ -1620,7 +1622,7 @@ let scroll_on_dead_space_reaches_focused_scrollable () =
   in
   do_frame t;
   ignore (Renderer.focus t (Scroll_box.node sb) : bool);
-  dispatch_mouse t (mouse_scroll ~x:30 ~y:8 Matrix_input.Mouse.Scroll_down);
+  dispatch_mouse t (mouse_scroll ~x:30 ~y:8 `Down);
   satisfies ~claim:"focused scroll box scrolled (scroll_top > 0)" int
     (fun top -> top > 0)
     (Scroll_box.scroll_top sb)

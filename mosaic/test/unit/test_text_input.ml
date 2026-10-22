@@ -91,14 +91,14 @@ let render_input input ~width ~height =
   Renderable.Private.render_full node ~grid ~delta:0.;
   grid
 
-let no_mod = Matrix_input.Modifier.none
+let no_mod = Matrix_input.Keystroke.no_mods
 
-let send_key input key =
-  let ev = Event.Key.of_input (Matrix_input.Key.make key) in
+let send_key ?keypad input key =
+  let ev = Event.Key.of_input (Test_harness.keystroke ?keypad key) in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let send_key_with_mod input ~modifier key =
-  let ev = Event.Key.of_input (Matrix_input.Key.make ~modifier key) in
+  let ev = Event.Key.of_input (Test_harness.keystroke ~mods:modifier key) in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let send_input_event input data =
@@ -108,16 +108,15 @@ let send_input_event input data =
 let send_char input c =
   let text = String.make 1 c in
   let ev =
-    Event.Key.of_input (Matrix_input.Key.of_char ~associated_text:text c)
+    Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char c)))
   in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let send_char_with_mod input ~modifier c =
-  let ev = Event.Key.of_input (Matrix_input.Key.of_char ~modifier c) in
-  Renderable.Private.emit_default_key (Text_input.node input) ev
-
-let send_release_key input key =
-  let ev = Event.Key.of_input (Matrix_input.Key.make ~event_type:Release key) in
+  let ev =
+    Event.Key.of_input
+      (Test_harness.keystroke ~mods:modifier (Char (Uchar.of_char c)))
+  in
   Renderable.Private.emit_default_key (Text_input.node input) ev
 
 let focus_input t input =
@@ -139,16 +138,13 @@ let string_contains haystack needle =
     done;
     !found
 
-let ctrl_mod = { no_mod with Matrix_input.Modifier.ctrl = true }
-let shift_mod = { no_mod with Matrix_input.Modifier.shift = true }
-let alt_mod = { no_mod with Matrix_input.Modifier.alt = true; meta = true }
-let super_mod = { no_mod with Matrix_input.Modifier.super = true }
-
-let ctrl_shift_mod =
-  { no_mod with Matrix_input.Modifier.ctrl = true; shift = true }
+let ctrl_mod = { no_mod with Matrix_input.Keystroke.ctrl = true }
+let shift_mod = { no_mod with Matrix_input.Keystroke.shift = true }
+let alt_mod = { no_mod with Matrix_input.Keystroke.alt = true }
+let super_mod = { no_mod with Matrix_input.Keystroke.super = true }
 
 let super_shift_mod =
-  { no_mod with Matrix_input.Modifier.super = true; shift = true }
+  { no_mod with Matrix_input.Keystroke.super = true; shift = true }
 
 (* ── Props ── *)
 
@@ -265,7 +261,7 @@ let changes_propose_complete_state () =
       ~on_change:(fun state -> proposals := state :: !proposals)
       ()
   in
-  send_key input Matrix_input.Key.Left;
+  send_key input Matrix_input.Keystroke.Left;
   send_char input 'x';
   match !proposals with
   | [ edited; moved ] ->
@@ -301,7 +297,7 @@ let rejected_cursor_does_not_affect_next_edit () =
       ~on_change:(fun state -> proposals := state :: !proposals)
       ()
   in
-  send_key input Matrix_input.Key.Left;
+  send_key input Matrix_input.Keystroke.Left;
   send_char input 'x';
   equal int 2 (Text_input.cursor input);
   equal string "abx" (Editor.text (List.hd !proposals))
@@ -335,7 +331,7 @@ let on_submit_fires_on_enter () =
   let count = ref 0 in
   let t, input = make_input ~on_submit:(fun _ -> incr count) () in
   focus_input t input;
-  send_key input Matrix_input.Key.Enter;
+  send_key input Matrix_input.Keystroke.Enter;
   equal ~msg:"fired" int 1 !count
 
 let on_submit_receives_current_value () =
@@ -344,7 +340,7 @@ let on_submit_receives_current_value () =
     make_input ~value:"hello" ~on_submit:(fun s -> fired := s :: !fired) ()
   in
   focus_input t input;
-  send_key input Matrix_input.Key.Enter;
+  send_key input Matrix_input.Keystroke.Enter;
   match !fired with
   | v :: _ -> equal ~msg:"received value" string "hello" v
   | [] -> fail "on_submit not fired"
@@ -354,7 +350,7 @@ let set_on_submit_none_disables () =
   let t, input = make_input ~on_submit:(fun _ -> incr count) () in
   focus_input t input;
   Text_input.set_on_submit input None;
-  send_key input Matrix_input.Key.Enter;
+  send_key input Matrix_input.Keystroke.Enter;
   equal ~msg:"disabled" int 0 !count
 
 (* ── Key Handling ── *)
@@ -372,30 +368,30 @@ let key_left_right_moves_cursor () =
   focus_input t input;
   (* Cursor starts at end (position 2) *)
   equal ~msg:"cursor at end" int 2 (Editor.cursor (Text_input.state input));
-  send_key input Matrix_input.Key.Left;
+  send_key input Matrix_input.Keystroke.Left;
   equal ~msg:"cursor moved left" int 1 (Editor.cursor (Text_input.state input));
-  send_key input Matrix_input.Key.Right;
+  send_key input Matrix_input.Keystroke.Right;
   equal ~msg:"cursor moved right" int 2 (Editor.cursor (Text_input.state input))
 
 let key_home_end_moves_cursor () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  send_key input Matrix_input.Key.Home;
+  send_key input Matrix_input.Keystroke.Home;
   equal ~msg:"cursor at home" int 0 (Editor.cursor (Text_input.state input));
-  send_key input Matrix_input.Key.End;
+  send_key input Matrix_input.Keystroke.End;
   equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input))
 
 let key_backspace_deletes_backward () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
-  send_key input Matrix_input.Key.Backspace;
+  send_key input Matrix_input.Keystroke.Backspace;
   equal ~msg:"deleted" string "ab" (Text_input.value input)
 
 let key_delete_deletes_forward () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
   update_editor input Editor.move_home;
-  send_key input Matrix_input.Key.Delete;
+  send_key input Matrix_input.Keystroke.Delete;
   equal ~msg:"deleted forward" string "bc" (Text_input.value input)
 
 let key_ctrl_w_deletes_word_backward () =
@@ -420,32 +416,32 @@ let key_ctrl_u_deletes_to_start () =
   send_char_with_mod input ~modifier:ctrl_mod 'u';
   equal ~msg:"deleted to start" string "" (Text_input.value input)
 
+let ctrl_j_fires_submit () =
+  let count = ref 0 in
+  let t, input = make_input ~on_submit:(fun _ -> incr count) () in
+  focus_input t input;
+  send_char_with_mod input ~modifier:ctrl_mod 'j';
+  equal ~msg:"a line feed submits" int 1 !count
+
 let key_enter_fires_submit () =
   let count = ref 0 in
   let t, input = make_input ~on_submit:(fun _ -> incr count) () in
   focus_input t input;
-  send_key input Matrix_input.Key.Enter;
+  send_key input Matrix_input.Keystroke.Enter;
   equal ~msg:"submitted" int 1 !count
 
 let key_kp_enter_fires_submit () =
   let count = ref 0 in
   let t, input = make_input ~on_submit:(fun _ -> incr count) () in
   focus_input t input;
-  send_key input Matrix_input.Key.KP_enter;
+  send_key ~keypad:true input Matrix_input.Keystroke.Enter;
   equal ~msg:"submitted" int 1 !count
 
 let key_kp_left_moves_cursor () =
   let t, input = make_input ~value:"abc" () in
   focus_input t input;
-  send_key input Matrix_input.Key.KP_left;
+  send_key ~keypad:true input Matrix_input.Keystroke.Left;
   equal ~msg:"cursor moved left" int 2 (Text_input.cursor input)
-
-let key_release_is_ignored () =
-  let count = ref 0 in
-  let t, input = make_input ~on_change:(fun _ -> incr count) () in
-  focus_input t input;
-  send_release_key input (Matrix_input.Key.Char (Uchar.of_char 'a'));
-  equal ~msg:"release ignored" int 0 !count
 
 let key_max_length_rejects_excess_typing () =
   let t, input = make_input ~max_length:3 () in
@@ -466,20 +462,22 @@ let ctrl_a_moves_to_start () =
   send_char_with_mod input ~modifier:ctrl_mod 'a';
   equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input))
 
-let ctrl_a_uppercase_from_parser_moves_to_start () =
+let ctrl_shift_a_selects_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input));
-  (* Runtime parser emits Ctrl+A as 'A' with ctrl=true. *)
+  (* Ctrl+Shift+a, its Shift consumed into the key: it selects. *)
   send_char_with_mod input ~modifier:ctrl_mod 'A';
-  equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input))
+  equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input));
+  is_true ~msg:"selection"
+    (Option.is_some (Editor.selection (Text_input.state input)))
 
 let ctrl_a_base_key_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let data =
-    Matrix_input.Key.make ~modifier:ctrl_mod ~base_key:(Uchar.of_char 'a')
-      (Matrix_input.Key.Char (Uchar.of_int 0x314a))
+    Test_harness.keystroke ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
+      (Matrix_input.Keystroke.Char (Uchar.of_int 0x314a))
   in
   send_input_event input data;
   equal ~msg:"cursor at start" int 0 (Text_input.cursor input)
@@ -514,7 +512,7 @@ let ctrl_d_deletes_forward () =
 let ctrl_shift_d_deletes_line () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  send_char_with_mod input ~modifier:ctrl_shift_mod 'd';
+  send_char_with_mod input ~modifier:ctrl_mod 'D';
   equal ~msg:"line deleted" string "" (Text_input.value input)
 
 (* ── Alt Keybindings ── *)
@@ -529,7 +527,7 @@ let alt_b_moves_word_backward () =
 let meta_only_does_not_match_alt_binding () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  let meta_mod = { no_mod with Matrix_input.Modifier.meta = true } in
+  let meta_mod = { no_mod with Matrix_input.Keystroke.meta = true } in
   send_char_with_mod input ~modifier:meta_mod 'b';
   equal ~msg:"Meta alone does not match Alt" int 11 (Text_input.cursor input)
 
@@ -550,7 +548,7 @@ let alt_d_deletes_word_forward () =
 let alt_backspace_deletes_word_backward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  send_key_with_mod input ~modifier:alt_mod Matrix_input.Key.Backspace;
+  send_key_with_mod input ~modifier:alt_mod Matrix_input.Keystroke.Backspace;
   equal ~msg:"word deleted backward" string "hello " (Text_input.value input)
 
 (* ── Ctrl/Alt+Arrow Word Movement ── *)
@@ -558,7 +556,7 @@ let alt_backspace_deletes_word_backward () =
 let ctrl_left_moves_word_backward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
-  send_key_with_mod input ~modifier:ctrl_mod Matrix_input.Key.Left;
+  send_key_with_mod input ~modifier:ctrl_mod Matrix_input.Keystroke.Left;
   equal ~msg:"moved to word boundary" int 6
     (Editor.cursor (Text_input.state input))
 
@@ -566,7 +564,7 @@ let ctrl_right_moves_word_forward () =
   let t, input = make_input ~value:"hello world" () in
   focus_input t input;
   update_editor input Editor.move_home;
-  send_key_with_mod input ~modifier:ctrl_mod Matrix_input.Key.Right;
+  send_key_with_mod input ~modifier:ctrl_mod Matrix_input.Keystroke.Right;
   equal ~msg:"moved to word end" int 6 (Editor.cursor (Text_input.state input))
 
 (* ── Super+Arrow Keybindings ── *)
@@ -574,33 +572,33 @@ let ctrl_right_moves_word_forward () =
 let super_left_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Left;
+  send_key_with_mod input ~modifier:super_mod Matrix_input.Keystroke.Left;
   equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input))
 
 let super_right_moves_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   update_editor input Editor.move_home;
-  send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Right;
+  send_key_with_mod input ~modifier:super_mod Matrix_input.Keystroke.Right;
   equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input))
 
 let super_up_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Up;
+  send_key_with_mod input ~modifier:super_mod Matrix_input.Keystroke.Up;
   equal ~msg:"cursor at start" int 0 (Editor.cursor (Text_input.state input))
 
 let super_down_moves_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   update_editor input Editor.move_home;
-  send_key_with_mod input ~modifier:super_mod Matrix_input.Key.Down;
+  send_key_with_mod input ~modifier:super_mod Matrix_input.Keystroke.Down;
   equal ~msg:"cursor at end" int 5 (Editor.cursor (Text_input.state input))
 
 let super_shift_left_selects_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  send_key_with_mod input ~modifier:super_shift_mod Matrix_input.Key.Left;
+  send_key_with_mod input ~modifier:super_shift_mod Matrix_input.Keystroke.Left;
   is_true ~msg:"has selection"
     (Option.is_some (Editor.selection (Text_input.state input)));
   equal ~msg:"selected all" string "hello"
@@ -610,7 +608,7 @@ let super_shift_right_selects_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   update_editor input Editor.move_home;
-  send_key_with_mod input ~modifier:super_shift_mod Matrix_input.Key.Right;
+  send_key_with_mod input ~modifier:super_shift_mod Matrix_input.Keystroke.Right;
   is_true ~msg:"has selection"
     (Option.is_some (Editor.selection (Text_input.state input)));
   equal ~msg:"selected all" string "hello"
@@ -641,21 +639,21 @@ let shift_right_creates_selection () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   update_editor input Editor.move_home;
-  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Right;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Keystroke.Right;
   is_true ~msg:"has selection"
     (Option.is_some (Editor.selection (Text_input.state input)))
 
 let shift_left_creates_selection () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Left;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Keystroke.Left;
   is_true ~msg:"has selection"
     (Option.is_some (Editor.selection (Text_input.state input)))
 
 let shift_home_selects_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.Home;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Keystroke.Home;
   is_true ~msg:"has selection"
     (Option.is_some (Editor.selection (Text_input.state input)));
   equal ~msg:"selected all" string "hello"
@@ -665,7 +663,7 @@ let shift_end_selects_to_end () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   update_editor input Editor.move_home;
-  send_key_with_mod input ~modifier:shift_mod Matrix_input.Key.End;
+  send_key_with_mod input ~modifier:shift_mod Matrix_input.Keystroke.End;
   is_true ~msg:"has selection"
     (Option.is_some (Editor.selection (Text_input.state input)));
   equal ~msg:"selected all" string "hello"
@@ -703,7 +701,7 @@ let ctrl_shift_z_redoes () =
   send_char input 'a';
   send_char_with_mod input ~modifier:ctrl_mod 'z';
   equal ~msg:"after undo" string "" (Text_input.value input);
-  send_char_with_mod input ~modifier:ctrl_shift_mod 'z';
+  send_char_with_mod input ~modifier:ctrl_mod 'Z';
   equal ~msg:"after redo" string "a" (Text_input.value input)
 
 let super_z_undoes () =
@@ -855,38 +853,38 @@ let cursor_left_at_start_is_noop () =
   focus_input t input;
   update_editor input Editor.move_home;
   equal ~msg:"at start" int 0 (Editor.cursor (Text_input.state input));
-  send_key input Matrix_input.Key.Left;
+  send_key input Matrix_input.Keystroke.Left;
   equal ~msg:"still at start" int 0 (Editor.cursor (Text_input.state input))
 
 let cursor_right_at_end_is_noop () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   equal ~msg:"at end" int 5 (Editor.cursor (Text_input.state input));
-  send_key input Matrix_input.Key.Right;
+  send_key input Matrix_input.Keystroke.Right;
   equal ~msg:"still at end" int 5 (Editor.cursor (Text_input.state input))
 
 let backspace_at_start_is_noop () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   update_editor input Editor.move_home;
-  send_key input Matrix_input.Key.Backspace;
+  send_key input Matrix_input.Keystroke.Backspace;
   equal ~msg:"unchanged" string "hello" (Text_input.value input)
 
 let delete_at_end_is_noop () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
-  send_key input Matrix_input.Key.Delete;
+  send_key input Matrix_input.Keystroke.Delete;
   equal ~msg:"unchanged" string "hello" (Text_input.value input)
 
 let operations_on_empty_input_are_safe () =
   let t, input = make_input () in
   focus_input t input;
-  send_key input Matrix_input.Key.Backspace;
-  send_key input Matrix_input.Key.Delete;
-  send_key input Matrix_input.Key.Left;
-  send_key input Matrix_input.Key.Right;
-  send_key input Matrix_input.Key.Home;
-  send_key input Matrix_input.Key.End;
+  send_key input Matrix_input.Keystroke.Backspace;
+  send_key input Matrix_input.Keystroke.Delete;
+  send_key input Matrix_input.Keystroke.Left;
+  send_key input Matrix_input.Keystroke.Right;
+  send_key input Matrix_input.Keystroke.Home;
+  send_key input Matrix_input.Keystroke.End;
   send_char_with_mod input ~modifier:ctrl_mod 'w';
   send_char_with_mod input ~modifier:ctrl_mod 'k';
   send_char_with_mod input ~modifier:ctrl_mod 'u';
@@ -900,7 +898,7 @@ let prevent_default_blocks_input () =
   focus_input t input;
   let text = String.make 1 'a' in
   let ev =
-    Event.Key.of_input (Matrix_input.Key.of_char ~associated_text:text 'a')
+    Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char 'a')))
   in
   Event.Key.prevent_default ev;
   Renderable.Private.emit_default_key (Text_input.node input) ev;
@@ -1002,7 +1000,8 @@ let multiline_history_is_ignored_by_single_line_input () =
           ()
       in
       let event =
-        Event.Key.of_input (Matrix_input.Key.of_char ~modifier:ctrl_mod action)
+        Event.Key.of_input
+          (Test_harness.keystroke ~mods:ctrl_mod (Char (Uchar.of_char action)))
       in
       Renderable.Private.emit_default_key (Textarea.node textarea) event;
       equal ~msg:"textarea can still restore the shared multiline history"
@@ -1023,7 +1022,7 @@ let typed_bindings_override_defaults_and_recompile () =
   let bindings =
     [
       (Shortcut.left, Text_input.Buffer_home);
-      (Shortcut.key Matrix_input.Key.KP_left, Text_input.Buffer_end);
+      (Shortcut.key Matrix_input.Keystroke.Left, Text_input.Buffer_end);
       (Shortcut.ctrl 'a', Text_input.Buffer_end);
       (Shortcut.char ~meta:true 'b', Text_input.Buffer_home);
     ]
@@ -1033,31 +1032,27 @@ let typed_bindings_override_defaults_and_recompile () =
       ~on_change:(fun state -> proposed := state)
       ()
   in
-  send_key input Matrix_input.Key.Left;
+  send_key input Matrix_input.Keystroke.Left;
   equal ~msg:"last equivalent custom shortcut overrides default" int 3
     (Editor.cursor !proposed);
   send_input_event input
-    (Matrix_input.Key.make ~modifier:ctrl_mod ~base_key:(Uchar.of_char 'a')
-       (Matrix_input.Key.Char (Uchar.of_int 0x0444)));
+    (Test_harness.keystroke ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
+       (Matrix_input.Keystroke.Char (Uchar.of_int 0x0444)));
   equal ~msg:"custom shortcuts use the base-layout fallback" int 3
     (Editor.cursor !proposed);
   send_char_with_mod input ~modifier:{ no_mod with meta = true } 'b';
   equal ~msg:"explicit Meta shortcut remains distinct from Alt" int 0
     (Editor.cursor !proposed);
-  proposed := state;
   send_input_event input
-    (Matrix_input.Key.make ~event_type:Release Matrix_input.Key.Left);
-  is_true ~msg:"release publishes no proposal" (!proposed == state);
-  send_input_event input
-    (Matrix_input.Key.make ~event_type:Repeat Matrix_input.Key.Left);
+    (Test_harness.keystroke ~repeat:true Matrix_input.Keystroke.Left);
   equal ~msg:"repeat runs the custom shortcut" int 3 (Editor.cursor !proposed);
   proposed := state;
   send_key_with_mod input
     ~modifier:{ no_mod with hyper = true }
-    Matrix_input.Key.Left;
+    Matrix_input.Keystroke.Left;
   is_true ~msg:"extra non-lock modifier does not match" (!proposed == state);
   Text_input.apply_props input (Text_input.Props.make ~state ());
-  send_key input Matrix_input.Key.Left;
+  send_key input Matrix_input.Keystroke.Left;
   equal ~msg:"removing custom bindings restores defaults" int 0
     (Editor.cursor !proposed)
 
@@ -1134,17 +1129,16 @@ let () =
           test "Ctrl+K deletes to end" key_ctrl_k_deletes_to_end;
           test "Ctrl+U deletes to start" key_ctrl_u_deletes_to_start;
           test "Enter fires submit" key_enter_fires_submit;
+          test "Ctrl+J fires submit" ctrl_j_fires_submit;
           test "keypad Enter fires submit" key_kp_enter_fires_submit;
           test "keypad Left moves cursor" key_kp_left_moves_cursor;
-          test "key release is ignored" key_release_is_ignored;
           test "max_length rejects excess typing"
             key_max_length_rejects_excess_typing;
         ];
       group "Emacs keybindings"
         [
           test "Ctrl+A moves to start" ctrl_a_moves_to_start;
-          test "Ctrl+A uppercase from parser moves to start"
-            ctrl_a_uppercase_from_parser_moves_to_start;
+          test "Ctrl+Shift+A selects to start" ctrl_shift_a_selects_to_start;
           test "Ctrl+A base key moves to start" ctrl_a_base_key_moves_to_start;
           test "Ctrl+E moves to end" ctrl_e_moves_to_end;
           test "Ctrl+B moves left" ctrl_b_moves_left;

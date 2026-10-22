@@ -206,8 +206,7 @@ let run_typed_app driver ~script =
     Matrix.run (Matrix_test.app t)
       ~on_input:(fun _app event ->
         match event with
-        | Matrix.Input.Key { key = Matrix.Input.Key.Char u; _ }
-          when Uchar.is_char u ->
+        | Matrix.Key { key = Char u; _ } when Uchar.is_char u ->
             Buffer.add_char typed (Uchar.to_char u)
         | _ -> ())
       ~on_render:(fun app ->
@@ -547,7 +546,7 @@ let test_sigwinch_wakes_eio_runtime () =
     Eio.Time.with_timeout (Eio.Stdenv.clock env) 0.5 (fun () ->
         Matrix.run app
           ~on_input:(fun app -> function
-            | Matrix.Input.Resize _ ->
+            | Matrix.Resize _ ->
                 resized := true;
                 Matrix.stop app
             | _ -> ())

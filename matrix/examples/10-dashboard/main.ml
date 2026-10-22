@@ -285,24 +285,24 @@ let () =
     ~on_frame:(fun _ ~dt -> state := update ~dt !state)
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Char u; _ }
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Char u; _ }
         when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
           Matrix.stop app
-      | Input.Key { key = Input.Key.Up; _ } ->
+      | Key { key = Up; _ } ->
           state :=
             { !state with scroll_offset = max 0 (!state.scroll_offset - 1) }
-      | Input.Key { key = Input.Key.Down; _ } ->
+      | Key { key = Down; _ } ->
           let max_scroll = max 0 (List.length !state.logs - 10) in
           state :=
             {
               !state with
               scroll_offset = min max_scroll (!state.scroll_offset + 1);
             }
-      | Input.Key { key = Input.Key.Page_up; _ } ->
+      | Key { key = Page_up; _ } ->
           state :=
             { !state with scroll_offset = max 0 (!state.scroll_offset - 10) }
-      | Input.Key { key = Input.Key.Page_down; _ } ->
+      | Key { key = Page_down; _ } ->
           let max_scroll = max 0 (List.length !state.logs - 10) in
           state :=
             {

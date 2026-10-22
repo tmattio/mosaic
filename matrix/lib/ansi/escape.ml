@@ -520,8 +520,7 @@ let query = function
   | Terminal_identity -> literal "\027[>0q"
   | Device_status -> literal "\027[5n"
   | Csi_u_support -> literal "\027[?u"
-  | Kitty_graphics ->
-      literal "\027_Gi=31337,s=1,v=1,a=q,t=d,f=24;AAAA\027\\\027[c"
+  | Kitty_graphics -> literal "\027_Gi=31337,s=1,v=1,a=q,t=d,f=24;AAAA\027\\"
   | Sixel_geometry -> literal "\027[?2;1;0S"
   | Explicit_width_support -> literal "\027]66;w=1; \027\\"
   | Scaled_text_support -> literal "\027]66;s=2; \027\\"

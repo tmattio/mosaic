@@ -1,4 +1,4 @@
-module Key = Matrix_input.Key
+module Keystroke = Matrix_input.Keystroke
 
 type 'a binding = Shortcut.t * 'a
 
@@ -6,9 +6,9 @@ let binding_equal equal_action (a, action_a) (b, action_b) =
   Shortcut.equal a b && equal_action action_a action_b
 
 module Keys = Hashtbl.Make (struct
-  type t = Key.t
+  type t = Keystroke.key
 
-  let equal = Key.equal
+  let equal = ( = )
   let hash = Hashtbl.hash
 end)
 
@@ -31,7 +31,7 @@ let add t (shortcut, action) =
   in
   let action = Some action in
   match Shortcut.Private.key shortcut with
-  | Key.Char code -> Hashtbl.replace actions.chars (Uchar.to_int code) action
+  | Char code -> Hashtbl.replace actions.chars (Uchar.to_int code) action
   | key -> Keys.replace actions.keys key action
 
 let make ~defaults ?(custom = []) () =

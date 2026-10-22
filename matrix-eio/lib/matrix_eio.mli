@@ -30,8 +30,8 @@ val create :
   ?mouse_enabled:bool ->
   ?mouse:Matrix.Terminal.mouse_mode option ->
   ?bracketed_paste:bool ->
-  ?focus_reporting:bool ->
   ?kitty_keyboard:Matrix.kitty_keyboard ->
+  ?key_releases:bool ->
   ?exit_on_ctrl_c:bool ->
   ?debug_overlay:bool ->
   ?debug_overlay_corner:Matrix.debug_overlay_corner ->
@@ -47,7 +47,7 @@ val create :
   ?min_tui_height:int ->
   ?start_idle:bool ->
   ?signal_handlers:bool ->
-  ?initial_caps:Matrix.Terminal.capabilities ->
+  ?caps:Matrix.Terminal.capabilities ->
   sw:Eio.Switch.t ->
   clock:_ Eio.Time.Mono.t ->
   stdin:_ Eio_unix.source ->
@@ -60,7 +60,7 @@ val create :
     Equivalent to {!Matrix.create} but integrates with the Eio scheduler: the
     event loop yields to other Eio fibers while waiting for terminal input. The
     application is automatically closed when [sw] is released. Permanent EOF
-    from [stdin] finalizes pending parser state and closes the application
+    from [stdin] finalizes pending decoder state and closes the application
     without polling the source again. The app owns its SIGWINCH disposition and
     restores the previous disposition before releasing backend resources.
     Construction is transactional: a probe, cursor query, attachment, or initial

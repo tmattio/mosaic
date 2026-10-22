@@ -165,25 +165,18 @@ let () =
         state := { !state with life; generation = !state.generation + 1 })
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Char uchar; modifier; _ } ->
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Char uchar; mods; _ } ->
           let code = Uchar.to_int uchar in
           let ctrl_c =
-            modifier.Input.Modifier.ctrl
-            && (code = Char.code 'c' || code = Char.code 'C')
+            mods.ctrl && (code = Char.code 'c' || code = Char.code 'C')
           in
           if ctrl_c then Matrix.stop app
           else if code = Char.code ' ' then
             state := { !state with paused = not !state.paused }
           else if code = Char.code 'c' || code = Char.code 'C' then
             state := { !state with life = CSet.empty; generation = 0 }
-      | Input.Mouse
-          {
-            Input.Mouse.x;
-            y;
-            kind = Down { button = Left } | Drag { button = Left };
-            _;
-          } ->
+      | Mouse { x; y; kind = Press Left | Motion (Some Left); _ } ->
           let w, h = !state.dim in
           if y < h then
             let pt = torus (w, h) (x, y) in

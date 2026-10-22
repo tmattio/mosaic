@@ -69,13 +69,13 @@ let default_bindings =
       (down, Move_down);
       (char 'k', Move_up);
       (char 'j', Move_down);
-      (key ~shift:true Matrix_input.Key.Up, Move_up_fast);
-      (key ~shift:true Matrix_input.Key.Down, Move_down_fast);
+      (key ~shift:true Matrix_input.Keystroke.Up, Move_up_fast);
+      (key ~shift:true Matrix_input.Keystroke.Down, Move_down_fast);
       (right, Expand);
       (left, Collapse);
       (space, Toggle);
       (enter, Activate);
-      (key Matrix_input.Key.Line_feed, Activate);
+      (ctrl 'j', Activate);
     ]
 
 let default_keymap = Keymap.make ~defaults:default_bindings ()
@@ -569,10 +569,10 @@ let handle_mouse t (event : Event.mouse) =
           Event.Mouse.stop_propagation event)
   | Scroll { direction; delta } -> (
       match direction with
-      | Matrix_input.Mouse.Scroll_up when delta > 0 ->
+      | Event.Mouse.Scroll_up when delta > 0 ->
           move_up t;
           Event.Mouse.stop_propagation event
-      | Matrix_input.Mouse.Scroll_down when delta > 0 ->
+      | Event.Mouse.Scroll_down when delta > 0 ->
           move_down t;
           Event.Mouse.stop_propagation event
       | _ -> ())

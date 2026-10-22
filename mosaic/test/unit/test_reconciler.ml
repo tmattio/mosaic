@@ -157,11 +157,7 @@ let viewport_switch_reconciles_selected_branch_on_resize () =
   let first_root = List.hd (children_of renderer) in
   let first_transcript = List.hd (Renderable.children first_root) in
   let first_narrow = List.nth (Renderable.children first_root) 1 in
-  let mouse =
-    match Matrix_input.mouse_scroll 1 1 Matrix_input.Mouse.Scroll_down with
-    | Matrix_input.Mouse mouse -> mouse
-    | _ -> assert false
-  in
+  let mouse = Test_harness.mouse_report ~x:1 ~y:1 (Scroll `Down) in
   ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   let first_scroll =
     match !last_scroll with
@@ -240,11 +236,7 @@ let non_focusable_scroll_box_still_scrolls_with_wheel () =
   ignore (Renderer.render ~full:true renderer : string);
   let node = List.hd (children_of renderer) in
   is_false ~msg:"scroll box is not focusable" (Renderable.focusable node);
-  let mouse =
-    match Matrix_input.mouse_scroll 1 1 Matrix_input.Mouse.Scroll_down with
-    | Matrix_input.Mouse mouse -> mouse
-    | _ -> assert false
-  in
+  let mouse = Test_harness.mouse_report ~x:1 ~y:1 (Scroll `Down) in
   ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   is_none ~msg:"wheel does not take focus" (Renderer.focused renderer);
   match !last_scroll with
@@ -280,10 +272,8 @@ let declared_scroll_survives_rerender_and_remount () =
       [ content ]
   in
   let wheel () =
-    match Matrix_input.mouse_scroll 1 1 Matrix_input.Mouse.Scroll_up with
-    | Matrix_input.Mouse mouse ->
-        ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse)
-    | _ -> assert false
+    let mouse = Test_harness.mouse_report ~x:1 ~y:1 (Scroll `Up) in
+    ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse)
   in
   let show key scroll =
     render_view reconciler (view key scroll);
@@ -367,12 +357,12 @@ let rejected_input_preserves_accepted_state () =
   in
   render_focused_view renderer reconciler (view ());
   ignore
-    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
+    (Renderer.dispatch_key renderer (Test_harness.char_key 'x') : Event.key);
   equal ~msg:"input proposes the edit" (list string) [ "x" ] (List.rev !inputs);
   render_focused_view renderer reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer
-       (Matrix_input.Key.make Matrix_input.Key.Enter)
+       (Test_harness.keystroke Matrix_input.Keystroke.Enter)
       : Event.key);
   equal ~msg:"rejected edit leaves submitted text unchanged" (list string)
     [ "" ] (List.rev !submissions)
@@ -389,15 +379,15 @@ let rejected_textarea_preserves_accepted_state () =
   in
   render_focused_view renderer reconciler (view ());
   ignore
-    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
+    (Renderer.dispatch_key renderer (Test_harness.char_key 'x') : Event.key);
   equal ~msg:"textarea proposes the edit" (list string) [ "x" ]
     (List.rev !inputs);
   do_frame renderer;
   render_focused_view renderer reconciler (view ());
-  let modifier = { Matrix_input.Modifier.none with ctrl = true } in
+  let modifier = { Matrix_input.Keystroke.no_mods with ctrl = true } in
   ignore
     (Renderer.dispatch_key renderer
-       (Matrix_input.Key.make ~modifier Matrix_input.Key.Enter)
+       (Test_harness.keystroke ~mods:modifier Matrix_input.Keystroke.Enter)
       : Event.key);
   equal ~msg:"rejected edit leaves submitted text unchanged" (list string)
     [ "" ] (List.rev !submissions)
@@ -413,12 +403,12 @@ let accepted_editor_state_preserves_cursor () =
   render_focused_view renderer reconciler (view ());
   ignore
     (Renderer.dispatch_key renderer
-       (Matrix_input.Key.make Matrix_input.Key.Left)
+       (Test_harness.keystroke Matrix_input.Keystroke.Left)
       : Event.key);
   equal ~msg:"cursor proposal accepted by model" int 1 (Editor.cursor !state);
   render_focused_view renderer reconciler (view ());
   ignore
-    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x') : Event.key);
+    (Renderer.dispatch_key renderer (Test_harness.char_key 'x') : Event.key);
   equal ~msg:"accepted caret guides next edit" string "axb" (Editor.text !state)
 
 (* ── Keyed Reconciliation ── *)
@@ -675,7 +665,7 @@ let on_key_handler_fires () =
   let node = List.hd (children_of renderer) in
   ignore (Renderer.focus renderer node : bool);
   ignore
-    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'a') : Event.key);
+    (Renderer.dispatch_key renderer (Test_harness.char_key 'a') : Event.key);
   is_true ~msg:"handler fired" !received
 
 let on_key_handler_updates_on_rerender () =
@@ -689,14 +679,14 @@ let on_key_handler_updates_on_rerender () =
   let node = List.hd (children_of renderer) in
   ignore (Renderer.focus renderer node : bool);
   ignore
-    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'a') : Event.key);
+    (Renderer.dispatch_key renderer (Test_harness.char_key 'a') : Event.key);
   equal ~msg:"first handler" (list string) [ "first" ] !log;
   render_view reconciler
     (Vnode.box ~focusable:true
        ~on_key:(fun _ -> Some (log := "second" :: !log))
        []);
   ignore
-    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'b') : Event.key);
+    (Renderer.dispatch_key renderer (Test_harness.char_key 'b') : Event.key);
   equal ~msg:"second handler" (list string) [ "second"; "first" ] !log
 
 (* ── Unmount ── *)
@@ -803,8 +793,7 @@ let memo_refreshes_message_mapper () =
   ignore (Renderer.focus renderer (List.hd (children_of renderer)) : bool);
   let key () =
     ignore
-      (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'x')
-        : Event.key)
+      (Renderer.dispatch_key renderer (Test_harness.char_key 'x') : Event.key)
   in
   key ();
   render_view reconciler (Vnode.map second (view ()));

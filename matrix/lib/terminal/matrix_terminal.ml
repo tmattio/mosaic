@@ -17,29 +17,9 @@ type mouse_mode =
 
 type cursor_position = { x : int; y : int; visible : bool }
 
-type capabilities = Caps.t = {
-  term : string;
-  rgb : bool;
-  kitty_keyboard : bool;
-  kitty_graphics : bool;
-  bracketed_paste : bool;
-  focus_tracking : bool;
-  unicode_width : Matrix_text.width_method;
-  sgr_pixels : bool;
-  color_scheme_updates : bool;
-  explicit_width : bool;
-  explicit_cursor_positioning : bool;
-  scaled_text : bool;
-  sixel : bool;
-  sync : bool;
-  hyperlinks : bool;
-}
+module Caps = Caps
 
-type terminal_info = Caps.terminal_info = {
-  name : string;
-  version : string;
-  from_xtversion : bool;
-}
+type capabilities = Caps.t
 
 type cursor_state = {
   mutable x : int;
@@ -54,15 +34,16 @@ type t = {
   output : string -> unit;
   tty : bool;
   mutable caps : Caps.t;
-  mutable terminal_info : Caps.terminal_info;
   mutable mouse_mode : mouse_mode;
   mutable bracketed_paste_enabled : bool;
   mutable focus_enabled : bool;
   mutable kitty_keyboard_enabled : bool;
   mutable kitty_keyboard_flags : int;
   mutable modify_other_keys_enabled : bool;
+  mutable color_scheme_reports_enabled : bool;
+  mutable resize_reports_enabled : bool;
+  mutable meta_sends_escape_enabled : bool;
   mutable unicode_mode_enabled : bool;
-  mutable unicode_wide_locked : bool option;
   (* [*_armed] is not a duplicate of [*_enabled]: armed is set {e before} the
      enable sequence is written, enabled only after. When the output callback
      raises mid-enable the sequence may have reached the terminal even though
@@ -74,11 +55,13 @@ type t = {
   mutable focus_armed : bool;
   mutable kitty_keyboard_armed : bool;
   mutable modify_other_keys_armed : bool;
+  mutable color_scheme_reports_armed : bool;
+  mutable resize_reports_armed : bool;
+  mutable meta_sends_escape_armed : bool;
   cursor : cursor_state;
   mutable alt_screen : bool;
   mutable scroll_region : (int * int) option;
   mutable pixel_resolution : (int * int) option;
-  env_overrides : bool;
   (* Appearance the handle actually emitted. [reset_state] restores only what
      was touched: blanking a title or resetting cursor colour/style the app
      never set would clobber user- or shell-configured terminal state. *)
@@ -95,6 +78,12 @@ let focus_on = "\027[?1004h"
 let focus_off = "\027[?1004l"
 let paste_on = "\027[?2004h"
 let paste_off = "\027[?2004l"
+let color_scheme_reports_on = "\027[?2031h"
+let color_scheme_reports_off = "\027[?2031l"
+let resize_reports_on = "\027[?2048h"
+let resize_reports_off = "\027[?2048l"
+let meta_sends_escape_on = "\027[?1036h"
+let meta_sends_escape_off = "\027[?1036l"
 let kitty_kb_push flags = Ansi.(to_string (csi_u_push ~flags))
 let kitty_kb_pop = "\027[<u"
 let modify_other_keys_on_seq = "\027[>4;1m"
@@ -144,28 +133,29 @@ let toggle t ~current ~set ~enable ~on_seq ~off_seq =
 
 (* Constructor *)
 
-let make ~output ?(tty = true) ?initial_caps () =
-  let term = Sys.getenv_opt "TERM" |> Option.value ~default:"unknown" in
-  let caps, terminal_info = Caps.initial ?provided:initial_caps ~term () in
-  let env_overrides = Option.is_none initial_caps in
+let make ~output ?(tty = true) caps =
   {
     output;
     tty;
     caps;
-    terminal_info;
     mouse_mode = `Off;
     bracketed_paste_enabled = false;
     focus_enabled = false;
     kitty_keyboard_enabled = false;
     kitty_keyboard_flags = 0b00101;
     modify_other_keys_enabled = false;
+    color_scheme_reports_enabled = false;
+    resize_reports_enabled = false;
+    meta_sends_escape_enabled = false;
     unicode_mode_enabled = false;
-    unicode_wide_locked = None;
     mouse_armed = false;
     bracketed_paste_armed = false;
     focus_armed = false;
     kitty_keyboard_armed = false;
     modify_other_keys_armed = false;
+    color_scheme_reports_armed = false;
+    resize_reports_armed = false;
+    meta_sends_escape_armed = false;
     cursor =
       {
         x = 1;
@@ -178,7 +168,6 @@ let make ~output ?(tty = true) ?initial_caps () =
     alt_screen = false;
     scroll_region = None;
     pixel_resolution = None;
-    env_overrides;
     title_sent = false;
     cursor_style_sent = false;
     cursor_color_sent = false;
@@ -188,42 +177,8 @@ let make ~output ?(tty = true) ?initial_caps () =
 
 let capabilities t = t.caps
 let set_capabilities t caps = t.caps <- caps
-let terminal_info t = t.terminal_info
-let set_terminal_info t info = t.terminal_info <- info
 let pixel_resolution t = t.pixel_resolution
 let set_pixel_resolution t res = t.pixel_resolution <- res
-
-let preserve_width_policy t caps =
-  match t.unicode_wide_locked with
-  | Some true -> { caps with Caps.unicode_width = `Unicode_wide }
-  | Some false when caps.Caps.unicode_width = `Unicode_wide ->
-      { caps with unicode_width = `Unicode }
-  | _ -> caps
-
-let apply_capability_event t (event : Matrix_input.Response.capability) =
-  let caps, info =
-    Caps.apply_event ~apply_env_overrides:t.env_overrides ~caps:t.caps
-      ~info:t.terminal_info event
-  in
-  t.caps <- preserve_width_policy t caps;
-  t.terminal_info <- info;
-  match event with
-  | Matrix_input.Response.Pixel_resolution (w, h) ->
-      t.pixel_resolution <- Some (w, h)
-  | _ -> ()
-
-(* Probing *)
-
-let probe ?(timeout = 0.2) ~now ~on_event ~read_into ~wait_readable ~parser t =
-  if Option.is_none t.unicode_wide_locked then
-    t.unicode_wide_locked <- Some (t.caps.unicode_width = `Unicode_wide);
-  let caps, info =
-    Caps.probe ~timeout ~apply_env_overrides:t.env_overrides ~now ~on_event
-      ~read_into ~wait_readable ~send:(send t) ~parser ~caps:t.caps
-      ~info:t.terminal_info ()
-  in
-  t.caps <- preserve_width_policy t caps;
-  t.terminal_info <- info
 
 (* Mouse mode *)
 
@@ -314,6 +269,42 @@ let enable_modify_other_keys t enable =
 
 let modify_other_keys_enabled t = t.modify_other_keys_enabled
 
+(* Color scheme reports, resize reports and metaSendsEscape: a mode is armed
+   before its enable sequence is written, as above. *)
+
+let enable_color_scheme_reports t enable =
+  if t.color_scheme_reports_enabled <> enable then
+    if enable then (
+      t.color_scheme_reports_armed <- true;
+      send t color_scheme_reports_on;
+      t.color_scheme_reports_enabled <- true)
+    else (
+      send t color_scheme_reports_off;
+      t.color_scheme_reports_enabled <- false;
+      t.color_scheme_reports_armed <- false)
+
+let enable_resize_reports t enable =
+  if t.resize_reports_enabled <> enable then
+    if enable then (
+      t.resize_reports_armed <- true;
+      send t resize_reports_on;
+      t.resize_reports_enabled <- true)
+    else (
+      send t resize_reports_off;
+      t.resize_reports_enabled <- false;
+      t.resize_reports_armed <- false)
+
+let enable_meta_sends_escape t enable =
+  if t.meta_sends_escape_enabled <> enable then
+    if enable then (
+      t.meta_sends_escape_armed <- true;
+      send t meta_sends_escape_on;
+      t.meta_sends_escape_enabled <- true)
+    else (
+      send t meta_sends_escape_off;
+      t.meta_sends_escape_enabled <- false;
+      t.meta_sends_escape_armed <- false)
+
 (* Unicode width *)
 
 let set_unicode_width t width =
@@ -323,8 +314,7 @@ let set_unicode_width t width =
   toggle t
     ~current:(fun () -> t.unicode_mode_enabled)
     ~set:(fun v -> t.unicode_mode_enabled <- v)
-    ~enable ~on_seq:unicode_on ~off_seq:unicode_off;
-  t.caps <- { t.caps with unicode_width = width }
+    ~enable ~on_seq:unicode_on ~off_seq:unicode_off
 
 (* Alternate screen *)
 
@@ -432,32 +422,29 @@ let set_title t title =
 
 let copy_to_clipboard t text =
   let seq = Ansi.set_clipboard ~text in
-  if
-    Caps.is_tmux ~term:t.caps.term
-    || t.terminal_info.from_xtversion
-       && String.lowercase_ascii t.terminal_info.name = "tmux"
-  then send t (Ansi.to_string (Ansi.tmux_passthrough seq))
-  else if Caps.is_screen ~term:t.caps.term then (
-    (* Screen forwards at most 252 payload bytes per DCS envelope. OSC 52
+  match t.caps.multiplexer with
+  | Some `Tmux -> send t (Ansi.to_string (Ansi.tmux_passthrough seq))
+  | Some `Screen ->
+      (* Screen forwards at most 252 payload bytes per DCS envelope. OSC 52
        uses BEL so its terminator cannot close the enclosing DCS early. *)
-    let seq = Ansi.to_string seq in
-    let len = String.length seq in
-    let buf = Buffer.create (len + (4 * ((len + 251) / 252))) in
-    let off = ref 0 in
-    while !off < len do
-      let count = min 252 (len - !off) in
-      Buffer.add_string buf "\027P";
-      Buffer.add_substring buf seq !off count;
-      Buffer.add_string buf "\027\\";
-      off := !off + count
-    done;
-    send t (Buffer.contents buf))
-  else send t (Ansi.to_string seq)
+      let seq = Ansi.to_string seq in
+      let len = String.length seq in
+      let buf = Buffer.create (len + (4 * ((len + 251) / 252))) in
+      let off = ref 0 in
+      while !off < len do
+        let count = min 252 (len - !off) in
+        Buffer.add_string buf "\027P";
+        Buffer.add_substring buf seq !off count;
+        Buffer.add_string buf "\027\\";
+        off := !off + count
+      done;
+      send t (Buffer.contents buf)
+  | None -> send t (Ansi.to_string seq)
 
 let notify t ~title ~body =
   let seq = Ansi.notify ~title ~body in
   let seq =
-    if Caps.is_tmux ~term:t.caps.term then Ansi.tmux_passthrough seq else seq
+    if t.caps.multiplexer = Some `Tmux then Ansi.tmux_passthrough seq else seq
   in
   send t (Ansi.to_string seq)
 
@@ -482,7 +469,10 @@ let restore_modes ?(skip_focus = false) t =
   if t.kitty_keyboard_enabled then (
     send t kitty_kb_pop;
     send t (kitty_kb_push t.kitty_keyboard_flags));
-  if t.modify_other_keys_enabled then send t modify_other_keys_on_seq
+  if t.modify_other_keys_enabled then send t modify_other_keys_on_seq;
+  if t.color_scheme_reports_enabled then send t color_scheme_reports_on;
+  if t.resize_reports_enabled then send t resize_reports_on;
+  if t.meta_sends_escape_enabled then send t meta_sends_escape_on
 
 (* Reset and close *)
 
@@ -509,6 +499,15 @@ let reset_state t =
   if t.focus_armed then send t focus_off;
   t.focus_enabled <- false;
   t.focus_armed <- false;
+  if t.color_scheme_reports_armed then send t color_scheme_reports_off;
+  t.color_scheme_reports_enabled <- false;
+  t.color_scheme_reports_armed <- false;
+  if t.resize_reports_armed then send t resize_reports_off;
+  t.resize_reports_enabled <- false;
+  t.resize_reports_armed <- false;
+  if t.meta_sends_escape_armed then send t meta_sends_escape_off;
+  t.meta_sends_escape_enabled <- false;
+  t.meta_sends_escape_armed <- false;
   if t.unicode_mode_enabled then set_unicode_width t `Wcwidth;
   if t.scroll_region <> None then clear_scroll_region t;
   if t.alt_screen then leave_alternate_screen t

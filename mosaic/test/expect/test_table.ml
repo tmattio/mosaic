@@ -18,13 +18,8 @@ let rows =
 let paging_rows count =
   List.init count (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
 
-let dispatch_mouse app = function
-  | Matrix_input.Mouse event ->
-      ignore (Renderer.dispatch_mouse app.renderer event : Event.mouse)
-  | Matrix_input.Key _ | Matrix_input.Paste _ | Matrix_input.Resize _
-  | Matrix_input.Focus | Matrix_input.Blur | Matrix_input.Color_scheme _
-  | Matrix_input.Error _ ->
-      invalid_arg "expected mouse input"
+let dispatch_mouse app event =
+  ignore (Renderer.dispatch_mouse app.renderer event : Event.mouse)
 
 (* ── Basic Rendering ── *)
 
@@ -154,7 +149,7 @@ let%expect_test "keyboard navigation changes selection" =
   reconcile app (view ());
   focus app (mounted app);
   frame app ~width:25 ~height:4;
-  send_key app Matrix_input.Key.Down;
+  send_key app Matrix_input.Keystroke.Down;
   reconcile app (view ());
   frame app ~width:25 ~height:4;
   [%expect_exact
@@ -185,7 +180,7 @@ let%expect_test "page down uses the measured bordered table body" =
   reconcile app (view ());
   focus app (mounted app);
   frame app ~width:14 ~height:8;
-  send_key app Matrix_input.Key.Page_down;
+  send_key app Matrix_input.Keystroke.Page_down;
   reconcile app (view ());
   frame app ~width:14 ~height:8;
   Format.printf "\nchanges=%s\n"
@@ -228,7 +223,7 @@ let%expect_test "page up accounts for measured row separators" =
   reconcile app (view ());
   focus app (mounted app);
   frame app ~width:12 ~height:5;
-  send_key app Matrix_input.Key.Page_up;
+  send_key app Matrix_input.Keystroke.Page_up;
   reconcile app (view ());
   frame app ~width:12 ~height:5;
   Format.printf "\nchanges=%s\n"
@@ -260,8 +255,8 @@ let%expect_test "declarative hover and click callbacks report exact rows" =
        ());
   frame app ~width:25 ~height:3;
   ignore (Renderer.render app.renderer : string);
-  dispatch_mouse app (Matrix_input.mouse_move 2 1);
-  dispatch_mouse app (Matrix_input.mouse_press 2 2 Matrix_input.Mouse.Left);
+  dispatch_mouse app (mouse_report ~x:2 ~y:1 (Motion None));
+  dispatch_mouse app (mouse_report ~x:2 ~y:2 (Press Left));
   Format.printf "hover=%s activate=%s\n"
     (String.concat ","
        (List.rev_map (Option.fold ~none:"none" ~some:string_of_int) !hovered))

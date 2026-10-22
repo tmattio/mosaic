@@ -23,11 +23,10 @@ let initial = { keys = []; ticks = 0; size = None; note = "-" }
 
 let key_name key =
   let data = Mosaic.Event.Key.data key in
-  match data.Matrix.Input.Key.key with
-  | Matrix.Input.Key.Char u when Uchar.is_char u ->
-      String.make 1 (Uchar.to_char u)
-  | Matrix.Input.Key.Up -> "<up>"
-  | Matrix.Input.Key.Escape -> "<esc>"
+  match data.Matrix.Input.Keystroke.key with
+  | Char u when Uchar.is_char u -> String.make 1 (Uchar.to_char u)
+  | Up -> "<up>"
+  | Escape -> "<esc>"
   | _ -> "<other>"
 
 let update msg model =
@@ -1181,9 +1180,9 @@ let%expect_test "non-key subscriptions accumulate in declaration order" =
           equal ~msg:"startup geometry reaches both resize subscribers"
             (list string) [ "r1"; "r2" ] !observed.keys);
       `Resize (71, 1);
-      `Run (fun t -> Matrix_test.feed_event t Matrix.Input.Blur);
-      `Run (fun t -> Matrix_test.feed_event t Matrix.Input.Focus);
-      `Run (fun t -> Matrix_test.feed_event t (Matrix.Input.Color_scheme `Dark));
+      `Run (fun t -> Matrix_test.feed_event t Matrix.Focus_out);
+      `Run (fun t -> Matrix_test.feed_event t Matrix.Focus_in);
+      `Run (fun t -> Matrix_test.feed_event t (Matrix.Color_scheme `Dark));
       `Run
         (fun t ->
           equal ~msg:"every subscriber sees its event in source order"
@@ -1527,3 +1526,88 @@ let%expect_test "timer ids must be unique across every and on_tick" =
   | () -> print_endline "accepted"
   | exception Invalid_argument message -> print_endline message);
   [%expect {| Mosaic.Sub: empty or duplicate timer id: clock |}]
+
+(* An application that records every message it receives, by name. *)
+let recording subs =
+  let observed = ref initial in
+  let base = app ~subs () in
+  ( observed,
+    {
+      base with
+      Mosaic.update =
+        (fun msg model ->
+          let model, cmd = update msg model in
+          observed := model;
+          (model, cmd));
+    } )
+
+let%expect_test "a paste is delivered whole and a cut paste is dropped" =
+  let observed, application =
+    recording (fun _ ->
+        Mosaic.Sub.on_paste_all (fun ev ->
+            Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev))))
+  in
+  let feed event = `Run (fun t -> Matrix_test.feed_event t event) in
+  drive ~width:70 ~height:1 application
+    [
+      feed Matrix.Paste_start;
+      feed (Matrix.Paste_data "ab");
+      feed (Matrix.Paste_data "cd");
+      `Run
+        (fun _ ->
+          equal ~msg:"nothing is delivered before the end marker" (list string)
+            [] !observed.keys);
+      feed (Matrix.Paste_end `Complete);
+      `Run
+        (fun _ ->
+          equal ~msg:"the pieces are delivered as one paste" (list string)
+            [ "p:abcd" ] !observed.keys);
+      feed Matrix.Paste_start;
+      feed (Matrix.Paste_data "lost");
+      feed (Matrix.Paste_end `Cut);
+      `Feed "\027[200~he";
+      `Feed "llo\027[201~";
+      feed (Matrix.Text "é");
+      `Run
+        (fun _ ->
+          equal
+            ~msg:
+              "a cut paste is dropped, a bracketed paste split across reads \
+               arrives whole, and text without a key is a paste"
+            (list string)
+            [ "p:abcd"; "p:hello"; "p:é" ]
+            !observed.keys);
+    ];
+  [%expect {| |}]
+
+let%expect_test "key releases reach on_key_release, not key handlers" =
+  let observed, application =
+    recording (fun _ ->
+        Mosaic.Sub.batch
+          [
+            Mosaic.Sub.on_key_all (fun key -> Some (Pressed (key_name key)));
+            Mosaic.Sub.on_key_release (fun release ->
+                match release.key with
+                | Char u when Uchar.is_char u ->
+                    Some (Pressed ("r:" ^ String.make 1 (Uchar.to_char u)))
+                | _ -> None);
+          ])
+  in
+  let release : Matrix.Input.Keystroke.release =
+    {
+      key = Char (Uchar.of_char 'q');
+      mods = Matrix.Input.Keystroke.no_mods;
+      base = None;
+      keypad = false;
+    }
+  in
+  drive ~width:70 ~height:1 application
+    [
+      `Feed "q";
+      `Run (fun t -> Matrix_test.feed_event t (Matrix.Key_release release));
+      `Run
+        (fun _ ->
+          equal ~msg:"the press reaches key handlers, the release does not"
+            (list string) [ "q"; "r:q" ] !observed.keys);
+    ];
+  [%expect {| |}]

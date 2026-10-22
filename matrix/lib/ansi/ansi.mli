@@ -327,8 +327,8 @@ val modify_other_keys_off : t
 
 (** {1:queries Device and capability queries} *)
 
-(** The type for terminal queries. The terminal responds asynchronously; parse
-    responses via {!Parser}. *)
+(** The type for terminal queries. The terminal answers in its input stream,
+    after what it was already sending. *)
 type query =
   | Cursor_position  (** DSR 6. *)
   | Pixel_size  (** CSI 14 t. *)
@@ -337,7 +337,10 @@ type query =
   | Terminal_identity  (** XTVERSION. *)
   | Device_status  (** DSR 5. *)
   | Csi_u_support  (** CSI ? u. *)
-  | Kitty_graphics  (** Kitty graphics probe. *)
+  | Kitty_graphics
+      (** The kitty graphics protocol's query, for a 1x1 image with id 31337. A
+          terminal without the protocol stays silent, so the query is followed
+          by a query every terminal answers, such as DA1. *)
   | Sixel_geometry  (** Sixel geometry limits. *)
   | Explicit_width_support  (** OSC 66 width probe. *)
   | Scaled_text_support  (** OSC 66 scaled text probe. *)

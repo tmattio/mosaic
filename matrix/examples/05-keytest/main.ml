@@ -1,9 +1,9 @@
 open Matrix
 
 (* Keyboard tester: visualize all key events with modifiers and Kitty
-   metadata *)
+   metadata, releases included *)
 
-type event_record = { event : Input.t; timestamp : float }
+type event_record = { event : Matrix.event; timestamp : float }
 
 let max_history = 20
 let history : event_record list ref = ref []
@@ -12,7 +12,7 @@ let add_event event =
   let record = { event; timestamp = Unix.gettimeofday () } in
   history := record :: List.filteri (fun i _ -> i < max_history - 1) !history
 
-let event_to_string event = Format.asprintf "%a" Input.pp event
+let event_to_string event = Format.asprintf "%a" Matrix.pp_event event
 
 let draw_header grid ~cols =
   let title = "Keyboard & Input Tester" in
@@ -43,9 +43,7 @@ let draw_modifier_panel grid ~y =
   let x = ref 13 in
   (* Check current modifier state from most recent key event *)
   let current_mods =
-    match !history with
-    | { event = Key ke; _ } :: _ -> Some ke.modifier
-    | _ -> None
+    match !history with { event = Key ke; _ } :: _ -> Some ke.mods | _ -> None
   in
   List.iter
     (fun name ->
@@ -87,13 +85,16 @@ let draw_event_history grid ~y ~rows =
     !history
 
 let () =
-  let app = Matrix.create ~target_fps:(Some 30.) ~debug_overlay:false () in
+  let app =
+    Matrix.create ~target_fps:(Some 30.) ~debug_overlay:false ~key_releases:true
+      ()
+  in
   Matrix.run app
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
+      | Key { key = Escape; _ } -> Matrix.stop app
       | _ -> add_event event)
-    ~on_resize:(fun _ ~cols ~rows -> add_event (Input.Resize (cols, rows)))
+    ~on_resize:(fun _ ~cols ~rows -> add_event (Resize (cols, rows)))
     ~on_render:(fun app ->
       let grid = Matrix.grid app in
       let cols, rows = Matrix.size app in

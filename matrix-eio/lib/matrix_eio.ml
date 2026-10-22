@@ -74,14 +74,14 @@ let install_termination_handlers () =
 
 let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(mouse_enabled = true) ?(mouse = None) ?(bracketed_paste = true)
-    ?(focus_reporting = true) ?(kitty_keyboard = `Auto) ?(exit_on_ctrl_c = true)
+    ?(kitty_keyboard = `Auto) ?(key_releases = false) ?(exit_on_ctrl_c = true)
     ?(debug_overlay = false) ?(debug_overlay_corner = `Bottom_right)
     ?(debug_overlay_capacity = 120) ?(frame_dump_every = 0) ?frame_dump_dir
     ?frame_dump_pattern ?(frame_dump_hits = false)
     ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
     ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(min_tui_height = 1)
-    ?(start_idle = false) ?(signal_handlers = true) ?initial_caps ~sw ~clock
-    ~stdin ~stdout () =
+    ?(start_idle = false) ?(signal_handlers = true) ?caps ~sw ~clock ~stdin
+    ~stdout () =
   let input_eio_fd = Eio_unix.Resource.fd stdin in
   let output_eio_fd = Eio_unix.Resource.fd stdout in
   let output_is_tty =
@@ -213,7 +213,7 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         if Atomic.get winch_flag then (
           Atomic.set winch_flag false;
           let cols, rows = terminal_size () in
-          on_event (Matrix.Input.Resize (cols, rows)));
+          on_event (Matrix.Resize (cols, rows)));
         got = `Input
       in
       let backend : Matrix.Backend.t =
@@ -233,15 +233,16 @@ let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
             (fun () ->
               !restore_termination ();
               !restore_winch ());
+          env = Matrix.Terminal.Caps.env Sys.getenv_opt ~win32:Sys.win32;
         }
       in
       let app =
         Matrix.attach ~mode ~raw_mode ~target_fps ~mouse_enabled ~mouse
-          ~bracketed_paste ~focus_reporting ~kitty_keyboard ~exit_on_ctrl_c
+          ~bracketed_paste ~kitty_keyboard ~key_releases ~exit_on_ctrl_c
           ~debug_overlay ~debug_overlay_corner ~debug_overlay_capacity
           ~frame_dump_every ?frame_dump_dir ?frame_dump_pattern ~frame_dump_hits
           ~cursor_visible ~explicit_width ~input_timeout ~resize_debounce
-          ~min_tui_height ~start_idle ?initial_caps ~backend ()
+          ~min_tui_height ~start_idle ?caps ~backend ()
       in
       app_ref := Some app;
       restore_winch := install_winch_handler ();

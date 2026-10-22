@@ -53,54 +53,66 @@ let read_pty_output state =
       in
       read_loop ()
 
-let send_key state (ke : Input.Key.event) =
+let send state s =
   match state.pty with
   | None -> ()
   | Some pty -> (
-      let data =
-        match ke.key with
-        | Input.Key.Enter -> Some "\r"
-        | Input.Key.Tab -> Some "\t"
-        | Input.Key.Backspace -> Some "\x7f"
-        | Input.Key.Escape -> Some "\x1b"
-        | Input.Key.Up -> Some "\x1b[A"
-        | Input.Key.Down -> Some "\x1b[B"
-        | Input.Key.Right -> Some "\x1b[C"
-        | Input.Key.Left -> Some "\x1b[D"
-        | Input.Key.Home -> Some "\x1b[H"
-        | Input.Key.End -> Some "\x1b[F"
-        | Input.Key.Page_up -> Some "\x1b[5~"
-        | Input.Key.Page_down -> Some "\x1b[6~"
-        | Input.Key.Delete -> Some "\x1b[3~"
-        | Input.Key.Insert -> Some "\x1b[2~"
-        | Input.Key.F n when n >= 1 && n <= 4 ->
-            Some (Printf.sprintf "\x1bO%c" (Char.chr (Char.code 'P' + n - 1)))
-        | Input.Key.F n when n >= 5 && n <= 12 ->
-            let codes = [| "15"; "17"; "18"; "19"; "20"; "21"; "23"; "24" |] in
-            if n - 5 < Array.length codes then
-              Some (Printf.sprintf "\x1b[%s~" codes.(n - 5))
-            else None
-        | Input.Key.Char u ->
-            let code = Uchar.to_int u in
-            if ke.modifier.ctrl && code >= 0x40 && code <= 0x7f then
-              (* Ctrl+letter -> control code *)
-              let ctrl_code = code land 0x1f in
-              Some (String.make 1 (Char.chr ctrl_code))
-            else if code < 128 then Some (String.make 1 (Char.chr code))
-            else
-              (* UTF-8 encode *)
-              let buf = Buffer.create 4 in
-              Buffer.add_utf_8_uchar buf u;
-              Some (Buffer.contents buf)
-        | _ -> None
-      in
-      match data with
-      | Some s -> (
-          try write_all pty s 0 (String.length s)
-          with Unix.Unix_error (Unix.EIO, _, _) ->
-            Pty.close pty;
-            state.pty <- None)
-      | None -> ())
+      try write_all pty s 0 (String.length s)
+      with Unix.Unix_error (Unix.EIO, _, _) ->
+        Pty.close pty;
+        state.pty <- None)
+
+(* xterm's bytes for a keystroke. [Char c] is the character typed, Shift
+   already applied: Ctrl with it is its C0 control, and Alt puts ESC before
+   what the key sends. *)
+let key_bytes (ke : Input.Keystroke.t) =
+  let data =
+    match ke.key with
+    | Enter -> Some "\r"
+    | Tab when ke.mods.shift -> Some "\x1b[Z"
+    | Tab -> Some "\t"
+    | Backspace -> Some "\x7f"
+    | Escape -> Some "\x1b"
+    | Up -> Some "\x1b[A"
+    | Down -> Some "\x1b[B"
+    | Right -> Some "\x1b[C"
+    | Left -> Some "\x1b[D"
+    | Begin -> Some "\x1b[E"
+    | Home -> Some "\x1b[H"
+    | End -> Some "\x1b[F"
+    | Page_up -> Some "\x1b[5~"
+    | Page_down -> Some "\x1b[6~"
+    | Delete -> Some "\x1b[3~"
+    | Insert -> Some "\x1b[2~"
+    | F n when n >= 1 && n <= 4 ->
+        Some (Printf.sprintf "\x1bO%c" (Char.chr (Char.code 'P' + n - 1)))
+    | F n when n >= 5 && n <= 12 ->
+        let codes = [| "15"; "17"; "18"; "19"; "20"; "21"; "23"; "24" |] in
+        Some (Printf.sprintf "\x1b[%s~" codes.(n - 5))
+    | Char u ->
+        let code = Uchar.to_int u in
+        if ke.mods.ctrl && code = Char.code ' ' then Some "\x00"
+        else if ke.mods.ctrl && code >= 0x40 && code <= 0x7f then
+          Some (String.make 1 (Char.chr (code land 0x1f)))
+        else
+          let buf = Buffer.create 4 in
+          Buffer.add_utf_8_uchar buf u;
+          Some (Buffer.contents buf)
+    | _ -> None
+  in
+  if ke.mods.alt then Option.map (fun s -> "\x1b" ^ s) data else data
+
+let send_key state ke = Option.iter (send state) (key_bytes ke)
+
+(* A paste goes to the program as it came, between the bracketed paste
+   markers when the program asked for them. *)
+let send_paste state event =
+  let bracketed = (Vte.modes state.vte).bracketed_paste in
+  match event with
+  | Paste_start -> if bracketed then send state "\x1b[200~"
+  | Paste_data data -> send state data
+  | Paste_end _ -> if bracketed then send state "\x1b[201~"
+  | _ -> ()
 
 let resize_state state ~cols ~rows =
   if cols <> state.cols || rows <> state.rows then (
@@ -157,8 +169,11 @@ let () =
       if !state.pty = None then Matrix.stop app)
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key ke -> send_key !state ke
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key ke -> send_key !state ke
+      | Text text -> send !state text
+      | (Paste_start | Paste_data _ | Paste_end _) as event ->
+          send_paste !state event
       | _ -> ())
     ~on_resize:(fun _ ~cols ~rows ->
       let term_rows = max 1 (rows - 2) in

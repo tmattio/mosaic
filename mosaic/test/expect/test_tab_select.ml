@@ -64,7 +64,7 @@ let%expect_test "left arrow at start stays" =
   in
   reconcile app (view ());
   focus app (mounted app);
-  send_key app Matrix_input.Key.Left;
+  send_key app Matrix_input.Keystroke.Left;
   reconcile app (view ());
   frame app ~width:60 ~height:3;
   [%expect {| Home        Files       Settings    Help
@@ -80,7 +80,7 @@ let%expect_test "wrap_selection wraps right to first" =
   in
   reconcile app (view ());
   focus app (mounted app);
-  send_key app Matrix_input.Key.Right;
+  send_key app Matrix_input.Keystroke.Right;
   reconcile app (view ());
   frame app ~width:60 ~height:3;
   [%expect {| Home        Files       Settings    Help
@@ -96,7 +96,7 @@ let%expect_test "wrap_selection wraps left to last" =
   in
   reconcile app (view ());
   focus app (mounted app);
-  send_key app Matrix_input.Key.Left;
+  send_key app Matrix_input.Keystroke.Left;
   reconcile app (view ());
   frame app ~width:60 ~height:3;
   [%expect

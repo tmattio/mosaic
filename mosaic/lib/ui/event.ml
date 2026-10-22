@@ -19,7 +19,7 @@ end
 (* {1 Keyboard events} *)
 
 module Key = struct
-  type t = { data : Input.Key.event; control : Dispatch_control.t }
+  type t = { data : Input.Keystroke.t; control : Dispatch_control.t }
 
   let of_input data = { data; control = Dispatch_control.create () }
   let data t = t.data
@@ -27,8 +27,8 @@ module Key = struct
   let default_prevented t = Dispatch_control.default_prevented t.control
   let stop_propagation t = Dispatch_control.stop_propagation t.control
   let propagation_stopped t = Dispatch_control.propagation_stopped t.control
-  let equal a b = Input.Key.equal_event a.data b.data
-  let pp ppf t = Input.Key.pp_event ppf t.data
+  let equal a b = a.data = b.data
+  let pp ppf t = Input.Keystroke.pp ppf t.data
 end
 
 (* {1 Paste events} *)
@@ -63,10 +63,10 @@ module Mouse = struct
     | Right -> Format.pp_print_string ppf "Right"
     | Button n -> Format.fprintf ppf "Button(%d)" n
 
-  type modifier = Input.Modifier.t = {
-    ctrl : bool;
-    alt : bool;
+  type modifier = Input.Keystroke.mods = {
     shift : bool;
+    alt : bool;
+    ctrl : bool;
     super : bool;
     hyper : bool;
     meta : bool;
@@ -74,18 +74,38 @@ module Mouse = struct
     num_lock : bool;
   }
 
-  let no_modifier = Input.Modifier.none
-  let equal_modifier = Input.Modifier.equal
-  let pp_modifier = Input.Modifier.pp
+  let no_modifier = Input.Keystroke.no_mods
+  let equal_modifier (a : modifier) b = a = b
 
-  type scroll_direction = Input.Mouse.scroll_direction =
-    | Scroll_up
-    | Scroll_down
-    | Scroll_left
-    | Scroll_right
+  let pp_modifier ppf (m : modifier) =
+    let names =
+      List.filter_map
+        (fun (held, name) -> if held then Some name else None)
+        [
+          (m.ctrl, "Ctrl");
+          (m.alt, "Alt");
+          (m.shift, "Shift");
+          (m.super, "Super");
+          (m.hyper, "Hyper");
+          (m.meta, "Meta");
+          (m.caps_lock, "Caps_lock");
+          (m.num_lock, "Num_lock");
+        ]
+    in
+    Format.pp_print_string ppf
+      (match names with [] -> "none" | names -> String.concat "+" names)
 
-  let equal_scroll_direction = Input.Mouse.equal_scroll_direction
-  let pp_scroll_direction = Input.Mouse.pp_scroll_direction
+  type scroll_direction = Scroll_up | Scroll_down | Scroll_left | Scroll_right
+
+  let equal_scroll_direction (a : scroll_direction) b = a = b
+
+  let pp_scroll_direction ppf d =
+    Format.pp_print_string ppf
+      (match d with
+      | Scroll_up -> "Scroll_up"
+      | Scroll_down -> "Scroll_down"
+      | Scroll_left -> "Scroll_left"
+      | Scroll_right -> "Scroll_right")
 
   type kind =
     | Down of { button : button }
@@ -118,8 +138,7 @@ module Mouse = struct
     | Over { source = None } -> Format.pp_print_string ppf "Over"
     | Out -> Format.pp_print_string ppf "Out"
     | Scroll { direction; delta } ->
-        Format.fprintf ppf "Scroll(%a, %d)" Input.Mouse.pp_scroll_direction
-          direction delta
+        Format.fprintf ppf "Scroll(%a, %d)" pp_scroll_direction direction delta
 
   let equal_kind a b =
     match (a, b) with

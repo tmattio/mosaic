@@ -47,7 +47,7 @@ let () =
     ~on_frame:(fun _ ~dt:_ -> incr frames)
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
+      | Key { key = Escape; _ } -> Matrix.stop app
       | _ -> ())
     ~on_render:(fun app ->
       let grid = Matrix.grid app in

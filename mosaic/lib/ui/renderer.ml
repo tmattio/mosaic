@@ -16,7 +16,7 @@ type render_command =
 
 type pointer_state = {
   mutable position : (int * int) option;
-  mutable modifiers : Input.Modifier.t;
+  mutable modifiers : Event.Mouse.modifier;
   mutable rejected_press : bool;
   mutable press_target : Renderable.t option;
 }
@@ -433,7 +433,7 @@ let reject_press t ~x ~y ~modifiers kind =
 
 (* When the selection state machine consumes the event, returns [Some ev]
    where [ev] is the event the tree saw; [None] means not consumed. *)
-let handle_selection t ~requested ~x ~y ~(modifiers : Input.Modifier.t)
+let handle_selection t ~requested ~x ~y ~(modifiers : Event.Mouse.modifier)
     ~target_node ~target_id kind =
   match kind with
   | Event.Mouse.Down { button = Left } when not modifiers.ctrl -> (
@@ -546,11 +546,11 @@ let handle_drag_capture t ~x ~y ~modifiers ~target_node ~target_id kind =
 
 (* ───── Mouse Dispatch Pipeline ───── *)
 
-let map_button = function
-  | Input.Mouse.Left -> Event.Mouse.Left
-  | Input.Mouse.Right -> Event.Mouse.Right
-  | Input.Mouse.Middle -> Event.Mouse.Middle
-  | Input.Mouse.Button n -> Event.Mouse.Button n
+let map_button : Input.Mouse_report.button -> Event.Mouse.button = function
+  | Left -> Left
+  | Right -> Right
+  | Middle -> Middle
+  | Extra n -> Button n
 
 (* Full mouse dispatch pipeline in a fixed order: 1. Update pointer →
    2. Hit test → 3. Selection → 4. Hover → 5. Drag capture → 6. Normal dispatch
@@ -681,7 +681,7 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
   let pointer =
     {
       position = None;
-      modifiers = Input.Modifier.none;
+      modifiers = Event.Mouse.no_modifier;
       rejected_press = false;
       press_target = None;
     }
@@ -1155,7 +1155,7 @@ let render_frame_until_settled ?(max_passes = 4) t ~width ~height ~delta =
 
 (* ───── Event Dispatch ───── *)
 
-let dispatch_key ?(capture = Fun.const ()) t (key : Input.Key.event) =
+let dispatch_key ?(capture = Fun.const ()) t (key : Input.Keystroke.t) =
   let ev = Event.Key.of_input key in
   capture ev;
   (match !(t.focused) with
@@ -1195,21 +1195,37 @@ let dispatch_click t pressed event =
     in
     if hit > 0 then Option.iter bubble (find_node t hit)
 
-let dispatch_mouse t (mouse : Input.Mouse.event) =
-  let kind =
+(* A release that does not say which button (X10, URXVT) is [Button 0],
+   which ends a left press. *)
+let dispatch_mouse t (mouse : Input.Mouse_report.t) =
+  let kind : Event.Mouse.kind =
     match mouse.kind with
-    | Input.Mouse.Down { button } ->
-        Event.Mouse.Down { button = map_button button }
-    | Input.Mouse.Up { button } ->
+    | Press button -> Down { button = map_button button }
+    | Release button ->
         let button =
           Option.fold ~none:(Event.Mouse.Button 0) ~some:map_button button
         in
-        Event.Mouse.Up { button; is_dragging = false }
-    | Input.Mouse.Move -> Event.Mouse.Move
-    | Input.Mouse.Drag { button } ->
-        Event.Mouse.Drag { button = map_button button; is_dragging = true }
-    | Input.Mouse.Scroll { direction; delta } ->
-        Event.Mouse.Scroll { direction; delta }
+        Up { button; is_dragging = false }
+    | Motion None -> Move
+    | Motion (Some button) ->
+        Drag { button = map_button button; is_dragging = true }
+    | Scroll direction ->
+        let direction : Event.Mouse.scroll_direction =
+          match direction with
+          | `Up -> Scroll_up
+          | `Down -> Scroll_down
+          | `Left -> Scroll_left
+          | `Right -> Scroll_right
+        in
+        Scroll { direction; delta = 1 }
+  in
+  let modifiers =
+    {
+      Event.Mouse.no_modifier with
+      shift = mouse.shift;
+      alt = mouse.alt;
+      ctrl = mouse.ctrl;
+    }
   in
   let pressed = t.pointer.press_target in
   (match kind with
@@ -1217,10 +1233,7 @@ let dispatch_mouse t (mouse : Input.Mouse.event) =
   | Event.Mouse.Up { button = Left | Button 0; _ } ->
       t.pointer.press_target <- None
   | _ -> ());
-  let event =
-    dispatch_mouse_internal t ~x:mouse.x ~y:mouse.y ~modifiers:mouse.modifiers
-      kind
-  in
+  let event = dispatch_mouse_internal t ~x:mouse.x ~y:mouse.y ~modifiers kind in
   if not (Event.Mouse.default_prevented event) then
     begin match kind with
     | Event.Mouse.Down { button = Left } -> (

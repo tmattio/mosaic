@@ -116,13 +116,10 @@ let selection_callback_reports_rendered_text () =
   in
   Renderer.render_frame renderer ~width:40 ~height:5 ~delta:0.;
   ignore (Renderer.render ~full:true renderer : string);
-  let mouse kind =
-    Matrix_input.Mouse.make ~x:0 ~y:0 ~modifiers:Matrix_input.Modifier.none kind
-  in
-  dispatch_mouse renderer (mouse (Down { button = Left }));
+  let mouse kind = Test_harness.mouse_report ~x:0 ~y:0 kind in
+  dispatch_mouse renderer (mouse (Press Left));
   dispatch_mouse renderer
-    (Matrix_input.Mouse.make ~x:5 ~y:0 ~modifiers:Matrix_input.Modifier.none
-       (Drag { button = Left }));
+    (Test_harness.mouse_report ~x:5 ~y:0 (Motion (Some Left)));
   equal ~msg:"selected markdown text" (option string) (Some "Hello") !selected
 
 let selection_callback_clears () =
@@ -138,13 +135,10 @@ let selection_callback_clears () =
   Markdown.set_on_selection md None;
   Markdown.set_on_selection md (Some (fun text -> selected := text));
   Markdown.set_selectable md false;
-  let mouse kind =
-    Matrix_input.Mouse.make ~x:0 ~y:0 ~modifiers:Matrix_input.Modifier.none kind
-  in
-  dispatch_mouse renderer (mouse (Down { button = Left }));
+  let mouse kind = Test_harness.mouse_report ~x:0 ~y:0 kind in
+  dispatch_mouse renderer (mouse (Press Left));
   dispatch_mouse renderer
-    (Matrix_input.Mouse.make ~x:5 ~y:0 ~modifiers:Matrix_input.Modifier.none
-       (Drag { button = Left }));
+    (Test_harness.mouse_report ~x:5 ~y:0 (Motion (Some Left)));
   equal ~msg:"selection did not change while disabled" (option string)
     (Some "stale") !selected
 

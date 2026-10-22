@@ -122,18 +122,9 @@ let print_hit = function
         hit.logical_row hit.visual_row
 
 let dispatch_mouse r ev = ignore (Renderer.dispatch_mouse r ev : Event.mouse)
-
-let mouse_down ~x ~y =
-  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
-    (Down { button = Left })
-
-let mouse_up ~x ~y =
-  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
-    (Up { button = Some Left })
-
-let mouse_drag ~x ~y =
-  Matrix_input.Mouse.make ~x ~y ~modifiers:Matrix_input.Modifier.none
-    (Drag { button = Left })
+let mouse_down ~x ~y = mouse_report ~x ~y (Press Left)
+let mouse_up ~x ~y = mouse_report ~x ~y (Release (Some Left))
+let mouse_drag ~x ~y = mouse_report ~x ~y (Motion (Some Left))
 
 let full_style =
   Toffee.Style.make

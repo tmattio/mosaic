@@ -1,235 +1,164 @@
-(** Terminal capability detection.
+(** Terminal capabilities, derived from evidence.
 
-    [Caps] implements a functional capability detection pipeline used by
-    {!Terminal}. It combines environment heuristics with active probing and
-    never keeps hidden mutable state: capabilities are stored in plain records
-    and updated by folding events.
+    What a terminal can do is learned from three sources: its answers to
+    queries, its identity (the name and version it reports, or that the
+    environment names), and guesses from the environment. They disagree, and an
+    answer can arrive late, so the capabilities are not accumulated: they are a
+    function, {!derive}, of the evidence gathered so far, and a later answer can
+    take back what an earlier guess gave.
 
-    {2:stage1 Stage 1 -- Environment heuristics}
+    {1:precedence Precedence}
 
-    {!initial} constructs a baseline {!t} from [$TERM], [$COLORTERM],
-    [$KITTY_WINDOW_ID], platform quirks (e.g. Windows ConPTY), and explicit
-    overrides such as [MATRIX_FORCE_WCWIDTH] and [MATRIX_FORCE_UNICODE]. This
-    stage emits no escape sequences and is safe for non-interactive runs.
+    Each fact is taken from the first source that has it:
+    + {b user policy}, which the person running the program decides:
+      [MATRIX_FORCE_UNICODE] and [MATRIX_FORCE_WCWIDTH] set the width method,
+      and [VHS_RECORD] (a recording) asks for the plain widths and no kitty
+      protocols;
+    + {b corrections} keyed on the terminal's identity, for a terminal that
+      answers but is known to do otherwise, each with its reason: Ghostty from
+      1.3 widens graphemes past what mode 2027 describes;
+    + {b the answer} of the terminal that does the work;
+    + {b identity}: what a terminal of that name and version is known to do;
+    + {b guesses} from the environment: [TERM], [COLORTERM], the platform;
+    + the default, which a caller may supply in place of the environment
+      ({!assume}).
 
-    {2:stage2 Stage 2 -- Active probing}
+    A question is asked of the terminal that does the work. Inside tmux, tmux
+    draws the screen and reads the keyboard, so questions about drawing and keys
+    go to tmux itself, which answers or stays silent. tmux 3.5 answers no mode
+    query at all, so its facts then come from its identity, by version: it
+    answers for modes 2004 and 1004 from 3.6 and for 2026 from 3.7, and has no
+    mode 2027. Only a question about the terminal outside, such as kitty
+    graphics, which tmux passes through untouched, is wrapped for tmux's
+    passthrough, and only once passthrough is known to be on: tmux drops wrapped
+    queries unless its [allow-passthrough] option is set, which it is not by
+    default since 3.3.
 
-    {!probe} sends a single compound payload that includes cursor save/restore,
-    DECRQM queries for private modes (focus, sync, Unicode width, SGR pixels,
-    colour-scheme updates, bracketed paste), primary device attributes (DA),
-    explicit-width and scaled-text cursor-position queries, XTVersion, CSI u
-    (Kitty keyboard), and Kitty graphics queries. iTerm2 proprietary queries are
-    appended when [$TERM] contains ["iterm"].
+    The environment describes the terminal the process started in, which is not
+    always the one it talks to: [TERM_PROGRAM] survives into ssh sessions, GNU
+    screen, zellij and tmux. The environment gives an identity only when the
+    terminal is directly attached, with none of [SSH_CONNECTION], [SSH_CLIENT],
+    [SSH_TTY], [TMUX], [STY] or [ZELLIJ] set. An identity the terminal reports
+    itself (XTVERSION) is an answer and holds everywhere.
 
-    Responses are parsed through a {!Matrix_input.Parser.t} and converted into
-    {!Matrix_input.Response.capability} values. {!apply_events} folds those into
-    the capability record and {!terminal_info}.
+    {1:batches Batches}
 
-    Kitty detection (via XTVersion containing ["kitty"] or [$KITTY_WINDOW_ID])
-    immediately promotes all Kitty capabilities. Detection of the Kitty keyboard
-    protocol alone (via CSI u query) only sets [kitty_keyboard = true], since
-    other terminals may support the keyboard protocol without full Kitty
-    compatibility.
+    Queries go in batches, each ending with a primary device attributes query
+    (DA1), which every terminal answers. A terminal answers in order, so the DA1
+    reply says that the batch has been answered: "If an answer for the device
+    attributes is received without getting back an answer for the progressive
+    enhancement the terminal does not support this protocol" (kitty keyboard
+    protocol, "Detection of support"). A query that is silent before its batch's
+    DA1 reply is answered "no" where its protocol says so (kitty graphics) and
+    stays unknown otherwise: a terminal without DECRQM says nothing of its
+    modes. The caller sends the batches, settles them and routes their replies;
+    {!ask} gives each batch's bytes, {!next} the batch that follows. *)
 
-    {2:cap_model Capability model}
-
-    The capability record distinguishes between {e detected} capabilities and
-    {e policy overrides}:
-    - {e Detected capabilities} from probing are monotonic: once a probe
-      confirms a feature, it remains enabled.
-    - {e Policy overrides} from the environment may disable features that were
-      detected or assumed: Windows ConPTY disables Kitty/SIXEL, VS Code terminal
-      disables Kitty keyboard/graphics, tmux/screen forces
-      [unicode_width = `Wcwidth], [$VHS_RECORD] disables Kitty features for
-      recording.
-
-    When [apply_env_overrides] is [true] in {!probe} or {!apply_events}, policy
-    overrides are reapplied after each batch of responses.
-
-    {1:types Types} *)
+(** {1:caps Capabilities} *)
 
 type t = {
-  term : string;  (** Raw [$TERM] value used for heuristics. *)
-  rgb : bool;
-      (** [true] if 24-bit colour is considered safe
-          ([COLORTERM=truecolor/24bit] or Kitty/ConPTY heuristics). *)
-  kitty_keyboard : bool;
-      (** [true] if the Kitty keyboard protocol is supported. *)
-  kitty_graphics : bool;
-      (** [true] if the Kitty graphics protocol is supported. *)
-  bracketed_paste : bool;
-      (** [true] if bracketed paste (DECSET/DECRST 2004) is supported or
-          enabled. *)
-  focus_tracking : bool;
-      (** [true] if focus tracking (DECSET/DECRST 1004) is supported or enabled.
-      *)
+  rgb : bool;  (** 24-bit color is safe. *)
+  kitty_keyboard : int option;
+      (** [Some flags] when the terminal speaks the kitty keyboard protocol,
+          with the enhancement flags it last reported in effect; [None] when it
+          has not answered the protocol's query. *)
+  kitty_graphics : bool;  (** The kitty graphics protocol is supported. *)
+  bracketed_paste : bool;  (** Bracketed paste (mode 2004) is supported. *)
+  focus_tracking : bool;  (** Focus reports (mode 1004) are supported. *)
   unicode_width : Matrix_text.width_method;
-      (** Current Unicode width mode. Reflects both heuristics and any DECRQM
-          2027 responses processed so far. Terminals such as Kitty, WezTerm,
-          recent iTerm2, and Foot report Unicode width support via DECRQM 2027.
-      *)
-  sgr_pixels : bool;
-      (** [true] if SGR pixel-position mouse reports (DECRQM 1016) are
-          supported. *)
+      (** How the terminal measures text. Mode 2027 set, or permanently set, is
+          [`Unicode]; reset, or permanently reset, is [`Wcwidth]. *)
+  sgr_pixels : bool;  (** SGR pixel mouse reports (mode 1016) are supported. *)
   color_scheme_updates : bool;
-      (** [true] if colour-scheme update notifications (Terminal Update
-          protocol, DECRQM 2031) are supported. *)
+      (** Color scheme change reports (mode 2031) are supported. *)
   explicit_width : bool;
-      (** [true] if the terminal reported explicit cell-width information via
-          proprietary cursor-position queries (iTerm2/Foot). *)
+      (** The terminal sizes text as OSC 66 says: [w=1] moves the cursor one
+          cell. *)
   explicit_cursor_positioning : bool;
-      (** [true] if the terminal may miscalculate grapheme widths but supports
-          reliable cursor positioning. When set, the renderer repositions the
-          cursor after each wide grapheme to prevent column drift. Only used
-          when {!field-explicit_width} is [false]. *)
-  scaled_text : bool;
-      (** [true] if the terminal reports support for scaled text sizing (Foot,
-          WezTerm and similar, via proprietary queries). *)
-  sixel : bool;
-      (** [true] if SIXEL graphics are supported (DA parameter 4 present). *)
-  sync : bool;  (** [true] if synchronised output (DECRQM 2026) is supported. *)
-  hyperlinks : bool;
-      (** [true] if OSC 8 hyperlinks are supported (detected from Kitty/iTerm2
-          cues). *)
+      (** The terminal may measure graphemes otherwise than the renderer, so the
+          renderer places the cursor after each wide one. *)
+  scaled_text : bool;  (** OSC 66 scaled text ([s=2]) is supported. *)
+  sixel : bool;  (** SIXEL graphics: DA1 attribute 4. *)
+  sync : bool;  (** Synchronized output (mode 2026) is supported. *)
+  hyperlinks : bool;  (** OSC 8 hyperlinks are supported. *)
+  meta_sends_escape : bool option;
+      (** xterm's metaSendsEscape (mode 1036) as the terminal answered.
+          [Some false] says it has the mode and it is reset, and can be set: Alt
+          then arrives as the character with its high bit set, not as an ESC
+          before it. [None] when the terminal does not have the mode, cannot
+          change it, or did not answer. *)
+  multiplexer : [ `Tmux | `Screen ] option;
+      (** The multiplexer between the program and the terminal: tmux when it
+          reports itself (XTVERSION) or [TMUX] is set, GNU screen when [STY] is
+          set, else as [TERM]'s prefix says. *)
+  identity : (string * string) option;
+      (** The terminal's name and version, from XTVERSION, or from
+          [TERM_PROGRAM] and [TERM_PROGRAM_VERSION] when directly attached. *)
 }
-(** The type for terminal capability sets.
+(** The type for capabilities. *)
 
-    Boolean fields from probing are monotonic: once a probe confirms a feature,
-    subsequent probes do not disable it. Policy overrides (see {!apply_events}
-    with [apply_env_overrides:true]) may disable features to ensure correct
-    behaviour in specific environments.
+(** {1:env Environment} *)
 
-    The record is intentionally verbose rather than bit-packed to keep debugging
-    and conditional branches readable. *)
+type env
+(** The type for the environment variables that bear on capabilities. *)
 
-type terminal_info = { name : string; version : string; from_xtversion : bool }
-(** The type for terminal emulator identity.
-    - [name] is the terminal program name, taken from XTVersion when available,
-      otherwise from [$TERM_PROGRAM].
-    - [version] is the version string, taken from XTVersion or
-      [$TERM_PROGRAM_VERSION].
-    - [from_xtversion] is [true] iff [name] and [version] came from an XTVersion
-      response. *)
+val env : (string -> string option) -> win32:bool -> env
+(** [env getenv ~win32] reads the environment through [getenv], such as
+    [Sys.getenv_opt]; an empty value counts as unset. [win32] says the terminal
+    is a Windows console. *)
 
-(** {1:environment Environment} *)
+(** {1:evidence Evidence} *)
 
-val is_tmux : term:string -> bool
-(** [is_tmux ~term] is [true] when running inside tmux: [$TMUX] is set and
-    non-empty, or [term] starts with ["tmux"]. *)
+type evidence
+(** The type for what is known of a terminal: its environment and the answers
+    received so far. *)
 
-val is_screen : term:string -> bool
-(** [is_screen ~term] is [true] when [$STY] is non-empty or [term] starts with
-    ["screen"], unless {!is_tmux} identifies tmux. *)
+val evidence : env -> evidence
+(** [evidence env] is the evidence before any answer. *)
 
-(** {1:constructors Constructors} *)
+val assume : t -> evidence
+(** [assume caps] is evidence with no environment, in which every fact that no
+    answer gives is as [caps] says. *)
 
-val initial : ?provided:t -> term:string -> unit -> t * terminal_info
-(** [initial ~provided ~term ()] is the initial capability record and terminal
-    metadata.
+val add : evidence -> Matrix_input.Reply.t -> evidence
+(** [add ev r] is [ev] with the reply [r]: a mode report (DECRPM), the kitty
+    keyboard flags, XTVERSION or a kitty graphics reply. Other replies, and the
+    cursor reports and DA1 replies whose meaning depends on their batch
+    ({!cursor}, {!answered}), leave [ev] as it is. *)
 
-    When [provided] is [Some caps], returns [caps] unchanged and derives
-    {!terminal_info} from the environment
-    ([$TERM_PROGRAM]/[$TERM_PROGRAM_VERSION]) using [caps.term] as the baseline.
+val derive : evidence -> t
+(** [derive ev] is the capabilities [ev] gives, by the {!section-precedence}. *)
 
-    When [provided] is [None], constructs a baseline from [term] and environment
-    heuristics, then applies environment overrides such as
-    [MATRIX_FORCE_WCWIDTH], [MATRIX_FORCE_UNICODE], [$TERM_PROGRAM], modern
-    terminal sync hints, tmux/screen fallbacks, and platform-specific quirks.
+(** {1:questions Questions} *)
 
-    In both cases [terminal_info.from_xtversion] is [false]; XTVersion replies
-    processed later via {!apply_events} take precedence. *)
+(** The type for batches of queries. *)
+type batch =
+  | Probe
+      (** The startup batch, to the terminal that does the work. It starts with
+          S7C1T, so that no reply comes with 8-bit controls, then asks for the
+          mode reports, two OSC 66 widths each followed by a cursor position
+          report, XTVERSION, the kitty keyboard flags, the kitty graphics query
+          unless a multiplexer is in the way, and DA1. *)
+  | Passthrough
+      (** DA1 alone, wrapped for tmux: answered only when tmux passes it on. *)
+  | Outer
+      (** Questions about the terminal outside tmux, wrapped for tmux: the kitty
+          graphics query, then DA1. *)
 
-(** {1:events Event processing} *)
+val ask : evidence -> batch -> string * Matrix_input.Decoder.owed
+(** [ask ev b] is the bytes of [b] and the replies it owes the decoder (see
+    {!Matrix_input.Decoder.expect}). *)
 
-val apply_event :
-  ?apply_env_overrides:bool ->
-  caps:t ->
-  info:terminal_info ->
-  Matrix_input.Response.capability ->
-  t * terminal_info
-(** [apply_event ~apply_env_overrides ~caps ~info event] processes a single
-    capability [event] and is [(caps', info')] with the updated records.
+val cursor : evidence -> batch -> index:int -> row:int -> col:int -> evidence
+(** [cursor ev b ~index ~row ~col] is [ev] with the [index]th cursor position
+    report that [b] asked for, from [0], at [row] and [col], from [0]. *)
 
-    This is the callback-friendly version of {!apply_events} that avoids list
-    allocation. [apply_env_overrides] defaults to [false].
+val answered : evidence -> batch -> attributes:int list -> evidence
+(** [answered ev b ~attributes] is [ev] once the DA1 that ends [b] is answered
+    with [attributes]. What [b] asked and was not answered is then known not to
+    be there, where its protocol says that silence means so. *)
 
-    See also {!apply_events}. *)
-
-val apply_events :
-  ?apply_env_overrides:bool ->
-  caps:t ->
-  info:terminal_info ->
-  Matrix_input.Response.capability list ->
-  t * terminal_info
-(** [apply_events ~apply_env_overrides ~caps ~info events] folds capability
-    [events] into the records and is [(caps', info')].
-
-    Events are processed in order; later events win when they provide strictly
-    more information (e.g. a Unicode-width DECRQM replacing an environment
-    guess).
-
-    When [apply_env_overrides] is [true], environment heuristics are reapplied
-    after folding. Defaults to [false].
-
-    See also {!apply_event}. *)
-
-(** {1:probing Probing} *)
-
-val probe :
-  ?timeout:float ->
-  ?apply_env_overrides:bool ->
-  now:(unit -> float) ->
-  on_event:(Matrix_input.t -> unit) ->
-  read_into:(bytes -> int -> int -> int) ->
-  wait_readable:(timeout:float -> bool) ->
-  send:(string -> unit) ->
-  parser:Matrix_input.Parser.t ->
-  caps:t ->
-  info:terminal_info ->
-  unit ->
-  t * terminal_info
-(** [probe ~timeout ~apply_env_overrides ~now ~on_event ~read_into
-     ~wait_readable ~send ~parser ~caps ~info ()] runs the active probing stage
-    and is [(caps', info')] with the refined records.
-
-    Emits a compound query payload built from [caps.term] using [send].
-    Repeatedly waits for input using [wait_readable], reads into a temporary
-    buffer via [read_into], feeds bytes into [parser], collects capability
-    events, and applies them with {!apply_events}. User input events (keys,
-    mouse, etc.) are forwarded to [on_event] so they are not lost during
-    probing. A [read_into] result of [0] stops probing because it denotes
-    permanent end-of-input; [-1] means no bytes are currently available and
-    resumes waiting within the probe deadline.
-
-    Using the caller's [parser] (rather than an internal one) ensures that
-    partial escape sequences spanning the probe boundary are not lost. [now ()]
-    is monotonic time in seconds, using the same origin as all other calls to
-    [parser]. It determines probe and parser deadlines.
-
-    Stops when all three conditions are met:
-    - explicit-width information is available (either
-      [caps.explicit_width = true] or a new probe response),
-    - scaled-text information is available (either [caps.scaled_text = true] or
-      a new probe response),
-    - at least one device-attributes (DA) response has been seen.
-
-    Probing also terminates after [timeout] seconds (default [0.2];
-    non-negative).
-
-    When [apply_env_overrides] is [true], environment overrides are reapplied
-    after each batch of responses to keep forced policies (e.g. tmux wcwidth) in
-    effect even if probes report richer capabilities. Defaults to [false].
-
-    The cursor is saved and restored as part of the payload. Probing is
-    idempotent and monotonic: running [probe] multiple times can only add
-    capabilities or refine {!terminal_info}, never remove information.
-
-    {b Note.} Callers are responsible for ensuring that [read_into],
-    [wait_readable], and [send] interact with the same underlying descriptor and
-    do not interfere with normal input processing. *)
-
-val build_probe_payload : string -> string
-(** [build_probe_payload term] is the compound probe query string for the given
-    [$TERM] value. The payload includes cursor save/restore, DECRQM queries, DA,
-    cursor-position probes, XTVersion, CSI u, and Kitty graphics queries. iTerm2
-    proprietary queries are appended when [term] contains ["iterm"]. *)
+val next : evidence -> batch -> batch option
+(** [next ev b] is the batch to send once [b] is answered, if any: inside tmux,
+    {!Passthrough} after {!Probe}, then {!Outer} once passthrough is known to be
+    on. *)

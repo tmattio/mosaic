@@ -1,9 +1,9 @@
-module Input = Matrix_input
+module Reply = Matrix_input.Reply
+module Decoder = Matrix_input.Decoder
 
 type t = {
-  term : string;
   rgb : bool;
-  kitty_keyboard : bool;
+  kitty_keyboard : int option;
   kitty_graphics : bool;
   bracketed_paste : bool;
   focus_tracking : bool;
@@ -16,70 +16,15 @@ type t = {
   sixel : bool;
   sync : bool;
   hyperlinks : bool;
+  meta_sends_escape : bool option;
+  multiplexer : [ `Tmux | `Screen ] option;
+  identity : (string * string) option;
 }
 
-type terminal_info = { name : string; version : string; from_xtversion : bool }
-
-(* Non-allocating substring search *)
-let contains_substring s sub =
-  let len_s = String.length s and len_sub = String.length sub in
-  if len_sub = 0 then true
-  else if len_sub > len_s then false
-  else
-    (* Check if sub matches at position idx without allocation *)
-    let matches_at idx =
-      let rec check i =
-        if i >= len_sub then true
-        else if String.unsafe_get s (idx + i) <> String.unsafe_get sub i then
-          false
-        else check (i + 1)
-      in
-      check 0
-    in
-    let rec loop idx =
-      if idx + len_sub > len_s then false
-      else if matches_at idx then true
-      else loop (idx + 1)
-    in
-    loop 0
-
-let detect_rgb () =
-  let env = Sys.getenv_opt "COLORTERM" |> Option.map String.lowercase_ascii in
-  match env with
-  | Some v when contains_substring v "truecolor" -> true
-  | Some v when contains_substring v "24bit" -> true
-  | _ -> false
-
-let detect_kitty ~term =
-  Option.is_some (Sys.getenv_opt "KITTY_WINDOW_ID")
-  || contains_substring (String.lowercase_ascii term) "kitty"
-
-(* Terminals known to support OSC 8 hyperlinks. *)
-let is_hyperlink_term name =
-  let lower = String.lowercase_ascii name in
-  contains_substring lower "ghostty"
-  || contains_substring lower "kitty"
-  || contains_substring lower "wezterm"
-  || contains_substring lower "alacritty"
-  || contains_substring lower "iterm"
-
-let is_sync_term name =
-  let lower = String.lowercase_ascii name in
-  contains_substring lower "ghostty"
-  || contains_substring lower "kitty"
-  || contains_substring lower "wezterm"
-  || contains_substring lower "alacritty"
-  || contains_substring lower "iterm"
-
-let make_initial_capabilities ~term =
-  let rgb = detect_rgb () in
-  let kitty = detect_kitty ~term in
-  let hyperlinks = is_hyperlink_term term || rgb in
-  let sync = is_sync_term term in
+let defaults =
   {
-    term;
-    rgb;
-    kitty_keyboard = kitty;
+    rgb = false;
+    kitty_keyboard = None;
     kitty_graphics = false;
     bracketed_paste = false;
     focus_tracking = false;
@@ -90,36 +35,164 @@ let make_initial_capabilities ~term =
     explicit_cursor_positioning = false;
     scaled_text = false;
     sixel = false;
-    sync;
-    hyperlinks;
+    sync = false;
+    hyperlinks = false;
+    meta_sends_escape = None;
+    multiplexer = None;
+    identity = None;
   }
 
-let with_env name f caps =
-  match Sys.getenv_opt name with
-  | Some value when value <> "" -> f value caps
-  | _ -> caps
+let contains s sub =
+  let n = String.length s and m = String.length sub in
+  let rec at i j = j = m || (s.[i + j] = sub.[j] && at i (j + 1)) in
+  let rec from i = i + m <= n && (at i 0 || from (i + 1)) in
+  from 0
 
-let with_env_bool name f caps =
-  match Sys.getenv_opt name with
-  | Some value when value <> "" -> f caps
-  | _ -> caps
+(* Environment *)
 
-let colorterm_truecolor value =
-  let v = String.lowercase_ascii value in
-  String.equal v "truecolor" || String.equal v "24bit"
+type env = {
+  term : string;  (** Lowercase, [""] when unset. *)
+  colorterm : string;
+  term_program : (string * string) option;
+  kitty_window : bool;
+  termux : string option;
+  attached : bool;
+      (** No ssh session, multiplexer or zellij between the process and the
+          terminal its environment names. *)
+  tmux : bool;
+  screen : bool;
+  vhs : bool;
+  force_wcwidth : bool;
+  force_unicode : bool;
+  win32 : bool;
+}
 
-let env_present name =
-  match Sys.getenv_opt name with Some value -> value <> "" | None -> false
+let env getenv ~win32 =
+  let get name =
+    match getenv name with Some "" | None -> None | Some v -> Some v
+  in
+  let set name = Option.is_some (get name) in
+  let lower name =
+    String.lowercase_ascii (Option.value (get name) ~default:"")
+  in
+  let term = lower "TERM" in
+  let prefixed prefix = String.starts_with ~prefix term in
+  let tmux = set "TMUX" and screen = set "STY" in
+  {
+    term;
+    colorterm = lower "COLORTERM";
+    term_program =
+      Option.map
+        (fun name ->
+          (name, Option.value (get "TERM_PROGRAM_VERSION") ~default:""))
+        (get "TERM_PROGRAM");
+    kitty_window = set "KITTY_WINDOW_ID";
+    termux = get "TERMUX_VERSION";
+    attached =
+      not
+        (List.exists set [ "SSH_CONNECTION"; "SSH_CLIENT"; "SSH_TTY"; "ZELLIJ" ]
+        || tmux || screen || prefixed "tmux" || prefixed "screen"
+        || prefixed "zellij");
+    tmux;
+    screen;
+    vhs = set "VHS_RECORD";
+    force_wcwidth = set "MATRIX_FORCE_WCWIDTH";
+    force_unicode = set "MATRIX_FORCE_UNICODE";
+    win32;
+  }
+
+let no_env = env (fun _ -> None) ~win32:false
+
+(* Evidence *)
+
+type evidence = {
+  env : env;
+  assumed : t;
+  modes : (int * Reply.setting) list;  (** DECRPM of DEC modes, latest first. *)
+  keyboard : int option;
+  version : string option;
+  attributes : int list option;  (** The probe's DA1. *)
+  explicit : bool option;
+  scaled : bool option;
+  graphics : bool option;
+  passthrough : bool;
+}
+
+let make env assumed =
+  {
+    env;
+    assumed;
+    modes = [];
+    keyboard = None;
+    version = None;
+    attributes = None;
+    explicit = None;
+    scaled = None;
+    graphics = None;
+    passthrough = false;
+  }
+
+let evidence env = make env defaults
+let assume caps = make no_env caps
+
+let add ev (r : Reply.t) =
+  match r with
+  | Mode { dec = true; mode; setting } ->
+      { ev with modes = (mode, setting) :: List.remove_assoc mode ev.modes }
+  | Keyboard_flags flags -> { ev with keyboard = Some flags }
+  | Version text -> { ev with version = Some text }
+  | Graphics { id = Some 31337; _ } -> { ev with graphics = Some true }
+  | _ -> ev
+
+(* XTVERSION is "name(version)" (xterm, kitty) or "name version" (tmux,
+   WezTerm, Ghostty). *)
+let parse_version text =
+  let text = String.trim text in
+  let cut i j = String.trim (String.sub text i (j - i)) in
+  let n = String.length text in
+  match String.index_opt text '(' with
+  | Some i ->
+      let j = Option.value (String.index_from_opt text i ')') ~default:n in
+      (cut 0 i, if j > i then cut (i + 1) j else "")
+  | None -> (
+      match String.index_opt text ' ' with
+      | Some i -> (cut 0 i, cut (i + 1) n)
+      | None -> (text, ""))
+
+(* The leading [major.minor] of a version such as "3.5a" or "next-3.7". *)
+let major_minor version =
+  let n = String.length version in
+  let rec number i acc =
+    if i < n && version.[i] >= '0' && version.[i] <= '9' then
+      number (i + 1) ((acc * 10) + Char.code version.[i] - 48)
+    else (i, acc)
+  in
+  let rec start i =
+    if i >= n then None
+    else if version.[i] >= '0' && version.[i] <= '9' then
+      let i, major = number i 0 in
+      if i < n && version.[i] = '.' then
+        let j, minor = number (i + 1) 0 in
+        if j > i + 1 then Some (major, minor) else None
+      else None
+    else start (i + 1)
+  in
+  start 0
+
+let at_least version v =
+  match major_minor version with Some mm -> mm >= v | None -> false
 
 let decimal s =
   if s <> "" && String.for_all (fun c -> c >= '0' && c <= '9') s then
     int_of_string_opt s
   else None
 
-let ghostty_wide_version version =
-  let parts = String.split_on_char '-' version in
+(* Ghostty widens graphemes from 1.3.0, and in its dev builds from
+   2026-02-24 ("0.0.0-YYYYMMDD.…"), with a release's own dev builds
+   ("1.3.0-N-gHASH") counting as the release. *)
+let ghostty_wide version =
   let release =
-    match parts with
+    match String.split_on_char '-' version with
     | core :: suffix -> (
         match String.split_on_char '.' core with
         | [ major; minor; patch ] -> (
@@ -156,571 +229,224 @@ let ghostty_wide_version version =
      | Some date -> date >= 20260224
      | None -> false
 
-let direct_ghostty_wide term =
-  let lower = String.lowercase_ascii term in
-  (not Sys.win32)
-  && (not
-        (List.exists env_present
-           [
-             "SSH_CONNECTION"; "SSH_CLIENT"; "SSH_TTY"; "TMUX"; "STY"; "ZELLIJ";
-           ]))
-  && (not
-        (List.exists
-           (fun prefix -> String.starts_with ~prefix lower)
-           [ "tmux"; "screen"; "zellij" ]))
-  &&
-  match
-    (Sys.getenv_opt "TERM_PROGRAM", Sys.getenv_opt "TERM_PROGRAM_VERSION")
-  with
-  | Some name, Some version ->
-      String.lowercase_ascii name = "ghostty" && ghostty_wide_version version
-  | _ -> false
+(* The identity an answer gives, else the environment's when directly
+   attached. *)
+let reported_identity ev =
+  match ev.version with
+  | Some text -> Some (parse_version text)
+  | None when ev.env.attached -> (
+      match (ev.env.term_program, ev.env.termux) with
+      | Some id, _ -> Some id
+      | None, _ when ev.env.kitty_window -> Some ("kitty", "")
+      | None, Some version -> Some ("termux", version)
+      | None, None -> None)
+  | None -> None
 
-let apply_environment_overrides ?info caps =
-  let caps =
-    if caps.unicode_width = `Unicode_wide then
-      { caps with unicode_width = `Unicode }
-    else caps
-  in
-  (* On Windows, assume modern terminal capabilities (Windows Terminal, ConPTY,
-     etc.) *)
-  let caps =
-    if Sys.win32 then
-      {
-        caps with
-        rgb = true;
-        unicode_width = `Unicode;
-        bracketed_paste = true;
-        (* ConPTY has limited capabilities compared to Unix terminals *)
-        sixel = false;
-        kitty_graphics = false;
-        kitty_keyboard = false;
-      }
-    else caps
-  in
-  let caps =
-    match Sys.getenv_opt "TMUX" with
-    | Some value when value <> "" ->
-        {
-          caps with
-          unicode_width = `Wcwidth;
-          explicit_cursor_positioning = true;
-        }
-    | _ ->
-        with_env "TERM"
-          (fun term caps ->
-            let lower = String.lowercase_ascii term in
-            if
-              String.starts_with ~prefix:"tmux" lower
-              || String.starts_with ~prefix:"screen" lower
-            then
-              {
-                caps with
-                unicode_width = `Wcwidth;
-                explicit_cursor_positioning = true;
-              }
-            else caps)
-          caps
-  in
-  let caps =
-    with_env "TERM_PROGRAM"
-      (fun prog caps ->
-        let caps =
-          if is_hyperlink_term prog then { caps with hyperlinks = true }
-          else caps
-        in
-        let caps =
-          if is_sync_term prog then { caps with sync = true } else caps
-        in
-        match String.lowercase_ascii prog with
-        | "vscode" ->
-            {
-              caps with
-              kitty_keyboard = false;
-              kitty_graphics = false;
-              unicode_width = `Unicode;
-            }
-        | "apple_terminal" -> { caps with unicode_width = `Wcwidth }
-        | "alacritty" -> { caps with explicit_cursor_positioning = true }
-        | _ -> caps)
-      caps
-  in
-  let caps =
-    with_env "COLORTERM"
-      (fun value caps ->
-        if colorterm_truecolor value then
-          { caps with rgb = true; hyperlinks = true }
-        else caps)
-      caps
-  in
-  let caps =
-    if
-      direct_ghostty_wide caps.term
-      && Option.fold ~none:true
-           ~some:(fun info ->
-             (not info.from_xtversion)
-             || String.lowercase_ascii info.name = "ghostty")
-           info
-    then { caps with unicode_width = `Unicode_wide }
-    else caps
-  in
-  let caps =
-    with_env_bool "TERMUX_VERSION"
-      (fun caps -> { caps with unicode_width = `Wcwidth })
-      caps
-  in
-  let caps =
-    with_env_bool "VHS_RECORD"
-      (fun caps ->
-        {
-          caps with
-          unicode_width = `Wcwidth;
-          kitty_keyboard = false;
-          kitty_graphics = false;
-        })
-      caps
-  in
-  let caps =
-    with_env_bool "MATRIX_FORCE_WCWIDTH"
-      (fun caps -> { caps with unicode_width = `Wcwidth })
-      caps
-  in
-  let caps =
-    with_env_bool "MATRIX_FORCE_UNICODE"
-      (fun caps -> { caps with unicode_width = `Unicode })
-      caps
-  in
-  let caps =
-    with_env_bool "KITTY_WINDOW_ID"
-      (fun caps ->
-        {
-          caps with
-          kitty_keyboard = true;
-          kitty_graphics = true;
-          unicode_width = `Unicode;
-          rgb = true;
-          sixel = true;
-          hyperlinks = true;
-        })
-      caps
-  in
-  caps
+(* The multiplexer the environment says is in the way. *)
+let env_multiplexer env =
+  if env.tmux then Some `Tmux
+  else if env.screen then Some `Screen
+  else if String.starts_with ~prefix:"tmux" env.term then Some `Tmux
+  else if String.starts_with ~prefix:"screen" env.term then Some `Screen
+  else None
 
-let make_terminal_info term =
-  { name = term; version = ""; from_xtversion = false }
+(* An XTVERSION reply is the terminal that answers: tmux, or no multiplexer
+   (GNU screen does not answer). *)
+let reported_multiplexer ev =
+  match ev.version with
+  | Some text ->
+      let name, _ = parse_version text in
+      if contains (String.lowercase_ascii name) "tmux" then Some `Tmux else None
+  | None -> env_multiplexer ev.env
 
-let update_terminal_info_from_env info =
-  if info.from_xtversion then info
-  else
-    match Sys.getenv_opt "TERM_PROGRAM" with
-    | Some prog ->
-        let version =
-          Option.value ~default:"" (Sys.getenv_opt "TERM_PROGRAM_VERSION")
-        in
-        { name = prog; version; from_xtversion = false }
-    | None -> info
+let first options default =
+  match List.find_map Fun.id options with Some v -> v | None -> default
 
-let initial ?provided ~term () =
-  match provided with
-  | Some caps ->
-      let info =
-        make_terminal_info caps.term |> update_terminal_info_from_env
-      in
-      (caps, info)
-  | None ->
-      let caps =
-        make_initial_capabilities ~term |> apply_environment_overrides
-      in
-      let info =
-        make_terminal_info caps.term |> update_terminal_info_from_env
-      in
-      (caps, info)
+let when_ b v = if b then Some v else None
 
-let parse_xtversion_payload info payload =
-  let payload = String.trim payload in
-  if payload = "" then info
-  else
-    let len = String.length payload in
-    match String.index_from_opt payload 0 '(' with
-    | Some paren ->
-        let close =
-          Option.value ~default:len
-            (String.index_from_opt payload (paren + 1) ')')
-        in
-        let name = String.sub payload 0 paren |> String.trim in
-        let version =
-          if close > paren + 1 then
-            String.sub payload (paren + 1) (close - paren - 1) |> String.trim
-          else ""
-        in
-        { name; version; from_xtversion = true }
-    | None -> (
-        match String.index_from_opt payload 0 ' ' with
-        | Some space ->
-            let name = String.sub payload 0 space |> String.trim in
-            let rest_len = len - (space + 1) in
-            let version =
-              if rest_len > 0 then
-                String.sub payload (space + 1) rest_len |> String.trim
-              else ""
-            in
-            { name; version; from_xtversion = true }
-        | None -> { name = payload; version = ""; from_xtversion = true })
+let supported : Reply.setting -> bool = function
+  | Set | Reset | Permanently_set -> true
+  | Not_recognized | Permanently_reset -> false
 
-(* Mark capabilities for a confirmed Kitty terminal (from XTVersion or env).
-   This is only called when we're confident the terminal is actually Kitty. *)
-let mark_kitty_terminal caps =
+let modern_names = [ "ghostty"; "kitty"; "wezterm"; "alacritty"; "iterm" ]
+
+(* Identity rows and guesses apply to what was reported, never to what the
+   caller assumed: an assumed fact is already the answer for that fact. *)
+let derive ev =
+  let env = ev.env and d = ev.assumed in
+  let id = reported_identity ev in
+  let name, version =
+    match id with
+    | Some (name, version) -> (String.lowercase_ascii name, version)
+    | None -> ("", "")
+  in
+  let is family = contains name family in
+  let tmux = is "tmux" in
+  let modern = List.exists is modern_names in
+  let term_modern = List.exists (contains env.term) modern_names in
+  let truecolor =
+    env.colorterm = "truecolor" || env.colorterm = "24bit" || env.win32
+  in
+  let mux = reported_multiplexer ev in
+  let mode m = Option.map supported (List.assoc_opt m ev.modes) in
   {
-    caps with
-    kitty_keyboard = true;
-    kitty_graphics = true;
-    unicode_width = `Unicode;
-    rgb = true;
-    sixel = true;
-    hyperlinks = true;
-    bracketed_paste = true;
+    rgb = first [ when_ (is "kitty") true; when_ truecolor true ] d.rgb;
+    kitty_keyboard =
+      (if env.vhs then None
+       else match ev.keyboard with Some _ as k -> k | None -> d.kitty_keyboard);
+    kitty_graphics =
+      first
+        [ when_ env.vhs false; ev.graphics; when_ (is "kitty") true ]
+        d.kitty_graphics;
+    bracketed_paste =
+      first
+        [
+          mode 2004;
+          when_ (is "kitty") true;
+          when_ tmux (at_least version (3, 6));
+          when_ env.win32 true;
+        ]
+        d.bracketed_paste;
+    focus_tracking =
+      first [ mode 1004; when_ tmux (at_least version (3, 6)) ] d.focus_tracking;
+    unicode_width =
+      first
+        [
+          when_ env.force_unicode `Unicode;
+          when_ (env.force_wcwidth || env.vhs) `Wcwidth;
+          when_ (is "ghostty" && ghostty_wide version) `Unicode_wide;
+          (match List.assoc_opt 2027 ev.modes with
+          | Some (Set | Permanently_set) -> Some `Unicode
+          | Some (Reset | Permanently_reset) -> Some `Wcwidth
+          | Some Not_recognized | None -> None);
+          when_ (is "kitty") `Unicode;
+          when_ (tmux || is "apple_terminal" || is "termux") `Wcwidth;
+          when_ (Option.is_some mux) `Wcwidth;
+        ]
+        d.unicode_width;
+    sgr_pixels = first [ mode 1016 ] d.sgr_pixels;
+    color_scheme_updates = first [ mode 2031 ] d.color_scheme_updates;
+    explicit_width = first [ ev.explicit ] d.explicit_width;
+    explicit_cursor_positioning =
+      first
+        [ when_ (tmux || is "alacritty") true; when_ (Option.is_some mux) true ]
+        d.explicit_cursor_positioning;
+    scaled_text = first [ ev.scaled ] d.scaled_text;
+    sixel = first [ Option.map (List.mem 4) ev.attributes ] d.sixel;
+    sync =
+      first
+        [
+          mode 2026;
+          when_ tmux (at_least version (3, 7));
+          when_ modern true;
+          when_ term_modern true;
+        ]
+        d.sync;
+    hyperlinks =
+      first
+        [ when_ (tmux || modern) true; when_ (term_modern || truecolor) true ]
+        d.hyperlinks;
+    meta_sends_escape =
+      (match List.assoc_opt 1036 ev.modes with
+      | Some (Set | Permanently_set) -> Some true
+      | Some Reset -> Some false
+      | Some (Not_recognized | Permanently_reset) -> None
+      | None -> d.meta_sends_escape);
+    multiplexer =
+      (match (ev.version, mux) with
+      | Some _, mux | None, (Some _ as mux) -> mux
+      | None, None -> d.multiplexer);
+    identity = (match id with Some _ -> id | None -> d.identity);
   }
 
-let apply_terminal_name_policy caps name =
-  let lower = String.lowercase_ascii name in
-  if contains_substring lower "tmux" then
-    {
-      caps with
-      unicode_width = `Wcwidth;
-      explicit_cursor_positioning = true;
-      hyperlinks = true;
-    }
-  else if contains_substring lower "alacritty" then
-    { caps with explicit_cursor_positioning = true; hyperlinks = true }
-  else caps
+(* Questions *)
 
-let terminal_info_is_tmux info =
-  info.from_xtversion
-  && contains_substring (String.lowercase_ascii info.name) "tmux"
+type batch = Probe | Passthrough | Outer
 
-let apply_mode_report caps report =
-  (* DECRQM response values: 0 = not recognized (mode not supported) 1 = set
-     (mode is enabled) 2 = reset (mode is disabled but supported) 3 =
-     permanently set 4 = permanently reset
-
-     For most modes, a response of 1 or 2 indicates the terminal supports the
-     mode. For mode 2027 (Unicode width), the value indicates the current state:
-     1 = Unicode mode active, 2 = wcwidth mode active. *)
-  let is_supported value = value = 1 || value = 2 in
-  let update caps (mode, value) =
-    match mode with
-    | 2027 ->
-        (* Mode 2027 is special: value indicates current width mode state *)
-        if value = 1 then { caps with unicode_width = `Unicode }
-        else if value = 2 then { caps with unicode_width = `Wcwidth }
-        else caps
-    | _ -> (
-        if
-          (* Other modes: any recognized response means supported *)
-          not (is_supported value)
-        then caps
-        else
-          match mode with
-          | 1004 -> { caps with focus_tracking = true }
-          | 1016 -> { caps with sgr_pixels = true }
-          | 2004 -> { caps with bracketed_paste = true }
-          | 2026 -> { caps with sync = true }
-          | 2031 -> { caps with color_scheme_updates = true }
-          | _ -> caps)
-  in
-  if report.Input.Response.is_private then
-    List.fold_left update caps report.modes
-  else caps
-
-let apply_event_internal (caps, info) (event : Input.Response.capability) =
-  match event with
-  | Input.Response.Device_attributes attrs ->
-      let caps =
-        if List.mem 4 attrs then { caps with sixel = true } else caps
-      in
-      (caps, info)
-  | Input.Response.Mode_report r ->
-      let caps = apply_mode_report caps r in
-      (caps, info)
-  | Input.Response.Pixel_resolution _ -> (caps, info)
-  (* Cursor-position reports carry capability information only while a width
-     probe is in flight; [probe] classifies them itself. Outside the probe a
-     CPR is ambient input (xterm encodes modified F3 as [CSI 1;mR], and shell
-     prompt integration can leave stray reports), so folding it here would let
-     any such byte sequence permanently flip explicit_width/scaled_text. *)
-  | Input.Response.Cursor_position _ -> (caps, info)
-  | Input.Response.Xtversion payload ->
-      let info = parse_xtversion_payload info payload in
-      let caps =
-        (* XTVersion containing "kitty" confirms we're in actual Kitty terminal,
-           so we can safely enable all Kitty capabilities *)
-        if contains_substring (String.lowercase_ascii payload) "kitty" then
-          mark_kitty_terminal caps
-        else
-          let caps =
-            if is_hyperlink_term payload then { caps with hyperlinks = true }
-            else caps
-          in
-          apply_terminal_name_policy caps info.name
-      in
-      (caps, info)
-  | Input.Response.Dcs payload ->
-      (* A DCS reply whose payload mentions Kitty identifies the terminal as
-         Kitty even without the XTVersion prefix; other DCS payloads carry no
-         capability information. *)
-      let caps =
-        if contains_substring (String.lowercase_ascii payload) "kitty" then
-          mark_kitty_terminal caps
-        else caps
-      in
-      (caps, info)
-  | Input.Response.Kitty_graphics_reply payload ->
-      (* Kitty graphics reply only confirms graphics support, nothing else *)
-      let caps =
-        if contains_substring payload "i=31337" then
-          { caps with kitty_graphics = true }
-        else caps
-      in
-      (caps, info)
-  | Input.Response.Kitty_keyboard _ ->
-      (* Any reply to the CSI ? u query confirms keyboard protocol support;
-         the flags only report which enhancements are currently active. Other
-         terminals (e.g., foot, WezTerm) may support the Kitty keyboard
-         protocol without supporting Kitty graphics or other Kitty
-         features. *)
-      ({ caps with kitty_keyboard = true }, info)
-  | Input.Response.Color_scheme _ ->
-      (* Color scheme DSR response. The scheme value (Dark/Light) could be
-         stored if needed, but for now we just acknowledge the capability. *)
-      let caps = { caps with color_scheme_updates = true } in
-      (caps, info)
-
-(* Single-event version for callback-based parsing - no list allocation *)
-let apply_event ?(apply_env_overrides = false) ~caps ~info event =
-  let caps, info = apply_event_internal (caps, info) event in
-  let caps =
-    if apply_env_overrides then apply_environment_overrides ~info caps else caps
-  in
-  (caps, info)
-
-let apply_events ?(apply_env_overrides = false) ~caps ~info events =
-  let caps, info = List.fold_left apply_event_internal (caps, info) events in
-  let caps =
-    if apply_env_overrides then apply_environment_overrides ~info caps else caps
-  in
-  (caps, info)
-
-let cursor_save = Ansi.(to_string cursor_save)
-let cursor_restore = Ansi.(to_string cursor_restore)
+let s7c1t = "\027 F"
+let da1 = Ansi.(to_string (query Device_attributes))
+let cursor_report = Ansi.(to_string (query Cursor_position))
 let home = Ansi.(to_string home)
-let explicit_width_query = Ansi.(to_string (query Explicit_width_support))
-let scaled_text_query = Ansi.(to_string (query Scaled_text_support))
-let xtversion_query = Ansi.(to_string (query Terminal_identity))
-let csi_u_query = Ansi.(to_string (query Csi_u_support))
-let decrqm_sgr_pixels = Ansi.(to_string (query Sgr_pixels_mode))
-let decrqm_unicode = Ansi.(to_string (query Unicode_mode))
-let decrqm_color_scheme = Ansi.(to_string (query Color_scheme_mode))
-let decrqm_focus = Ansi.(to_string (query Focus_mode))
-let decrqm_bracketed_paste = Ansi.(to_string (query Bracketed_paste_mode))
-let decrqm_sync = Ansi.(to_string (query Sync_mode))
-let cursor_position_request = Ansi.(to_string (query Cursor_position))
-let kitty_graphics_query = Ansi.(to_string (query Kitty_graphics))
-let primary_device_attrs = Ansi.(to_string (query Device_attributes))
-let iterm2_proprietary_query = "\027]1337;ReportCellSize\007"
+let graphics_query = Ansi.(to_string (query Kitty_graphics))
+let wrap s = Ansi.(to_string (tmux_passthrough (literal s)))
 
-let is_tmux ~term =
-  env_present "TMUX"
-  ||
-  let lower = String.lowercase_ascii term in
-  String.starts_with ~prefix:"tmux" lower
-
-let is_screen ~term =
-  (not (is_tmux ~term))
-  && (env_present "STY"
-     || String.starts_with ~prefix:"screen" (String.lowercase_ascii term))
-
-(* Wrap an escape sequence for tmux DCS passthrough. All ESC bytes (0x1b) in the
-   payload are doubled so tmux forwards them to the outer terminal. *)
-let wrap_for_tmux seq =
-  let buf = Buffer.create (String.length seq + 16) in
-  Buffer.add_string buf "\027Ptmux;";
-  String.iter
-    (fun c ->
-      if c = '\027' then Buffer.add_string buf "\027\027"
-      else Buffer.add_char buf c)
-    seq;
-  Buffer.add_string buf "\027\\";
-  Buffer.contents buf
-
-let decrqm_queries =
+let probe ~graphics =
   String.concat ""
     [
-      decrqm_sgr_pixels;
-      decrqm_unicode;
-      decrqm_color_scheme;
-      decrqm_focus;
-      decrqm_bracketed_paste;
-      decrqm_sync;
+      s7c1t;
+      Ansi.(to_string cursor_save);
+      Ansi.(to_string (query Sgr_pixels_mode));
+      Ansi.(to_string (query Unicode_mode));
+      Ansi.(to_string (query Color_scheme_mode));
+      Ansi.(to_string (query Focus_mode));
+      Ansi.(to_string (query Bracketed_paste_mode));
+      Ansi.(to_string (query Sync_mode));
+      "\027[?1036$p";
+      home;
+      Ansi.(to_string (query Explicit_width_support));
+      cursor_report;
+      home;
+      Ansi.(to_string (query Scaled_text_support));
+      cursor_report;
+      Ansi.(to_string (query Terminal_identity));
+      Ansi.(to_string (query Csi_u_support));
+      (if graphics then graphics_query else "");
+      Ansi.(to_string cursor_restore);
+      da1;
     ]
 
-let build_probe_payload term =
-  let tmux = is_tmux ~term in
-  let screen = is_screen ~term in
-  let decrqm_block =
-    if tmux then wrap_for_tmux decrqm_queries else decrqm_queries
-  in
-  let graphics =
-    if screen then ""
-    else if tmux then wrap_for_tmux kitty_graphics_query
-    else kitty_graphics_query
-  in
-  let base_queries =
-    [
-      cursor_save;
-      decrqm_block;
-      primary_device_attrs;
-      home;
-      explicit_width_query;
-      cursor_position_request;
-      home;
-      scaled_text_query;
-      cursor_position_request;
-      xtversion_query;
-      csi_u_query;
-      graphics;
-    ]
-  in
-  let queries =
-    let term_lower = String.lowercase_ascii term in
-    if contains_substring term_lower "iterm" then
-      base_queries @ [ iterm2_proprietary_query ]
-    else base_queries
-  in
-  String.concat "" (queries @ [ cursor_restore ])
+(* The probe asks for kitty graphics directly only with no multiplexer in the
+   way, as the environment or the caller tells before any answer: tmux takes an
+   APC string for a window title. *)
+let probe_graphics ev =
+  Option.is_none
+    (match env_multiplexer ev.env with
+    | Some _ as m -> m
+    | None -> ev.assumed.multiplexer)
 
-let build_tmux_pending_probe_payload term =
-  let graphics =
-    if is_screen ~term then "" else wrap_for_tmux kitty_graphics_query
-  in
-  String.concat "" [ wrap_for_tmux decrqm_queries; graphics ]
+let ask ev = function
+  | Probe ->
+      let graphics = probe_graphics ev in
+      ( probe ~graphics,
+        {
+          Decoder.cursor_reports = 2;
+          string_replies = (if graphics then 2 else 1);
+        } )
+  | Passthrough -> (wrap da1, { cursor_reports = 0; string_replies = 0 })
+  | Outer ->
+      ( wrap graphics_query ^ wrap da1,
+        { cursor_reports = 0; string_replies = 1 } )
 
-let probe ?(timeout = 0.2) ?(apply_env_overrides = false) ~now ~on_event
-    ~read_into ~wait_readable ~send ~parser ~caps ~info () =
-  let payload = build_probe_payload caps.term in
-  let previous_context = Input.Parser.protocol_context parser in
-  let probe_context =
-    {
-      previous_context with
-      kitty_keyboard = true;
-      explicit_width_cpr = true;
-      pixel_resolution = true;
-      private_capability_replies = true;
-    }
-  in
-  let run_probe () =
-    let reports_pending = ref 2 in
-    (* CPR has no request ID. Match the two ordered query slots and exact
-       expected columns, as OpenTUI does, then ignore further reports. *)
-    let apply_probe_cpr caps ~row ~col =
-      let slot = !reports_pending in
-      if slot > 0 then decr reports_pending;
-      match (slot, row, col) with
-      | 2, 1, 2 -> { caps with explicit_width = true }
-      | 1, 1, 3 -> { caps with explicit_width = true; scaled_text = true }
-      | _ -> caps
-    in
-    send payload;
-    let buffer = Bytes.create 4096 in
-    let tmux_pending_sent = ref (is_tmux ~term:caps.term) in
-    let maybe_send_tmux_pending info =
-      if (not !tmux_pending_sent) && terminal_info_is_tmux info then (
-        send (build_tmux_pending_probe_payload caps.term);
-        tmux_pending_sent := true)
-    in
-    let deadline = now () +. max 0. timeout in
-    (* Grace period after DA: once we receive Device Attributes, the terminal has
-     processed our entire query payload. Any remaining responses (CPR for
-     explicit width/scaled text, XTVersion, etc.) should arrive shortly after.
-     We use a short grace period instead of waiting the full timeout. *)
-    let da_grace = 0.05 in
-    let rec loop caps info got_da da_time =
-      let time = now () in
-      let complete = !reports_pending = 0 && got_da in
-      let effective_deadline =
-        match da_time with
-        | Some t -> Float.min deadline (t +. da_grace)
-        | None -> deadline
-      in
-      if time >= effective_deadline || complete then (caps, info)
-      else
-        let remaining = effective_deadline -. time in
-        let select_timeout = Float.min remaining 0.05 in
-        let ready = wait_readable ~timeout:select_timeout in
-        if not ready then loop caps info got_da da_time
-        else
-          let read = read_into buffer 0 (Bytes.length buffer) in
-          if read = 0 then (caps, info)
-          else if read < 0 then loop caps info got_da da_time
-          else
-            let now = now () in
-            let caps_ref = ref caps in
-            let info_ref = ref info in
-            let found_da = ref false in
-            Input.Parser.feed parser buffer 0 read ~now ~on_event
-              ~on_response:(fun response ->
-                match response with
-                | Input.Response.Clipboard _ | Input.Response.Osc _
-                | Input.Response.Unknown _ ->
-                    ()
-                | Input.Response.Capability
-                    (Input.Response.Cursor_position (row, col)) ->
-                    caps_ref := apply_probe_cpr !caps_ref ~row ~col
-                | Input.Response.Capability c -> (
-                    let caps', info' =
-                      apply_event ~caps:!caps_ref ~info:!info_ref c
-                    in
-                    caps_ref := caps';
-                    info_ref := info';
-                    maybe_send_tmux_pending info';
-                    match c with
-                    | Input.Response.Device_attributes _ -> found_da := true
-                    | _ -> ()));
-            let caps =
-              if apply_env_overrides then
-                apply_environment_overrides ~info:!info_ref !caps_ref
-              else !caps_ref
-            in
-            let info = !info_ref in
-            let has_da = got_da || !found_da in
-            let da_time = if has_da && not got_da then Some now else da_time in
-            loop caps info has_da da_time
-    in
-    let caps, info = loop caps info false None in
-    let caps_ref = ref caps in
-    let info_ref = ref info in
-    let now = now () in
-    Input.Parser.drain parser ~now ~on_event ~on_response:(fun response ->
-        match response with
-        | Input.Response.Clipboard _ | Input.Response.Osc _
-        | Input.Response.Unknown _ ->
-            ()
-        | Input.Response.Capability (Input.Response.Cursor_position (row, col))
-          ->
-            caps_ref := apply_probe_cpr !caps_ref ~row ~col
-        | Input.Response.Capability c ->
-            let caps', info' = apply_event ~caps:!caps_ref ~info:!info_ref c in
-            caps_ref := caps';
-            info_ref := info';
-            maybe_send_tmux_pending info');
-    let caps =
-      if apply_env_overrides then
-        apply_environment_overrides ~info:!info_ref !caps_ref
-      else !caps_ref
-    in
-    (caps, !info_ref)
-  in
-  Input.Parser.set_protocol_context parser probe_context;
-  Fun.protect
-    ~finally:(fun () ->
-      Input.Parser.set_protocol_context parser previous_context)
-    run_probe
+(* The probe writes a space of width 1, then one of scale 2, at the top left,
+   and asks where the cursor went: a terminal without OSC 66 skips the string
+   and leaves the cursor in place. *)
+let cursor ev batch ~index ~row ~col =
+  match (batch, index) with
+  | Probe, 0 -> { ev with explicit = Some (row = 0 && col = 1) }
+  | Probe, 1 ->
+      let scaled = row = 0 && col = 2 in
+      {
+        ev with
+        scaled = Some scaled;
+        explicit = (if scaled then Some true else ev.explicit);
+      }
+  | _ -> ev
+
+let answered ev batch ~attributes =
+  let silent = function Some true -> Some true | _ -> Some false in
+  match batch with
+  | Probe ->
+      {
+        ev with
+        attributes = Some attributes;
+        graphics =
+          (if probe_graphics ev then silent ev.graphics else ev.graphics);
+      }
+  | Passthrough -> { ev with passthrough = true }
+  | Outer -> { ev with graphics = silent ev.graphics }
+
+let next ev = function
+  | Probe ->
+      if (derive ev).multiplexer = Some `Tmux then Some Passthrough else None
+  | Passthrough -> if ev.passthrough then Some Outer else None
+  | Outer -> None

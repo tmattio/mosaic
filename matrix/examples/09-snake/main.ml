@@ -160,20 +160,20 @@ let () =
         state := move_snake !state))
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Up; _ } ->
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Up; _ } ->
           if not (opposite_dir !state.direction Up) then
             state := { !state with direction = Up }
-      | Input.Key { key = Input.Key.Down; _ } ->
+      | Key { key = Down; _ } ->
           if not (opposite_dir !state.direction Down) then
             state := { !state with direction = Down }
-      | Input.Key { key = Input.Key.Left; _ } ->
+      | Key { key = Left; _ } ->
           if not (opposite_dir !state.direction Left) then
             state := { !state with direction = Left }
-      | Input.Key { key = Input.Key.Right; _ } ->
+      | Key { key = Right; _ } ->
           if not (opposite_dir !state.direction Right) then
             state := { !state with direction = Right }
-      | Input.Key { key = Input.Key.Char u; _ } -> (
+      | Key { key = Char u; _ } -> (
           match Uchar.to_int u with
           | c when c = Char.code 'p' || c = Char.code 'P' ->
               state := { !state with paused = not !state.paused }

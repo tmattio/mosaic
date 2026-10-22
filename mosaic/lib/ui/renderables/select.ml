@@ -342,10 +342,10 @@ let handle_mouse t (event : Event.mouse) =
           Event.Mouse.stop_propagation event)
   | Scroll { direction; delta } -> (
       match direction with
-      | Matrix_input.Mouse.Scroll_up when delta > 0 ->
+      | Event.Mouse.Scroll_up when delta > 0 ->
           move_up t;
           Event.Mouse.stop_propagation event
-      | Matrix_input.Mouse.Scroll_down when delta > 0 ->
+      | Event.Mouse.Scroll_down when delta > 0 ->
           move_down t;
           Event.Mouse.stop_propagation event
       | _ -> ())

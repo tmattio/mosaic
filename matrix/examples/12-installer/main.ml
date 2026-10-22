@@ -207,8 +207,8 @@ let () =
       else completed_at := None)
     ~on_input:(fun app event ->
       match event with
-      | Input.Key { key = Input.Key.Escape; _ } -> Matrix.stop app
-      | Input.Key { key = Input.Key.Char u; _ }
+      | Key { key = Escape; _ } -> Matrix.stop app
+      | Key { key = Char u; _ }
         when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
           Matrix.stop app
       | _ -> ())

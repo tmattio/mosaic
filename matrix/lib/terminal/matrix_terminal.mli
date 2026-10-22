@@ -5,12 +5,11 @@
     all I/O resources: no {!Unix.select}, no threads, no wakeup pipe, no signal
     handling.
 
-    {2:caps_detect Capability detection}
+    {2:caps_detect Capabilities}
 
-    Capabilities are seeded from environment heuristics at creation time
-    ({!make}). The runtime refines them by calling {!probe} with I/O callbacks,
-    or incrementally via {!apply_capability_event} as the input parser produces
-    capability responses.
+    The handle holds the terminal's capabilities, which decide how it wraps
+    output for a multiplexer. The runtime derives them ({!Caps}) and sets them
+    ({!set_capabilities}) as answers arrive.
 
     {2:protocol_sym Protocol symmetry}
 
@@ -51,55 +50,11 @@ type cursor_position = { x : int; y : int; visible : bool }
 
 (** {1:capabilities Capabilities} *)
 
-type capabilities = {
-  term : string;  (** Raw [$TERM] value used for heuristics. *)
-  rgb : bool;  (** [true] if 24-bit colour is considered safe. *)
-  kitty_keyboard : bool;
-      (** [true] if the Kitty keyboard protocol is supported. *)
-  kitty_graphics : bool;
-      (** [true] if the Kitty graphics protocol is supported. *)
-  bracketed_paste : bool;
-      (** [true] if bracketed paste (mode 2004) is supported. *)
-  focus_tracking : bool;
-      (** [true] if focus tracking (mode 1004) is supported. *)
-  unicode_width : Matrix_text.width_method;  (** Current Unicode width mode. *)
-  sgr_pixels : bool;
-      (** [true] if SGR pixel-position mouse reports (mode 1016) are supported.
-      *)
-  color_scheme_updates : bool;
-      (** [true] if colour-scheme update notifications (mode 2031) are
-          supported. *)
-  explicit_width : bool;
-      (** [true] if the terminal reported explicit cell-width information via
-          proprietary cursor-position queries. *)
-  explicit_cursor_positioning : bool;
-      (** [true] if the terminal may miscalculate grapheme widths but supports
-          reliable cursor positioning. When set, the renderer repositions the
-          cursor after each wide grapheme to prevent column drift. Only used
-          when {!field-explicit_width} is [false]. *)
-  scaled_text : bool;  (** [true] if scaled text sizing is supported. *)
-  sixel : bool;  (** [true] if SIXEL graphics are supported. *)
-  sync : bool;  (** [true] if synchronised output (mode 2026) is supported. *)
-  hyperlinks : bool;  (** [true] if OSC 8 hyperlinks are supported. *)
-}
-(** The type for terminal capabilities.
+module Caps = Caps
+(** Capabilities, derived from evidence. See {!Caps}. *)
 
-    Detection happens in two stages:
-    - {b Environment stage.} {!make} inspects [$TERM], [$COLORTERM],
-      [$KITTY_WINDOW_ID], platform quirks, and overrides such as
-      [MATRIX_FORCE_UNICODE]. No escape sequences are emitted.
-    - {b Probe stage.} The runtime calls {!probe} with I/O callbacks and the
-      results are folded into the capability record.
-
-    Boolean fields from probing are monotonic: once confirmed, subsequent probes
-    do not disable them. Environment policy overrides may still disable features
-    in specific contexts (e.g. tmux forces wcwidth mode). *)
-
-type terminal_info = { name : string; version : string; from_xtversion : bool }
-(** The type for terminal emulator identity. [name] and [version] are populated
-    from XTVersion when available; otherwise derived from [$TERM_PROGRAM] and
-    [$TERM_PROGRAM_VERSION]. [from_xtversion] is [true] iff [name] and [version]
-    came from an XTVersion response. *)
+type capabilities = Caps.t
+(** The type for terminal capabilities. *)
 
 (** {1:handle Session handle} *)
 
@@ -110,19 +65,11 @@ type t
 
     Close with {!close} to unwind all active protocols. *)
 
-val make :
-  output:(string -> unit) ->
-  ?tty:bool ->
-  ?initial_caps:capabilities ->
-  unit ->
-  t
-(** [make ~output ~tty ~initial_caps ()] is a terminal handle with:
+val make : output:(string -> unit) -> ?tty:bool -> capabilities -> t
+(** [make ~output ~tty caps] is a terminal handle with capabilities [caps]:
     - [output] receives escape sequence strings.
     - [tty] controls whether escape sequences are emitted. Defaults to [true].
       Set to [false] for non-TTY outputs or testing.
-    - [initial_caps] seeds the capability record. When omitted, capabilities are
-      built from [$TERM] and environment heuristics. When provided, the record
-      is used as-is and environment overrides are not applied.
 
     The handle starts with no protocols enabled. *)
 
@@ -130,10 +77,11 @@ val close : t -> unit
 (** [close t] unwinds all active protocols via [output].
 
     Disables mouse tracking, bracketed paste, focus reporting, Kitty keyboard,
-    modifyOtherKeys, Unicode mode, and alternate screen. Resets cursor
-    visibility and SGR attributes. Cursor colour, cursor style, and the window
-    title are reset only when they were changed through the handle, so terminal
-    state the application never touched is left alone.
+    modifyOtherKeys, color scheme and resize reports, metaSendsEscape, Unicode
+    mode, and alternate screen. Resets cursor visibility and SGR attributes.
+    Cursor colour, cursor style, and the window title are reset only when they
+    were changed through the handle, so terminal state the application never
+    touched is left alone.
 
     {b Note.} Does not restore termios or close file descriptors; that is the
     runtime's responsibility. *)
@@ -146,54 +94,12 @@ val capabilities : t -> capabilities
 val set_capabilities : t -> capabilities -> unit
 (** [set_capabilities t caps] replaces [t]'s capability record with [caps]. *)
 
-val terminal_info : t -> terminal_info
-(** [terminal_info t] is [t]'s current terminal identity. *)
-
-val set_terminal_info : t -> terminal_info -> unit
-(** [set_terminal_info t info] replaces [t]'s terminal identity with [info]. *)
-
 val pixel_resolution : t -> (int * int) option
 (** [pixel_resolution t] is the last known pixel resolution as
     [Some (width, height)], or [None] if unknown. *)
 
 val set_pixel_resolution : t -> (int * int) option -> unit
 (** [set_pixel_resolution t res] updates [t]'s cached pixel resolution. *)
-
-val apply_capability_event : t -> Matrix_input.Response.capability -> unit
-(** [apply_capability_event t event] folds a single capability response into
-    [t]'s state. Updates {!capabilities}, {!terminal_info}, and
-    {!pixel_resolution} as appropriate.
-
-    Called by the runtime as {!Matrix_input.Parser} produces capability events.
-*)
-
-(** {1:probing Probing} *)
-
-val probe :
-  ?timeout:float ->
-  now:(unit -> float) ->
-  on_event:(Matrix_input.t -> unit) ->
-  read_into:(bytes -> int -> int -> int) ->
-  wait_readable:(timeout:float -> bool) ->
-  parser:Matrix_input.Parser.t ->
-  t ->
-  unit
-(** [probe ~timeout ~now ~on_event ~read_into ~wait_readable ~parser t] actively
-    probes terminal capabilities.
-
-    Sends a compound query payload through [output] and processes responses
-    using the provided I/O callbacks and [parser]. Updates {!capabilities} and
-    {!terminal_info} with the results.
-
-    Using the caller's [parser] ensures that partial escape sequences spanning
-    the probe boundary are preserved. User input events received during probing
-    are forwarded to [on_event]. A [read_into] result of [0] stops probing
-    because it denotes permanent end-of-input; [-1] resumes waiting for input.
-
-    [now ()] is monotonic time in seconds, using the same origin as all other
-    calls to [parser]. It determines probe and parser deadlines.
-
-    [timeout] is the maximum probe duration in seconds. Defaults to [0.2]. *)
 
 (** {1:protocol Protocol control}
 
@@ -204,7 +110,8 @@ val probe :
 val restore_modes : ?skip_focus:bool -> t -> unit
 (** [restore_modes ?skip_focus t] unconditionally re-sends enable sequences for
     every currently-active protocol mode (mouse tracking, focus reporting,
-    bracketed paste, Kitty keyboard, modifyOtherKeys).
+    bracketed paste, Kitty keyboard, modifyOtherKeys, color scheme reports,
+    resize reports, metaSendsEscape).
 
     When [skip_focus] is [true], the focus-tracking enable sequence is not
     re-sent. This avoids a feedback loop when [restore_modes] is called from a
@@ -282,11 +189,32 @@ val modify_other_keys_enabled : t -> bool
 (** [modify_other_keys_enabled t] is [true] iff modifyOtherKeys mode is active.
 *)
 
+(** {2:reports Reports and Alt} *)
+
+val enable_color_scheme_reports : t -> bool -> unit
+(** [enable_color_scheme_reports t b] enables or disables reports of color
+    scheme changes (DECSET/DECRST 2031): the terminal sends [CSI ? 997 ; 1 n]
+    (dark) or [CSI ? 997 ; 2 n] (light) when its scheme changes. Idempotent. *)
+
+val enable_resize_reports : t -> bool -> unit
+(** [enable_resize_reports t b] enables or disables in-band resize reports
+    (DECSET/DECRST 2048): the terminal sends
+    [CSI 48 ; rows ; cols ; height ; width t] on every resize and once when the
+    mode is set. Idempotent. *)
+
+val enable_meta_sends_escape : t -> bool -> unit
+(** [enable_meta_sends_escape t b] sets or resets xterm's metaSendsEscape (mode
+    1036): with it set, Alt with a key sends ESC before the key, rather than the
+    key's character with its high bit set. Set it only where it was reset
+    ({!Caps.t.meta_sends_escape}), so that {!reset_state} restores what was
+    there. Idempotent. *)
+
 (** {2:unicode_w Unicode width} *)
 
 val set_unicode_width : t -> Matrix_text.width_method -> unit
-(** [set_unicode_width t w] sets the Unicode width mode to [w] and updates
-    {!capabilities} accordingly. Idempotent. *)
+(** [set_unicode_width t w] sets the terminal's grapheme mode (mode 2027) for
+    [w]: set for [`Unicode] and [`Unicode_wide], reset for [`Wcwidth].
+    Idempotent. *)
 
 (** {2:alt_screen Alternate screen} *)
 
@@ -371,8 +299,8 @@ val set_title : t -> string -> unit
 
 val copy_to_clipboard : t -> string -> unit
 (** [copy_to_clipboard t s] sets the system clipboard to [s] (OSC 52) when the
-    terminal supports it. Inside tmux or GNU Screen, the sequence is wrapped for
-    DCS passthrough to the outer terminal. *)
+    terminal supports it. Inside tmux or GNU Screen ({!Caps.t.multiplexer}), the
+    sequence is wrapped for DCS passthrough to the outer terminal. *)
 
 val notify : t -> title:string -> body:string -> unit
 (** [notify t ~title ~body] posts a desktop notification (OSC 9 followed by OSC
@@ -386,13 +314,12 @@ val bell : t -> unit
 val query_color_scheme : t -> unit
 (** [query_color_scheme t] asks whether the terminal uses a light or dark colour
     scheme ([CSI ? 996 n]). Supporting terminals reply [CSI ? 997 ; value n];
-    the reply arrives asynchronously as an {!Matrix_input.Response.Color_scheme}
-    capability event. *)
+    the reply arrives in the input as {!Matrix_input.Reply.Color_scheme}. *)
 
 val query_pixel_resolution : t -> unit
 (** [query_pixel_resolution t] sends a pixel resolution query (CSI 14 t) through
-    [output]. The response arrives asynchronously and should be processed via
-    {!apply_capability_event}. *)
+    [output]. The reply arrives in the input as
+    {!Matrix_input.Reply.Text_area_pixels}. *)
 
 (** {1:output Output and state} *)
 
@@ -407,9 +334,10 @@ val reset_state : t -> unit
 (** [reset_state t] resets all protocol state to defaults.
 
     Disables mouse tracking, bracketed paste, focus events, Kitty keyboard,
-    modifyOtherKeys, Unicode mode, scroll region, and alternate screen. Resets
-    SGR attributes. Cursor colour, cursor style, and the window title are reset
-    only when they were changed through the handle. *)
+    modifyOtherKeys, color scheme and resize reports, metaSendsEscape, Unicode
+    mode, scroll region, and alternate screen. Resets SGR attributes. Cursor
+    colour, cursor style, and the window title are reset only when they were
+    changed through the handle. *)
 
 (** {1:tty_helpers TTY helpers}
 

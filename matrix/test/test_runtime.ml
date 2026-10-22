@@ -12,7 +12,7 @@ type fake_state = {
   mutable raw_restore_calls : int;
   mutable flush_input_calls : int;
   wake_calls : int Atomic.t;
-  mutable pending_events : Matrix.Input.t list;
+  mutable pending_events : Matrix.event list;
   mutable pending_input_chunks : string list;
   mutable read_timeouts : float option list;
   output : Buffer.t;
@@ -77,13 +77,25 @@ let assert_distinct_handlers entries =
       | _ -> failf "%s prior disposition was not restored" signal.name)
     entries
 
+(* The environment, as a value: the tests never read the process's. *)
+let env vars =
+  Matrix.Terminal.Caps.env (fun name -> List.assoc_opt name vars) ~win32:false
+
+let no_env = env []
+
+let key ?(mods = Matrix.Input.Keystroke.no_mods) ?(text = "") key =
+  Matrix.Key { key; mods; text; base = None; keypad = false; repeat = false }
+
+let char c = key ~text:(String.make 1 c) (Char (Uchar.of_char c))
+
 let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
     ?(start_idle = false) ?(input_timeout = Some 0.) ?(terminal_tty = false)
     ?(advance_now = true) ?(sleep_until_timeout = false)
     ?(read_quantum_s = 0.0001) ?(emit_event_each_read = None) ?(events = [])
     ?(input_chunks = []) ?(startup_input = []) ?startup_cursor ?stop_after_reads
     ?end_after_reads ?(min_tui_height = 1) ?(resize_debounce = Some 0.)
-    ?(width = 80) ?(height = 24) ?hyperlinks ?query_cursor_position () =
+    ?(width = 80) ?(height = 24) ?hyperlinks ?query_cursor_position
+    ?(env = no_env) () =
   let state = make_state events input_chunks in
   let app_ref = ref None in
   let startup_chunks = ref startup_input in
@@ -186,33 +198,33 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
         (fun () -> state.flush_input_calls <- state.flush_input_calls + 1);
       cleanup = (fun () -> state.cleanup_calls <- state.cleanup_calls + 1);
       protect = (fun f -> f ());
+      env;
     }
   in
-  let initial_caps =
+  let caps =
     Option.map
       (fun hyperlinks ->
-        let terminal = Matrix.Terminal.make ~output:ignore ~tty:false () in
-        let caps = Matrix.Terminal.capabilities terminal in
-        { caps with hyperlinks })
+        {
+          (Matrix.Terminal.Caps.derive (Matrix.Terminal.Caps.evidence no_env)) with
+          hyperlinks;
+        })
       hyperlinks
   in
   let app =
     Matrix.attach ~mode ~raw_mode ~target_fps ~start_idle ~input_timeout
-      ~min_tui_height ~resize_debounce ?initial_caps ~backend ()
+      ~min_tui_height ~resize_debounce ?caps ~backend ()
   in
   app_ref := Some app;
   Buffer.clear state.output;
   (app, state)
 
-let mouse_press x y = Matrix.Input.mouse_press x y Matrix.Input.Mouse.Left
+let mouse kind x y =
+  Matrix.Mouse { kind; x; y; shift = false; alt = false; ctrl = false }
 
-let mouse_release x y =
-  Matrix.Input.mouse_release x y (Some Matrix.Input.Mouse.Left)
-
-let mouse_motion x y = Matrix.Input.mouse_drag x y Matrix.Input.Mouse.Left
-
-let mouse_scroll x y =
-  Matrix.Input.mouse_scroll x y Matrix.Input.Mouse.Scroll_down
+let mouse_press = mouse (Press Left)
+let mouse_release = mouse (Release (Some Left))
+let mouse_motion = mouse (Motion (Some Left))
+let mouse_scroll = mouse (Scroll `Down)
 
 let set_sync_capable app =
   let terminal = Matrix.terminal app in
@@ -229,7 +241,7 @@ type term = {
   vte : Vte.t;
   mutable size : int * int;
   replies : Buffer.t;
-  mutable script : (on_event:(Matrix.Input.t -> unit) -> unit) list;
+  mutable script : (on_event:(Matrix.event -> unit) -> unit) list;
 }
 
 let vte_app ?(mode = `Primary) ?(min_tui_height = 1) ?(shell = "") ~cols ~rows
@@ -276,12 +288,13 @@ let vte_app ?(mode = `Primary) ?(min_tui_height = 1) ?(shell = "") ~cols ~rows
       flush_input = ignore;
       protect = (fun f -> f ());
       cleanup = ignore;
+      env = no_env;
     }
   in
   let app =
     Matrix.attach ~mode ~target_fps:None ~mouse_enabled:false
-      ~bracketed_paste:false ~focus_reporting:false ~kitty_keyboard:`Disabled
-      ~resize_debounce:None ~pace_redraws:false ~min_tui_height ~backend ()
+      ~bracketed_paste:false ~kitty_keyboard:`Off ~resize_debounce:None
+      ~pace_redraws:false ~min_tui_height ~backend ()
   in
   app_ref := Some app;
   (app, term)
@@ -320,7 +333,7 @@ let live_rows app term =
 let resize_step term ~cols ~rows ~on_event =
   Vte.resize term.vte ~rows ~cols;
   term.size <- (cols, rows);
-  on_event (Matrix.Input.Resize (cols, rows))
+  on_event (Matrix.Resize (cols, rows))
 
 let test_request_redraw_while_paused () =
   let app, _state =
@@ -394,7 +407,7 @@ let test_redraw_races_lifecycle () =
 let test_immediate_redraw_bypasses_live_cadence_once () =
   let app, state =
     make_app ~target_fps:(Some 1.) ~input_timeout:None ~sleep_until_timeout:true
-      ~emit_event_each_read:(Some Matrix.Input.Focus) ~stop_after_reads:5000 ()
+      ~emit_event_each_read:(Some Matrix.Focus_in) ~stop_after_reads:5000 ()
   in
   let frames = ref 0 in
   let request_at = ref None in
@@ -607,10 +620,10 @@ let test_suspended_events_defer_terminal_operations () =
       ~input_timeout:None ~stop_after_reads:8
       ~events:
         [
-          Matrix.Input.Blur;
-          Matrix.Input.Resize (100, 30);
-          Matrix.Input.Focus;
-          Matrix.Input.Focus;
+          Matrix.Focus_out;
+          Matrix.Resize (100, 30);
+          Matrix.Focus_in;
+          Matrix.Focus_in;
         ]
       ()
   in
@@ -652,7 +665,7 @@ let test_run_closes_on_exception () =
 let test_native_event_close_skips_ready_input () =
   let app, state =
     make_app ~target_fps:None
-      ~events:[ Matrix.Input.Resize (100, 30) ]
+      ~events:[ Matrix.Resize (100, 30) ]
       ~input_chunks:[ "unread" ] ()
   in
   Matrix.run app ~on_input:(fun app _ -> Matrix.close app) ~on_render:ignore;
@@ -673,11 +686,8 @@ let test_end_of_input_finalizes_parser_and_closes_once () =
   equal ~msg:"end-of-input restores raw mode once" int 1 state.raw_restore_calls;
   is_false ~msg:"application is no longer running" (Matrix.running app);
   match List.rev !events with
-  | [ Matrix.Input.Error (Matrix.Input.Error.Unterminated_paste { received }) ]
-    ->
-      equal ~msg:"EOF finalizes the open paste" int 7 received
-  | events ->
-      failf "expected one unterminated-paste event, got %d" (List.length events)
+  | [ Matrix.Paste_start; Paste_data "partial"; Paste_end `Cut ] -> ()
+  | events -> failf "expected a cut paste, got %d events" (List.length events)
 
 (* Regression: a stray CPR arriving through the normal event loop (xterm's
    Shift+F3, leftover shell-integration reports) must not flip the width
@@ -709,26 +719,16 @@ let test_startup_and_late_cpr_do_not_enable_width () =
   equal ~msg:"late input was read" int 3 state.read_calls
 
 let test_ghostty_profile_reaches_runtime () =
-  List.iter
-    (fun key -> setenv key None)
-    [
-      "TMUX";
-      "STY";
-      "ZELLIJ";
-      "SSH_CONNECTION";
-      "SSH_CLIENT";
-      "SSH_TTY";
-      "MATRIX_FORCE_WCWIDTH";
-      "MATRIX_FORCE_UNICODE";
-      "KITTY_WINDOW_ID";
-      "VHS_RECORD";
-      "TERMUX_VERSION";
-    ];
-  setenv "TERM" (Some "xterm-ghostty");
-  setenv "TERM_PROGRAM" (Some "ghostty");
-  setenv "TERM_PROGRAM_VERSION" (Some "1.3.1");
+  let env =
+    env
+      [
+        ("TERM", "xterm-ghostty");
+        ("TERM_PROGRAM", "ghostty");
+        ("TERM_PROGRAM_VERSION", "1.3.1");
+      ]
+  in
   let app, state =
-    make_app ~terminal_tty:true
+    make_app ~env ~terminal_tty:true
       ~startup_input:[ "\027[?2027;2$y\027[1;1R\027[1;1R\027[?62;4c" ]
       ()
   in
@@ -742,7 +742,13 @@ let test_ghostty_profile_reaches_runtime () =
   contains ~sub:"\027[?2027h" (Buffer.contents state.output);
   Matrix.close app
 
-let input_event = Testable.make ~pp:Matrix.Input.pp ~equal:Matrix.Input.equal
+let input_event = Testable.make ~pp:Matrix.pp_event ~equal:( = )
+
+let input_width =
+  Testable.make ~equal:( = ) ~pp:(fun ppf -> function
+    | `Unicode -> Format.pp_print_string ppf "Unicode"
+    | `Unicode_wide -> Format.pp_print_string ppf "Unicode_wide"
+    | `Wcwidth -> Format.pp_print_string ppf "Wcwidth")
 
 let test_escape_expires_without_more_input () =
   let app, state =
@@ -756,7 +762,7 @@ let test_escape_expires_without_more_input () =
       Matrix.stop app)
     ~on_render:(fun _app -> ());
   equal ~msg:"timeout delivers the buffered Escape" (list input_event)
-    [ Matrix.Input.key Matrix.Input.Key.Escape ]
+    [ key Escape ]
     (List.rev !events);
   is_true ~msg:"Escape required a wait after the input read"
     (state.read_calls > 1)
@@ -777,7 +783,12 @@ let test_startup_preserves_input_and_partial_paste () =
   equal ~msg:"startup and runtime bytes share one parser in input order"
     (list input_event)
     [
-      Matrix.Input.char 'a'; Matrix.Input.Paste "partial"; Matrix.Input.char 'b';
+      char 'a';
+      Paste_start;
+      Paste_data "par";
+      Paste_data "tial";
+      Paste_end `Complete;
+      char 'b';
     ]
     (List.rev !events);
   equal ~msg:"EOF closes the backend after replaying startup input" int 1
@@ -794,11 +805,7 @@ let test_startup_eof_finalizes_input_without_reading_again () =
     ~on_render:(fun _app -> ());
   equal ~msg:"startup EOF preserves completed input and finalizes partial paste"
     (list input_event)
-    [
-      Matrix.Input.char 'a';
-      Matrix.Input.Error
-        (Matrix.Input.Error.Unterminated_paste { received = 3 });
-    ]
+    [ char 'a'; Paste_start; Paste_data "par"; Paste_end `Cut ]
     (List.rev !events);
   equal ~msg:"startup EOF prevents further input waits" int 0 state.read_calls;
   equal ~msg:"startup EOF closes the backend once" int 1 state.cleanup_calls
@@ -817,6 +824,7 @@ let inert_backend () : Matrix.Backend.t =
     flush_input = (fun () -> ());
     cleanup = (fun () -> ());
     protect = (fun f -> f ());
+    env = no_env;
   }
 
 let test_close_restores_raw_mode_if_terminal_close_raises () =
@@ -834,8 +842,8 @@ let test_close_restores_raw_mode_if_terminal_close_raises () =
   in
   let app =
     Matrix.attach ~mode:`Primary ~raw_mode:true ~mouse_enabled:false
-      ~bracketed_paste:false ~focus_reporting:false ~kitty_keyboard:`Disabled
-      ~target_fps:None ~input_timeout:(Some 0.) ~backend ()
+      ~bracketed_paste:false ~kitty_keyboard:`Off ~target_fps:None
+      ~input_timeout:(Some 0.) ~backend ()
   in
   fail_output := true;
   Matrix.close app;
@@ -852,8 +860,7 @@ let test_close_restores_owned_signal_dispositions_once () =
     (fun () ->
       let app =
         Matrix.create ~raw_mode:false ~target_fps:None ~mouse_enabled:false
-          ~bracketed_paste:false ~focus_reporting:false
-          ~kitty_keyboard:`Disabled ~output:(`Fd write_fd) ()
+          ~bracketed_paste:false ~kitty_keyboard:`Off ~output:(`Fd write_fd) ()
       in
       (match
          List.find_opt
@@ -903,8 +910,7 @@ let test_nested_apps_restore_signal_dispositions_in_reverse () =
     (fun () ->
       let create () =
         Matrix.create ~raw_mode:false ~target_fps:None ~mouse_enabled:false
-          ~bracketed_paste:false ~focus_reporting:false
-          ~kitty_keyboard:`Disabled ~output:(`Fd write_fd) ()
+          ~bracketed_paste:false ~kitty_keyboard:`Off ~output:(`Fd write_fd) ()
       in
       let outer = create () in
       let outer_winch = peek_signal Sys.sigwinch in
@@ -983,7 +989,7 @@ let test_attach_rolls_back_partially_applied_terminal_modes () =
 let test_focus_restore_runs_only_after_blur_once () =
   let app, state =
     make_app ~terminal_tty:true ~target_fps:None ~input_timeout:(Some 0.)
-      ~events:[ Matrix.Input.Focus ] ()
+      ~events:[ Matrix.Focus_in ] ()
   in
   let first_focus_output = ref "" in
   Matrix.run app
@@ -998,7 +1004,7 @@ let test_focus_restore_runs_only_after_blur_once () =
 
   let app, state =
     make_app ~terminal_tty:true ~target_fps:None ~input_timeout:(Some 0.)
-      ~events:[ Matrix.Input.Blur; Matrix.Input.Focus; Matrix.Input.Focus ]
+      ~events:[ Matrix.Focus_out; Matrix.Focus_in; Matrix.Focus_in ]
       ()
   in
   let seen = ref [] in
@@ -1009,9 +1015,9 @@ let test_focus_restore_runs_only_after_blur_once () =
     ~on_render:(fun _app -> ());
   match List.rev !seen with
   | [
-   (Matrix.Input.Blur, after_blur);
-   (Matrix.Input.Focus, after_first_focus);
-   (Matrix.Input.Focus, after_second_focus);
+   (Matrix.Focus_out, after_blur);
+   (Matrix.Focus_in, after_first_focus);
+   (Matrix.Focus_in, after_second_focus);
   ] ->
       not_contains ~msg:"blur itself does not restore terminal modes"
         ~sub:"\027[?2004h" after_blur;
@@ -1072,16 +1078,16 @@ let test_resume_reanchors_primary_from_bottom_cursor () =
 let test_resume_preserves_resize_during_cursor_query () =
   let app, state =
     make_app ~mode:`Primary ~target_fps:None ~read_quantum_s:0.1
-      ~stop_after_reads:2
+      ~stop_after_reads:20
       ~query_cursor_position:(fun ~timeout:_ -> None)
       ()
   in
   Matrix.suspend app;
-  state.pending_events <- [ Matrix.Input.Resize (100, 30) ];
+  state.pending_events <- [ Matrix.Resize (100, 30) ];
   Matrix.resume app;
   let resized = ref false in
   Matrix.run app ~on_render:ignore ~on_input:(fun app -> function
-    | Matrix.Input.Resize (100, 30) ->
+    | Matrix.Resize (100, 30) ->
         resized := true;
         Matrix.stop app
     | _ -> ());
@@ -1105,8 +1111,7 @@ let test_target_fps_respected_without_input_storm () =
 let test_target_fps_respected_with_input_storm () =
   let app, state =
     make_app ~target_fps:(Some 13.) ~input_timeout:None ~advance_now:false
-      ~sleep_until_timeout:false ~emit_event_each_read:(Some Matrix.Input.Focus)
-      ()
+      ~sleep_until_timeout:false ~emit_event_each_read:(Some Matrix.Focus_in) ()
   in
   let frames = ref 0 in
   Matrix.run app ~on_render:(fun app ->
@@ -1161,12 +1166,14 @@ let test_suspend_is_idempotent () =
   is_true ~msg:"double suspend then resume leaves the app resumable"
     (Matrix.redraw_requested app)
 
+(* Bytes held across a suspend are dropped, and a paste the application has
+   begun to receive is cut. *)
 let test_suspend_discards_partial_input () =
   List.iter
-    (fun partial ->
+    (fun (partial, expected) ->
       let app, state =
         make_app ~target_fps:None ~input_chunks:[ partial ]
-          ~emit_event_each_read:(Some Matrix.Input.Focus) ~stop_after_reads:5 ()
+          ~emit_event_each_read:(Some Matrix.Focus_in) ~stop_after_reads:5 ()
       in
       let received = ref [] in
       Matrix.run app
@@ -1177,16 +1184,20 @@ let test_suspend_discards_partial_input () =
             state.pending_input_chunks <- [ "q" ]))
         ~on_input:(fun app event ->
           match event with
-          | Matrix.Input.Focus -> ()
-          | _ ->
+          | Matrix.Focus_in -> ()
+          | Key _ ->
               received := event :: !received;
-              Matrix.stop app);
+              Matrix.stop app
+          | _ -> received := event :: !received);
       equal
         ~msg:(Printf.sprintf "discard partial %S across suspend" partial)
-        (list input_event)
-        [ Matrix.Input.Key (Matrix.Input.Key.of_char 'q') ]
-        (List.rev !received))
-    [ "\027"; "\226"; "\027[200~unfinished" ]
+        (list input_event) expected (List.rev !received))
+    [
+      ("\027", [ char 'q' ]);
+      ("\226", [ char 'q' ]);
+      ( "\027[200~unfinished",
+        [ Paste_start; Paste_data "unfinished"; Paste_end `Cut; char 'q' ] );
+    ]
 
 let test_cursor_visibility_preserves_blinking () =
   let app, state = make_app ~terminal_tty:true ~target_fps:None () in
@@ -1396,7 +1407,7 @@ let test_initial_resize_fires_before_first_render () =
 let test_resize_zero_dimensions_are_ignored () =
   let app, _state =
     make_app ~resize_debounce:None ~target_fps:None ~input_timeout:(Some 0.)
-      ~events:[ Matrix.Input.Resize (0, 0) ]
+      ~events:[ Matrix.Resize (0, 0) ]
       ~stop_after_reads:1 ()
   in
   let events = ref [] in
@@ -1417,7 +1428,7 @@ let test_on_resize_reports_usable_size () =
   let app, _state =
     make_app ~mode:`Primary ~startup_cursor:(15, 1) ~resize_debounce:None
       ~target_fps:None ~input_timeout:(Some 0.)
-      ~events:[ Matrix.Input.Resize (100, 30) ]
+      ~events:[ Matrix.Resize (100, 30) ]
       ~stop_after_reads:1 ()
   in
   let events = ref [] in
@@ -1439,7 +1450,7 @@ let test_resize_clamps_primary_render_offset () =
   let app, _state =
     make_app ~mode:`Primary ~startup_cursor:(21, 1) ~resize_debounce:None
       ~target_fps:None ~input_timeout:(Some 0.)
-      ~events:[ Matrix.Input.Resize (80, 12) ]
+      ~events:[ Matrix.Resize (80, 12) ]
       ~stop_after_reads:1 ()
   in
   Matrix.run app ~on_render:(fun _app -> ());
@@ -1452,7 +1463,7 @@ let test_resize_debounce_applies_latest_pending_resize () =
   let app, _state =
     make_app ~resize_debounce:(Some 0.5) ~advance_now:false
       ~sleep_until_timeout:true ~target_fps:None ~input_timeout:None
-      ~events:[ Matrix.Input.Resize (100, 30); Matrix.Input.Resize (120, 40) ]
+      ~events:[ Matrix.Resize (100, 30); Matrix.Resize (120, 40) ]
       ()
   in
   let frames = ref 0 in
@@ -1471,7 +1482,7 @@ let test_same_size_debounced_resize_settles () =
   let app, state =
     make_app ~resize_debounce:(Some 0.1) ~advance_now:false
       ~sleep_until_timeout:true ~target_fps:None ~input_timeout:None
-      ~events:[ Matrix.Input.Resize (100, 30); Matrix.Input.Resize (100, 30) ]
+      ~events:[ Matrix.Resize (100, 30); Matrix.Resize (100, 30) ]
       ~stop_after_reads:40 ()
   in
   Matrix.run app ~on_render:(fun _ -> ());
@@ -1867,12 +1878,12 @@ let test_queued_static_snapshot_keeps_row_count_after_resize () =
   let app, state =
     make_app ~mode:`Primary ~width:6 ~height:3 ~min_tui_height:3
       ~target_fps:None
-      ~events:[ Matrix.Input.Focus; Matrix.Input.Resize (3, 3) ]
+      ~events:[ Matrix.Focus_in; Matrix.Resize (3, 3) ]
       ~stop_after_reads:2 ()
   in
   Matrix.run app
     ~on_input:(fun app -> function
-      | Matrix.Input.Focus ->
+      | Matrix.Focus_in ->
           Buffer.clear state.output;
           Matrix.static_write app (static_grid "ABCDEF\nGHIJKL")
       | _ -> ())
@@ -2201,7 +2212,7 @@ let test_primary_mouse_event_is_offset_into_live_region () =
       Matrix.stop app)
     ~on_render:(fun _app -> ());
   match List.rev !inputs with
-  | [ Matrix.Input.Mouse { Matrix.Input.Mouse.y; kind = Down _; _ } ] ->
+  | [ Matrix.Mouse { y; kind = Press _; _ } ] ->
       equal ~msg:"mouse y is relative to live viewport" int 2 y
   | _ -> fail "expected one mouse press event"
 
@@ -2219,22 +2230,16 @@ let test_primary_mouse_event_above_live_region_maps_to_minus_one () =
       Matrix.stop app)
     ~on_render:(fun _app -> ());
   match List.rev !inputs with
-  | [ Matrix.Input.Mouse { Matrix.Input.Mouse.y; kind = Down _; _ } ] ->
+  | [ Matrix.Mouse { y; kind = Press _; _ } ] ->
       equal ~msg:"mouse y above live region maps outside UI" int (-1) y
   | _ -> fail "expected one mouse press event"
 
 let test_primary_adjusts_all_mouse_like_events () =
   let cases =
     [
-      ( "release",
-        mouse_release 4 12,
-        Matrix.Input.mouse_release 4 2 (Some Matrix.Input.Mouse.Left) );
-      ( "motion",
-        mouse_motion 4 12,
-        Matrix.Input.mouse_drag 4 2 Matrix.Input.Mouse.Left );
-      ( "scroll",
-        mouse_scroll 4 12,
-        Matrix.Input.mouse_scroll 4 2 Matrix.Input.Mouse.Scroll_down );
+      ("release", mouse_release 4 12, mouse_release 4 2);
+      ("motion", mouse_motion 4 12, mouse_motion 4 2);
+      ("scroll", mouse_scroll 4 12, mouse_scroll 4 2);
     ]
   in
   List.iter
@@ -2250,7 +2255,7 @@ let test_primary_adjusts_all_mouse_like_events () =
           Matrix.stop app)
         ~on_render:(fun _app -> ());
       match !got with
-      | Some event when Matrix.Input.equal event expected -> ()
+      | Some event when event = expected -> ()
       | Some _ -> failf "unexpected adjusted %s event" name
       | None -> failf "missing adjusted %s event" name)
     cases
@@ -2321,6 +2326,355 @@ let test_wakeup_renders_without_input () =
         float_exact
         (fun dt -> dt < 1.)
         !second_frame_elapsed)
+
+(* Input on a virtual clock. Bytes arrive at their times: [typed] as the user
+   types them, and the terminal's replies, which [answer] gives for each write
+   of the runtime, [rtt] after it. The clock moves only when the runtime
+   waits: to the next arrival within its timeout, or by the whole timeout. A
+   run stops at [limit]. *)
+type clocked = {
+  mutable now : float;
+  mutable arrivals : (float * string) list;
+  written : Buffer.t;
+  mutable waits : (float * float option) list;  (** When, and how long. *)
+  mutable seen : (float * Matrix.event) list;  (** Delivered, latest first. *)
+}
+
+let clocked_app ?(env = no_env) ?(exit_on_ctrl_c = true) ?(limit = 10.)
+    ?(rtt = 0.) ?(answer = fun _ -> []) typed =
+  let c =
+    {
+      now = 0.;
+      arrivals = [];
+      written = Buffer.create 256;
+      waits = [];
+      seen = [];
+    }
+  in
+  let arrive at bytes =
+    c.arrivals <-
+      List.stable_sort
+        (fun (a, _) (b, _) -> Float.compare a b)
+        (c.arrivals @ [ (at, bytes) ])
+  in
+  List.iter (fun (at, bytes) -> arrive at bytes) typed;
+  let app_ref = ref None in
+  let write_output buf off len =
+    let s = Bytes.sub_string buf off len in
+    Buffer.add_string c.written s;
+    List.iter (arrive (c.now +. rtt)) (answer s)
+  in
+  let wait ~timeout ~on_event:_ =
+    c.waits <- (c.now, timeout) :: c.waits;
+    let deadline = Option.fold ~none:infinity ~some:(( +. ) c.now) timeout in
+    match c.arrivals with
+    | (at, _) :: _ when at <= deadline ->
+        c.now <- Float.max c.now at;
+        true
+    | _ when deadline > limit ->
+        c.now <- limit;
+        Option.iter Matrix.stop !app_ref;
+        false
+    | _ ->
+        c.now <- deadline;
+        false
+  in
+  let read_input buf off len =
+    let due, later = List.partition (fun (at, _) -> at <= c.now) c.arrivals in
+    let s = String.concat "" (List.map snd due) in
+    let n = min len (String.length s) in
+    c.arrivals <-
+      (if n < String.length s then
+         (c.now, String.sub s n (String.length s - n)) :: later
+       else later);
+    Bytes.blit_string s 0 buf off n;
+    if n = 0 then -1 else n
+  in
+  let backend : Matrix.Backend.t =
+    {
+      now = (fun () -> c.now);
+      wake = ignore;
+      write_output;
+      read_input;
+      wait;
+      input_is_tty = true;
+      output_is_tty = true;
+      terminal_size = (fun () -> (80, 24));
+      set_raw_mode = ignore;
+      flush_input = ignore;
+      protect = (fun f -> f ());
+      cleanup = ignore;
+      env;
+    }
+  in
+  let app =
+    Matrix.attach ~target_fps:None ~exit_on_ctrl_c ~resize_debounce:None
+      ~pace_redraws:false ~backend ()
+  in
+  app_ref := Some app;
+  (app, c)
+
+let run_clocked ?(on_event = fun _ _ -> ()) (app, c) =
+  Matrix.run app ~on_render:ignore ~on_input:(fun app event ->
+      c.seen <- (c.now, event) :: c.seen;
+      on_event app event)
+
+let events c = List.rev_map snd c.seen
+
+(* An xterm-like terminal: it answers the startup probe, which ends with DA1,
+   with its two cursor reports and DA1. *)
+let answers_probe s =
+  if
+    String.ends_with ~suffix:"\027[c" s && String.starts_with ~prefix:"\027 F" s
+  then [ "\027[1;1R\027[1;1R\027[?64;1c" ]
+  else []
+
+let wait_at c time =
+  List.filter_map
+    (fun (at, timeout) ->
+      if Float.abs (at -. time) < 1e-9 then timeout else None)
+    c.waits
+
+let close_to a b = Float.abs (a -. b) < 1e-9
+
+(* An ESC waits max(50 ms, 2 RTT) for what follows, and a sequence begun max
+   (500 ms, 4 RTT), the round trip measured from the probe's DA1. *)
+let test_waits_follow_round_trip () =
+  let ((app, c) as t) =
+    clocked_app ~rtt:0.2 ~answer:answers_probe ~limit:5.
+      [ (1., "\027"); (3., "\027[1;") ]
+  in
+  ignore app;
+  run_clocked t;
+  (match c.seen with
+  | [ (at, Key { key = Escape; _ }) ] ->
+      is_true ~msg:"Escape after 2 RTT of silence" (close_to at 1.4)
+  | _ -> fail "expected one Escape");
+  is_true ~msg:"the sequence waits 4 RTT"
+    (List.exists (close_to 0.8) (wait_at c 3.));
+  let ((_, c) as t) = clocked_app ~limit:2. [ (1., "\027") ] in
+  run_clocked t;
+  match c.seen with
+  | [ (at, Key { key = Escape; _ }) ] ->
+      is_true ~msg:"50 ms with no round trip" (close_to at 1.05)
+  | _ -> fail "expected one Escape"
+
+(* A batch without its DA1 is settled after max(500 ms, 4 RTT): the decoder is
+   owed nothing more, so a modified F3 is a key and [ESC \]] is Alt+\]. *)
+let test_unanswered_batch_expires () =
+  let ((_, c) as t) =
+    clocked_app ~limit:2. [ (1., "\027[1;2R"); (1.5, "\027]1x") ]
+  in
+  is_true ~msg:"startup waits out the probe" (close_to c.now 0.5);
+  run_clocked t;
+  let key ?(text = "") ?(mods = Matrix.Input.Keystroke.no_mods) key =
+    Matrix.Key { key; mods; text; base = None; keypad = false; repeat = false }
+  in
+  let alt = { Matrix.Input.Keystroke.no_mods with alt = true } in
+  let shift = { Matrix.Input.Keystroke.no_mods with shift = true } in
+  equal (list input_event)
+    [
+      key ~mods:shift (F 3);
+      key ~mods:alt (Char (Uchar.of_char ']'));
+      key ~text:"1" (Char (Uchar.of_char '1'));
+      key ~text:"x" (Char (Uchar.of_char 'x'));
+    ]
+    (events c)
+
+let index_of s sub =
+  let n = String.length sub in
+  let rec go i =
+    if i + n > String.length s then None
+    else if String.sub s i n = sub then Some i
+    else go (i + 1)
+  in
+  go 0
+
+(* The startup payload starts with S7C1T and sets the reports that need no
+   answer; a late answer changes the modes by their difference: the kitty
+   flags are pushed and asked for again, modifyOtherKeys goes, and
+   metaSendsEscape is set where it was reset, and reset on exit. *)
+let test_late_answer_changes_modes () =
+  let ((app, c) as t) =
+    clocked_app ~limit:3. [ (1., "\027[?0u\027[?1036;2$y") ]
+  in
+  let startup = Buffer.contents c.written in
+  is_true ~msg:"S7C1T first" (String.starts_with ~prefix:"\027 F" startup);
+  List.iter
+    (fun sub -> contains ~msg:"startup" ~sub startup)
+    [ "\027[?1004h"; "\027[?2031h"; "\027[?2048h"; "\027[?2004h"; "\027[>4;1m" ];
+  not_contains ~msg:"no kitty flags before an answer" ~sub:"\027[>5u" startup;
+  not_contains ~msg:"metaSendsEscape untouched" ~sub:"\027[?1036h" startup;
+  Buffer.clear c.written;
+  run_clocked t;
+  (* The run closes the application as it ends. *)
+  let late = Buffer.contents c.written in
+  (match (index_of late "\027[>5u", index_of late "\027[?u") with
+  | Some push, Some query ->
+      is_true ~msg:"flags asked for after the push" (query > push)
+  | _ -> fail "expected the kitty flags pushed and asked for");
+  contains ~msg:"modifyOtherKeys off" ~sub:"\027[>4;0m" late;
+  contains ~msg:"metaSendsEscape set" ~sub:"\027[?1036h" late;
+  equal ~msg:"capabilities" (option int) (Some 0)
+    (Matrix.capabilities app).kitty_keyboard;
+  List.iter
+    (fun sub -> contains ~msg:"close" ~sub late)
+    [ "\027[<u"; "\027[?1036l"; "\027[?1004l"; "\027[?2031l"; "\027[?2048l" ]
+
+(* A terminal that has metaSendsEscape set keeps it. *)
+let test_meta_sends_escape_kept () =
+  let app, c =
+    clocked_app ~limit:1.
+      ~answer:(fun s ->
+        if String.starts_with ~prefix:"\027 F" s then
+          [ "\027[?1036;1$y\027[1;1R\027[1;1R\027[?64;1c" ]
+        else [])
+      []
+  in
+  Matrix.close app;
+  not_contains ~sub:"\027[?1036"
+    ( Buffer.contents c.written |> fun s ->
+      match index_of s "\027[?1036$p" with
+      | Some i -> String.sub s (i + 9) (String.length s - i - 9)
+      | None -> s )
+
+(* Paste reaches the application as it arrives, with no limit;
+   [Matrix.abort_paste] ends it, and the bytes after decode as input. *)
+let test_paste_streams_and_aborts () =
+  let big = String.make (1024 * 1024) 'p' in
+  let ((_, c) as t) =
+    clocked_app ~limit:5.
+      [
+        (1., "\027[200~abc");
+        (2., "def");
+        (3., "\027[201~x");
+        (4., "\027[200~");
+        (4.1, big);
+        (4.2, "\027[201~");
+      ]
+  in
+  run_clocked t ~on_event:(fun app -> function
+    | Paste_data "def" -> Matrix.abort_paste app
+    | _ -> ());
+  let events = events c in
+  let rec take n = function
+    | x :: rest when n > 0 -> x :: take (n - 1) rest
+    | _ -> []
+  in
+  equal ~msg:"cut by the application" (list input_event)
+    [
+      Paste_start;
+      Paste_data "abc";
+      Paste_data "def";
+      Paste_end `Cut;
+      Matrix.Key
+        {
+          key = Char (Uchar.of_char 'x');
+          mods = Matrix.Input.Keystroke.no_mods;
+          text = "x";
+          base = None;
+          keypad = false;
+          repeat = false;
+        };
+      Paste_start;
+    ]
+    (take 6 events);
+  let data =
+    String.concat ""
+      (List.filter_map
+         (function Matrix.Paste_data d -> Some d | _ -> None)
+         (List.filteri (fun i _ -> i >= 6) events))
+  in
+  equal ~msg:"a large paste whole" int (String.length big) (String.length data);
+  is_true ~msg:"complete" (List.mem (Matrix.Paste_end `Complete) events)
+
+(* The replies that are application facts reach it: the color scheme, in
+   reply to a query or on a change, and the in-band resize when the size
+   changed. Other replies never do. *)
+let test_application_replies () =
+  let ((app, c) as t) =
+    clocked_app ~limit:3.
+      [
+        (1., "\027[?997;1n\027[48;24;80;480;800t\027[?2026;1$y");
+        (2., "\027[48;30;100;600;1000t\027[?64;1c\027[1;5R");
+      ]
+  in
+  run_clocked t;
+  equal (list input_event)
+    [
+      Color_scheme `Dark;
+      Resize (100, 30);
+      Matrix.Key
+        {
+          key = F 3;
+          mods = { Matrix.Input.Keystroke.no_mods with ctrl = true };
+          text = "";
+          base = None;
+          keypad = false;
+          repeat = false;
+        };
+    ]
+    (events c);
+  equal ~msg:"pixels"
+    (option (pair int int))
+    (Some (1000, 600))
+    (Matrix.pixel_resolution app)
+
+(* Ctrl+C closes on a press: a release never does, whatever the encoding. *)
+let test_ctrl_c_ignores_releases () =
+  List.iter
+    (fun (name, bytes, closes) ->
+      let ((_, c) as t) =
+        clocked_app ~limit:3. [ (1., "\027[99;5:3u"); (2., bytes) ]
+      in
+      run_clocked t;
+      equal ~msg:name bool closes (close_to c.now 2.))
+    [
+      ("legacy", "\003", true);
+      ("kitty", "\027[99;5u", true);
+      ("kitty, Shift consumed", "\027[99:67;6u", true);
+      ("Ctrl+D", "\004", false);
+    ]
+
+(* Inside tmux, the probe goes to tmux; once it answers, passthrough is
+   asked about with a wrapped DA1, and only once that answers are the
+   questions about the outer terminal sent, wrapped, each group closed by its
+   own wrapped DA1. *)
+let test_tmux_groups () =
+  let wrapped_da1 = "\027Ptmux;\027\027[c\027\\" in
+  let tmux ~passthrough s =
+    if String.starts_with ~prefix:"\027 F" s then
+      [ "\027P>|tmux 3.5a\027\\\027[1;1R\027[1;1R\027[?1;2;4c" ]
+    else if s = wrapped_da1 && passthrough then [ "\027[?64;1c" ]
+    else if String.starts_with ~prefix:"\027Ptmux;\027\027_G" s && passthrough
+    then [ "\027_Gi=31337;OK\027\\\027[?64;1c" ]
+    else []
+  in
+  let app, c =
+    clocked_app
+      ~env:(env [ ("TMUX", "s") ])
+      ~rtt:0.01 ~limit:2. ~answer:(tmux ~passthrough:true) []
+  in
+  run_clocked (app, c);
+  let out = Buffer.contents c.written in
+  (match (index_of out wrapped_da1, index_of out "\027Ptmux;\027\027_G") with
+  | Some check, Some outer ->
+      is_true ~msg:"outer after the check" (outer > check)
+  | _ -> fail "expected the passthrough check and the outer group");
+  let caps = Matrix.capabilities app in
+  is_true ~msg:"outer graphics" caps.kitty_graphics;
+  is_true ~msg:"tmux" (caps.multiplexer = Some `Tmux);
+  equal ~msg:"tmux's widths" input_width `Wcwidth caps.unicode_width;
+  let app, c =
+    clocked_app
+      ~env:(env [ ("TMUX", "s") ])
+      ~rtt:0.01 ~limit:2. ~answer:(tmux ~passthrough:false) []
+  in
+  run_clocked (app, c);
+  let out = Buffer.contents c.written in
+  contains ~msg:"passthrough asked" ~sub:wrapped_da1 out;
+  not_contains ~msg:"nothing wrapped without passthrough" ~sub:"\027_G" out;
+  is_false ~msg:"no graphics" (Matrix.capabilities app).kitty_graphics
 
 let () =
   run "matrix.runtime"
@@ -2520,6 +2874,17 @@ let () =
             test_primary_minimum_height_survives_shrink;
           test "resize keeps the live region below the transcript"
             test_primary_resize_keeps_live_region_below_transcript;
+        ];
+      group "Input"
+        [
+          test "waits follow the round trip" test_waits_follow_round_trip;
+          test "an unanswered batch expires" test_unanswered_batch_expires;
+          test "a late answer changes modes" test_late_answer_changes_modes;
+          test "metaSendsEscape set is kept" test_meta_sends_escape_kept;
+          test "paste streams and aborts" test_paste_streams_and_aborts;
+          test "Ctrl+C ignores releases" test_ctrl_c_ignores_releases;
+          test "replies that are application facts" test_application_replies;
+          test "tmux groups" test_tmux_groups;
         ];
       group "Primary input"
         [

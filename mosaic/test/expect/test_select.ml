@@ -67,7 +67,7 @@ let%expect_test "navigation changes selection" =
   reconcile app (view ());
   focus app (mounted app);
   frame app ~width:30 ~height:10;
-  send_key app Matrix_input.Key.Down;
+  send_key app Matrix_input.Keystroke.Down;
   reconcile app (view ());
   frame app ~width:30 ~height:10;
   [%expect_exact

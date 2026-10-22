@@ -77,7 +77,8 @@ let map_transforms_on_key () =
     Vnode.box
       ~on_key:(fun event ->
         if
-          (Event.Key.data event).key = Matrix_input.Key.Char (Uchar.of_char 'a')
+          (Event.Key.data event).key
+          = Matrix_input.Keystroke.Char (Uchar.of_char 'a')
         then Some 42
         else None)
       []
@@ -86,9 +87,9 @@ let map_transforms_on_key () =
   let mapped : unit Vnode.t = Vnode.map (fun n -> log := n :: !log) v in
   match mapped with
   | Vnode.Element { handlers = { on_key = Some handler; _ }; _ } ->
-      let fake_ev = Event.Key.of_input (Matrix_input.Key.of_char 'a') in
+      let fake_ev = Event.Key.of_input (Test_harness.char_key 'a') in
       equal (option unit) (Some ()) (handler fake_ev);
-      is_none (handler (Event.Key.of_input (Matrix_input.Key.of_char 'b')));
+      is_none (handler (Event.Key.of_input (Test_harness.char_key 'b')));
       equal ~msg:"only present messages reach the mapper" (list int) [ 42 ] !log
   | _ -> fail "expected on_key handler"
 
@@ -173,7 +174,7 @@ let viewport_switch_maps_both_branches () =
   let run_handler = function
     | Vnode.Element { handlers = { on_key = Some handler; _ }; _ } ->
         equal (option unit) (Some ())
-          (handler (Event.Key.of_input (Matrix_input.Key.of_char 'a')))
+          (handler (Event.Key.of_input (Test_harness.char_key 'a')))
     | _ -> fail "expected branch key handler"
   in
   match mapped with

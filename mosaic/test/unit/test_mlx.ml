@@ -40,12 +40,12 @@ let children_and_editor_state () =
   let node = Option.get (Mosaic.Reconciler.focused reconciler) in
   ignore (Renderer.focus renderer node : bool);
   ignore
-    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'b') : Event.key);
+    (Renderer.dispatch_key renderer (Test_harness.char_key 'b') : Event.key);
   equal ~msg:"editor callback proposes model state" string "ab"
     (Mosaic.Editor.text !state);
   render renderer reconciler (view ()) accept;
   ignore
-    (Renderer.dispatch_key renderer (Matrix_input.Key.of_char 'c') : Event.key);
+    (Renderer.dispatch_key renderer (Test_harness.char_key 'c') : Event.key);
   equal ~msg:"next edit uses accepted declaration" string "abc"
     (Mosaic.Editor.text !state)
 
@@ -74,10 +74,8 @@ let scroll_children_and_state () =
     ignore (Renderer.render ~full:true renderer : string)
   in
   let wheel () =
-    match Matrix_input.mouse_scroll 1 1 Matrix_input.Mouse.Scroll_down with
-    | Matrix_input.Mouse mouse ->
-        ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse)
-    | _ -> assert false
+    let mouse = Test_harness.mouse_report ~x:1 ~y:1 (Scroll `Down) in
+    ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse)
   in
   let position () =
     snd

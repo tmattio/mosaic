@@ -26,6 +26,7 @@
 - Frame deltas are milliseconds everywhere (runtime, widgets, Screen post-processors); widget animation constants were split between units before
 - Selection/value props are controlled when provided and uncontrolled otherwise, uniformly across `slider`, `select`, `tab_select`, `table`, and `tree`
 - Editable widgets take key bindings and aliases, and user paste handlers run before widget default paste behavior, matching OpenTUI's default-prevention semantics
+- **Shortcuts match exactly** – a shortcut matches the key and its modifiers, then the base-layout key; the lowercase fallback, keypad normalization and Alt-implies-Meta are gone, `char ~shift:true 'r'` is `'R'`, and `Line_feed` bindings are Ctrl+J. Editors insert the keystroke's text; key releases reach `Sub.on_key_release`, never widgets; a paste reaches widgets whole once it completes
 - `Cmd.focus` expires after one deferred attempt instead of retrying forever; every-timers carry absolute deadlines and no longer phase-merge
 - Incremental markdown reconciliation: streaming appends re-render only the tail; `table` caches auto column widths; `line_number` indexes its props
 - Edit-buffer undo history is bounded (200 snapshots)
@@ -54,7 +55,7 @@
 #### Added
 
 - **Pluggable backends** – `Matrix.Backend` is a record of I/O primitives with a shared `bootstrap` handshake; `matrix-eio` provides an Eio runtime on top of it
-- **Headless test backend (`matrix.test`)** – virtual clock, byte-level input through the real parser, plain-text frame snapshots; `Screen.create` takes an injectable `?clock`
+- **Headless test backend (`matrix.test`)** – virtual clock, byte-level input through the real decoder, plain-text frame snapshots; `Screen.create` takes an injectable `?clock`
 - **Unicode text layer (`matrix.text`)** – grapheme iteration, width measurement, wrap-break and line-break discovery, and position helpers, independent of cell storage
 - **Terminal charts (`matrix.charts`)** – declarative chart composition rendered into grids
 - **Timer wakeups and paced one-shot redraws** – `Matrix.schedule_wakeup`, and `request_redraw` bursts coalesce to `target_fps`; `Matrix.request_immediate_redraw` renders one frame off-cadence
@@ -65,8 +66,10 @@
 #### Changed
 
 - **Prefixed module names** – the sublibraries install `Matrix_grid`, `Matrix_screen`, `Matrix_input`, `Matrix_text`, `Matrix_terminal`, and `Matrix_image` (Toffee likewise `Toffee_style`, `Toffee_tree`, `Toffee_geometry`, `Toffee_compute`) so they cannot collide with other packages' top-level modules; `Matrix.Grid` and friends are unchanged via the umbrella. `Ansi`, `Vte`, and `Pty` deliberately keep their bare names
-- **Input responses are separate from events** – `Input.Response` carries clipboard, OSC, capability, and unknown protocol replies out of the user event stream, and the parser defers only the replies a probe currently expects
-- Mouse input is one `Input.Mouse` record of coordinates, modifiers, and a kind (scroll included), replacing tuple events and wheel pseudo-buttons; modifiers live in a shared `Input.Modifier` instead of nested under keys
+- **Input is decoded with no clock** – `Input.Decoder` replaces `Input.Parser` and `Input.Event`: one ordered stream of keystrokes (`Input.Keystroke`), mouse reports (`Input.Mouse_report`), paste, focus and replies (`Input.Reply`), the runtime saying when the terminal was silent. A keystroke has one value in every encoding: `Char` is the character typed with Shift consumed (Shift+a is `'A'`), Ctrl+j is the old `Line_feed`, keypad keys are main keys with `keypad`, releases are `Key_release`, Alt no longer sets Meta, and bytes that are not UTF-8 are `Invalid`. A reply is never typed, and a control string begins only while a string reply is owed
+- **The application's events are `Matrix.event`** – paste streams as `Paste_start`, `Paste_data` and `Paste_end` with no limit, and `Matrix.abort_paste` ends one; focus is `Focus_in`/`Focus_out`; `Text` carries text a terminal reports without a key. `create` lost `focus_reporting` and `` `Enabled flags ``, takes `?key_releases` and `?caps` (in place of `initial_caps`), and `Backend.t` carries the session's environment
+- **Capabilities are derived, not accumulated** – `Terminal.Caps.derive` is a pure function of the environment, read once, and the answers so far, by one precedence: user policy, cited corrections, the answer of the terminal doing the work, identity, guesses. A late answer can take back a guess, and the runtime then changes the modes by their difference. Identity comes from the environment only when the terminal is directly attached; inside tmux, questions go to tmux itself, its facts come from its version when it is silent, and only questions about the outer terminal are wrapped, once passthrough has answered. The VS Code rule (no recorded reason) and `KITTY_WINDOW_ID` implying SIXEL are gone, and a color scheme report no longer implies mode 2031
+- **Input modes** – the startup probe sends S7C1T first, so no reply comes with 8-bit controls; focus (1004), color scheme (2031) and resize (2048) reports are set without asking; metaSendsEscape (1036) is set where the terminal has it reset, and reset on exit; the kitty flags are pushed once the terminal answers, then asked for again; queries settle at their batch's DA1 or after max(500 ms, 4 RTT), and the ESC and sequence waits scale with the probe's round trip
 - Colors are emitted at the terminal's negotiated depth: RGB downgrades to ANSI256 or ANSI16 when truecolor is unavailable, and indexed colors are preserved verbatim
 - The Image DSL is its own `matrix.image` sublibrary; its aliases collapsed into one `text` constructor and one grid-order `draw`
 - All screen buffers share one grapheme and hyperlink store, making the diff sound for complex cells and hyperlinks across frames
@@ -85,7 +88,7 @@
 
 #### Fixed
 
-- Capability probing: stray cursor-position replies no longer flip `explicit_width`/`scaled_text` for the session; late capability replies are still applied, and modern terminals seed synchronized output
+- Capability probing: stray cursor-position replies no longer flip `explicit_width`/`scaled_text` for the session; late capability replies are still applied, and modern terminals seed synchronized output. The environment is no longer read behind the caller's back (a `$TMUX` set in the developer's shell wrapped the probe)
 - Kitty keyboard stack balanced on flag changes; teardown resets only the title/cursor appearance the app actually set
 - Terminal setup rolls back transactionally when probing or protocol negotiation fails, so no path escapes with the terminal left raw; app-owned signal dispositions, including SIGHUP, are restored in reverse
 - Raw mode clears `IEXTEN`, so the kernel stops swallowing `^O` and `^V` before they reach the application
@@ -95,8 +98,7 @@
 - Grid: wide-glyph spans stay atomic across fills, clipping, resizes, and ANSI export; blit alpha is source-driven; terminal-default glyphs cover their destination instead of reading as transparent
 - Cursor style is emitted on the first frame and after `suspend`, and cursor visuals are re-emitted when the cursor is shown
 - Alt-mode submit skips unchanged frames; `suspend` is idempotent; `on_resize` reports the usable size consistently
-- Input parser: colon SGR sub-parameters (undercurl, colon colors), rxvt `$`/`^` keys mid-chunk, bounded SGR-mouse deferral, split-invariant streaming UTF-8, Ctrl letters normalized to lowercase, Ctrl punctuation and Cygwin/libuv F-keys, Alt as Meta, Kitty base-key metadata in lookups, and recovery from interrupted escapes
-- Bracketed paste has a bounded lifecycle with configurable payload and idle limits, so an unterminated paste can no longer swallow input or grow without limit
+- Input: long replies are never typed whatever their length or split, a stalled reply or paste is never typed, modified F1–F4, SS3 with modifiers and Alt with an introducer decode, SGR motion reads its button from the report, and Ctrl punctuation, Cygwin/libuv F-keys and rxvt keys decode in every split
 - `matrix.pty`: a child that fails session setup, chdir, or exec exits without running cleanup inherited from the parent
 - VTE: scrollback rendering order, wide graphemes at the right margin, insert-mode wrap, DECRC style restore, typed DECSET/DECRST (multi-parameter modes), reverse-index scrolling, scrollback cleared on ED 3, default colors resolved for terminal text, and emulated scroll control sequences
 - Combining marks stay attached to ASCII bases in grapheme segmentation; wrapping keeps periods inside their token

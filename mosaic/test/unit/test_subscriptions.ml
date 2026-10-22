@@ -133,42 +133,63 @@ let sub_map_transforms_messages () =
       | _ -> fail "expected Tick")
   | _ -> fail "expected On_tick"
 
-let key ?modifier ?event_type ?base_key key =
-  Event.Key.of_input (Input.Key.make ?modifier ?event_type ?base_key key)
+let key ?(mods = Input.Keystroke.no_mods) ?(repeat = false) ?base
+    ?(keypad = false) key =
+  Event.Key.of_input
+    { Input.Keystroke.key; mods; text = ""; base; keypad; repeat }
 
-let char ?modifier ?event_type ?base_key c =
-  key ?modifier ?event_type ?base_key (Input.Key.Char (Uchar.of_char c))
+let char ?mods ?base c =
+  key ?mods ?base (Input.Keystroke.Char (Uchar.of_char c))
 
 let shortcut_matches_plain_keys () =
   is_true ~msg:"char shortcut" (Shortcut.matches (Shortcut.char 'q') (char 'q'));
   is_true ~msg:"escape shortcut"
-    (Shortcut.matches Shortcut.escape (key Input.Key.Escape));
+    (Shortcut.matches Shortcut.escape (key Input.Keystroke.Escape));
   is_false ~msg:"wrong char" (Shortcut.matches (Shortcut.char 'q') (char 'x'))
 
-let shortcut_ignores_key_release () =
-  let ev = char ~event_type:Input.Key.Release 'q' in
-  is_false ~msg:"release ignored" (Shortcut.matches (Shortcut.char 'q') ev)
+let sub_on_key_release_delivers_releases () =
+  let release : Input.Keystroke.release =
+    {
+      key = Char (Uchar.of_char 'q');
+      mods = Input.Keystroke.no_mods;
+      base = None;
+      keypad = false;
+    }
+  in
+  let sub =
+    Sub.map
+      (fun n -> n + 1)
+      (Sub.on_key_release (fun (r : Input.Keystroke.release) ->
+           if r.key = Char (Uchar.of_char 'q') then Some 1 else None))
+  in
+  match sub with
+  | Sub.On_key_release f ->
+      equal ~msg:"release delivered and mapped" (option int) (Some 2)
+        (f release)
+  | _ -> fail "expected On_key_release"
 
 let shortcut_matches_ctrl_base_key () =
   let ev =
     key
-      ~modifier:{ Input.Modifier.none with ctrl = true }
-      ~base_key:(Uchar.of_char 'c')
-      (Input.Key.Char (Uchar.of_int 0x0441))
+      ~mods:{ Input.Keystroke.no_mods with ctrl = true }
+      ~base:(Uchar.of_char 'c')
+      (Input.Keystroke.Char (Uchar.of_int 0x0441))
   in
   is_true ~msg:"base-layout fallback" (Shortcut.matches (Shortcut.ctrl 'c') ev)
 
-let shortcut_matches_legacy_shift_char () =
-  let ev = char ~modifier:{ Input.Modifier.none with shift = true } 'A' in
-  is_true ~msg:"legacy uppercase fallback"
-    (Shortcut.matches (Shortcut.char ~shift:true 'a') ev)
+let shortcut_shift_letter_is_the_capital () =
+  is_true ~msg:"Shift+a arrives as 'A' and matches char ~shift:true 'a'"
+    (Shortcut.matches (Shortcut.char ~shift:true 'a') (char 'A'));
+  is_false ~msg:"char 'a' does not match Shift+a"
+    (Shortcut.matches (Shortcut.char 'a') (char 'A'))
 
-let shortcut_alt_matches_matrix_alt_meta () =
-  let ev =
-    char ~modifier:{ Input.Modifier.none with alt = true; meta = true } 'x'
-  in
-  is_true ~msg:"Alt also requires Matrix meta"
-    (Shortcut.matches (Shortcut.alt 'x') ev)
+let shortcut_alt_matches_alt () =
+  is_true ~msg:"Alt matches Matrix's Alt"
+    (Shortcut.matches (Shortcut.alt 'x')
+       (char ~mods:{ Input.Keystroke.no_mods with alt = true } 'x'));
+  is_false ~msg:"Alt with Meta is another chord"
+    (Shortcut.matches (Shortcut.alt 'x')
+       (char ~mods:{ Input.Keystroke.no_mods with alt = true; meta = true } 'x'))
 
 let sub_on_keys_resolution () =
   let resolve bindings event =
@@ -185,27 +206,27 @@ let sub_on_keys_resolution () =
   check "later equivalent bindings override earlier ones" (Some 2)
     [ (Shortcut.char 'q', 1); (Shortcut.char 'q', 2) ]
     (char 'q');
-  check "keypad equivalents override earlier ones" (Some 2)
-    [ (Shortcut.enter, 1); (Shortcut.key Input.Key.KP_enter, 2) ]
-    (key Input.Key.Enter);
-  check "exact uppercase precedes lowercase regardless of order" (Some 1)
+  check "a keypad key resolves its main key's binding" (Some 1)
+    [ (Shortcut.enter, 1) ]
+    (key ~keypad:true Input.Keystroke.Enter);
+  check "exact uppercase resolves regardless of order" (Some 1)
     [ (Shortcut.char 'Q', 1); (Shortcut.char 'q', 2) ]
+    (char 'Q');
+  check "a capital does not resolve the lowercase binding" None
+    [ (Shortcut.char 'q', 2) ]
     (char 'Q');
   check "direct character precedes base layout regardless of order" (Some 1)
     [ (Shortcut.char 'x', 1); (Shortcut.char 'q', 2) ]
-    (char ~base_key:(Uchar.of_char 'q') 'x');
-  check "normalized direct character precedes base layout" (Some 1)
+    (char ~base:(Uchar.of_char 'q') 'x');
+  check "an unbound capital falls back to the base layout" (Some 2)
     [ (Shortcut.char 'x', 1); (Shortcut.char 'q', 2) ]
-    (char ~base_key:(Uchar.of_char 'q') 'X');
+    (char ~base:(Uchar.of_char 'q') 'X');
   check "base-layout fallback remains available" (Some 2)
     [ (Shortcut.char 'q', 1); (Shortcut.char 'q', 2) ]
-    (char ~base_key:(Uchar.of_char 'Q') 'x');
-  check "release never resolves" None
-    [ (Shortcut.char 'q', 1) ]
-    (char ~event_type:Input.Key.Release 'q');
+    (char ~base:(Uchar.of_char 'q') 'x');
   check "unbound modifiers remain available" None
     [ (Shortcut.char 'q', 1) ]
-    (char ~modifier:{ Input.Modifier.none with ctrl = true } 'q')
+    (char ~mods:{ Input.Keystroke.no_mods with ctrl = true } 'q')
 
 let sub_on_keys_does_not_compile_or_allocate_per_override () =
   let shortcut = Shortcut.char 'q' in
@@ -302,12 +323,12 @@ let () =
       test "Sub.batch flattens" sub_batch_flattens;
       test "Sub.map transforms messages" sub_map_transforms_messages;
       test "Shortcut.matches plain keys" shortcut_matches_plain_keys;
-      test "Shortcut ignores key release" shortcut_ignores_key_release;
+      test "Sub.on_key_release delivers releases"
+        sub_on_key_release_delivers_releases;
       test "Shortcut matches ctrl base key" shortcut_matches_ctrl_base_key;
-      test "Shortcut matches legacy shift char"
-        shortcut_matches_legacy_shift_char;
-      test "Shortcut Alt matches Matrix Alt/Meta"
-        shortcut_alt_matches_matrix_alt_meta;
+      test "Shortcut Shift with a letter is the capital"
+        shortcut_shift_letter_is_the_capital;
+      test "Shortcut Alt matches Matrix Alt" shortcut_alt_matches_alt;
       test "Sub.on_keys binding resolution" sub_on_keys_resolution;
       test "Sub.on_keys allocation across overrides"
         sub_on_keys_does_not_compile_or_allocate_per_override;

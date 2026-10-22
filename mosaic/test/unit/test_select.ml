@@ -200,7 +200,7 @@ let kp_enter_fires_on_activate () =
   let _t, sel = make_select ~options:sample_items ~selected_index:1 () in
   let log = ref [] in
   Select.set_on_activate sel (Some (fun i -> log := i :: !log));
-  emit_key sel (make_key KP_enter);
+  emit_key sel (make_key ~keypad:true Enter);
   equal ~msg:"activated" (list int) [ 1 ] !log
 
 let on_change_fires_on_key_navigation () =
@@ -653,7 +653,7 @@ let bindings_use_exact_key_events () =
     (fun key ->
       let event = Event.Key.of_input key in
       Renderable.Private.emit_default_key (Select.node sel) event;
-      is_false ~msg:"unbound modified/released key remains available"
+      is_false ~msg:"unbound modified key remains available"
         (Event.Key.default_prevented event);
       equal ~msg:"unbound event leaves selection unchanged" int 2
         (Select.selected_index sel))
@@ -663,15 +663,14 @@ let bindings_use_exact_key_events () =
       make_key ~super:true Down;
       make_key ~hyper:true Down;
       make_key ~meta:true Down;
-      make_key ~shift:true (Char (Uchar.of_char 'j'));
-      make_key ~event_type:Release Down;
+      (* Shift+j types the capital, which is no binding of its own. *)
+      make_key (Char (Uchar.of_char 'J'));
     ];
   emit_key sel
-    (make_key ~caps_lock:true ~num_lock:true ~event_type:Repeat KP_down);
+    (make_key ~caps_lock:true ~num_lock:true ~repeat:true ~keypad:true Down);
   equal ~msg:"repeat and keypad navigation ignore lock state" int 3
     (Select.selected_index sel);
-  emit_key sel
-    (make_key ~base_key:(Uchar.of_char 'k') (Char (Uchar.of_int 0x043B)));
+  emit_key sel (make_key ~base:(Uchar.of_char 'k') (Char (Uchar.of_int 0x043B)));
   equal ~msg:"base-layout fallback uses the same default binding" int 2
     (Select.selected_index sel)
 

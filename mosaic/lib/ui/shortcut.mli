@@ -1,12 +1,16 @@
 (** Keyboard shortcuts for subscriptions and event handlers.
 
-    A shortcut matches a key press or repeat with exact non-lock modifiers. Caps
-    Lock and Num Lock state are ignored. When a terminal reports a base-layout
-    key, matching also tries that base key so physical shortcuts such as Ctrl+C
-    keep working across keyboard layouts. Lowercase ASCII shortcuts also match
-    uppercase event keys; uppercase shortcuts remain exact. Keypad digits,
-    arithmetic, Enter and navigation match their main-keyboard equivalents.
-    Keypad Begin remains distinct. *)
+    A shortcut matches a key press or repeat ({!Matrix_input.Keystroke.t}) by
+    its key and its held modifiers, exactly. A key's value is the character
+    typed, with Shift consumed: Shift+r is [Char 'R'], so
+    {!char}[ ~shift:true 'r'] is the shortcut [Char 'R'], and [char 'r'] does
+    not match Shift+r. A lock never changes a chord's key, and Caps Lock and Num
+    Lock are ignored in matching; a letter typed with Caps Lock on is the
+    capital, as typed. The keypad is ignored: keypad Enter matches {!enter}, and
+    the keypad's 5 without Num Lock is [Begin]. When a terminal reports the
+    base-layout key, matching then tries that key with the same modifiers, so
+    that Ctrl+c keeps working on a layout whose key in that place types another
+    letter. Releases never match. *)
 
 type t
 (** The type for keyboard shortcuts. *)
@@ -18,11 +22,13 @@ val key :
   ?super:bool ->
   ?hyper:bool ->
   ?meta:bool ->
-  Matrix_input.Key.t ->
+  Matrix_input.Keystroke.key ->
   t
 (** [key k] matches [k] with no modifiers. Optional modifier arguments default
-    to [false]. [alt] also implies [meta], matching terminal Alt input as
-    reported by Matrix. *)
+    to [false]. With [shift], an ASCII letter is its capital and Shift is
+    consumed, as in the keystrokes Matrix reports: [key ~shift:true (Char 'r')]
+    is [key (Char 'R')]. [meta] is a Meta key distinct from Alt, which only the
+    kitty keyboard protocol reports. *)
 
 val char :
   ?ctrl:bool ->
@@ -33,8 +39,8 @@ val char :
   ?meta:bool ->
   char ->
   t
-(** [char c] is [key (Char c)]. Optional modifier arguments default to [false].
-*)
+(** [char c] is [key (Char c)], with [c] as a Unicode code point. Optional
+    modifier arguments default to [false]. *)
 
 val ctrl : char -> t
 (** [ctrl c] matches Ctrl+[c]. *)
@@ -43,7 +49,7 @@ val alt : char -> t
 (** [alt c] matches Alt+[c]. *)
 
 val shift : char -> t
-(** [shift c] matches Shift+[c]. *)
+(** [shift c] matches Shift+[c]: the capital, for a letter. *)
 
 val escape : t
 (** [escape] matches Escape. *)
@@ -79,8 +85,7 @@ val space : t
 (** [space] matches Space. *)
 
 val equal : t -> t -> bool
-(** [equal a b] is [true] iff [a] and [b] denote the same shortcut, including
-    keypad equivalences. *)
+(** [equal a b] is [true] iff [a] and [b] denote the same shortcut. *)
 
 val matches : t -> Event.key -> bool
 (** [matches shortcut ev] is [true] iff [ev] matches [shortcut]. *)
@@ -90,12 +95,12 @@ val matches : t -> Event.key -> bool
 module Private : sig
   val resolve :
     find_char:('a -> int -> int -> 'b option) ->
-    find_key:('a -> int -> Matrix_input.Key.t -> 'b option) ->
+    find_key:('a -> int -> Matrix_input.Keystroke.key -> 'b option) ->
     'a ->
-    Matrix_input.Key.event ->
+    Matrix_input.Keystroke.t ->
     'b option
 
   val find : (t * 'a) list -> Event.key -> 'a option
-  val key : t -> Matrix_input.Key.t
+  val key : t -> Matrix_input.Keystroke.key
   val modifier : t -> int
 end
