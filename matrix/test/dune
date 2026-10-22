@@ -85,3 +85,9 @@
  (package matrix)
  (modules test_image)
  (libraries windtrap matrix matrix.image))
+
+(test
+ (name test_vte_fuzz)
+ (package matrix)
+ (modules test_vte_fuzz)
+ (libraries windtrap matrix.vte matrix.grid matrix.ansi matrix.text))
