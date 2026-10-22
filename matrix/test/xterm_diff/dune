@@ -1,0 +1,6 @@
+; A differential fuzzer against xterm. Not a test: it needs xterm and an X
+; server, which CI lacks, so nothing runs it under @runtest. See README.md.
+
+(executable
+ (name xterm_diff)
+ (libraries unix matrix.vte matrix.grid matrix.ansi))
