@@ -1094,24 +1094,37 @@ let rewrite ctx bytes =
   let last = ref (Ctl '\x00') in
   (* A lexeme xterm does not get: if its ESC ended a string, xterm gets a
      sequence that does nothing instead, which ends the string as well. *)
+  let current = ref "" in
   let drop () =
-    let unfinished raw =
-      let n = String.length raw in
-      let b = raw.[n - 1] in
-      if n >= 2 && String.contains "P]_^X" raw.[1] then
-        not (String.ends_with ~suffix:"\027\\" raw)
-      else if b >= '\x80' then false
-      else if n >= 2 && raw.[1] = '[' then n = 2 || b < '\x40' || b > '\x7E'
-      else n = 1 || b < '\x30' || b > '\x7E'
+    (* Controls left inside the lexeme (after an open string, where they
+       could not move before it) are performed: xterm gets them, after an
+       ESC that ends what the lexeme's ESC ended. *)
+    let controls =
+      String.concat ""
+        (List.filter_map
+           (fun c ->
+             if c < '\x20' && c <> '\027' then Some (String.make 1 c) else None)
+           (List.init (String.length !current) (String.get !current)))
     in
-    match !last with
-    | Str raw
-      when not
-             (String.ends_with ~suffix:"\027\\" raw
-             || (raw.[1] = ']' && String.ends_with ~suffix:"\x07" raw)) ->
-        emit "\027[?0l"
-    | Silent raw when unfinished raw -> emit "\027[?0l"
-    | _ -> ()
+    if controls <> "" then emit ("\027" ^ controls ^ "[?0l")
+    else
+      let unfinished raw =
+        let n = String.length raw in
+        let b = raw.[n - 1] in
+        if n >= 2 && String.contains "P]_^X" raw.[1] then
+          not (String.ends_with ~suffix:"\027\\" raw)
+        else if b >= '\x80' then false
+        else if n >= 2 && raw.[1] = '[' then n = 2 || b < '\x40' || b > '\x7E'
+        else n = 1 || b < '\x30' || b > '\x7E'
+      in
+      match !last with
+      | Str raw
+        when not
+               (String.ends_with ~suffix:"\027\\" raw
+               || (raw.[1] = ']' && String.ends_with ~suffix:"\x07" raw)) ->
+          emit "\027[?0l"
+      | Silent raw when unfinished raw -> emit "\027[?0l"
+      | _ -> ()
   in
   (* The bytes [m] got, to replay them. *)
   let seen = Buffer.create (String.length bytes) in
@@ -1411,6 +1424,10 @@ let rewrite ctx bytes =
          | l when with_subparams l -> before
          | _ -> None);
       let lexeme = l in
+      (current :=
+         match l with
+         | Esc { raw; _ } | Csi { raw; _ } | Silent raw | Overlong raw -> raw
+         | _ -> "");
       (* After each unit: [crossed], the unit in progress went on through
          bytes that form no token; [joined], it is a unit of no width that
          joined a cell. *)
@@ -1526,7 +1543,15 @@ let rewrite ctx bytes =
           let slot =
             match inter.[0] with '-' -> ')' | '.' -> '*' | '/' -> '+' | g -> g
           in
-          emit ("\027" ^ String.make 1 slot ^ "B");
+          (* The controls a sequence after an open string keeps inside it
+             stay there. *)
+          let controls =
+            String.concat ""
+              (List.filter_map
+                 (fun c -> if c < '\x20' then Some (String.make 1 c) else None)
+                 (List.tl (List.init (String.length raw) (String.get raw))))
+          in
+          emit ("\027" ^ controls ^ String.make 1 slot ^ "B");
           feed raw
       | Esc { inter = ""; final = '8'; raw } ->
           emit raw;
