@@ -19,6 +19,11 @@
     puts the positions an erasure or a deletion vacates "into the erased state"
     (§8.3.26), and the half of a wide character they cut is such a position.
 
+    A grapheme also has one rendition, its start cell's colors, attributes and
+    hyperlink, since a terminal shows a character in one: blending a translucent
+    color over a wide character blends it over the start cell's background, and
+    the other cells take the start cell's rendition.
+
     Drawing composites colors with source-over alpha blending; copying preserves
     stored colors. A stack of {e scissor} clipping regions constrains drawing.
     Wide characters are span-atomic: if the start cell is accepted by a clipping
@@ -255,7 +260,8 @@ val draw_text :
 
     When the resolved background has alpha < 1.0, colors are blended with
     existing cells. A space on a translucent background preserves the existing
-    cell content and tints its colors.
+    cell content and tints its colors; a wide character is tinted whole when the
+    space covers its start cell, and not at all otherwise.
 
     Respects the active scissor for start cells. If a wide character's start
     cell is visible, its continuation cells are written as well to preserve the

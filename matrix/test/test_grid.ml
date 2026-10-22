@@ -871,6 +871,81 @@ let draw_text_blends_fg_alpha_over_opaque_bg () =
   satisfies ~claim:"blue component preserved (> 0)" int (fun blue -> blue > 0) b;
   satisfies ~claim:"red component applied (> 0)" int (fun red -> red > 0) r
 
+(* A grapheme has one rendition: a terminal shows a wide character in one. *)
+let same_rendition ~msg g a b =
+  equal ~msg:(msg ^ ": bg") rgba
+    (let r, g', b', a' = Ansi.Color.to_rgba (Grid.get_bg g a) in
+     (r, (g', (b', a'))))
+    (let r, g', b', a' = Ansi.Color.to_rgba (Grid.get_bg g b) in
+     (r, (g', (b', a'))));
+  equal ~msg:(msg ^ ": fg") rgba
+    (let r, g', b', a' = Ansi.Color.to_rgba (Grid.get_fg g a) in
+     (r, (g', (b', a'))))
+    (let r, g', b', a' = Ansi.Color.to_rgba (Grid.get_fg g b) in
+     (r, (g', (b', a'))));
+  equal ~msg:(msg ^ ": attrs") int (Grid.get_attrs g a) (Grid.get_attrs g b);
+  equal ~msg:(msg ^ ": link") string (Grid.get_link g a) (Grid.get_link g b)
+
+let translucent_wide_character_has_one_background () =
+  let grid = Grid.create ~width:4 ~height:1 () in
+  Grid.fill_rect grid ~x:0 ~y:0 ~width:1 ~height:1
+    ~color:(Ansi.Color.of_rgb 0 0 255);
+  Grid.fill_rect grid ~x:1 ~y:0 ~width:1 ~height:1
+    ~color:(Ansi.Color.of_rgb 255 255 0);
+  let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"\u{4E2D}"
+    ~style:(Ansi.Style.make ~bg:semi_red ());
+  is_true ~msg:"the character spans two cells" (Grid.is_continuation grid 1);
+  same_rendition ~msg:"drawn over two backgrounds" grid 0 1;
+  equal ~msg:"blended over the start cell's background" rgba
+    (let r, g, b, a =
+       Ansi.Color.to_rgba
+         (Ansi.Color.blend ~src:semi_red ~dst:(Ansi.Color.of_rgb 0 0 255))
+     in
+     (r, (g, (b, a))))
+    (let r, g, b, a = Ansi.Color.to_rgba (Grid.get_bg grid 1) in
+     (r, (g, (b, a))))
+
+let translucent_fill_tints_wide_character () =
+  let tinted ~x ~width =
+    let grid = Grid.create ~width:4 ~height:1 () in
+    Grid.draw_text grid ~x:0 ~y:0 ~text:"\u{4E2D}"
+      ~style:
+        (Ansi.Style.make ~fg:Ansi.Color.white
+           ~bg:(Ansi.Color.of_rgb 0 0 255)
+           ());
+    let before = Grid.get_bg grid 0 in
+    Grid.fill_rect grid ~x ~y:0 ~width ~height:1
+      ~color:(Ansi.Color.of_rgba 255 0 0 128);
+    (grid, before)
+  in
+  List.iter
+    (fun (x, width, label, changed) ->
+      let grid, before = tinted ~x ~width in
+      equal
+        ~msg:(label ^ ": the character stays")
+        string "\u{4E2D}" (Grid.get_text grid 0);
+      is_true ~msg:(label ^ ": whole") (Grid.is_continuation grid 1);
+      same_rendition ~msg:label grid 0 1;
+      equal
+        ~msg:(label ^ ": tinted once by its start cell")
+        bool changed
+        (not (Ansi.Color.equal before (Grid.get_bg grid 0))))
+    [
+      (0, 2, "both cells covered", true);
+      (0, 1, "the start cell covered", true);
+      (1, 1, "the second cell covered", false);
+    ];
+  let grid, before = tinted ~x:0 ~width:2 in
+  equal ~msg:"blended once" rgba
+    (let r, g, b, a =
+       Ansi.Color.to_rgba
+         (Ansi.Color.blend ~src:(Ansi.Color.of_rgba 255 0 0 128) ~dst:before)
+     in
+     (r, (g, (b, a))))
+    (let r, g, b, a = Ansi.Color.to_rgba (Grid.get_bg grid 1) in
+     (r, (g, (b, a))))
+
 let blit_region_copies_alpha () =
   let src = Grid.create ~width:1 ~height:1 () in
   let semi_red = Ansi.Color.of_rgba 255 0 0 128 in
@@ -1880,6 +1955,10 @@ let tests =
     test "Thai spacing mark cell placement" thai_spacing_mark_cell_placement;
     test "Thai spacing mark wcwidth units" thai_spacing_mark_wcwidth_units;
     test "wide span beyond four cells" wide_span_beyond_four_cells;
+    test "translucent wide character has one background"
+      translucent_wide_character_has_one_background;
+    test "translucent fill tints a wide character"
+      translucent_fill_tints_wide_character;
     test "wide span survives moves" wide_span_survives_moves;
     test "max width bounds the grid" max_width_bounds_grid;
     test "one operation, one blank" one_operation_one_blank;

@@ -104,6 +104,7 @@
 - `Screen` keeps apart two cells the terminal would read as one grapheme, such as a letter and a lone emoji modifier or a Prepend character and a letter, which shifted the rest of the row
 - After a resize, `Screen` paints every cell of its next frame; its blank baseline skipped the cells blank in the new frame and left the old frame's there, as on the frame after a primary live region grows
 - A visible cursor without a position shows in alt mode, at the bottom-left; in primary mode a cursor below the painted rows of a full redraw keeps its row instead of rising to the last one
+- `Grid` keeps one rendition per grapheme, its start cell's: a translucent background drawn over a wide character blends over the start cell's background for both halves, which a terminal could not show apart, and a translucent fill over a wide character tints it instead of erasing it and blending its second cell twice
 
 #### Removed
 

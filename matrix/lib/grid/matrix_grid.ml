@@ -575,29 +575,54 @@ let[@inline] apply_opacity t color =
          (Float.round
             (float_of_int (Color_packed.alpha color) *. t.opacity_product)))
 
+(* Gives cell [idx] the rendition of cell [lead]. *)
+let copy_rendition t ~lead idx =
+  Buf.set_short t.attrs idx (Buf.get_short t.attrs lead);
+  set_link t idx (get_link t lead);
+  Buf.set t.fg_color idx (Buf.get t.fg_color lead);
+  Buf.set t.bg_color idx (Buf.get t.bg_color lead)
+
+(* A grapheme has one rendition, its start cell's: blending works on the start
+   cell, and the other cells copy it. A wide character's start cell is
+   written before its other cells. *)
 let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~blending =
   let fg_alpha = Color_packed.alpha fg_color in
   let bg_alpha = Color_packed.alpha bg_color in
   if blending && fg_alpha = 0 && bg_alpha = 0 then ()
   else if blending && (fg_alpha < 255 || bg_alpha < 255) then begin
-    let dst_bg = Buf.get t.bg_color idx in
-    let blended_bg = Color_packed.blend ~src:bg_color ~dst:dst_bg in
     let dest_code = Buf.get_cell t.chars idx in
-    let preserve =
-      (code = space_cell || code = null_cell)
-      && dest_code <> null_cell && dest_code <> space_cell
-      && Packed_cell.cell_width dest_code = 1
-    in
-    if preserve then
-      Buf.set t.fg_color idx
-        (Color_packed.blend ~src:bg_color ~dst:(Buf.get t.fg_color idx))
+    let blank = code = space_cell || code = null_cell in
+    if Packed_cell.is_continuation code then begin
+      (* The rest of a wide character whose start cell was just drawn. *)
+      let lead = idx - Packed_cell.left_extent code in
+      write_cell t idx code (Buf.get t.bg_color lead);
+      copy_rendition t ~lead idx
+    end
+    else if blank && Packed_cell.is_continuation dest_code then
+      (* A space tints the character it covers from its start cell. *)
+      copy_rendition t ~lead:(idx - Packed_cell.left_extent dest_code) idx
     else begin
-      write_cell t idx code blended_bg;
-      Buf.set_short t.attrs idx attrs;
-      Buf.set t.fg_color idx (Color_packed.blend ~src:fg_color ~dst:blended_bg)
-    end;
-    set_link t idx link;
-    Buf.set t.bg_color idx blended_bg
+      let blended_bg =
+        Color_packed.blend ~src:bg_color ~dst:(Buf.get t.bg_color idx)
+      in
+      if blank && dest_code <> null_cell && dest_code <> space_cell then begin
+        Buf.set t.fg_color idx
+          (Color_packed.blend ~src:bg_color ~dst:(Buf.get t.fg_color idx));
+        set_link t idx link;
+        Buf.set t.bg_color idx blended_bg;
+        for i = idx + 1 to idx + span_right dest_code do
+          copy_rendition t ~lead:idx i
+        done
+      end
+      else begin
+        write_cell t idx code blended_bg;
+        Buf.set_short t.attrs idx attrs;
+        Buf.set t.fg_color idx
+          (Color_packed.blend ~src:fg_color ~dst:blended_bg);
+        set_link t idx link;
+        Buf.set t.bg_color idx blended_bg
+      end
+    end
   end
   else begin
     write_cell t idx code bg_color;

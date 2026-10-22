@@ -6,10 +6,9 @@
     terminal's size, and check after every frame that the terminal shows what
     the frame asked for: each cell's text, width, colors, attributes and
     hyperlink, as far as they show (a space's foreground does not without an
-    attribute, and a wide character shows its first cell's rendition across its
-    span), and the cursor's visibility and, when it is visible, its position and
-    its shape (from the last DECSCUSR sent). The VTE uses the width method of
-    the runtime's capabilities, each of the three in turn.
+    attribute), and the cursor's visibility and, when it is visible, its
+    position and its shape (from the last DECSCUSR sent). The VTE uses the width
+    method of the runtime's capabilities, each of the three in turn.
 
     Frames mix ASCII, wide CJK, combining marks, emoji sequences, characters of
     no width and characters that join their neighbors; every SGR attribute;
@@ -487,17 +486,13 @@ let shown_fg g idx =
   if cell_text g idx = " " && Grid.get_attrs g idx = 0 then `Default
   else shown (Grid.get_fg g idx)
 
-(* A wide character shows its start cell's rendition across its span, so a
-   continuation cell is compared by what it is, not by its own rendition. *)
 let same_cell e ei v vi =
-  if Grid.is_continuation e ei then Grid.is_continuation v vi
-  else
-    String.equal (cell_text e ei) (cell_text v vi)
-    && Grid.cell_width e ei = Grid.cell_width v vi
-    && shown_fg e ei = shown_fg v vi
-    && shown (Grid.get_bg e ei) = shown (Grid.get_bg v vi)
-    && Grid.get_attrs e ei = Grid.get_attrs v vi
-    && String.equal (Grid.get_link e ei) (Grid.get_link v vi)
+  String.equal (cell_text e ei) (cell_text v vi)
+  && Grid.cell_width e ei = Grid.cell_width v vi
+  && shown_fg e ei = shown_fg v vi
+  && shown (Grid.get_bg e ei) = shown (Grid.get_bg v vi)
+  && Grid.get_attrs e ei = Grid.get_attrs v vi
+  && String.equal (Grid.get_link e ei) (Grid.get_link v vi)
 
 let blank = Grid.create ~width:1 ~height:1 ()
 
