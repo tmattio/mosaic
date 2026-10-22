@@ -1799,6 +1799,30 @@ let test_required_rows_show_in_their_frame () =
   equal ~msg:"the shell's rows go to the transcript" (list string)
     [ "$ ls"; "$"; "$"; "$" ] (transcript app term)
 
+(* A program run while the application is suspended goes on from the
+   transcript: the live region is erased and the cursor shown at its start,
+   after the static rows the frame being drawn had already placed. *)
+let test_suspend_hands_over_below_the_transcript () =
+  let app, term = vte_app ~shell:"$ ls\r\n" ~cols:12 ~rows:6 () in
+  present app [ "ui one"; "ui two" ];
+  Matrix.static_write app (static_grid "done\n");
+  Matrix.prepare app;
+  Matrix.suspend app;
+  equal ~msg:"the transcript, then nothing" (list string)
+    [ "$ ls"; "done"; ""; ""; ""; "" ]
+    (screen_rows term);
+  equal ~msg:"the cursor waits below the transcript" (pair int int) (2, 0)
+    (Vte.cursor_pos term.vte);
+  is_true ~msg:"and shows" (Vte.modes term.vte).cursor_visible;
+  ignore (Vte.feed_string term.vte "$ make\r\nok\r\n" : string);
+  Matrix.resume app;
+  present app [ "ui one"; "ui two" ];
+  equal ~msg:"the program's output joins the transcript" (list string)
+    [ "$ ls"; "done"; "$ make"; "ok" ]
+    (transcript app term);
+  equal ~msg:"the live region is below it" (list string) [ "ui one"; "ui two" ]
+    (live_rows app term)
+
 let test_static_snapshots_scroll_exactly_once_per_row () =
   List.iter
     (fun rows ->
@@ -2461,6 +2485,8 @@ let () =
             test_primary_required_rows_apply_after_static_flush;
           test "required rows show in their frame"
             test_required_rows_show_in_their_frame;
+          test "suspend hands over below the transcript"
+            test_suspend_hands_over_below_the_transcript;
           test "full-height static write scrolls into scrollback"
             test_full_height_static_write_scrolls_into_scrollback;
           test "partial frame restores transient modes"

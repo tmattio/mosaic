@@ -7,15 +7,19 @@
     the frame asked for: each cell's text, width, colors, attributes and
     hyperlink, as far as they show (a space's foreground does not without an
     attribute), and the cursor's visibility and, when it is visible, its
-    position and its shape (from the last DECSCUSR sent). The VTE uses the width
-    method of the runtime's capabilities, each of the three in turn.
+    position and its shape (from the last DECSCUSR sent). The VTE uses each of
+    the three width methods in turn, and so do the runtime's capabilities, or
+    they start with another until the terminal reports its own (DECRPM 2027)
+    before some frame: from then on every frame must show.
 
     Frames mix ASCII, wide CJK, combining marks, emoji sequences, characters of
     no width and characters that join their neighbors; every SGR attribute;
     default, 256-color, truecolor and translucent colors; hyperlinks; background
     fills and clears; cursor moves, shapes and visibility; terminals with
-    synchronized output or [explicit_cursor_positioning]; and resizes between
-    frames, growing and shrinking.
+    synchronized output or [explicit_cursor_positioning]; resizes between
+    frames, growing and shrinking; and suspensions, during which a program
+    writes rows. While suspended, the screen must be as {!Matrix.suspend} leaves
+    it, the cursor shown.
 
     {b Alternate screen.} The frame is the whole screen, and scroll hints, true
     or not, never change what it shows. The VTE's replies are ignored.
@@ -32,8 +36,9 @@
     - the transcript is everything above it, the scrollback and then the rows
       above the live region: the shell's output, then each static row, in order,
       each exactly once, as {!Matrix.static_replace} and {!Matrix.static_clear}
-      leave it. Nothing else is there but rows the terminal itself pushed into
-      its scrollback as it shrank.
+      leave it, and the rows of programs run while suspended. Nothing else is
+      there but rows the terminal itself pushed into its scrollback as it
+      shrank.
 
     The VTE departs from xterm in places (vte.mli, Printing). Two concern
     printing, and neither applies here: it erases the cells a wide unit skips
@@ -75,8 +80,13 @@ type static =
   | Replace of { rows : int; preserve : bool }  (** [Matrix.static_replace] *)
   | Clear_static  (** [Matrix.static_clear] *)
 
+(* The application suspends, and a program run meanwhile writes [child]
+   lines before it resumes. *)
+type suspend = { leave_alt : bool; child : int }
+
 type frame = {
   size : (int * int) option;  (** A terminal resize before the frame. *)
+  suspend : suspend option;  (** Before the frame, after the resize. *)
   statics : static list;  (** Before the frame, after the resize. *)
   required : int option;  (** [primary_required_rows]. *)
   scroll : Matrix.Screen.scroll_hint option;
@@ -272,6 +282,17 @@ let frame_gen ~mode ~max_cols ~max_rows ~min_cols ~min_rows (cols, rows) =
       ]
   in
   let cols, rows = Option.value size ~default:(cols, rows) in
+  let* suspend =
+    frequency
+      [
+        (6, pure None);
+        ( 1,
+          map2
+            (fun leave_alt child -> Some { leave_alt; child })
+            (match mode with `Alt -> bool | `Primary -> pure false)
+            (int_range 0 (rows + 1)) );
+      ]
+  in
   let* statics =
     match mode with
     | `Alt -> pure []
@@ -320,7 +341,7 @@ let frame_gen ~mode ~max_cols ~max_rows ~min_cols ~min_rows (cols, rows) =
   in
   let* ops = list ~size:(int_range 0 8) (op_gen ~cols ~rows) in
   let+ cursor = cursor_gen ~cols ~rows in
-  ({ size; statics; required; scroll; ops; cursor }, (cols, rows))
+  ({ size; suspend; statics; required; scroll; ops; cursor }, (cols, rows))
 
 let rec frames_gen ~mode ~max_cols ~max_rows ~min_cols ~min_rows size n =
   let open Gen in
@@ -411,6 +432,12 @@ let pp_cursor fmt c =
 let pp_frame fmt f =
   Format.fprintf fmt "@[<v 2>frame";
   Option.iter (fun (c, r) -> Format.fprintf fmt "@,resize %dx%d" c r) f.size;
+  Option.iter
+    (fun { leave_alt; child } ->
+      Format.fprintf fmt "@,suspend%s, %d child rows"
+        (if leave_alt then " leaving alt" else "")
+        child)
+    f.suspend;
   List.iter
     (function
       | Write { rows; preserve } ->
@@ -653,7 +680,7 @@ let check_live r app (expected, cursor) =
 (* The transcript: the scrollback, then the rows above the live region. *)
 let is_tag s =
   String.length s > 1
-  && (s.[0] = 'S' || s.[0] = '$')
+  && (s.[0] = 'S' || s.[0] = '$' || s.[0] = 'C')
   && String.for_all
        (fun c -> c >= '0' && c <= '9')
        (String.sub s 1 (String.length s - 1))
@@ -693,6 +720,38 @@ let check r app =
       r.drawn <- None;
       Buffer.clear r.frame_bytes
 
+(* What a program run while the application is suspended finds: in primary
+   mode the transcript, and below it the live region erased, the cursor at its
+   start; in alt mode an erased screen, the cursor at its top left, or the
+   primary screen when the application left the alternate one. The cursor
+   shows. *)
+let check_suspended r app ~leave_alt =
+  let cols, rows = r.size in
+  let modes = Vte.modes r.vte in
+  if not modes.cursor_visible then fail_frame r "suspended with a hidden cursor";
+  let erased_from top =
+    let v = Vte.grid r.vte in
+    for y = top to rows - 1 do
+      for x = 0 to cols - 1 do
+        let vi = (y * cols) + x in
+        if not (same_cell blank 0 v vi) then
+          fail_frame r "suspended: row %d col %d shows %s" y x (cell_desc v vi)
+      done
+    done;
+    if Vte.cursor_pos r.vte <> (top, 0) then
+      fail_frame r "suspended: cursor at %d,%d, expected %d,0"
+        (fst (Vte.cursor_pos r.vte))
+        (snd (Vte.cursor_pos r.vte))
+        top
+  in
+  match r.case.mode with
+  | `Primary -> erased_from (fst (live_region r app))
+  | `Alt ->
+      if leave_alt then (
+        if modes.alternate_screen then
+          fail_frame r "suspended on the alternate screen")
+      else erased_from 0
+
 let start_frame r app ~on_event (frame : frame) =
   (match frame.size with
   | Some (cols, rows) when (cols, rows) <> r.size ->
@@ -702,6 +761,18 @@ let start_frame r app ~on_event (frame : frame) =
       r.size <- (cols, rows);
       on_event (Matrix.Input.Resize (cols, rows))
   | _ -> ());
+  Option.iter
+    (fun { leave_alt; child } ->
+      Matrix.suspend ~leave_alt app;
+      check_suspended r app ~leave_alt;
+      for _ = 1 to child do
+        let line = Printf.sprintf "C%d" r.tag in
+        r.tag <- r.tag + 1;
+        ignore (Vte.feed_string r.vte (line ^ "\r\n") : string);
+        if r.case.mode = `Primary then r.transcript <- line :: r.transcript
+      done;
+      Matrix.resume app)
+    frame.suspend;
   let tagged rows =
     let cols, _ = r.size in
     let grid = static_grid ~cols ~tag:r.tag rows in

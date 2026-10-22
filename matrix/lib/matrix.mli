@@ -314,6 +314,13 @@ val suspend : ?leave_alt:bool -> app -> unit
     exits the alternate-screen buffer, so a full-screen foreground child owns
     the primary screen and its scrollback. {!resume} reapplies configuration.
 
+    It leaves the screen to a program run meanwhile, with the cursor shown. In
+    [`Primary] mode the live region is erased, after the static rows already
+    placed by a frame, and the cursor waits at its start: the program's output
+    goes on from the transcript, and {!resume} starts the live region below it.
+    In [`Alt] mode the screen is erased and the cursor waits at its top left,
+    unless [leave_alt].
+
     Idempotent: calling [suspend] while already suspended (or after {!close}) is
     a no-op. Live requests and {!start}/{!pause} can change rendering demand
     while suspended without reclaiming terminal ownership. *)
@@ -322,9 +329,11 @@ val resume : app -> unit
 (** [resume app] reapplies terminal configuration after {!suspend}: it re-enters
     the alternate-screen buffer iff the matching {!suspend} left it, discards
     any input received while suspended (stale keystrokes never reach the app),
-    and requests a full repaint on the next frame. Cadence follows the latest
-    rendering demand and live count; resuming does not restart a stopped loop.
-*)
+    and requests a full repaint on the next frame. In [`Primary] mode the live
+    region starts again at the cursor, from a cursor position report, below what
+    the program run meanwhile wrote, which joins the transcript. Cadence follows
+    the latest rendering demand and live count; resuming does not restart a
+    stopped loop. *)
 
 val request_live : app -> unit
 (** [request_live app] increments live demand. In automatic mode, the first

@@ -107,6 +107,7 @@
 - A visible cursor without a position shows in alt mode, at the bottom-left; in primary mode a cursor below the painted rows of a full redraw keeps its row instead of rising to the last one
 - `Grid` keeps one rendition per grapheme, its start cell's: a translucent background drawn over a wide character blends over the start cell's background for both halves, which a terminal could not show apart, and a translucent fill over a wide character tints it instead of erasing it and blending its second cell twice
 - The runtime sets the terminal's width method and the screen's together whenever the capabilities change, as when a DECRPM 2027 report arrives after the first frame, and repaints: the screen kept the method of its creation and laid out cells the terminal measured otherwise. With `explicit_width` the screen measures with wcwidth, as the terminal does
+- `suspend` hands the screen over clean: in primary mode it sends what the frame had planned for the transcript, erases the live region and leaves the cursor shown at its start, so a program run meanwhile writes below the transcript rather than over the stale UI, and `resume` starts the live region below that output; in alt mode it erases the screen unless it leaves it. The cursor was left hidden
 
 #### Removed
 

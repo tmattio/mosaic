@@ -764,9 +764,58 @@ let restore_frame_modes t =
     (try Terminal.send t.terminal reset_scroll_region_seq with _ -> ());
     try Terminal.send t.terminal "\027[?7h" with _ -> ())
 
+(* Re-anchors the live region after a resize from where the cursor went: the
+   last frame left it on a known live row. Input read while waiting for the
+   report is replayed. Without a report the layout stays as {!Primary.resize}
+   planned it. *)
+let reanchor t =
+  t.reanchor <- false;
+  match t.cursor_live_row with
+  | None -> ()
+  | Some live_row -> (
+      match
+        Backend.query_cursor_position ~terminal:t.terminal ~parser:t.parser
+          ~timeout:0.1
+          ~on_event:(fun event ->
+            t.pending_startup_events <- t.pending_startup_events @ [ event ])
+          t.backend
+      with
+      | Some (row, _) ->
+          (* The planned operations assumed the rows had not moved. *)
+          t.layout_ops <- [];
+          relayout t (Primary.anchor t.primary ~row:(row - live_row) ~col:1);
+          sync_primary_layout t ~resize:true
+      | None -> ())
+
+(* A suspended application leaves the screen as a program run in its place
+   should find it. In [`Primary] mode that is the transcript, everything a
+   frame planned for it sent, and below it the live region, erased, with the
+   cursor at its start: the program's output goes on from the transcript. In
+   [`Alt] mode it is an erased screen with the cursor at its top left, or,
+   when [leave_alt], the primary screen as the shell left it. The cursor is
+   shown. *)
+let release_screen t ~leave_alt =
+  let w = Ansi.Writer.create 64 in
+  List.iter (apply_primary_op w) t.layout_ops;
+  t.layout_ops <- [];
+  (match t.config.mode with
+  | `Primary ->
+      buf_cursor_position w ~row:(Primary.render_offset t.primary + 1) ~col:1;
+      Ansi.Writer.write_string w sgr_reset;
+      Ansi.Writer.write_string w erase_below_seq
+  | `Alt ->
+      if not leave_alt then begin
+        Ansi.Writer.write_string w sgr_reset;
+        Ansi.Writer.write_string w clear_and_home_seq
+      end);
+  Ansi.Writer.write_string w cursor_show_seq;
+  Terminal.send t.terminal (Ansi.Writer.contents w)
+
 let suspend ?(leave_alt = false) t =
   if t.lifecycle <> `Ready then ()
   else (
+    (* After a resize the live region is where the terminal took it. *)
+    (if t.reanchor then try reanchor t with _ -> ());
     Atomic.set t.redraw_state `Disabled;
     t.lifecycle <- `Suspended;
     update_cadence t;
@@ -781,6 +830,7 @@ let suspend ?(leave_alt = false) t =
     t.last_cursor_shape <- None;
     t.last_cursor_color <- None;
     t.backend.protect (fun () -> restore_frame_modes t);
+    (try release_screen t ~leave_alt with _ -> ());
     (try Terminal.set_mouse_mode t.terminal `Off with _ -> ());
     (try Terminal.enable_bracketed_paste t.terminal false with _ -> ());
     (try Terminal.enable_focus_reporting t.terminal false with _ -> ());
@@ -887,29 +937,6 @@ let apply_resize t cols rows now =
     if t.config.mode = `Primary && can_query_cursor t then t.reanchor <- true;
     t.last_resize_apply_time <- now;
     request_redraw t)
-
-(* Re-anchors the live region after a resize from where the cursor went: the
-   last frame left it on a known live row. Input read while waiting for the
-   report is replayed. Without a report the layout stays as {!Primary.resize}
-   planned it. *)
-let reanchor t =
-  t.reanchor <- false;
-  match t.cursor_live_row with
-  | None -> ()
-  | Some live_row -> (
-      match
-        Backend.query_cursor_position ~terminal:t.terminal ~parser:t.parser
-          ~timeout:0.1
-          ~on_event:(fun event ->
-            t.pending_startup_events <- t.pending_startup_events @ [ event ])
-          t.backend
-      with
-      | Some (row, _) ->
-          (* The planned operations assumed the rows had not moved. *)
-          t.layout_ops <- [];
-          relayout t (Primary.anchor t.primary ~row:(row - live_row) ~col:1);
-          sync_primary_layout t ~resize:true
-      | None -> ())
 
 let handle_resize t cols rows =
   if t.lifecycle <> `Ready then t.pending_resize <- Some (cols, rows)
