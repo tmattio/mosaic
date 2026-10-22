@@ -418,6 +418,19 @@ let rejected_movement_preserves_preferred_column () =
   equal ~msg:"original accepted value stays intact" int 7
     (Editor.cursor accepted)
 
+let deferred_proposal_stale_after_text_change () =
+  let proposal = ref Editor.empty in
+  let _, ta =
+    make_textarea ~value:"ab" ~accept:false
+      ~on_change:(fun next -> proposal := next)
+      ()
+  in
+  send_char ta 'x';
+  equal string "abx" (Editor.text !proposal);
+  update_editor ta (Editor.insert "y");
+  update_editor ta (fun current -> Editor.accept ~current !proposal);
+  equal ~msg:"deferred proposal discarded" string "aby" (Textarea.value ta)
+
 let transformed_acceptance_is_next_event_base () =
   let widget = ref None in
   let on_change proposal =
@@ -1179,6 +1192,8 @@ let () =
             rejected_cursor_does_not_affect_next_edit;
           test "rejected movement preserves preferred column"
             rejected_movement_preserves_preferred_column;
+          test "deferred proposal stale after text change"
+            deferred_proposal_stale_after_text_change;
           test "transformed acceptance is next event base"
             transformed_acceptance_is_next_event_base;
           test "blur does not propose" blur_and_submit_do_not_propose_edits;

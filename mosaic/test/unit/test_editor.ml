@@ -89,6 +89,27 @@ let stale_affinity_proposal () =
   equal int (Editor.cursor original) (Editor.cursor moved);
   is_true (Editor.accept ~current:moved proposal == moved)
 
+let stale_text_proposal () =
+  let original = Editor.of_string "abcd" in
+  let proposal = Editor.insert "x" original in
+  let caret_proposal = Editor.move_left original in
+  let edited = Editor.insert "y" original in
+  is_true ~msg:"edit proposal after a text change"
+    (Editor.accept ~current:edited proposal == edited);
+  is_true ~msg:"caret proposal does not restore older text"
+    (Editor.accept ~current:edited caret_proposal == edited);
+  let same_text = Editor.insert "x" original in
+  equal string (Editor.text proposal) (Editor.text same_text);
+  is_true ~msg:"equal text from another edit is still newer"
+    (Editor.accept ~current:same_text proposal == same_text);
+  let restored = Editor.undo edited in
+  equal string (Editor.text original) (Editor.text restored);
+  is_true ~msg:"undo back to the base text is a newer state"
+    (Editor.accept ~current:restored proposal == restored);
+  let replaced = Editor.of_string "zz" in
+  is_true ~msg:"replacement"
+    (Editor.accept ~current:replaced proposal == replaced)
+
 let combining_insertion_and_limit () =
   let original = Editor.of_string ~max_length:1 "e" in
   let edited = Editor.insert "\xcc\x81" original in
@@ -1014,6 +1035,7 @@ let () =
             restored_source_is_shared_by_cursor_branches;
           test "stale same-source proposals" stale_same_source_proposal;
           test "stale affinity proposal" stale_affinity_proposal;
+          test "stale text proposal" stale_text_proposal;
           test "combining insertion at limit" combining_insertion_and_limit;
           test "no-op edits preserve identity" no_op_identity;
         ];
