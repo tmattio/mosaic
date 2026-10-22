@@ -1179,6 +1179,36 @@ let unicode_mark_at_margin_across_writes () =
         (cells width_method (bytes s)))
     [ (`Unicode, "unicode"); (`Wcwidth, "wcwidth") ]
 
+let unicode_wcwidth_cells_across_writes () =
+  (* With wcwidth, each character of non-zero width takes cells of its own,
+     even where it continues a grapheme cluster, so a read split inside the
+     cluster draws the same screen. *)
+  let cells chunks =
+    let vte = Vte.create ~width_method:`Wcwidth ~rows:1 ~cols:6 () in
+    List.iter (Vte.feed_string vte) chunks;
+    List.init 6 (fun i -> Grid.get_text (Vte.grid vte) i)
+  in
+  let bytes s = List.init (String.length s) (fun i -> String.make 1 s.[i]) in
+  List.iter
+    (fun (s, expected) ->
+      let msg = Printf.sprintf "%S" s in
+      equal ~msg (list string) expected (cells [ s ]);
+      equal ~msg:(msg ^ " split") (list string) expected (cells (bytes s)))
+    [
+      ("\u{0915}\u{093E}x", [ "\u{0915}"; "\u{093E}"; "x"; " "; " "; " " ]);
+      ( "\u{1F469}\u{200D}\u{1F4BB}x",
+        [ "\u{1F469}\u{200D}"; ""; "\u{1F4BB}"; ""; "x"; " " ] );
+      ("\u{1F1FA}\u{1F1F8}x", [ "\u{1F1FA}"; "\u{1F1F8}"; "x"; " "; " "; " " ]);
+      (* Regional indicators pair from the start of their run: writing the
+         first one apart must not pair the second with the third. *)
+      ( "\u{1F1F7}\u{1F1EB}\u{1F1F7}x",
+        [ "\u{1F1F7}"; "\u{1F1EB}"; "\u{1F1F7}"; "x"; " "; " " ] );
+      ( "a\u{1F1EB}\u{1F1F7}\u{1F1EB}\u{1F1F7}",
+        [ "a"; "\u{1F1EB}"; "\u{1F1F7}"; "\u{1F1EB}"; "\u{1F1F7}"; " " ] );
+      ("\u{1100}\u{1161}x", [ "\u{1100}"; ""; "\u{1161}"; "x"; " "; " " ]);
+      ("e\u{0301}x", [ "e\u{0301}"; "x"; " "; " "; " "; " " ]);
+    ]
+
 let unicode_prepend_across_writes () =
   (* A Prepend character draws apart from the character after it, as in
      xterm, so a read split between them draws the same screen. *)
@@ -1389,6 +1419,8 @@ let tests =
     test "unicode zero-width joins cell" unicode_zero_width_joins_cell;
     test "unicode mark at margin across writes"
       unicode_mark_at_margin_across_writes;
+    test "unicode wcwidth cells across writes"
+      unicode_wcwidth_cells_across_writes;
     test "unicode prepend across writes" unicode_prepend_across_writes;
     test "unicode mark after dropped wide" unicode_mark_after_dropped_wide;
     test "unicode malformed utf8" unicode_malformed_utf8;
