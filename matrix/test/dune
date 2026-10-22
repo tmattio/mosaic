@@ -92,3 +92,9 @@
  (package matrix)
  (modules test_vte_fuzz)
  (libraries windtrap matrix.vte matrix.grid matrix.ansi matrix.text))
+
+(test
+ (name test_render_props)
+ (package matrix)
+ (modules test_render_props)
+ (libraries windtrap matrix matrix.vte matrix.ansi matrix.grid matrix.text))
