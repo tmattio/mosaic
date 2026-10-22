@@ -1077,9 +1077,10 @@ module Layout = struct
     in
     let r = t.rows.(i) in
     let col =
-      if g > r.visible_last then
+      if g = r.last && g > r.visible_last then r.columns
+      else if g > r.visible_last then
         r.columns - if affinity = Upstream then 1 else 0
-      else t.metrics.columns.(min g r.last) - t.metrics.columns.(r.first)
+      else t.metrics.columns.(g) - t.metrics.columns.(r.first)
     in
     (i, col)
 
@@ -1089,19 +1090,24 @@ module Layout = struct
       { grapheme = Source.length t.source; affinity }
     else
       let r = t.rows.(i) and p = t.metrics.columns in
+      (* The boundaries at [g]'s column: the earliest upstream, the latest
+         downstream. *)
+      let snap g =
+        if affinity = Upstream then lower_bound p r.first (g + 1) p.(g)
+        else upper_bound p g (r.visible_last + 1) p.(g) - 1
+      in
+      let column = max 0 column in
       let g =
         if r.visible_last < r.last && column >= r.columns - 1 then
-          if column < r.columns then r.visible_last else r.last
+          if column < r.columns then snap r.visible_last else r.last
         else
-          let target = p.(r.first) + max 0 column in
+          let target = p.(r.first) + column in
           let next = lower_bound p r.first (r.visible_last + 1) target in
-          if next > r.visible_last then r.visible_last
-          else if p.(next) = target then
-            if affinity = Upstream then next
-            else upper_bound p next (r.visible_last + 1) target - 1
-          else if next = r.first then next
-          else if target - p.(next - 1) < p.(next) - target then next - 1
-          else next
+          snap
+            (if next > r.visible_last then r.visible_last
+             else if p.(next) = target || next = r.first then next
+             else if target - p.(next - 1) < p.(next) - target then next - 1
+             else next)
       in
       let affinity =
         if g = r.last && i + 1 < row_count t && t.rows.(i + 1).first = g then

@@ -357,7 +357,9 @@ module Layout : sig
 
   val locate : t -> caret -> int * int
   (** [locate t caret] returns its row and column. Source positions are clamped.
-      Affinity distinguishes soft-wrap sides and the two ellipsis edges. *)
+      Affinity distinguishes soft-wrap sides, and the two ellipsis edges for a
+      boundary inside an omitted suffix; the suffix's own end locates after the
+      ellipsis. *)
 
   val hit : ?affinity:affinity -> t -> row:int -> column:int -> caret
   (** [hit t ~row ~column] is the nearest insertion boundary, with ties forward.
