@@ -366,6 +366,16 @@ module Segmenter = struct
       unit_starts u
     end
 
+  (* A control is a unit of its own. [`Wcwidth] continues a unit with each
+     scalar of no width. *)
+  let may_continue m u v =
+    let cu = Uchar.to_int u and cv = Uchar.to_int v in
+    (not (is_control cu || is_control cv))
+    &&
+    match m with
+    | `Wcwidth -> codepoint_width_wcwidth ~tab_width:0 cv <= 0
+    | `Unicode | `Unicode_wide -> Uuseg_grapheme_cluster.may_continue u v
+
   let ascii_run s str ~pos ~len =
     check_sub "Matrix_text.Segmenter.ascii_run" str ~pos ~len;
     let k =

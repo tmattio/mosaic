@@ -10,6 +10,8 @@
    - Removed the uuseg streaming API ([add]/[copy]/[equal] and the
      [state]/[buf] fields): Matrix only uses the direct boundary checks
    - Added [is_boundary], a boundary check that does not update the state
+   - Split [break] into [break_after], which takes the left context as
+     arguments, for [may_continue], a check of two characters alone
 *)
 
 (* These are the rules as found in [1], with property values aliases [2]
@@ -81,12 +83,11 @@ let reset s =
   s.left_odd_ri <- false;
   s.left_emoji_seq <- false
 
-let gb9c_match s right_incb = match s.left_gb9c, right_incb with
-| Has_linker, Consonant -> true
-| _, _ -> false
-
-(* Core break check - takes pre-computed is_extpic for efficiency *)
-let break s right right_incb ~is_extpic = match s.left, right with
+(* Core break check - takes pre-computed is_extpic for efficiency. The left
+   context is given as arguments: [left], and whether the GB9c, GB11 and
+   GB12-13 sequences end there. *)
+let break_after ~left ~gb9c ~emoji_seq ~odd_ri right right_incb ~is_extpic =
+  match left, right with
 | (* GB1 *)   Sot, _ -> true
   (* GB2 is handled by `End *)
 | (* GB3 *)   CR, LF -> false
@@ -97,10 +98,15 @@ let break s right right_incb ~is_extpic = match s.left, right with
 | (* GB8 *)   (LVT|T), T -> false
 | (* GB9+a *) _, (EX|ZWJ|SM) -> false
 | (* GB9b *)  PP, _ -> false
-| (* GB9c *)  _, _ when gb9c_match s right_incb -> false
-| (* GB11 *)  ZWJ, _ when s.left_emoji_seq && is_extpic -> false
-| (* GB12+13 *) RI, RI when s.left_odd_ri -> false
+| (* GB9c *)  _, _ when gb9c && right_incb = Consonant -> false
+| (* GB11 *)  ZWJ, _ when emoji_seq && is_extpic -> false
+| (* GB12+13 *) RI, RI when odd_ri -> false
 | (* GB999 *) _, _ -> true
+
+let[@inline] break s right right_incb ~is_extpic =
+  break_after ~left:s.left ~gb9c:(s.left_gb9c = Has_linker)
+    ~emoji_seq:s.left_emoji_seq ~odd_ri:s.left_odd_ri right right_incb
+    ~is_extpic
 
 (* Core state update - takes pre-computed is_extpic for efficiency *)
 let update_left s right right_incb ~is_extpic =
@@ -145,6 +151,24 @@ let is_boundary s u =
   let right = byte_to_gcb.(props land 0x1F) in
   let right_incb = byte_to_incb.((props lsr 5) land 0x03) in
   break s right right_incb ~is_extpic:(props land 0x80 <> 0)
+
+(* The sequences that GB9c, GB11 and GB12-13 match are taken to end with
+   [u] whenever they can: GB9c's ends with a character of InCB Extend or
+   Linker, GB11's with ZWJ and GB12-13's with RI, which [break_after]
+   checks. *)
+let may_continue u v =
+  let pu = Unicode.grapheme_props u and pv = Unicode.grapheme_props v in
+  let gb9c =
+    match byte_to_incb.((pu lsr 5) land 0x03) with
+    | Extend | Linker -> true
+    | Consonant | None' -> false
+  in
+  not
+    (break_after ~left:byte_to_gcb.(pu land 0x1F) ~gb9c ~emoji_seq:true
+       ~odd_ri:true
+       byte_to_gcb.(pv land 0x1F)
+       byte_to_incb.((pv lsr 5) land 0x03)
+       ~is_extpic:(pv land 0x80 <> 0))
 
 (* Combined boundary check + width extraction in one property lookup.
    Returns packed int: bit 2 = is_boundary, bits 0-1 = width_enc.

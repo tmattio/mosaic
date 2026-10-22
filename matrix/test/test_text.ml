@@ -1174,6 +1174,69 @@ let segmenter_width_monotone () =
         prefixes)
     methods
 
+(* When [may_continue] rules a pair out, the scalar starts a unit after any
+   text that ends with the other: after texts ending in each grapheme break
+   class, and in each state the rules that look further back keep, add each
+   scalar of the planes in use. *)
+let segmenter_may_continue () =
+  let prefixes =
+    [
+      "a";
+      "中";
+      "\u{0600}";
+      "\u{1100}";
+      "\u{1161}";
+      "\u{AC00}";
+      "\u{AC01}";
+      "\u{11A8}";
+      "\u{1F1EB}";
+      "\u{1F1EB}\u{1F1F7}";
+      "a\u{1F1EB}\u{1F1F7}\u{1F1EB}";
+      "👨\u{200D}";
+      "x\u{200D}";
+      "👨\u{0301}\u{200D}";
+      "\u{0915}\u{094D}";
+      "\u{0915}\u{094D}\u{0301}";
+      "\u{094D}";
+      "e\u{0301}";
+      "\u{0915}\u{0903}";
+      "\u{200B}";
+      "1\u{FE0F}";
+    ]
+  in
+  let scalars =
+    Seq.append (Seq.init 0x30000 Fun.id)
+      (Seq.init 0x1000 (fun i -> 0xE0000 + i))
+    |> Seq.filter (fun cp -> cp < 0xD800 || cp > 0xDFFF)
+    |> Array.of_seq
+  in
+  List.iter
+    (fun m ->
+      List.iter
+        (fun prefix ->
+          let s = Segmenter.create m in
+          let last = ref Uchar.min in
+          Array.iter
+            (fun cp ->
+              let v = Uchar.of_int cp in
+              Segmenter.reset s;
+              let i = ref 0 in
+              while !i < String.length prefix do
+                let d = String.get_utf_8_uchar prefix !i in
+                last := Uchar.utf_decode_uchar d;
+                ignore (Segmenter.add s !last : bool);
+                i := !i + Uchar.utf_decode_length d
+              done;
+              if
+                (not (Segmenter.may_continue m !last v))
+                && not (Segmenter.add s v)
+              then
+                failf "%s: U+%04X continues %S, which may_continue denies"
+                  (method_name m) cp prefix)
+            scalars)
+        prefixes)
+    methods
+
 (* Every function that measures text agrees with the segmenter, also the
    loop that measure keeps apart for `Wcwidth. *)
 let folds_agree_with_segmenter () =
@@ -1304,6 +1367,7 @@ let () =
           test "ASCII runs" segmenter_ascii_run;
           test "reset" segmenter_reset;
           test "width never decreases" segmenter_width_monotone;
+          test "pairs that never continue" segmenter_may_continue;
           test "folds agree" folds_agree_with_segmenter;
         ];
       group "Graphemes"

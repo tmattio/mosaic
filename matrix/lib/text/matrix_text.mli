@@ -81,6 +81,14 @@ module Segmenter : sig
       that needs the closed unit's width reads {!width} before [add].
       Allocation-free. *)
 
+  val may_continue : width_method -> Uchar.t -> Uchar.t -> bool
+  (** [may_continue m u v] is [false] when [v] starts a unit of method [m] after
+      any text that ends with [u], and [true] when [v] continues the unit that
+      ends with [u] in some text. It reads the two scalars only: a unit may
+      continue by a rule that looks further back than [u], as two regional
+      indicators do after an even number of them and not after an odd number,
+      and then only {!add}, which has seen that text, tells. Allocation-free. *)
+
   val ascii_run : t -> string -> pos:int -> len:int -> int
   (** [ascii_run s str ~pos ~len] is the number [k] of bytes from [pos] that are
       complete units of one printable ASCII character (U+0020 to U+007E) each:

@@ -32,6 +32,12 @@ val check_boundary : t -> Uchar.t -> bool
 val is_boundary : t -> Uchar.t -> bool
 (** [is_boundary s u] is {!check_boundary}[ s u] without updating [s]. *)
 
+val may_continue : Uchar.t -> Uchar.t -> bool
+(** [may_continue u v] is [false] iff there is a grapheme cluster
+    boundary between [u] and [v] whatever precedes [u]. It is [true]
+    when the boundary depends on what precedes [u] (GB9c, GB11, GB12,
+    GB13) and when there is none (GB3, GB6 to GB9b). Zero allocation. *)
+
 val check_boundary_with_width : t -> Uchar.t -> int
 (** [check_boundary_with_width s u] is like {!check_boundary} but
     also extracts the display width from a single property-table

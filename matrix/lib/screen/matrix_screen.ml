@@ -82,8 +82,7 @@ type diff_ctx = {
       (* Display units of [curr]'s width method, to tell where the terminal
          would join two cells. *)
   mutable units_method : Matrix_text.width_method;
-  mutable units_live : bool;
-      (* [units] took the scalars of the cell written last. *)
+  mutable joint : bytes; (* The previous cell's scalars, for [units]. *)
 }
 
 (* screen state - mutable internal state for maximum performance *)
@@ -149,82 +148,85 @@ let[@inline] cell_changed (c : diff_ctx) y x idx curr_width =
 let[@inline] cell_link (c : diff_ctx) idx =
   if c.hyperlinks then Grid.get_link c.curr idx else ""
 
-(* Writes a grid cell's content to the output buffer. For wide graphemes, uses
-   explicit_width (OSC 66) when available, otherwise falls back to cursor
-   repositioning to prevent column drift in terminals that miscalculate
-   grapheme widths. Emitters are called saturated so no closures are built. *)
-let write_cell (c : diff_ctx) ~y ~x ~cell_width ~cp idx =
-  let w = c.out in
-  if cp >= 0 && cp < 128 then
-    Ansi.Writer.write_char w (if cp = 0 then ' ' else Char.chr cp)
-  else if Grid.is_continuation c.curr idx then Ansi.Writer.write_char w ' '
-  else
-    let len = Grid.cell_text_length c.curr idx in
-    if len <= 0 then Ansi.Writer.write_char w ' '
-    else begin
-      if len > Bytes.length c.scratch then
-        c.scratch <- Bytes.create (max (Bytes.length c.scratch * 2) len);
-      let written = Grid.blit_cell_text c.curr idx c.scratch ~pos:0 in
-      if written <= 0 then Ansi.Writer.write_char w ' '
-      else if c.explicit_width && cell_width >= 2 then
-        Ansi.explicit_width_bytes ~width:cell_width ~bytes:c.scratch ~off:0
-          ~len:written w
-      else begin
-        Ansi.Writer.write_subbytes w c.scratch 0 written;
-        (* Fallback: reposition cursor after wide graphemes to prevent drift
-           in terminals that support cursor addressing but not OSC 66. *)
-        if c.explicit_cursor_positioning && cell_width >= 2 then
-          let next_x = x + cell_width in
-          if next_x < c.width then
-            Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(next_x + 1) w
-      end
-    end
-
-(* Adds the scalars the terminal receives for cell [idx], whose code point is
-   [cp], to [c.units], and is [true] iff the first one starts a display
-   unit. *)
-let add_cell_units (c : diff_ctx) idx ~cp =
-  if cp >= 0 then
-    Matrix_text.Segmenter.add c.units (Uchar.unsafe_of_int (max cp 0x20))
-  else
-    let len = Grid.cell_text_length c.curr idx in
-    if len > Bytes.length c.scratch then
-      c.scratch <- Bytes.create (max (Bytes.length c.scratch * 2) len);
-    let n = Grid.blit_cell_text c.curr idx c.scratch ~pos:0 in
-    let rec add pos starts =
-      if pos >= n then starts
-      else
-        let d = Bytes.get_utf_8_uchar c.scratch pos in
-        let s = Matrix_text.Segmenter.add c.units (Uchar.utf_decode_uchar d) in
-        add (pos + Uchar.utf_decode_length d) (if pos = 0 then s else starts)
-    in
-    if n <= 0 then Matrix_text.Segmenter.add c.units (Uchar.of_char ' ')
-    else add 0 true
-
-(* Whether cell [idx] would join cell [prev], written just before it: whether
-   the terminal, cutting the scalars it receives into display units as the
-   grid's width method does, would make one unit of their graphemes, as of a
-   letter and an emoji modifier, or of a Prepend character and a letter.
-   [c.units] follows the terminal's cut, catching up from [prev] when it fell
-   behind; a control function, which ends the unit in progress, keeps two
-   joining cells apart. *)
-let joins (c : diff_ctx) ~prev ~prev_cp idx ~cp =
-  if not c.units_live then (
-    Matrix_text.Segmenter.reset c.units;
-    ignore (add_cell_units c prev ~cp:prev_cp : bool));
-  c.units_live <- true;
-  if add_cell_units c idx ~cp then false
-  else (
-    Matrix_text.Segmenter.reset c.units;
-    ignore (add_cell_units c idx ~cp : bool);
-    true)
-
 let[@inline] ascii cp = cp land lnot 0x7f = 0
+
+(* [buf], or a larger buffer when [buf] is shorter than [len]. *)
+let[@inline] room buf len =
+  if len <= Bytes.length buf then buf
+  else Bytes.create (max (Bytes.length buf * 2) len)
+
+let[@inline] first_scalar buf =
+  Uchar.utf_decode_uchar (Bytes.get_utf_8_uchar buf 0)
+
+let last_scalar buf n =
+  let rec start i =
+    if i > 0 && Char.code (Bytes.unsafe_get buf i) land 0xC0 = 0x80 then
+      start (i - 1)
+    else i
+  in
+  Uchar.utf_decode_uchar (Bytes.get_utf_8_uchar buf (start (n - 1)))
+
+(* Writes the cell's scalars: [n] bytes in [c.scratch], or [cp] when it is
+   ASCII. For wide graphemes, uses explicit_width (OSC 66) when available,
+   otherwise falls back to cursor repositioning to prevent column drift in
+   terminals that miscalculate grapheme widths. Emitters are called saturated
+   so no closures are built. *)
+let write_cell (c : diff_ctx) ~y ~x ~cell_width ~cp ~n =
+  let w = c.out in
+  if ascii cp then
+    Ansi.Writer.write_char w (if cp = 0 then ' ' else Char.chr cp)
+  else if n <= 0 then Ansi.Writer.write_char w ' '
+  else if c.explicit_width && cell_width >= 2 then
+    Ansi.explicit_width_bytes ~width:cell_width ~bytes:c.scratch ~off:0 ~len:n w
+  else begin
+    Ansi.Writer.write_subbytes w c.scratch 0 n;
+    (* Fallback: reposition cursor after wide graphemes to prevent drift in
+       terminals that support cursor addressing but not OSC 66. *)
+    if c.explicit_cursor_positioning && cell_width >= 2 then
+      let next_x = x + cell_width in
+      if next_x < c.width then
+        Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(next_x + 1) w
+  end
+
+(* Adds the [n] bytes of scalars in [buf] from [pos] to [units]. *)
+let rec add_scalars units buf pos n =
+  if pos < n then begin
+    let d = Bytes.get_utf_8_uchar buf pos in
+    ignore (Matrix_text.Segmenter.add units (Uchar.utf_decode_uchar d) : bool);
+    add_scalars units buf (pos + Uchar.utf_decode_length d) n
+  end
+
+(* Whether a cell whose first scalar is [first] would join cell [prev],
+   written just before it and ending with the scalar [last]: whether the
+   terminal, cutting the scalars it receives into display units as the
+   grid's width method does, would make one unit of their graphemes, as of a
+   letter and an emoji modifier, or of a Prepend character and a letter. A
+   control function, which ends the unit in progress, keeps two joining cells
+   apart.
+
+   [prev] starts a unit, by itself or after such a control, so the units
+   depend on its scalars only. Most pairs of scalars never join, which
+   [Segmenter.may_continue] tells from the pair; the others go through
+   [c.units]. *)
+let joins (c : diff_ctx) ~prev ~prev_cp ~last first =
+  Matrix_text.Segmenter.may_continue c.units_method last first
+  &&
+  let n =
+    if prev_cp >= 0 then 0
+    else (
+      c.joint <- room c.joint (Grid.cell_text_length c.curr prev);
+      Grid.blit_cell_text c.curr prev c.joint ~pos:0)
+  in
+  Matrix_text.Segmenter.reset c.units;
+  if n > 0 then add_scalars c.units c.joint 0 n
+  else ignore (Matrix_text.Segmenter.add c.units last : bool);
+  not (Matrix_text.Segmenter.add c.units first)
 
 (* Write consecutive changed cells, return the new x position. Cells written =
    new_x - start_x. [prev] is the cell written just before, of code point
-   [prev_cp] and width [prev_width], or [-1] after a cursor motion. *)
-let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width =
+   [prev_cp], width [prev_width] and last scalar [last], or [-1] after a
+   cursor motion. *)
+let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width ~last =
   if x >= c.width then x
   else
     let idx = (y * c.width) + x in
@@ -234,25 +236,40 @@ let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width =
     else if not (cell_changed c y x idx cell_width) then x
     else begin
       let cp = Grid.get_codepoint c.curr idx in
+      (* The cell's scalars: [n] bytes in [c.scratch], or [cp] when it is
+         ASCII; a space when there are none. *)
+      let n =
+        if ascii cp then 0
+        else (
+          c.scratch <- room c.scratch (Grid.cell_text_length c.curr idx);
+          Grid.blit_cell_text c.curr idx c.scratch ~pos:0)
+      in
+      let simple = cp >= 0 || n <= 0 in
+      let first =
+        if simple then Uchar.unsafe_of_int (if cp < 0x20 then 0x20 else cp)
+        else first_scalar c.scratch
+      in
+      let final = if simple then first else last_scalar c.scratch n in
       if
-        prev < 0
+        prev >= 0
         (* Two ASCII cells never join. *)
-        || (ascii cp && ascii prev_cp)
+        && (not (ascii cp && ascii prev_cp))
         (* A control stands between a wide cell and its neighbors when it
            is written in OSC 66, or followed by a cursor motion. *)
-        || prev_width >= 2
-           && (c.explicit_width || c.explicit_cursor_positioning)
-        || (c.explicit_width && cell_width >= 2)
-      then c.units_live <- false
-      else if joins c ~prev ~prev_cp idx ~cp then
-        Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
+        && (not
+              (prev_width >= 2
+               && (c.explicit_width || c.explicit_cursor_positioning)
+              || (c.explicit_width && cell_width >= 2)))
+        && joins c ~prev ~prev_cp ~last first
+      then Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
       (* Emit style/color through zero-alloc accessors. *)
       Ansi.Sgr_state.update c.sgr c.out ~fg:(Grid.get_fg c.curr idx)
         ~bg:(Grid.get_bg c.curr idx)
         ~attrs:(Grid.get_attrs c.curr idx)
         ~link:(cell_link c idx);
-      write_cell c ~y ~x ~cell_width ~cp idx;
+      write_cell c ~y ~x ~cell_width ~cp ~n;
       write_run c y (x + step) ~prev:idx ~prev_cp:cp ~prev_width:cell_width
+        ~last:final
     end
 
 (* Zero-width cell: the run writer never visits it, so defensively clear it in
@@ -286,7 +303,9 @@ let rec process_cols (c : diff_ctx) y x row_cells =
       (* Move cursor to start of changed run, then write it. *)
       Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
       let start_x = x in
-      let new_x = write_run c y x ~prev:(-1) ~prev_cp:0 ~prev_width:0 in
+      let new_x =
+        write_run c y x ~prev:(-1) ~prev_cp:0 ~prev_width:0 ~last:Uchar.min
+      in
       (* Close active hyperlink. SGR state is preserved across the gap so the
          next run on this row skips re-emission when unchanged. *)
       Ansi.Sgr_state.close_link c.sgr c.out;
@@ -566,7 +585,7 @@ let create ?width_method ?(cursor_visible = true) ?(explicit_width = false)
         hyperlinks = true;
         units = Matrix_text.Segmenter.create w_method;
         units_method = w_method;
-        units_live = false;
+        joint = Bytes.create 64;
       };
     render_writer;
     last_render_time = Float.nan;
