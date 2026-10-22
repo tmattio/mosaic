@@ -112,8 +112,14 @@ val spawn :
 
     Creates a PTY pair, forks, configures the child with the slave as its
     controlling terminal ([setsid] + [TIOCSCTTY]), redirects the child's
-    stdin/stdout/stderr to the slave, and executes [prog]. The slave is closed
-    in the parent. The child's PID is available via {!pid}.
+    stdin/stdout/stderr to the slave, and executes [prog]. The child's PID is
+    available via {!pid}.
+
+    On macOS the last close of the slave discards the output that the master has
+    not read, so the parent holds the slave until {!close}. The child, exiting
+    as session leader, then waits for its output to be read: read it before
+    waiting for the child with [Unix.waitpid]. Elsewhere the slave is closed in
+    the parent.
 
     Optional arguments:
     - [env] is the child environment as ["KEY=value"] strings. Defaults to the

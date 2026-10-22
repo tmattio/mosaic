@@ -209,3 +209,14 @@ CAMLprim value ocaml_pty_setsid_and_setctty(value slave_fd) {
 }
 
 #endif  // MATRIX_HAS_POSIX_PTY
+
+// Whether the last close of a slave discards the output that the master has
+// not read yet. macOS does; Linux keeps it for the master to read.
+CAMLprim value ocaml_pty_close_discards_output(value unit) {
+  (void)unit;
+#ifdef __APPLE__
+  return Val_true;
+#else
+  return Val_false;
+#endif
+}

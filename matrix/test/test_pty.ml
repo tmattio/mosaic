@@ -50,6 +50,27 @@ let write_all_with_select pty data timeout =
   done;
   !written
 
+(* Spawns [prog] and returns once it has closed its descriptors on exit,
+   without reaping it: the child inherits the write end of a pipe. *)
+let spawn_and_await_exit ~prog ~args =
+  let exited_r, exited_w = Unix.pipe () in
+  let pty = Pty.spawn ~prog ~args () in
+  Unix.close exited_w;
+  ignore (Unix.read exited_r (Bytes.create 1) 0 1 : int);
+  Unix.close exited_r;
+  pty
+
+let read_to_eof pty =
+  let buf = Bytes.create 256 and out = Buffer.create 64 in
+  let rec loop () =
+    match Pty.read pty buf 0 (Bytes.length buf) with
+    | 0 | (exception Unix.Unix_error (Unix.EIO, _, _)) -> Buffer.contents out
+    | n ->
+        Buffer.add_subbytes out buf 0 n;
+        loop ()
+  in
+  loop ()
+
 let pty_test_supported =
   if Sys.os_type = "Win32" then false
   else
@@ -197,6 +218,18 @@ let test_spawn_with_cwd () =
     (output = "/tmp" || output = "/private/tmp");
   Pty.close pty
 
+(* Regression: the parent closed the slave once it had forked, so on macOS
+   the child's exit was the slave's last close, which discards the output the
+   master has not read within about 0.6s. With the slave held, the output
+   waits for the read, so the sleep only matters without the fix. *)
+let test_spawn_output_read_late () =
+  let pty = spawn_and_await_exit ~prog:"echo" ~args:[ "hello" ] in
+  Unix.sleepf 1.;
+  let output = read_to_eof pty in
+  Pty.close pty;
+  equal ~msg:"output read 1s after the child closed its descriptors" string
+    "hello\r\n" output
+
 let test_failed_spawn_does_not_run_parent_at_exit () =
   let parent_pid = Unix.getpid () in
   let marker_read, marker_write = Unix.pipe () in
@@ -317,6 +350,19 @@ let test_close_reaps_exited_child_without_delay () =
       (Printf.sprintf "close reaped an exited child in %.0fms" (elapsed *. 1000.))
     (elapsed < 0.05)
 
+(* An exiting child that waits for its output to be read must not make close
+   wait in turn. *)
+let test_close_with_unread_output () =
+  let pty = spawn_and_await_exit ~prog:"echo" ~args:[ "hello" ] in
+  let pid = Option.get (Pty.pid pty) in
+  Pty.close pty;
+  let reaped =
+    match Unix.waitpid [ Unix.WNOHANG ] pid with
+    | _ -> false
+    | exception Unix.Unix_error (Unix.ECHILD, _, _) -> true
+  in
+  is_true ~msg:"close reaped the child" reaped
+
 (* Regression: a second close used to call Unix.close on the stored fd number
    again. The kernel reallocates freed numbers to the next opened descriptor,
    so the second close destroyed an unrelated fd. *)
@@ -379,6 +425,7 @@ let tests =
       test "spawn sh" test_spawn_sh;
       test "spawn with env" test_spawn_with_env;
       test "spawn with cwd" test_spawn_with_cwd;
+      test "spawn output read late" test_spawn_output_read_late;
       test "failed spawn skips parent at_exit"
         test_failed_spawn_does_not_run_parent_at_exit;
       (* Non-blocking I/O *)
@@ -388,6 +435,7 @@ let tests =
       test "close idempotent" test_close_idempotent;
       test "close reaps exited child without delay"
         test_close_reaps_exited_child_without_delay;
+      test "close with unread output" test_close_with_unread_output;
       test "double close does not touch reused fd"
         test_double_close_does_not_touch_reused_fd;
       test "eof on close" test_eof_on_close;
