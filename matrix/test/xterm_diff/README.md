@@ -215,3 +215,38 @@ Each one is a deviation that RFC 0004 decides, an xterm quirk cited to its
 source or changelog, or a configuration difference (xterm's level, its
 print-screen). `--strict NAME` turns one off; `--strict all` shows the raw
 differences.
+
+## input_diff: the runtime's input against xterm
+
+`input_diff` runs a matrix application inside a real xterm, so that the
+runtime sends its real startup probe and decodes real keys. It needs the same
+xterm and X server; keys also need python3 and libXtst (`keys.py` drives
+xterm through XTest with ctypes, so no xdotool is needed):
+
+```sh
+dune build ./matrix/test/xterm_diff/input_diff.exe
+I=_build/default/matrix/test/xterm_diff/input_diff.exe
+D=matrix/test/xterm_diff
+
+$I caps --decid 100 --out /tmp/id     # the probe's replies, the capabilities
+$I caps --decid 420 --out /tmp/id
+$I keys --decid 420 --out /tmp/id --driver $D/keys.py --chords $D/chords.txt \
+  --xtst /usr/lib/x86_64-linux-gnu/libXtst.so.6
+```
+
+`caps` starts xterm twice on an agent: once to write the runtime's probe and
+record the raw replies (`raw-N.txt`), once to create an application and write
+the capabilities the runtime derived (`caps-N.txt`), which it checks against
+xterm 398's. xterm's environment is reduced to a terminal started fresh: no
+multiplexer, ssh or terminal-program variables.
+
+`keys` starts an application in xterm that records every event it delivers,
+then presses each chord of `chords.txt` (X keysym names joined by `+`) at
+the window and checks the keystroke the runtime decoded for each; the events
+between a chord and the next are its. The second time a chord is pressed,
+Caps Lock is on. The runtime asks xterm for its modes, finds no kitty keyboard
+protocol, and sets modifyOtherKeys 1 and, since xterm answers that it is
+reset, metaSendsEscape: the expected keystrokes are those of xterm's bytes in
+that configuration.
+
+Both exit 0 when nothing differs.
