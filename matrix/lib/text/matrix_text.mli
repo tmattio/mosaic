@@ -30,9 +30,6 @@ type position = { byte_offset : int; grapheme_count : int; columns_used : int }
     [grapheme_count] counts the display units of positive width before
     [byte_offset]. *)
 
-type grapheme = { byte_offset : int; byte_length : int; width : int }
-(** The type for the span of a display unit. *)
-
 val uchar_width : tab_width:int -> Uchar.t -> int
 (** [uchar_width ~tab_width u] is the display width of [u] in isolation.
     Controls and combining characters contribute [0]. Width policies agree on
@@ -63,9 +60,8 @@ val uchar_width : tab_width:int -> Uchar.t -> int
     ({{:https://www.unicode.org/reports/tr51/}UTS #51} §4), does not narrow an
     emoji already two cells wide.
 
-    {!measure}, {!iter_grapheme_info}, {!find_wrap_pos}, {!find_pos},
-    {!width_at} and {!prev_grapheme} measure these units, with a TAB [tab_width]
-    cells wide. *)
+    {!measure}, {!iter_grapheme_info}, {!find_wrap_pos}, {!find_pos} and
+    {!width_at} measure these units, with a TAB [tab_width] cells wide. *)
 
 module Segmenter : sig
   type t
@@ -212,17 +208,6 @@ val width_at :
 (** [width_at ~width_method ~tab_width s ~byte_offset] is the display width of
     the display unit starting at [byte_offset]. Returns [0] if [byte_offset] is
     out of bounds. *)
-
-val prev_grapheme :
-  width_method:width_method ->
-  tab_width:int ->
-  string ->
-  byte_offset:int ->
-  grapheme option
-(** [prev_grapheme ~width_method ~tab_width s ~byte_offset] is the display unit
-    immediately before [byte_offset], if any.
-
-    If [byte_offset] falls inside a unit, that containing unit is returned. *)
 
 module Layout : sig
   (** Source-backed terminal rows. Styles do not affect segmentation. *)

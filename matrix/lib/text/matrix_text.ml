@@ -3,7 +3,6 @@ open StdLabels
 type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
 type line_break_kind = [ `LF | `CR | `CRLF ]
 type position = { byte_offset : int; grapheme_count : int; columns_used : int }
-type grapheme = { byte_offset : int; byte_length : int; width : int }
 
 let default_tab_width = 2
 
@@ -647,46 +646,6 @@ let width_at ~width_method ~tab_width str ~byte_offset =
       first_unit_width (unit_seg width_method)
         ~wide:(width_method = `Unicode_wide)
         ~wcwidth:(width_method = `Wcwidth) str len tab_width byte_offset 0
-
-(* The unit in progress at [start] ends at or after [stop]. *)
-let rec unit_before seg ~wide ~wcwidth str len tab stop i start u =
-  if i >= len then
-    Some
-      { byte_offset = start; byte_length = len - start; width = unit_width u }
-  else
-    let d = decode str i len in
-    let cp = decoded_cp d in
-    let u' = unit_step seg ~wide ~wcwidth ~tab cp u in
-    if unit_starts u' && i > start then
-      if i >= stop then
-        Some
-          { byte_offset = start; byte_length = i - start; width = unit_width u }
-      else
-        unit_before seg ~wide ~wcwidth str len tab stop (i + decoded_len d) i u'
-    else
-      unit_before seg ~wide ~wcwidth str len tab stop
-        (i + decoded_len d)
-        start u'
-
-let prev_grapheme ~width_method ~tab_width str ~byte_offset =
-  let tab_width = normalize_tab_width tab_width in
-  let len = Stdlib.String.length str in
-  if byte_offset <= 0 || byte_offset > len then None
-  else if is_ascii_only str len 0 then
-    let rec loop i =
-      if i < 0 then None
-      else
-        let width =
-          ascii_width ~tab_width (Char.code (String.unsafe_get str i))
-        in
-        if width > 0 then Some { byte_offset = i; byte_length = 1; width }
-        else loop (i - 1)
-    in
-    loop (byte_offset - 1)
-  else
-    unit_before (unit_seg width_method)
-      ~wide:(width_method = `Unicode_wide)
-      ~wcwidth:(width_method = `Wcwidth) str len tab_width byte_offset 0 0 0
 
 (* String Measurement *)
 

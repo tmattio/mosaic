@@ -275,13 +275,6 @@ let position_testable =
         byte_offset grapheme_count columns_used)
     ~equal:( = )
 
-let grapheme_testable =
-  Testable.make
-    ~pp:(fun ppf { byte_offset; byte_length; width } ->
-      Format.fprintf ppf "{byte_offset=%d; byte_length=%d; width=%d}"
-        byte_offset byte_length width)
-    ~equal:( = )
-
 let wrap_breaks_ascii_spaces () =
   let breaks = wrap_breaks "hello world test" in
   equal ~msg:"two breaks for two spaces" int 2 (Array.length breaks);
@@ -579,21 +572,14 @@ let wcwidth_position_semantics () =
        "AB👋🏿CD" ~columns:3);
   equal ~msg:"wcwidth wrap through emoji" position_testable
     { byte_offset = 6; grapheme_count = 3; columns_used = 4 }
-    (find_wrap_pos ~width_method:`Wcwidth ~tab_width:4 "Hi👋🏿Bye" ~max_columns:4);
-  equal ~msg:"wcwidth previous skips zero-width ZWJ" (option grapheme_testable)
-    (Some { byte_offset = 7; byte_length = 4; width = 2 })
-    (prev_grapheme ~width_method:`Wcwidth ~tab_width:4 zwj ~byte_offset:11)
+    (find_wrap_pos ~width_method:`Wcwidth ~tab_width:4 "Hi👋🏿Bye" ~max_columns:4)
 
 let malformed_wcwidth_positions () =
   let text = "\xF0\x9F" in
   equal ~msg:"position uses the measurement replacement policy"
     position_testable
     { byte_offset = 2; grapheme_count = 1; columns_used = 1 }
-    (find_pos ~width_method:`Wcwidth ~tab_width:2 text ~columns:2);
-  equal ~msg:"previous codepoint uses the same invalid prefix"
-    (option grapheme_testable)
-    (Some { byte_offset = 0; byte_length = 2; width = 1 })
-    (prev_grapheme ~width_method:`Wcwidth ~tab_width:2 text ~byte_offset:2)
+    (find_pos ~width_method:`Wcwidth ~tab_width:2 text ~columns:2)
 
 let wcwidth_decoder_matches_stdlib () =
   let check text =
@@ -667,32 +653,6 @@ let unicode_position_semantics () =
   equal ~msg:"malformed offsets" position_testable
     { byte_offset = 1; grapheme_count = 1; columns_used = 1 }
     (find_wrap_pos ~width_method:`Unicode ~tab_width:8 "\xC3(" ~max_columns:1)
-
-let previous_grapheme_positions () =
-  equal ~msg:"at start" (option grapheme_testable) None
-    (prev_grapheme ~width_method:`Unicode ~tab_width:8 "hello" ~byte_offset:0);
-  equal ~msg:"out of bounds" (option grapheme_testable) None
-    (prev_grapheme ~width_method:`Unicode ~tab_width:8 "hello" ~byte_offset:10);
-  equal ~msg:"ASCII previous" (option grapheme_testable)
-    (Some { byte_offset = 4; byte_length = 1; width = 1 })
-    (prev_grapheme ~width_method:`Unicode ~tab_width:8 "hello" ~byte_offset:5);
-  equal ~msg:"inside CJK grapheme" (option grapheme_testable)
-    (Some { byte_offset = 1; byte_length = 3; width = 2 })
-    (prev_grapheme ~width_method:`Unicode ~tab_width:8 "a世界" ~byte_offset:2);
-  equal ~msg:"at CJK boundary returns previous" (option grapheme_testable)
-    (Some { byte_offset = 1; byte_length = 3; width = 2 })
-    (prev_grapheme ~width_method:`Unicode ~tab_width:8 "a世界" ~byte_offset:4);
-  equal ~msg:"combining cluster previous" (option grapheme_testable)
-    (Some { byte_offset = 3; byte_length = 3; width = 1 })
-    (prev_grapheme ~width_method:`Unicode ~tab_width:8 "cafe\u{0301}"
-       ~byte_offset:6);
-  equal ~msg:"emoji ZWJ previous" (option grapheme_testable)
-    (Some { byte_offset = 1; byte_length = 11; width = 2 })
-    (prev_grapheme ~width_method:`Unicode ~tab_width:8 ("a" ^ "👩\u{200D}🚀")
-       ~byte_offset:12);
-  equal ~msg:"flag previous" (option grapheme_testable)
-    (Some { byte_offset = 2; byte_length = 8; width = 2 })
-    (prev_grapheme ~width_method:`Unicode ~tab_width:8 "US🇺🇸" ~byte_offset:10)
 
 let emoji_presentation_widths () =
   let check label cp expected_w =
@@ -1382,7 +1342,6 @@ let () =
           test "width_at" width_at_positions;
           test "wcwidth semantics" wcwidth_position_semantics;
           test "unicode semantics" unicode_position_semantics;
-          test "previous grapheme" previous_grapheme_positions;
         ];
       group "Width Tables"
         [

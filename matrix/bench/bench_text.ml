@@ -78,14 +78,6 @@ let width_at_bench name method_ text offset =
       in
       ignore (Sys.opaque_identity w))
 
-let prev_bench name method_ text offset =
-  Thumper.bench name (fun () ->
-      let g =
-        T.prev_grapheme ~width_method:method_ ~tab_width:2 text
-          ~byte_offset:offset
-      in
-      ignore (Sys.opaque_identity g))
-
 let benchmarks =
   Thumper.
     [
@@ -112,12 +104,6 @@ let benchmarks =
           width_at_bench "position/width_at/ascii" `Unicode ascii_line 128;
           width_at_bench "position/width_at/mixed" `Unicode mixed_line 7;
           width_at_bench "position/width_at/wcwidth" `Wcwidth mixed_line 7;
-          prev_bench "position/prev/ascii" `Unicode ascii_line
-            (String.length ascii_line);
-          prev_bench "position/prev/mixed" `Unicode mixed_line
-            (String.length mixed_line);
-          prev_bench "position/prev/wcwidth" `Wcwidth mixed_line
-            (String.length mixed_line);
         ];
     ]
 
