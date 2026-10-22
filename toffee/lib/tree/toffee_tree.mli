@@ -161,9 +161,19 @@ module type ROUND_TREE = sig
   (** [get_unrounded_layout tree node] returns the float-valued layout computed
       by layout algorithms. *)
 
-  val set_final_layout : t -> Node_id.t -> Layout.t -> unit
-  (** [set_final_layout tree node layout] stores the final pixel-rounded layout
-      for [node]. *)
+  val is_rounded : t -> Node_id.t -> x:float -> y:float -> bool
+  (** [is_rounded tree node ~x ~y] is [true] only if the final layouts of [node]
+      and of all its descendants were stored by {!set_final_layout} with
+      [node]'s parent at the unrounded absolute position [(x, y)], and none of
+      their unrounded layouts was set since. Rounding then skips the subtree,
+      whose result would be the same. A tree that does not track this returns
+      [false]. *)
+
+  val set_final_layout :
+    t -> Node_id.t -> x:float -> y:float -> Layout.t -> unit
+  (** [set_final_layout tree node ~x ~y layout] stores the final pixel-rounded
+      layout for [node], rounded with [node]'s parent at the unrounded absolute
+      position [(x, y)]. *)
 end
 
 (** Tree interface for debug printing.

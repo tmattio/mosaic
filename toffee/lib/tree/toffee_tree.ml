@@ -62,7 +62,10 @@ module type ROUND_TREE = sig
   include TRAVERSE_TREE
 
   val get_unrounded_layout : t -> Node_id.t -> Layout.t
-  val set_final_layout : t -> Node_id.t -> Layout.t -> unit
+  val is_rounded : t -> Node_id.t -> x:float -> y:float -> bool
+
+  val set_final_layout :
+    t -> Node_id.t -> x:float -> y:float -> Layout.t -> unit
 end
 
 module type PRINT_TREE = sig

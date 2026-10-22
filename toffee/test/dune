@@ -3,6 +3,7 @@
  (names test_toffee test_grid)
  (libraries
   toffee
+  toffee.compute
   toffee.compute.grid
   toffee.compute.helpers
   toffee.style

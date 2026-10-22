@@ -51,13 +51,19 @@ type config = { use_rounding : bool }
 
 let default_config = { use_rounding = true }
 
-(* Node data stored for each node *)
+(* Node data stored for each node. [rounded] holds when [final_layout] and
+   every final layout below it were rounded from the current unrounded
+   layouts, with the node's parent at the position [rounded_at] (x, y).
+   Setting an unrounded layout clears it on the node and its ancestors, so
+   [rounded] on a node implies it on every descendant. *)
 type node_data = {
   style : Style.t;
-  unrounded_layout : Layout.t;
-  final_layout : Layout.t;
+  mutable unrounded_layout : Layout.t;
+  mutable final_layout : Layout.t;
   has_context : bool;
   cache : Cache.t;
+  mutable rounded : bool;
+  rounded_at : float array;
 }
 
 let new_node_data style =
@@ -67,6 +73,8 @@ let new_node_data style =
     unrounded_layout = Layout.default;
     final_layout = Layout.default;
     has_context = false;
+    rounded = false;
+    rounded_at = [| 0.; 0. |];
   }
 
 let mark_dirty node_data = Cache.clear node_data.cache
@@ -579,9 +587,19 @@ module View = struct
     tree.taffy.nodes.(node_index_exn tree.taffy node_id).style
 
   let set_unrounded_layout tree node_id layout =
-    let idx = node_index_exn tree.taffy node_id in
-    let node_data = tree.taffy.nodes.(idx) in
-    tree.taffy.nodes.(idx) <- { node_data with unrounded_layout = layout }
+    let taffy = tree.taffy in
+    let idx = node_index_exn taffy node_id in
+    taffy.nodes.(idx).unrounded_layout <- layout;
+    let rec unround idx =
+      let node_data = taffy.nodes.(idx) in
+      if node_data.rounded then begin
+        node_data.rounded <- false;
+        match taffy.parents.(idx) with
+        | Some parent -> unround (Node_id.index parent)
+        | None -> ()
+      end
+    in
+    unround idx
 
   let resolve_calc_value _tree _val _basis = 0.0
 
@@ -725,10 +743,18 @@ module View = struct
   let get_unrounded_layout tree node =
     tree.taffy.nodes.(node_index_exn tree.taffy node).unrounded_layout
 
-  let set_final_layout tree node_id layout =
-    let idx = node_index_exn tree.taffy node_id in
-    let node_data = tree.taffy.nodes.(idx) in
-    tree.taffy.nodes.(idx) <- { node_data with final_layout = layout }
+  let is_rounded tree node_id ~x ~y =
+    let node_data = tree.taffy.nodes.(node_index_exn tree.taffy node_id) in
+    node_data.rounded
+    && Float.equal node_data.rounded_at.(0) x
+    && Float.equal node_data.rounded_at.(1) y
+
+  let set_final_layout tree node_id ~x ~y layout =
+    let node_data = tree.taffy.nodes.(node_index_exn tree.taffy node_id) in
+    node_data.final_layout <- layout;
+    node_data.rounded_at.(0) <- x;
+    node_data.rounded_at.(1) <- y;
+    node_data.rounded <- true
 end
 
 (* Main layout computation *)
@@ -759,6 +785,7 @@ let compute_layout_with_measure (type ctx) (tree : ctx tree) node_id
         let child_count = View.child_count
         let get_child_id = View.get_child_id
         let get_unrounded_layout = View.get_unrounded_layout
+        let is_rounded = View.is_rounded
         let set_final_layout = View.set_final_layout
       end)
       view node_id;

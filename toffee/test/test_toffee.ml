@@ -1014,6 +1014,107 @@ let test_relayout_stable () =
   done
 
 (* Test suite *)
+(* Rounding skips subtrees whose unrounded layouts and position are unchanged.
+   The law: after any sequence of edits, every final layout is bit-for-bit the
+   layout a full rounding pass computes from the current unrounded layouts. *)
+let full_rounding tree root =
+  let finals = Hashtbl.create 64 in
+  Toffee_compute.round_layout
+    (module struct
+      type t = unit Toffee.tree
+
+      let children tree node = children tree node |> Result.get_ok
+      let child_ids tree node = List.to_seq (children tree node)
+      let child_count tree node = List.length (children tree node)
+
+      let get_child_id tree node index =
+        child_at_index tree node index |> Result.get_ok
+
+      let get_unrounded_layout = unrounded_layout
+      let is_rounded _ _ ~x:_ ~y:_ = false
+
+      let set_final_layout _ node ~x:_ ~y:_ layout =
+        Hashtbl.replace finals (Node_id.to_int node) layout
+    end)
+    tree root;
+  finals
+
+let random_style rng =
+  let fraction () = Float.of_int (Random.State.int rng 40) /. 3. in
+  let dimension () =
+    match Random.State.int rng 3 with
+    | 0 -> Style.Dimension.auto
+    | 1 -> Style.Dimension.length (fraction ())
+    | _ -> Style.Dimension.pct (Float.of_int (Random.State.int rng 10) /. 7.)
+  in
+  let edges () =
+    Rect.
+      {
+        left = Style.Length_percentage.length (fraction () /. 4.);
+        right = Style.Length_percentage.length (fraction () /. 4.);
+        top = Style.Length_percentage.length (fraction () /. 4.);
+        bottom = Style.Length_percentage.length (fraction () /. 4.);
+      }
+  in
+  Style.default
+  |> Style.set_flex_direction
+       (if Random.State.bool rng then Style.Flex_direction.Row
+        else Style.Flex_direction.Column)
+  |> Style.set_flex_grow (Float.of_int (Random.State.int rng 3) /. 2.)
+  |> Style.set_size Size.{ width = dimension (); height = dimension () }
+  |> Style.set_padding (edges ())
+  |> Style.set_border (edges ())
+  |> Style.set_margin_left
+       (Style.Length_percentage_auto.length (fraction () /. 5.))
+  |> Style.set_display
+       (if Random.State.int rng 10 = 0 then Style.Display.None
+        else Style.Display.Flex)
+
+let incremental_rounding_matches_full_rounding seed =
+  let rng = Random.State.make [| seed |] in
+  let tree : unit Toffee.tree = new_tree () in
+  let root = new_leaf tree Style.default |> Result.get_ok in
+  let nodes = ref [| root |] in
+  let add_node () =
+    let parent = !nodes.(Random.State.int rng (Array.length !nodes)) in
+    let node = new_leaf tree (random_style rng) |> Result.get_ok in
+    add_child tree parent node |> Result.get_ok;
+    nodes := Array.append !nodes [| node |]
+  in
+  for _ = 1 to 1 + Random.State.int rng 30 do
+    add_node ()
+  done;
+  let check step =
+    let available =
+      let space () =
+        Available_space.of_float
+          (50. +. (Float.of_int (Random.State.int rng 60) /. 7.))
+      in
+      Size.{ width = space (); height = space () }
+    in
+    compute_layout tree root available |> Result.get_ok;
+    let finals = full_rounding tree root in
+    Hashtbl.iter
+      (fun index expected ->
+        let actual = layout tree (Node_id.make index) |> Result.get_ok in
+        let bits layout = Marshal.to_string layout [ Marshal.No_sharing ] in
+        if bits actual <> bits expected then
+          failf "seed %d, step %d, node %d: %s, full rounding gives %s" seed
+            step index (Layout.to_string actual)
+            (Layout.to_string expected))
+      finals
+  in
+  check 0;
+  for step = 1 to 20 do
+    (match Random.State.int rng 4 with
+    | 0 -> add_node ()
+    | 1 | 2 ->
+        let node = !nodes.(Random.State.int rng (Array.length !nodes)) in
+        set_style tree node (random_style rng) |> Result.get_ok
+    | _ -> (* A relayout under new available space only. *) ());
+    check step
+  done
+
 let () =
   run "Toffee Tests"
     [
@@ -1049,7 +1150,11 @@ let () =
             test_root_padding_and_border_larger_than_definite_size;
         ];
       group "rounding"
-        [ test "Rounding without gaps" test_rounding_doesnt_leave_gaps ];
+        [
+          test "Rounding without gaps" test_rounding_doesnt_leave_gaps;
+          prop ~count:300 "Incremental rounding matches full rounding" Gen.int
+            incremental_rounding_matches_full_rounding;
+        ];
       group "display_none"
         [
           test "Toggle root display none" test_toggle_root_display_none;

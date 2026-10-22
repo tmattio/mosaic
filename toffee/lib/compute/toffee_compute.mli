@@ -227,6 +227,10 @@ val round_layout :
     {{:https://github.com/facebook/yoga/commit/aa5b296ac78f7a22e1aeaf4891243c6bb76488e2}
      Yoga's rounding commit} for detailed rationale.
 
+    A subtree for which [Tree.is_rounded] holds at its parent's position is
+    skipped: its stored result is what rounding would produce, so the cost of a
+    pass follows the nodes whose unrounded layout or position changed.
+
     Call this function after layout completes to prepare coordinates for
     rendering. *)
 

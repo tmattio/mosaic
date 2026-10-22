@@ -215,100 +215,105 @@ let round_layout (type t) (module Tree : Tree.ROUND_TREE with type t = t)
     else Float.ceil (f -. 0.5 -. epsilon)
   in
 
-  (* Recursive function to apply rounding to all descendants *)
-  let rec round_layout_inner node_id cumulative_x cumulative_y =
-    let unrounded_layout = Tree.get_unrounded_layout tree node_id in
+  (* Recursive function to apply rounding to all descendants. A subtree whose
+     unrounded layouts and parent position are unchanged keeps its result. *)
+  let rec round_layout_inner node_id parent_x parent_y =
+    if not (Tree.is_rounded tree node_id ~x:parent_x ~y:parent_y) then begin
+      let unrounded_layout = Tree.get_unrounded_layout tree node_id in
 
-    let cumulative_x = cumulative_x +. (Layout.location unrounded_layout).x in
-    let cumulative_y = cumulative_y +. (Layout.location unrounded_layout).y in
+      let cumulative_x = parent_x +. (Layout.location unrounded_layout).x in
+      let cumulative_y = parent_y +. (Layout.location unrounded_layout).y in
 
-    let layout =
-      Layout.make
-        ~order:(Layout.order unrounded_layout)
-        ~location:
-          Point.
-            {
-              x = round (Layout.location unrounded_layout).x;
-              y = round (Layout.location unrounded_layout).y;
-            }
-        ~size:
-          Size.
-            {
-              width =
-                round (cumulative_x +. (Layout.size unrounded_layout).width)
-                -. round cumulative_x;
-              height =
-                round (cumulative_y +. (Layout.size unrounded_layout).height)
-                -. round cumulative_y;
-            }
-        ~content_size:
-          Size.
-            {
-              width =
-                round
-                  (cumulative_x +. (Layout.content_size unrounded_layout).width)
-                -. round cumulative_x;
-              height =
-                round
-                  (cumulative_y +. (Layout.content_size unrounded_layout).height)
-                -. round cumulative_y;
-            }
-        ~scrollbar_size:
-          Size.
-            {
-              width = round (Layout.scrollbar_size unrounded_layout).width;
-              height = round (Layout.scrollbar_size unrounded_layout).height;
-            }
-        ~border:
-          Rect.
-            {
-              left =
-                round (cumulative_x +. (Layout.border unrounded_layout).left)
-                -. round cumulative_x;
-              right =
-                round (cumulative_x +. (Layout.size unrounded_layout).width)
-                -. round
-                     (cumulative_x +. (Layout.size unrounded_layout).width
-                    -. (Layout.border unrounded_layout).right);
-              top =
-                round (cumulative_y +. (Layout.border unrounded_layout).top)
-                -. round cumulative_y;
-              bottom =
-                round (cumulative_y +. (Layout.size unrounded_layout).height)
-                -. round
-                     (cumulative_y +. (Layout.size unrounded_layout).height
-                    -. (Layout.border unrounded_layout).bottom);
-            }
-        ~padding:
-          Rect.
-            {
-              left =
-                round (cumulative_x +. (Layout.padding unrounded_layout).left)
-                -. round cumulative_x;
-              right =
-                round (cumulative_x +. (Layout.size unrounded_layout).width)
-                -. round
-                     (cumulative_x +. (Layout.size unrounded_layout).width
-                    -. (Layout.padding unrounded_layout).right);
-              top =
-                round (cumulative_y +. (Layout.padding unrounded_layout).top)
-                -. round cumulative_y;
-              bottom =
-                round (cumulative_y +. (Layout.size unrounded_layout).height)
-                -. round
-                     (cumulative_y +. (Layout.size unrounded_layout).height
-                    -. (Layout.padding unrounded_layout).bottom);
-            }
-        ~margin:(Layout.margin unrounded_layout)
-    in
+      let layout =
+        Layout.make
+          ~order:(Layout.order unrounded_layout)
+          ~location:
+            Point.
+              {
+                x = round (Layout.location unrounded_layout).x;
+                y = round (Layout.location unrounded_layout).y;
+              }
+          ~size:
+            Size.
+              {
+                width =
+                  round (cumulative_x +. (Layout.size unrounded_layout).width)
+                  -. round cumulative_x;
+                height =
+                  round (cumulative_y +. (Layout.size unrounded_layout).height)
+                  -. round cumulative_y;
+              }
+          ~content_size:
+            Size.
+              {
+                width =
+                  round
+                    (cumulative_x
+                   +. (Layout.content_size unrounded_layout).width)
+                  -. round cumulative_x;
+                height =
+                  round
+                    (cumulative_y
+                   +. (Layout.content_size unrounded_layout).height)
+                  -. round cumulative_y;
+              }
+          ~scrollbar_size:
+            Size.
+              {
+                width = round (Layout.scrollbar_size unrounded_layout).width;
+                height = round (Layout.scrollbar_size unrounded_layout).height;
+              }
+          ~border:
+            Rect.
+              {
+                left =
+                  round (cumulative_x +. (Layout.border unrounded_layout).left)
+                  -. round cumulative_x;
+                right =
+                  round (cumulative_x +. (Layout.size unrounded_layout).width)
+                  -. round
+                       (cumulative_x +. (Layout.size unrounded_layout).width
+                      -. (Layout.border unrounded_layout).right);
+                top =
+                  round (cumulative_y +. (Layout.border unrounded_layout).top)
+                  -. round cumulative_y;
+                bottom =
+                  round (cumulative_y +. (Layout.size unrounded_layout).height)
+                  -. round
+                       (cumulative_y +. (Layout.size unrounded_layout).height
+                      -. (Layout.border unrounded_layout).bottom);
+              }
+          ~padding:
+            Rect.
+              {
+                left =
+                  round (cumulative_x +. (Layout.padding unrounded_layout).left)
+                  -. round cumulative_x;
+                right =
+                  round (cumulative_x +. (Layout.size unrounded_layout).width)
+                  -. round
+                       (cumulative_x +. (Layout.size unrounded_layout).width
+                      -. (Layout.padding unrounded_layout).right);
+                top =
+                  round (cumulative_y +. (Layout.padding unrounded_layout).top)
+                  -. round cumulative_y;
+                bottom =
+                  round (cumulative_y +. (Layout.size unrounded_layout).height)
+                  -. round
+                       (cumulative_y +. (Layout.size unrounded_layout).height
+                      -. (Layout.padding unrounded_layout).bottom);
+              }
+          ~margin:(Layout.margin unrounded_layout)
+      in
 
-    Tree.set_final_layout tree node_id layout;
+      Tree.set_final_layout tree node_id ~x:parent_x ~y:parent_y layout;
 
-    let child_count = Tree.child_count tree node_id in
-    for index = 0 to child_count - 1 do
-      let child = Tree.get_child_id tree node_id index in
-      round_layout_inner child cumulative_x cumulative_y
-    done
+      let child_count = Tree.child_count tree node_id in
+      for index = 0 to child_count - 1 do
+        let child = Tree.get_child_id tree node_id index in
+        round_layout_inner child cumulative_x cumulative_y
+      done
+    end
   in
 
   round_layout_inner node_id 0.0 0.0
