@@ -78,9 +78,11 @@ val set_width_method : t -> Matrix_text.width_method -> unit
     calls. Existing cell widths are not updated. *)
 
 val active_height : t -> int
-(** [active_height g] is the number of rows from the top containing non-blank
-    content (character code other than 0 or space). Returns [0] for an empty or
-    cleared grid. *)
+(** [active_height g] is the number of rows from the top down to the last row
+    that shows something a terminal's erase does not: a character other than a
+    space, or a space with an attribute, a hyperlink or a background other than
+    the terminal's default (a transparent one shows the default). It is [0] for
+    a cleared grid. *)
 
 (** {1:cell_access Cell access}
 

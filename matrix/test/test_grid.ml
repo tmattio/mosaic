@@ -2184,6 +2184,25 @@ let tests =
         equal ~msg:"height after resize_clear" int 2 (Grid.height grid);
         equal ~msg:"old row cleared" string "    " (row_to_string grid 0);
         equal ~msg:"new row cleared" string "    " (row_to_string grid 1));
+    (* Active height *)
+    test "active_height counts rows that show only a background" (fun () ->
+        let grid = Grid.create ~width:3 ~height:5 () in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"a";
+        equal ~msg:"text" int 1 (Grid.active_height grid);
+        Grid.fill_rect grid ~x:0 ~y:1 ~width:3 ~height:1 ~color:Ansi.Color.blue;
+        equal ~msg:"background" int 2 (Grid.active_height grid);
+        Grid.draw_text grid ~x:1 ~y:2 ~text:" "
+          ~style:(Ansi.Style.make ~underline:true ());
+        equal ~msg:"attribute" int 3 (Grid.active_height grid);
+        Grid.draw_text grid ~x:1 ~y:3 ~text:" "
+          ~style:(Ansi.Style.make ~link:"http://a" ());
+        equal ~msg:"link" int 4 (Grid.active_height grid);
+        Grid.fill_rect grid ~x:0 ~y:4 ~width:3 ~height:1
+          ~color:Ansi.Color.default_bg;
+        Grid.draw_text grid ~x:2 ~y:4 ~text:" "
+          ~style:(Ansi.Style.make ~fg:Ansi.Color.red ());
+        equal ~msg:"default background and an unseen foreground" int 4
+          (Grid.active_height grid));
   ]
 
 let () = run "matrix.grid" [ group "grid" tests ]

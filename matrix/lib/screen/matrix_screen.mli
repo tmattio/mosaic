@@ -287,6 +287,6 @@ val invalidate_presented : t -> unit
     {b Note.} Does not emit any escape sequences. *)
 
 val active_height : t -> int
-(** [active_height t] is the number of rows containing non-blank content in the
-    next buffer. Background-only cells (spaces) are ignored. Useful for sizing
-    inline rendering regions. *)
+(** [active_height t] is {!Matrix_grid.active_height} of the next buffer: the
+    rows down to the last one that shows anything. Useful for sizing inline
+    rendering regions. *)

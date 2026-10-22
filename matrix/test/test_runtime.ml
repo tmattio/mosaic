@@ -2151,6 +2151,20 @@ let test_primary_full_redraw_keeps_cursor_row () =
   equal ~msg:"the cursor is on its row, below the painted one" (pair int int)
     (3, 2) (Vte.cursor_pos term.vte)
 
+let test_primary_full_redraw_paints_background_rows () =
+  let app, term = vte_app ~cols:6 ~rows:4 () in
+  Matrix.prepare app;
+  let grid = Matrix.grid app in
+  Matrix.Grid.draw_text grid ~x:0 ~y:0 ~text:"x";
+  Matrix.Grid.fill_rect grid ~x:0 ~y:1 ~width:6 ~height:1
+    ~color:Matrix.Ansi.Color.blue;
+  Matrix.submit app;
+  let g = Vte.grid term.vte in
+  is_true ~msg:"a row of background only is painted"
+    (Matrix.Ansi.Color.equal
+       (Matrix.Grid.get_bg g (Matrix.Grid.idx g ~x:5 ~y:1))
+       Matrix.Ansi.Color.blue)
+
 let test_primary_mouse_event_is_offset_into_live_region () =
   let app, _state =
     make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
@@ -2476,6 +2490,8 @@ let () =
           test "alt default cursor is shown" test_alt_default_cursor_is_shown;
           test "full redraw keeps the cursor row"
             test_primary_full_redraw_keeps_cursor_row;
+          test "full redraw paints background rows"
+            test_primary_full_redraw_paints_background_rows;
         ];
       group "Primary input"
         [

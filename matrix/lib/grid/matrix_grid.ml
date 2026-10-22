@@ -134,6 +134,7 @@ let default_fg = Ansi.Color.default_fg
 let default_bg = Ansi.Color.transparent
 let default_fg_packed = Color_packed.encode default_fg
 let default_bg_packed = Color_packed.encode default_bg
+let terminal_bg_packed = Color_packed.encode Ansi.Color.default_bg
 
 (* {1 Helpers} *)
 
@@ -1431,19 +1432,36 @@ let draw_line t ~x1 ~y1 ~x2 ~y2 ?(style = Ansi.Style.default)
 
 (* {1 Inspection & utilities} *)
 
+(* A cell a terminal erase reproduces: a space or nothing, with no attribute
+   and no link, on the terminal's default background. The planes are read
+   where their element types are known, so each read is a load. *)
+let space_code = Packed_cell.to_int space_cell
+let null_code = Packed_cell.to_int null_cell
+
+let[@inline] blank_cell t idx =
+  let code = Bigarray.Array1.unsafe_get t.chars idx in
+  (code = space_code || code = null_code)
+  && Bigarray.Array1.unsafe_get t.attrs idx land attrs_mask = 0
+  && (let bg = Bigarray.Array1.unsafe_get t.bg_color idx in
+      bg = default_bg_packed || bg = terminal_bg_packed
+      || Color_packed.alpha bg = 0
+      ||
+      match Color_packed.intent bg with
+      | Default -> true
+      | Indexed _ | Rgb -> false)
+  && (Array.length t.links = 0
+     || String.length (Array.unsafe_get t.links idx) = 0)
+
 let active_height t =
   let rec find_row y =
     if y < 0 then 0
     else
       let row_start = y * t.width in
-      let rec has_content x =
-        if x >= t.width then false
-        else
-          let code = Buf.get_cell t.chars (row_start + x) in
-          if code <> space_cell && code <> null_cell then true
-          else has_content (x + 1)
-      in
-      if has_content 0 then y + 1 else find_row (y - 1)
+      let x = ref 0 in
+      while !x < t.width && blank_cell t (row_start + !x) do
+        incr x
+      done;
+      if !x < t.width then y + 1 else find_row (y - 1)
   in
   find_row (t.height - 1)
 

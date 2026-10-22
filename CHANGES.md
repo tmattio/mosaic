@@ -75,6 +75,7 @@
 - Backtrace recording policy is left to the application; the runtime prints a backtrace on an uncaught exception rather than enabling recording itself
 - `Screen.render_to_bytes` removed (no consumers); `render_to_buffer` is the per-frame eliminator
 - Vendored uuseg stripped to its boundary core; one shared grapheme-width state machine
+- `Grid.active_height` counts every row that shows something a terminal's erase does not: a space with a background, an attribute or a hyperlink counts, not only a character. A primary-mode full redraw no longer erases a trailing row of background, and a static commit keeps it
 
 #### Fixed
 
