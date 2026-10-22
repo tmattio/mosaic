@@ -148,6 +148,16 @@ let registry =
          and above decTerminalID 100 its DA has its own level and features.";
     };
     {
+      name = "decreqtparm";
+      kind = Deviation;
+      how = "replies";
+      why =
+        "the terminal answers DA, DECID, DA2, DSR, CPR and DECXCPR, and the \
+         identity promises only what is implemented (RFC 0004 §2 Replies; \
+         vte.mli); xterm also answers the VT100's DECREQTPARM (CSI x) with \
+         DECREPTPARM (ctlseqs). xterm's DECREPTPARM is removed.";
+    };
+    {
       name = "decxcpr-page";
       kind = Deviation;
       how = "replies";
@@ -2008,6 +2018,10 @@ let replies ctx ~input s =
              && p <> ">0;0;0" && on ctx "identity" ->
           fire ctx "identity";
           Buffer.add_string b "\027[>0;0;0c";
+          go j
+      | Some (_, 'x', j) when on ctx "decreqtparm" ->
+          (* DECREPTPARM, xterm's answer to DECREQTPARM. *)
+          fire ctx "decreqtparm";
           go j
       | Some (p, 'R', j)
         when String.length p > 0
