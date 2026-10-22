@@ -176,6 +176,27 @@ val styled : ?reset:bool -> t -> string -> string
 (** [styled ~reset s str] is [str] wrapped in the escape codes for [s]. If
     [reset] is [true] (default [false]), appends a reset sequence. *)
 
+(** {1:reading Reading} *)
+
+val apply_sgr : Parser.Params.t -> t -> t
+(** [apply_sgr p s] is [s] after SELECT GRAPHIC RENDITION with the parameters
+    [p] (ECMA-48 §8.3.117), applied left to right: [7;0] leaves inverse off. An
+    absent parameter is 0, and no parameter at all is a single 0.
+
+    - 0 resets the rendition: no colors, no attributes. The hyperlink stays,
+      since OSC 8 sets it and it is not rendition.
+    - Attribute codes mean what {!emit} writes for them: 1 bold, 22 neither bold
+      nor dim, 24 no underline of either kind, and so on. 6 (rapid blink) is
+      blink. [4:0] is 24, [4:2] is 21 (double underline), and the other
+      underline styles ([4:3] curly, for instance) are 4.
+    - 30..37, 90..97, 40..47 and 100..107 select a palette color, and 39 and 49
+      the default ones. [38] and [48] select a color written as T.416
+      sub-parameters, [38:5:n], [38:2:r:g:b] or [38:2:cs:r:g:b], or as xterm's
+      separate parameters, [38;5;n] or [38;2;r;g;b]; an incomplete color in the
+      second form ends the list. [58], the underline color, is read the same way
+      and has no effect.
+    - Other codes have no effect. *)
+
 (** {1:fmt Formatting} *)
 
 val pp : Format.formatter -> t -> unit

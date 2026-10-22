@@ -478,7 +478,68 @@ let sgr_indexed_stays_indexed_without_truecolor () =
     ~attrs:0 ~link:"";
   check_seq "indexed preserved" "\x1b[0;38;5;42;48;5;99m" (Writer.contents w)
 
-(* --- 4. Parser Resilience --- *)
+(* --- 4. Parser --- *)
+
+(* Tokens in ECMA-48's notation, adjacent Text and Data joined, so that the
+   expectation does not depend on how a run was cut. *)
+let join tokens =
+  let rec go acc = function
+    | Parser.Text a :: Parser.Text b :: rest ->
+        go acc (Parser.Text (a ^ b) :: rest)
+    | Parser.Data a :: Parser.Data b :: rest ->
+        go acc (Parser.Data (a ^ b) :: rest)
+    | token :: rest -> go (token :: acc) rest
+    | [] -> List.rev acc
+  in
+  go [] tokens
+
+let show tokens =
+  String.concat ", "
+    (List.map (Format.asprintf "%a" Parser.pp_token) (join tokens))
+
+(* The tokens of [feeds], each read by one [feed] call. *)
+let feed_all feeds =
+  let p = Parser.create () in
+  let acc = ref [] in
+  List.iter
+    (fun s ->
+      Parser.feed p (Bytes.of_string s) ~off:0 ~len:(String.length s)
+        (fun tok -> acc := tok :: !acc))
+    feeds;
+  List.rev !acc
+
+let check_tokens ?msg input expected =
+  let msg = Option.value msg ~default:(Printf.sprintf "%S" input) in
+  equal ~msg string expected (show (Parser.parse input))
+
+(* [input], which ends in ground, gives [expected] however it is cut in
+   two. *)
+let check_cuts input expected =
+  for cut = 0 to String.length input do
+    let chunks =
+      [
+        String.sub input 0 cut; String.sub input cut (String.length input - cut);
+      ]
+    in
+    equal
+      ~msg:(Printf.sprintf "%S cut at %d" input cut)
+      string expected
+      (show (feed_all chunks))
+  done
+
+let text tokens =
+  String.concat ""
+    (List.filter_map (function Parser.Text s -> Some s | _ -> None) tokens)
+
+let csi_params input =
+  match Parser.parse input with
+  | [ Parser.Csi { params; _ } ] -> params
+  | _ -> failf "%S is not one control sequence" input
+
+let read_sgr ?(from = Style.default) input =
+  Style.apply_sgr (csi_params input) from
+
+let check_style = Testable.make ~pp:Style.pp ~equal:Style.equal
 
 let parser_chunked_utf8 () =
   let p = Parser.create () in
@@ -512,10 +573,7 @@ let parser_chunked_utf8_same_buffer_slice () =
   let t2 = feed_to_list p input 1 1 in
   equal ~msg:"same buffer byte 2 buffered" int 0 (List.length t2);
   let t3 = feed_to_list p input 2 3 in
-  match t3 with
-  | [ Parser.Text s ] ->
-      equal ~msg:"same buffer utf8 reconstructed" string "€ok" s
-  | _ -> fail "Expected reconstructed UTF-8 text token"
+  equal ~msg:"same buffer utf8 reconstructed" string "€ok" (text t3)
 
 let parser_chunked_escape () =
   let p = Parser.create () in
@@ -527,36 +585,24 @@ let parser_chunked_escape () =
 
   (* Finish it *)
   let t2 = feed_to_list p (Bytes.of_string "1m") 0 2 in
-  match t2 with
-  | [ Parser.SGR [ `Fg c ] ] ->
-      equal ~msg:"parsed split csi" check_color Color.red c
-  | _ -> fail "Failed to reconstruct split CSI"
+  equal ~msg:"parsed split csi" string "CSI 31 m" (show t2);
+  equal ~msg:"split csi is red" check_style
+    (Style.make ~fg:Color.red ())
+    (read_sgr "\x1b[31m")
 
 let parser_controls_inside_csi () =
-  (* As in xterm, a C0 control inside a CSI sequence runs without ending it,
-     DEL is ignored, ESC starts a new sequence, and CAN and SUB cancel it. *)
-  (match Parser.parse "\x1b[1\b\x7fC" with
-  | [ Parser.Text "\b"; Parser.Control (Parser.CUF 1) ] -> ()
-  | _ -> fail "BS inside CSI should run, then CUF 1");
-  (match Parser.parse "\x1b[2\x1b[3C" with
-  | [ Parser.Control (Parser.CUF 3) ] -> ()
-  | _ -> fail "ESC inside CSI should start CUF 3");
-  List.iter
-    (fun s ->
-      match Parser.parse s with
-      | [ Parser.Text "b" ] -> ()
-      | _ -> failf "%S should cancel the sequence" s)
-    [ "\x1b[2\x18b"; "\x1b[2\x1ab" ]
+  (* A C0 control inside a CSI sequence is performed without ending it, DEL
+     is dropped, ESC starts a new sequence, and CAN and SUB cancel it and are
+     reported. *)
+  check_tokens "\x1b[1\b\x7fC" "BS, CSI 1 C";
+  check_tokens "\x1b[2\x1b[3C" "CSI 3 C";
+  check_tokens "\x1b[2\x18b" "CAN, \"b\"";
+  check_tokens "\x1b[2\x1ab" "SUB, \"b\""
 
 let parser_malformed_input () =
-  (* 1. Lone ESC at end of string *)
-  let t1 = Parser.parse "foo\x1b" in
-  (* Should probably ignore the lone ESC or treat as text depending on
-     implementation details. The current implementation buffers it waiting for
-     more. Since parse calls feed with 0 at end... *)
-  match t1 with
-  | [ Parser.Text "foo" ] -> () (* It was dropped/buffered as incomplete *)
-  | _ -> fail "Lone ESC handling unexpected"
+  (* A lone ESC at the end of the input is an unfinished sequence: no
+     effect. *)
+  check_tokens "foo\x1b" "\"foo\""
 
 (* Regression test: 0xFE and 0xFF are never valid UTF-8 lead bytes. Previously,
    the parser incorrectly treated any byte >= 0xC0 as a potential multi-byte
@@ -571,92 +617,70 @@ let parser_invalid_utf8_lead_bytes () =
   Bytes.set input 2 '\xfe';
   Bytes.set input 3 'B';
   Bytes.set input 4 'C';
-
   let tokens = feed_to_list p input 0 5 in
-  (* Flush any pending state *)
-  let tokens = tokens @ feed_to_list p Bytes.empty 0 0 in
-
-  match tokens with
-  | [ Parser.Text s ] ->
-      (* Should be: A + replacement + replacement + B + C *)
-      (* U+FFFD in UTF-8 is \xEF\xBF\xBD *)
-      let expected = "A\xEF\xBF\xBD\xEF\xBF\xBDBC" in
-      equal ~msg:"invalid lead bytes produce replacements" string expected s
-  | _ -> fail "Expected single text token with replacements"
+  (* U+FFFD in UTF-8 is \xEF\xBF\xBD *)
+  equal ~msg:"invalid lead bytes produce replacements" string
+    "A\xEF\xBF\xBD\xEF\xBF\xBDBC" (text tokens)
 
 let parser_max_length_overflow () =
-  (* Construct a massive garbage sequence *)
-  let huge_seq = "\x1b[" ^ String.make 300 '1' ^ "m" in
-  let tokens = Parser.parse huge_seq in
-  match tokens with
-  | Parser.Control (Parser.Unknown msg) :: _ ->
-      equal ~msg:"overflow detected" string "CSI_TOO_LONG" msg
-  | _ -> fail "Parser should reject oversized sequences"
+  (* No byte count bounds a sequence: a long number saturates. What is bounded
+     is the fields kept, 256, and a sequence with more has no effect. *)
+  check_tokens
+    ("\x1b[" ^ String.make 300 '1' ^ "m")
+    (Printf.sprintf "CSI %d m" max_int);
+  let fields n = String.concat ";" (List.init n (fun _ -> "1")) in
+  equal ~msg:"256 fields" int 256
+    (Parser.Params.count (csi_params ("\x1b[" ^ fields 256 ^ "m")));
+  check_tokens ~msg:"257 fields" ("\x1b[" ^ fields 257 ^ "mX") "\"X\"";
+  check_tokens ~msg:"257 fields with sub-parameters"
+    ("\x1b[" ^ fields 200 ^ ":"
+    ^ String.concat ":" (List.init 57 string_of_int)
+    ^ "mX")
+    "\"X\""
 
 let parser_osc8_st_terminated () =
-  let seq = "\x1b]8;;http://foo\x1b\\txt\x1b]8;;\x1b\\" in
-  match Parser.parse seq with
-  | [
-   Parser.Control (Parser.Hyperlink (Some ([], link)));
-   Parser.Text "txt";
-   Parser.Control (Parser.Hyperlink None);
-  ] ->
-      equal ~msg:"parsed link url" string "http://foo" link
-  | _ -> fail "OSC 8 ST tokens mismatch"
+  check_tokens "\x1b]8;;http://foo\x1b\\txt\x1b]8;;\x1b\\"
+    "OSC, \"8;;http://foo\", ST, \"txt\", OSC, \"8;;\", ST"
 
 let parser_osc8_bel_terminated () =
-  let seq = "\x1b]8;;http://foo\x07txt\x1b]8;;\x07" in
-  match Parser.parse seq with
-  | [
-   Parser.Control (Parser.Hyperlink (Some ([], link)));
-   Parser.Text "txt";
-   Parser.Control (Parser.Hyperlink None);
-  ] ->
-      equal ~msg:"parsed link url bel" string "http://foo" link
-  | _ -> fail "OSC 8 BEL tokens mismatch"
+  check_tokens "\x1b]8;;http://foo\x07txt\x1b]8;;\x07"
+    "OSC, \"8;;http://foo\", BEL, \"txt\", OSC, \"8;;\", BEL"
 
 let parser_protocol_string_controls () =
-  (match Parser.parse "\x1bP>|kitty(0.40.1)\x1b\\" with
-  | [ Parser.Control (Parser.DCS ">|kitty(0.40.1)") ] -> ()
-  | _ -> fail "DCS response not tokenized");
-  (match Parser.parse "\x1b_Gi=1;OK\x1b\\" with
-  | [ Parser.Control (Parser.APC "Gi=1;OK") ] -> ()
-  | _ -> fail "APC response not tokenized");
-  (match Parser.parse "\x1b^pm-data\x1b\\" with
-  | [ Parser.Control (Parser.PM "pm-data") ] -> ()
-  | _ -> fail "PM response not tokenized");
-  match Parser.parse "\x1bXsos-data\x1b\\" with
-  | [ Parser.Control (Parser.SOS "sos-data") ] -> ()
-  | _ -> fail "SOS response not tokenized"
+  (* A DCS has a header like a control sequence: XTVERSION's reply is
+     DCS > | then its text. *)
+  check_tokens "\x1bP>|kitty(0.40.1)\x1b\\" "DCS > |, \"kitty(0.40.1)\", ST";
+  check_tokens "\x1b_Gi=1;OK\x1b\\" "APC, \"Gi=1;OK\", ST";
+  check_tokens "\x1b^pm-data\x1b\\" "PM, \"pm-data\", ST";
+  check_tokens "\x1bXsos-data\x1b\\" "SOS, \"sos-data\", ST"
 
 let parser_protocol_string_controls_chunked () =
+  (* Strings are streamed: their content is reported as it arrives. *)
   let p = Parser.create () in
   let t1 = feed_to_list p (Bytes.of_string "\x1bP>|kitty") 0 9 in
-  equal ~msg:"partial DCS buffered" int 0 (List.length t1);
+  equal ~msg:"DCS opened and streamed" string "DCS > |, \"kitty\"" (show t1);
   let t2 = feed_to_list p (Bytes.of_string "(0.40.1)\x1b") 0 9 in
-  equal ~msg:"DCS split ESC buffered" int 0 (List.length t2);
-  match feed_to_list p (Bytes.of_string "\\") 0 1 with
-  | [ Parser.Control (Parser.DCS ">|kitty(0.40.1)") ] -> ()
-  | _ -> fail "split DCS terminator not reconstructed"
+  equal ~msg:"DCS split ESC held" string "\"(0.40.1)\"" (show t2);
+  let t3 = feed_to_list p (Bytes.of_string "\\") 0 1 in
+  equal ~msg:"split DCS terminator" string "ST" (show t3);
+  check_cuts "\x1bP>|kitty(0.40.1)\x1b\\" "DCS > |, \"kitty(0.40.1)\", ST"
 
 let parser_esc_ends_string_controls () =
-  (* ESC ends a control string, and starts a sequence unless it is ST. *)
+  (* ESC ends a control string, and starts a sequence unless it is ST. The
+     string is aborted, not complete. *)
+  check_tokens "\x1bP0;q\x1b[Cb" "DCS 0; q, Aborted, CSI C, \"b\"";
   List.iter
-    (fun intro ->
-      match Parser.parse ("\x1b" ^ intro ^ "0;q\x1b[Cb") with
-      | [ Parser.Control _; Parser.Control (Parser.CUF 1); Parser.Text "b" ] ->
-          ()
-      | _ -> fail ("ESC does not end ESC " ^ intro))
-    [ "P"; "X"; "^"; "_"; "]" ]
+    (fun (intro, name) ->
+      check_tokens
+        ("\x1b" ^ intro ^ "0;q\x1b[Cb")
+        (name ^ ", \"0;q\", Aborted, CSI C, \"b\""))
+    [ ("X", "SOS"); ("^", "PM"); ("_", "APC"); ("]", "OSC") ]
 
 let parser_non_ascii_ends_csi () =
-  (* A non-ASCII character ends a CSI sequence and is dropped, also when it
-     is split across feeds. *)
-  let text tokens =
-    String.concat ""
-      (List.filter_map (function Parser.Text s -> Some s | _ -> None) tokens)
-  in
-  equal ~msg:"whole" string "x</svg>"
+  (* U+009B is not CSI in UTF-8: it is dropped, and U+FFFE is a character.
+     A non-ASCII character inside a sequence ends it and is dropped, also
+     when it is split across feeds. *)
+  equal ~msg:"whole" string "x\xef\xbf\xbe</svg>"
     (text (Parser.parse "x\xc2\x9b\xef\xbf\xbe</svg>"));
   let p = Parser.create () in
   let feed s = feed_to_list p (Bytes.of_string s) 0 (String.length s) in
@@ -664,44 +688,28 @@ let parser_non_ascii_ends_csi () =
   equal ~msg:"split" string "x</svg>" (text (first @ feed "\xbe</svg>"))
 
 let parser_csi_empty_parameter_defaults () =
-  (match Parser.parse "\x1b[;5H" with
-  | [ Parser.Control (Parser.CUP (1, 5)) ] -> ()
-  | _ -> fail "CUP omitted row should default to 1");
-  (match Parser.parse "\x1b[5;H" with
-  | [ Parser.Control (Parser.CUP (5, 1)) ] -> ()
-  | _ -> fail "CUP omitted col should default to 1");
-  (match Parser.parse "\x1b[H" with
-  | [ Parser.Control (Parser.CUP (1, 1)) ] -> ()
-  | _ -> fail "CUP empty params should default to 1;1");
-  (match Parser.parse "\x1b[A" with
-  | [ Parser.Control (Parser.CUU 1) ] -> ()
-  | _ -> fail "CUU omitted count should default to 1");
-  match Parser.parse "\x1b[;31m" with
-  | [ Parser.SGR [ `Reset; `Fg c ] ] ->
-      equal ~msg:"SGR empty param fg" check_color Color.red c
-  | _ -> fail "SGR empty param should remain reset then fg"
+  (* An absent parameter is not 0: the device gives it its default. *)
+  let pn input i = Parser.Params.pn (csi_params input) i ~default:1 in
+  equal ~msg:"CUP omitted row" (pair int int) (1, 5)
+    (pn "\x1b[;5H" 0, pn "\x1b[;5H" 1);
+  equal ~msg:"CUP omitted col" (pair int int) (5, 1)
+    (pn "\x1b[5;H" 0, pn "\x1b[5;H" 1);
+  equal ~msg:"CUP no parameters" (pair int int) (1, 1)
+    (pn "\x1b[H" 0, pn "\x1b[H" 1);
+  equal ~msg:"CUU omitted count" int 1 (pn "\x1b[A" 0);
+  check_tokens "\x1b[;5H" "CSI ;5 H";
+  equal ~msg:"SGR empty param is reset, then fg" check_style
+    (Style.make ~fg:Color.red ())
+    (read_sgr ~from:(Style.make ~bold:true ()) "\x1b[;31m")
 
 let parser_utf8_split_invariance () =
   (* Feeding a byte stream whole or split at any boundary must decode to the
      same text (found by the matrix.vte split-invariance property fuzzing). *)
-  let decode feeds =
-    let p = Parser.create () in
-    let acc = ref [] in
-    let collect tok = acc := tok :: !acc in
-    List.iter
-      (fun s ->
-        Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s)
-          collect)
-      feeds;
-    Parser.feed p Bytes.empty ~off:0 ~len:0 collect;
-    List.rev !acc
-    |> List.concat_map (function Parser.Text s -> [ s ] | _ -> [])
-    |> String.concat ""
-  in
+  let decode feeds = text (feed_all feeds) in
   (* Exact decodes for the three chunk-boundary defects. *)
   equal ~msg:"non-continuation after pending lead is not swallowed" string
-    "\xEF\xBF\xBD\n"
-    (decode [ "\xC3"; "\n" ]);
+    "\"\xEF\xBF\xBD\", LF"
+    (show (feed_all [ "\xC3"; "\n" ]));
   equal ~msg:"overlong completes to one replacement per byte" string
     "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD"
     (decode [ "\xE0\x80"; "\x80" ]);
@@ -710,16 +718,18 @@ let parser_utf8_split_invariance () =
     (decode [ "\xE0\xE2"; "\x82\xAC" ]);
   (* Split invariance at every cut point. *)
   let check_all_cuts name input =
-    let whole = decode [ input ] in
+    let whole = show (feed_all [ input ]) in
     for cut = 0 to String.length input do
       let split =
-        decode
+        feed_all
           [
             String.sub input 0 cut;
             String.sub input cut (String.length input - cut);
           ]
       in
-      equal ~msg:(Printf.sprintf "%s cut at %d" name cut) string whole split
+      equal
+        ~msg:(Printf.sprintf "%s cut at %d" name cut)
+        string whole (show split)
     done
   in
   check_all_cuts "pending lead then newline" "\xC3\nX";
@@ -728,203 +738,314 @@ let parser_utf8_split_invariance () =
   check_all_cuts "surrogate" "\xED\xA0\x80X";
   check_all_cuts "valid euro" "\xE2\x82\xACX";
   check_all_cuts "truncated at eof" "X\xF0\x9F\x9A";
-  check_all_cuts "csi then pending lead" "\x1b[100;100A\xC3\nX"
+  check_all_cuts "csi then pending lead" "\x1b[100;100A\xC3\nX";
+  equal ~msg:"truncated at the end of the input" string "X\xEF\xBF\xBD"
+    (text (Parser.parse "X\xF0\x9F\x9A"))
 
 let parser_c1_controls () =
-  (* In UTF-8 the code points U+0080 to U+009F are the C1 controls, each the
-     same as ESC followed by the code minus 0x40, not text. *)
-  let show feeds =
-    let p = Parser.create () in
-    let b = Buffer.create 16 in
-    List.iter
-      (fun s ->
-        Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s)
-          (function
-          | Parser.Text s -> Buffer.add_string b s
-          | Parser.Control (Parser.CUF n) -> Printf.bprintf b "<CUF %d>" n
-          | Parser.Control (Parser.OSC (n, s)) ->
-              Printf.bprintf b "<OSC %d %s>" n s
-          | Parser.Control Parser.RI -> Buffer.add_string b "<RI>"
-          | _ -> Buffer.add_string b "<?>"))
-      feeds;
-    Buffer.contents b
-  in
-  let check input expected =
-    for cut = 0 to String.length input do
-      equal
-        ~msg:(Printf.sprintf "%S cut at %d" input cut)
-        string expected
-        (show
-           [
-             String.sub input 0 cut;
-             String.sub input cut (String.length input - cut);
-           ])
-    done
-  in
-  check "a\xc2\x9b2Cb" "a<CUF 2>b";
-  check "a\xc2\x9d0;t\xc3\xa9\xc2\x9cb" "a<OSC 0 t\xc3\xa9>b";
-  check "a\xc2\x8db" "a<RI>b";
-  check "\xc2\xa0\xc2\x9b1C" "\xc2\xa0<CUF 1>"
+  (* In UTF-8, U+0080..U+009F are not C1 controls: they are dropped, whatever
+     the state, and the text around them stays. *)
+  check_cuts "a\xc2\x9b2Cb" "\"a2Cb\"";
+  check_cuts "a\xc2\x9d0;t\xc3\xa9\xc2\x9cb" "\"a0;t\xc3\xa9b\"";
+  check_cuts "a\xc2\x8db" "\"ab\"";
+  check_cuts "\xc2\xa0\xc2\x9b1C" "\"\xc2\xa01C\"";
+  (* Written ESC Fe, they are controls. *)
+  check_cuts "a\x1b[2Cb" "\"a\", CSI 2 C, \"b\"";
+  check_cuts "a\x1bMb" "\"a\", RI, \"b\""
 
 let parser_charset_selection_split () =
-  (* ESC %()*+ charset designations are consumed silently under any chunking.
-     A lone designation byte arriving after a chunk that ended on the ESC used
+  (* Designations are escape sequences: ESC, intermediates, a final byte. A
+     lone designation byte arriving after a chunk that ended on the ESC used
      to rewind past the start of the current input and crash on Bytes.blit
      (found by the matrix.vte split-invariance property fuzzing). *)
-  let decode feeds =
-    let p = Parser.create () in
-    let acc = ref [] in
-    let collect tok = acc := tok :: !acc in
-    List.iter
-      (fun s ->
-        Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s)
-          collect)
-      feeds;
-    Parser.feed p Bytes.empty ~off:0 ~len:0 collect;
-    List.rev !acc
-    |> List.concat_map (function Parser.Text s -> [ s ] | _ -> [])
-    |> String.concat ""
-  in
-  (* The crash repro: ESC-final chunk, then a lone designation byte. *)
   equal ~msg:"lone designation byte after an ESC-final chunk" string
     "\xF0\x9F\x98\x80"
-    (decode [ "\xF0\x9F\x98\x80\x1b"; "%" ]);
-  let check_all_cuts name input expected =
-    for cut = 0 to String.length input do
-      let split =
-        decode
-          [
-            String.sub input 0 cut;
-            String.sub input cut (String.length input - cut);
-          ]
-      in
-      equal ~msg:(Printf.sprintf "%s cut at %d" name cut) string expected split
-    done
-  in
-  check_all_cuts "charset G0" "a\x1b(Bok" "aok";
-  check_all_cuts "utf8 charset select" "a\x1b%Gok" "aok";
-  check_all_cuts "emoji then dangling designation" "\xF0\x9F\x98\x80\x1b%"
-    "\xF0\x9F\x98\x80";
-  check_all_cuts "designation followed by spaces" "\x1b(   " "  "
+    (text (feed_all [ "\xF0\x9F\x98\x80\x1b"; "%" ]));
+  check_cuts "a\x1b(Bok" "\"a\", ESC ( B, \"ok\"";
+  check_cuts "a\x1b%Gok" "\"a\", ESC % G, \"ok\"";
+  check_cuts "\xF0\x9F\x98\x80\x1b%" "\"\xF0\x9F\x98\x80\"";
+  (* Spaces are intermediates: four of them, and no final byte yet. *)
+  check_cuts "\x1b(   " ""
 
 let parser_unknown_escape_sequences () =
   (* An escape sequence runs from ESC through any intermediates (0x20-0x2F) to
-     its final byte (0x30-0x7E); xterm drops the ones it does not implement.
-     DECKPAM and DECKPNM, sent by smkx and rmkx, used to print "=" and ">". *)
-  let decode feeds =
-    let p = Parser.create () in
-    let acc = ref [] in
-    List.iter
-      (fun s ->
-        Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s)
-          (fun tok -> acc := tok :: !acc))
-      feeds;
-    List.rev !acc
-    |> List.concat_map (function Parser.Text s -> [ s ] | _ -> [])
-    |> String.concat ""
-  in
-  equal ~msg:"DECKPAM and DECKPNM" string "abc" (decode [ "a\x1b=b\x1b>c" ]);
-  (match Parser.parse "\x1b#3" with
-  | [ Parser.Control (Parser.Unknown "ESC#3") ] -> ()
-  | _ -> fail "ESC # 3 should be one unknown control");
-  (match Parser.parse "\x1b%G\x1b%@" with
-  | [
-   Parser.Control (Parser.Unknown "ESC%G"); Parser.Control (Unknown "ESC%@");
-  ] ->
-      ()
-  | _ -> fail "ESC % G and ESC % @ should be unknown controls");
-  let input = "a\x1b Fb\x1b#3c" in
-  for cut = 0 to String.length input do
-    equal
-      ~msg:(Printf.sprintf "intermediates cut at %d" cut)
-      string "abc"
-      (decode
-         [
-           String.sub input 0 cut;
-           String.sub input cut (String.length input - cut);
-         ])
-  done
+     its final byte (0x30-0x7E). DECKPAM and DECKPNM, sent by smkx and rmkx,
+     used to print "=" and ">". *)
+  equal ~msg:"DECKPAM and DECKPNM" string "abc"
+    (text (feed_all [ "a\x1b=b\x1b>c" ]));
+  check_tokens "\x1b#3" "ESC # 3";
+  check_tokens "\x1b%G\x1b%@" "ESC % G, ESC % @";
+  check_cuts "a\x1b Fb\x1b#3c" "\"a\", ESC SP F, \"b\", ESC # 3, \"c\""
 
 let parser_sgr_colon_subparameters () =
   (* Underline style sub-parameters (emitted by neovim/kitty for undercurl):
      curly degrades to plain underline, 4:0 disables, 4:2 is double. *)
-  (match Parser.parse "\x1b[4:3m" with
-  | [ Parser.SGR [ `Underline ] ] -> ()
-  | _ -> fail "4:3 (curly) should degrade to underline");
-  (match Parser.parse "\x1b[4:0m" with
-  | [ Parser.SGR [ `No_underline ] ] -> ()
-  | _ -> fail "4:0 should disable underline");
-  (match Parser.parse "\x1b[4:2m" with
-  | [ Parser.SGR [ `Double_underline ] ] -> ()
-  | _ -> fail "4:2 should parse as double underline");
+  let underlined = Style.make ~underline:true ~double_underline:true () in
+  equal ~msg:"4:3 (curly) degrades to underline" check_style
+    (Style.make ~underline:true ())
+    (read_sgr "\x1b[4:3m");
+  equal ~msg:"4:0 disables underline" check_style Style.default
+    (read_sgr ~from:underlined "\x1b[4:0m");
+  equal ~msg:"4:2 is double underline" check_style
+    (Style.make ~double_underline:true ())
+    (read_sgr "\x1b[4:2m");
   (* Colon-form truecolor, with and without the ISO 8613-6 colorspace id. *)
   let check_rgb name input =
-    match Parser.parse input with
-    | [ Parser.SGR [ `Fg c ] ] ->
-        let r, g, b = Color.to_rgb c in
-        equal ~msg:(name ^ " r") int 255 r;
-        equal ~msg:(name ^ " g") int 0 g;
-        equal ~msg:(name ^ " b") int 100 b
-    | _ -> fail (name ^ ": expected a single fg color")
+    equal ~msg:name check_style
+      (Style.make ~fg:(Color.of_rgb 255 0 100) ())
+      (read_sgr input)
   in
   check_rgb "colon rgb" "\x1b[38:2:255:0:100m";
   check_rgb "colon rgb with colorspace" "\x1b[38:2::255:0:100m";
-  (match Parser.parse "\x1b[48:5:196m" with
-  | [ Parser.SGR [ `Bg c ] ] ->
-      equal ~msg:"colon palette bg" check_color (Color.indexed 196) c
-  | _ -> fail "48:5:196 should parse as indexed bg");
+  equal ~msg:"colon palette bg" check_style
+    (Style.make ~bg:(Color.indexed 196) ())
+    (read_sgr "\x1b[48:5:196m");
   (* Underline color (58) is not representable: its sub-parameters must be
      skipped, not misread as free-standing SGR parameters. *)
-  (match Parser.parse "\x1b[58:2::2:2:2m" with
-  | [ Parser.SGR [] ] -> ()
-  | _ -> fail "58:2::2:2:2 should be skipped whole");
+  equal ~msg:"58:2::2:2:2 skipped whole" check_style Style.default
+    (read_sgr "\x1b[58:2::2:2:2m");
+  equal ~msg:"58;2;2;2;2 skipped whole" check_style Style.default
+    (read_sgr "\x1b[58;2;2;2;2m");
   (* Sub-parameterized params mixed with plain ones. *)
-  match Parser.parse "\x1b[1;4:3;31m" with
-  | [ Parser.SGR [ `Bold; `Underline; `Fg c ] ] ->
-      equal ~msg:"mixed colon fg" check_color Color.red c
-  | _ -> fail "1;4:3;31 should parse each parameter"
+  equal ~msg:"1;4:3;31 parses each parameter" check_style
+    (Style.make ~bold:true ~underline:true ~fg:Color.red ())
+    (read_sgr "\x1b[1;4:3;31m");
+  check_tokens "\x1b[1;4:3;31m" "CSI 1;4:3;31 m"
+
+let style_apply_sgr () =
+  (* SGR reads the attribute codes the writer writes, and a few more. *)
+  let all =
+    Style.make ~bold:true ~dim:true ~underline:true ~double_underline:true
+      ~framed:true ~encircled:true ~link:"http://l" ()
+  in
+  let check msg ?(from = Style.default) input expected =
+    equal ~msg check_style expected (read_sgr ~from input)
+  in
+  check "0 keeps the link" ~from:all "\x1b[0m" (Style.make ~link:"http://l" ());
+  check "no parameter is 0" ~from:all "\x1b[m" (Style.make ~link:"http://l" ());
+  check "22 clears bold and dim" ~from:all "\x1b[22m"
+    (Style.make ~underline:true ~double_underline:true ~framed:true
+       ~encircled:true ~link:"http://l" ());
+  check "24 clears both underlines" ~from:all "\x1b[24;54m"
+    (Style.make ~bold:true ~dim:true ~link:"http://l" ());
+  check "21 is double underline" "\x1b[21m"
+    (Style.make ~double_underline:true ());
+  check "6 is blink" "\x1b[6m" (Style.make ~blink:true ());
+  check "applied in order" "\x1b[7;0;1m" (Style.make ~bold:true ());
+  check "palette" "\x1b[91;104m"
+    (Style.make ~fg:Color.bright_red ~bg:Color.bright_blue ());
+  check "defaults" "\x1b[31;39;41;49m"
+    (Style.make ~fg:Color.default_fg ~bg:Color.default_bg ());
+  check "38;5;n then more" "\x1b[38;5;196;1m"
+    (Style.make ~fg:(Color.indexed 196) ~bold:true ());
+  check "an incomplete color ends the list" "\x1b[1;38;5m"
+    (Style.make ~bold:true ());
+  check "an unknown color form is skipped alone" "\x1b[38;3;1m"
+    (Style.make ~italic:true ~bold:true ());
+  check "unknown codes have no effect" "\x1b[10;26;50;60;1000m" Style.default
 
 let parser_mode_sequences () =
-  (* Mode set/reset are first-class tokens carrying every parameter, so
-     batched sequences like [CSI ? 1049 ; 2004 h] keep all modes. *)
-  (match Parser.parse "\x1b[?1049;2004h" with
-  | [ Parser.Control (Parser.DECSET [ 1049; 2004 ]) ] -> ()
-  | _ -> fail "expected DECSET [1049; 2004]");
-  (match Parser.parse "\x1b[?25l" with
-  | [ Parser.Control (Parser.DECRST [ 25 ]) ] -> ()
-  | _ -> fail "expected DECRST [25]");
-  (match Parser.parse "\x1b[4h" with
-  | [ Parser.Control (Parser.SM [ 4 ]) ] -> ()
-  | _ -> fail "expected SM [4]");
-  match Parser.parse "\x1b[20l" with
-  | [ Parser.Control (Parser.RM [ 20 ]) ] -> ()
-  | _ -> fail "expected RM [20]"
+  (* Modes keep every parameter, so batched sequences like
+     [CSI ? 1049 ; 2004 h] keep all modes. *)
+  check_tokens "\x1b[?1049;2004h" "CSI ?1049;2004 h";
+  check_tokens "\x1b[?25l" "CSI ?25 l";
+  check_tokens "\x1b[4h" "CSI 4 h";
+  check_tokens "\x1b[20l" "CSI 20 l";
+  let modes = csi_params "\x1b[?1049;;2004h" in
+  equal ~msg:"modes, the absent one skipped"
+    (list (option int))
+    [ Some 1049; None; Some 2004 ]
+    (List.init (Parser.Params.count modes) (Parser.Params.value modes))
 
 let parser_csi_private_and_intermediates () =
-  (* The prefix and intermediates select the function along with the final
+  (* The marker and intermediates name the function along with the final
      byte: XTMODKEYS (CSI > 4 ; 1 m) is not SGR, CSI = 5 u is not a cursor
-     restore, and SL (CSI 1 SP @) is not ICH. *)
+     restore, and SL (CSI 1 SP @) is not ICH. A marker after a parameter is
+     malformed. *)
+  check_tokens "\x1b[>4;1m" "CSI >4;1 m";
+  check_tokens "\x1b[=5u" "CSI =5 u";
+  check_tokens "\x1b[>1u" "CSI >1 u";
+  check_tokens "\x1b[?5r" "CSI ?5 r";
+  check_tokens "\x1b[1?A" "";
+  check_tokens "\x1b[1 @" "CSI 1 SP @";
+  check_tokens "\x1b[1 A" "CSI 1 SP A";
+  check_tokens "\x1b[?2J" "CSI ?2 J";
+  check_tokens "\x1b[?K" "CSI ? K";
+  check_tokens "\x1b[1\"q" "CSI 1 \" q"
+
+(* The recovery rules, one test each. *)
+
+let parser_esc_can_sub_end_everything () =
+  (* ESC, CAN and SUB end whatever is in progress; CAN and SUB are reported,
+     ESC starts a new sequence. *)
   List.iter
-    (fun s ->
-      match Parser.parse s with
-      | [ Parser.Control (Parser.Unknown _) ] -> ()
-      | _ -> failf "%S should be an unknown control" s)
-    [ "\x1b[>4;1m"; "\x1b[=5u"; "\x1b[>1u"; "\x1b[?5r"; "\x1b[1?A" ];
-  (match Parser.parse "\x1b[1 @" with
-  | [ Parser.Control (Parser.ICH _) ] -> fail "SL should not be ICH"
-  | _ -> ());
-  (match Parser.parse "\x1b[1 A" with
-  | [ Parser.Control (Parser.CUU _) ] -> fail "SR should not be CUU"
-  | _ -> ());
-  (match Parser.parse "\x1b[?2J" with
-  | [ Parser.Control (Parser.DECSED 2) ] -> ()
-  | _ -> fail "CSI ? 2 J should be DECSED");
-  (match Parser.parse "\x1b[?K" with
-  | [ Parser.Control (Parser.DECSEL 0) ] -> ()
-  | _ -> fail "CSI ? K should be DECSEL");
-  match Parser.parse "\x1b[1\"q" with
-  | [ Parser.Control (Parser.DECSCA 1) ] -> ()
-  | _ -> fail "CSI 1 \" q should be DECSCA"
+    (fun (prefix, opened) ->
+      check_tokens (prefix ^ "\x18x") (opened ^ "CAN, \"x\"");
+      check_tokens (prefix ^ "\x1ax") (opened ^ "SUB, \"x\"");
+      check_tokens (prefix ^ "\x1b[Cx") (opened ^ "CSI C, \"x\""))
+    [
+      ("\x1b", "");
+      ("\x1b(", "");
+      ("\x1b[1;2", "");
+      ("\x1bP1$", "");
+      ("\x1b]0;t", "OSC, \"0;t\", Aborted, ");
+      ("\x1bPq", "DCS q, Aborted, ");
+      ("\x1b_G", "APC, \"G\", Aborted, ");
+      ("\x1b^p", "PM, \"p\", Aborted, ");
+      ("\x1bXs", "SOS, \"s\", Aborted, ");
+    ];
+  check_tokens "\x1b\x1b[Cb" "CSI C, \"b\""
+
+let parser_c0_inside_sequences () =
+  (* Performed inside ESC and CSI, never inside a DCS header or a string. *)
+  check_tokens "\x1b#\n8" "LF, ESC # 8";
+  check_tokens "\x1b(\rB" "CR, ESC ( B";
+  check_tokens "\x1b[2\nC" "LF, CSI 2 C";
+  check_tokens "\x1bP1\n$q\x1b\\" "DCS 1 $ q, ST";
+  (* In a string BS..CR are content, BEL ends an OSC only, and the other C0
+     controls and DEL are dropped. *)
+  check_tokens "\x1b]0;a\x01\x08\t\n\x0b\x0c\r\x7fb\x07"
+    "OSC, \"0;a\\b\\t\\n\\x0B\\x0C\\rb\", BEL";
+  check_tokens "\x1bPq\x07a\x1b\\" "DCS q, \"a\", ST";
+  check_tokens "\x1b_\x07a\x1b\\" "APC, \"a\", ST"
+
+let parser_del () =
+  (* DEL is reported in ground and dropped inside sequences and strings. *)
+  check_tokens "a\x7fb" "\"a\", DEL, \"b\"";
+  check_tokens "\x1b\x7f7" "ESC 7";
+  check_tokens "\x1b[1\x7f;2H" "CSI 1;2 H";
+  check_tokens "\x1b]0;a\x7fb\x07" "OSC, \"0;ab\", BEL"
+
+let parser_malformed_sequences () =
+  (* Consumed to the final byte, with no effect. *)
+  check_tokens "\x1b[1?2Ax" "\"x\"";
+  check_tokens "\x1b[??2Ax" "\"x\"";
+  check_tokens "\x1b[1 2Ax" "\"x\"";
+  check_tokens "\x1b[ ?Ax" "\"x\"";
+  (* Four intermediates are kept, a fifth makes the sequence malformed. *)
+  check_tokens "\x1b$( !Ix" "ESC $ ( SP ! I, \"x\"";
+  check_tokens "\x1b$( !!Ix" "\"x\"";
+  check_tokens "\x1b[1 !\"#Ax" "CSI 1 SP ! \" # A, \"x\"";
+  check_tokens "\x1b[1 !\"#$Ax" "\"x\"";
+  (* A malformed DCS is consumed to its end without tokens. *)
+  check_tokens "\x1bP1?2qdata\x1b\\x" "\"x\"";
+  check_tokens "\x1bP1?2qdata\x18x" "CAN, \"x\""
+
+let parser_non_ascii_in_sequences () =
+  (* A non-ASCII character ends an escape or control sequence and is dropped;
+     in a DCS header it makes the DCS malformed. *)
+  check_tokens "\x1b\xc3\xa9b" "\"b\"";
+  check_tokens "\x1b(\xc3\xa9b" "\"b\"";
+  check_tokens "\x1b[1\xe4\xb8\xadCb" "\"Cb\"";
+  check_tokens "\x1bP1\xc3\xa9q data\x1b\\b" "\"b\"";
+  (* Inside a string it is content. *)
+  check_tokens "\x1b]0;\xc3\xa9\x07" "OSC, \"0;\xc3\xa9\", BEL";
+  (* ESC then a non-ASCII character in a string: the string is aborted. *)
+  check_tokens "\x1b]0;t\x1b\xc3\xa9b" "OSC, \"0;t\", Aborted, \"b\""
+
+let parser_utf8 () =
+  (* Ill-formed subsequences become one U+FFFD each (maximal subparts). *)
+  let fffd = "\xEF\xBF\xBD" in
+  check_tokens "a\x80b" ("\"a" ^ fffd ^ "b\"");
+  check_tokens "a\x9bb" ("\"a" ^ fffd ^ "b\"");
+  check_tokens "a\xe2\x82b" ("\"a" ^ fffd ^ "b\"");
+  check_tokens "a\xed\xa0\x80b" ("\"a" ^ fffd ^ fffd ^ fffd ^ "b\"");
+  check_tokens "a\xf4\x90\x80\x80b" ("\"a" ^ fffd ^ fffd ^ fffd ^ fffd ^ "b\"");
+  check_tokens "a\xe2\x82" ("\"a" ^ fffd ^ "\"");
+  (* In strings too. *)
+  check_tokens "\x1b]0;\xff\x07" ("OSC, \"0;" ^ fffd ^ "\", BEL");
+  (* U+0080..U+009F are dropped in text and in strings. *)
+  check_tokens "\xc2\x85na\xc2\x9fve" "\"nave\"";
+  check_tokens "\x1b]0;a\xc2\x9cb\x07" "OSC, \"0;ab\", BEL"
+
+let parser_string_terminators () =
+  check_tokens "\x1b]2;t\x1b\\" "OSC, \"2;t\", ST";
+  check_tokens "\x1b]2;t\x07" "OSC, \"2;t\", BEL";
+  check_tokens "\x1b]2;t" "OSC, \"2;t\", Aborted";
+  check_tokens "\x1b]2;t\x1b" "OSC, \"2;t\", Aborted";
+  check_tokens "\x1b]2;t\x1b7" "OSC, \"2;t\", Aborted, ESC 7";
+  check_tokens "\x1bX\x07\x1b\\" "SOS, ST";
+  (* A lone ST and the C1 controls written ESC Fe. *)
+  check_tokens "a\x1b\\b" "\"ab\"";
+  check_tokens "\x1bD\x1bE\x1bH\x1bM\x1bN\x1bZ\x1b@"
+    "IND, NEL, HTS, RI, SS2, SCI, ESC @";
+  check_tokens "\x1b]\x1b\\" "OSC, ST"
+
+let parser_params () =
+  let p = csi_params "\x1b[0;;7:1::3;99999999999999999999m" in
+  let module P = Parser.Params in
+  equal ~msg:"count" int 4 (P.count p);
+  equal ~msg:"pn 0 is the default" int 9 (P.pn p 0 ~default:9);
+  equal ~msg:"ps 0 is 0" int 0 (P.ps p 0 ~default:9);
+  equal ~msg:"pn absent" int 9 (P.pn p 1 ~default:9);
+  equal ~msg:"ps absent" int 9 (P.ps p 1 ~default:9);
+  equal ~msg:"value absent" (option int) None (P.value p 1);
+  equal ~msg:"pn out of range" int 9 (P.pn p 4 ~default:9);
+  equal ~msg:"fields" (list int) [ 1; 1; 4; 1; 0 ] (List.init 5 (P.fields p));
+  equal ~msg:"sub-parameters"
+    (list (option int))
+    [ Some 7; Some 1; None; Some 3; None ]
+    (List.init 5 (P.field p 2));
+  equal ~msg:"saturated" int max_int (P.ps p 3 ~default:0);
+  equal ~msg:"no parameters" int 0 (P.count (csi_params "\x1b[m"));
+  equal ~msg:"two absent parameters" int 2 (P.count (csi_params "\x1b[;m"))
+
+let parser_feed_contract () =
+  let p = Parser.create () in
+  raises (Invalid_argument "Ansi.Parser.feed") (fun () ->
+      Parser.feed p (Bytes.create 4) ~off:2 ~len:3 ignore);
+  raises (Invalid_argument "Ansi.Parser.feed") (fun () ->
+      Parser.feed p (Bytes.create 4) ~off:(-1) ~len:1 ignore);
+  equal ~msg:"len 0 does nothing" int 0
+    (List.length (feed_to_list p (Bytes.of_string "\x1b]") 0 0));
+  (* reset drops the string in progress without closing it. *)
+  ignore (feed_to_list p (Bytes.of_string "\x1b]0;title") 0 9);
+  Parser.reset p;
+  equal ~msg:"after reset" string "\"x\""
+    (show (feed_to_list p (Bytes.of_string "x\x1b\\") 0 3))
+
+let parser_split_invariance () =
+  (* Every rule above, cut anywhere. *)
+  check_cuts
+    "a\xc3\xa9\x1b[1;2:3 \
+     q\x1b(%6\x1bP1$q\x07\xe2\x82\xac\x1b\\\x1b]8;;u\x07\x1b#\n\
+     8\x1b_x\x18\x7f\xc2\x9bz"
+    "\"a\xc3\xa9\", CSI 1;2:3 SP q, ESC ( % 6, DCS 1 $ q, \"\xe2\x82\xac\", \
+     ST, OSC, \"8;;u\", BEL, LF, ESC # 8, APC, \"x\", Aborted, CAN, DEL, \"z\""
+
+let parser_known_defects () =
+  (* The probes run against the parser this one replaces. *)
+  check_tokens "\x1b]0;t\x18abc" "OSC, \"0;t\", Aborted, CAN, \"abc\"";
+  check_tokens "\x1bPq\x1aabc" "DCS q, Aborted, SUB, \"abc\"";
+  check_tokens "\x1b[1\xc2\x9b2Cb" "\"2Cb\"";
+  check_tokens "\x1b]0;t\xc2\x9b2Cb" "OSC, \"0;t2Cb\", Aborted";
+  check_tokens "\x1bPq\xc2\x9b2Cb" "DCS q, \"2Cb\", Aborted";
+  check_tokens "\x1b%\x1b[Cb" "CSI C, \"b\"";
+  check_tokens "\x1b%/G" "ESC % / G";
+  check_tokens "\x1b(%6a" "ESC ( % 6, \"a\"";
+  check_tokens "\x1b(\">q" "ESC ( \" >, \"q\"";
+  check_tokens "\x1b(\x1b[Cb" "CSI C, \"b\"";
+  check_tokens "\x1b\x1b[Cb" "CSI C, \"b\"";
+  check_tokens "\x1b\xc3\xa9b" "\"b\"";
+  check_tokens "\x1b#\n8" "LF, ESC # 8";
+  check_tokens "\x1b_Gi=1\x1b[mx" "APC, \"Gi=1\", Aborted, CSI m, \"x\"";
+  check_tokens "\x1b[0A\x1b[0I" "CSI 0 A, CSI 0 I";
+  check_tokens "\x1b[4611686018427387904e" (Printf.sprintf "CSI %d e" max_int);
+  check_tokens "\x1b[?6;1n\x1b[>00c" "CSI ?6;1 n, CSI >0 c";
+  (* Long strings are streamed: nothing leaks into text. *)
+  let sixel = "\x1bPq" ^ String.make 10_000 '#' ^ "\x1b\\" in
+  equal ~msg:"long DCS" string "" (text (Parser.parse sixel));
+  let osc = "\x1b]52;c;" ^ String.make 10_000 'A' ^ "\x07" in
+  equal ~msg:"long OSC" int (10_000 + 5)
+    (List.fold_left
+       (fun n -> function Parser.Data s -> n + String.length s | _ -> n)
+       0 (Parser.parse osc))
+
+let parser_pp_token () =
+  check_tokens "\x00\x1f\x7f" "NUL, IS1, DEL";
+  check_tokens "\x1b[38:2::1:2:3m" "CSI 38:2::1:2:3 m";
+  check_tokens "\x1b[!p" "CSI ! p";
+  check_tokens "\x1b P" "ESC SP P"
 
 (* --- 5. Writer & Low-Level Escape --- *)
 
@@ -1089,86 +1210,67 @@ let hyperlink_lifecycle () =
 
 (* Verify parser recognizes sequences the library emits *)
 let roundtrip_cursor_sequences () =
-  (* Test cursor movement sequences *)
-  let test_cursor name seq expected_control =
-    let tokens = Parser.parse (to_string seq) in
-    match tokens with
-    | [ Parser.Control c ] -> is_true ~msg:name (c = expected_control)
-    | _ -> fail (Printf.sprintf "%s: unexpected tokens" name)
+  let test_cursor name seq expected =
+    check_tokens ~msg:name (to_string seq) expected
   in
-  test_cursor "cursor up" (cursor_up ~n:5) (Parser.CUU 5);
-  test_cursor "cursor down" (cursor_down ~n:3) (Parser.CUD 3);
-  test_cursor "cursor forward" (cursor_forward ~n:10) (Parser.CUF 10);
-  test_cursor "cursor back" (cursor_back ~n:2) (Parser.CUB 2);
-  test_cursor "cursor position"
-    (cursor_position ~row:10 ~col:20)
-    (Parser.CUP (10, 20));
-  test_cursor "cursor next line" (cursor_next_line ~n:3) (Parser.CNL 3);
-  test_cursor "cursor prev line" (cursor_previous_line ~n:2) (Parser.CPL 2);
-  test_cursor "cursor horiz abs" (cursor_horizontal_absolute 15) (Parser.CHA 15);
-  test_cursor "cursor vert abs" (cursor_vertical_absolute 8) (Parser.VPA 8);
+  test_cursor "cursor up" (cursor_up ~n:5) "CSI 5 A";
+  test_cursor "cursor down" (cursor_down ~n:3) "CSI 3 B";
+  test_cursor "cursor forward" (cursor_forward ~n:10) "CSI 10 C";
+  test_cursor "cursor back" (cursor_back ~n:2) "CSI 2 D";
+  test_cursor "cursor position" (cursor_position ~row:10 ~col:20) "CSI 10;20 H";
+  test_cursor "cursor next line" (cursor_next_line ~n:3) "CSI 3 E";
+  test_cursor "cursor prev line" (cursor_previous_line ~n:2) "CSI 2 F";
+  test_cursor "cursor horiz abs" (cursor_horizontal_absolute 15) "CSI 15 G";
+  test_cursor "cursor vert abs" (cursor_vertical_absolute 8) "CSI 8 d";
   (* Test cursor save/restore (CSI s/u) *)
-  test_cursor "cursor save" cursor_save Parser.DECSC;
-  test_cursor "cursor restore" cursor_restore Parser.DECRC
+  test_cursor "cursor save" cursor_save "CSI s";
+  test_cursor "cursor restore" cursor_restore "CSI u"
 
 let roundtrip_screen_sequences () =
-  let test_screen name seq expected_control =
-    let tokens = Parser.parse (to_string seq) in
-    match tokens with
-    | [ Parser.Control c ] -> is_true ~msg:name (c = expected_control)
-    | _ -> fail (Printf.sprintf "%s: unexpected tokens" name)
+  let test_screen name seq expected =
+    check_tokens ~msg:name (to_string seq) expected
   in
-  test_screen "erase display 0" (erase_display ~mode:`Below) (Parser.ED 0);
-  test_screen "erase display 2" (erase_display ~mode:`All) (Parser.ED 2);
-  test_screen "erase line 0" (erase_line ~mode:`Right) (Parser.EL 0);
-  test_screen "erase line 2" (erase_line ~mode:`All) (Parser.EL 2);
-  test_screen "insert lines" (insert_lines ~n:5) (Parser.IL 5);
-  test_screen "delete lines" (delete_lines ~n:3) (Parser.DL 3);
-  test_screen "scroll up" (scroll_up ~n:4) (Parser.SU 4);
-  test_screen "scroll down" (scroll_down ~n:2) (Parser.SD 2)
+  test_screen "erase display 0" (erase_display ~mode:`Below) "CSI 0 J";
+  test_screen "erase display 2" (erase_display ~mode:`All) "CSI 2 J";
+  test_screen "erase line 0" (erase_line ~mode:`Right) "CSI 0 K";
+  test_screen "erase line 2" (erase_line ~mode:`All) "CSI 2 K";
+  test_screen "insert lines" (insert_lines ~n:5) "CSI 5 L";
+  test_screen "delete lines" (delete_lines ~n:3) "CSI 3 M";
+  test_screen "scroll up" (scroll_up ~n:4) "CSI 4 S";
+  test_screen "scroll down" (scroll_down ~n:2) "CSI 2 T"
 
 let roundtrip_sgr_sequences () =
   (* Test that SGR sequences round-trip through parser *)
-  let test_sgr name seq check_fn =
-    let tokens = Parser.parse (to_string seq) in
-    match tokens with
-    | [ Parser.SGR attrs ] -> check_fn attrs
-    | _ -> fail (Printf.sprintf "%s: expected SGR token" name)
+  let test_sgr name seq expected =
+    equal ~msg:name check_style expected
+      (read_sgr ~from:(Style.make ~italic:true ()) (to_string seq))
   in
-  (* Reset *)
-  test_sgr "sgr reset" reset (fun attrs ->
-      is_true ~msg:"has reset" (List.mem `Reset attrs));
-  (* Bold via sgr [1] *)
-  test_sgr "sgr bold" (sgr [ 1 ]) (fun attrs ->
-      is_true ~msg:"has bold" (List.mem `Bold attrs));
-  (* Truecolor foreground via sgr [38;2;r;g;b] *)
+  test_sgr "sgr reset" reset Style.default;
+  test_sgr "sgr bold" (sgr [ 1 ]) (Style.make ~italic:true ~bold:true ());
   test_sgr "sgr truecolor fg"
     (sgr [ 38; 2; 100; 150; 200 ])
-    (fun attrs ->
-      match attrs with
-      | [ `Fg c ] ->
-          let r, g, b = Color.to_rgb c in
-          equal ~msg:"r" int 100 r;
-          equal ~msg:"g" int 150 g;
-          equal ~msg:"b" int 200 b
-      | _ -> fail "expected fg color")
+    (Style.make ~italic:true ~fg:(Color.of_rgb 100 150 200) ());
+  (* Every style the writer emits reads back as itself. *)
+  List.iter
+    (fun style ->
+      equal
+        ~msg:(Format.asprintf "%a" Style.pp style)
+        check_style style
+        (read_sgr (Style.sgr_sequence style)))
+    [
+      Style.make ~bold:true ~dim:true ~italic:true ~underline:true ();
+      Style.make ~blink:true ~inverse:true ~hidden:true ~strikethrough:true ();
+      Style.make ~overline:true ~double_underline:true ~framed:true ();
+      Style.make ~encircled:true ~fg:(Color.indexed 200) ~bg:Color.bright_red ();
+      Style.make ~fg:(Color.of_rgb 1 2 3) ~bg:(Color.of_rgb 4 5 6) ();
+    ]
 
 let roundtrip_hyperlink_sequences () =
-  (* Test hyperlink sequences *)
-  let test_link name seq check_fn =
-    let tokens = Parser.parse (to_string seq) in
-    match tokens with
-    | [ Parser.Control (Parser.Hyperlink h) ] -> check_fn h
-    | _ -> fail (Printf.sprintf "%s: expected hyperlink control" name)
-  in
-  (* Open hyperlink *)
-  test_link "hyperlink open" (hyperlink_start ~url:"http://test.com") (fun h ->
-      match h with
-      | Some ([], url) -> equal ~msg:"url" string "http://test.com" url
-      | _ -> fail "expected open hyperlink");
-  (* Close hyperlink *)
-  test_link "hyperlink close" hyperlink_end (fun h ->
-      is_true ~msg:"is close" (h = None))
+  check_tokens ~msg:"hyperlink open"
+    (to_string (hyperlink_start ~url:"http://test.com"))
+    "OSC, \"8;;http://test.com\", ST";
+  check_tokens ~msg:"hyperlink close" (to_string hyperlink_end)
+    "OSC, \"8;;\", ST"
 
 let roundtrip_strip_removes_all () =
   (* Verify strip removes all sequences we emit *)
@@ -1279,6 +1381,19 @@ let tests =
         test "mode sequences" parser_mode_sequences;
         test "csi private and intermediates"
           parser_csi_private_and_intermediates;
+        test "esc, can and sub end everything" parser_esc_can_sub_end_everything;
+        test "c0 inside sequences and strings" parser_c0_inside_sequences;
+        test "del" parser_del;
+        test "malformed sequences" parser_malformed_sequences;
+        test "non-ascii in sequences" parser_non_ascii_in_sequences;
+        test "utf8" parser_utf8;
+        test "string terminators and c1" parser_string_terminators;
+        test "params" parser_params;
+        test "feed contract" parser_feed_contract;
+        test "split invariance" parser_split_invariance;
+        test "known defects" parser_known_defects;
+        test "pp_token" parser_pp_token;
+        test "apply_sgr" style_apply_sgr;
       ];
     group "Writer & Seq"
       [

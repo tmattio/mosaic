@@ -1,133 +1,174 @@
-(** Streaming ANSI escape sequence parser.
+(** Control functions in a UTF-8 stream (ECMA-48, ECMA-35).
 
-    Converts byte streams into high-level {!token}s representing ANSI escape
-    sequences, SGR attributes, and plain text. The parser handles partial input:
-    incomplete escape sequences and UTF-8 multi-byte characters at chunk
-    boundaries are buffered until the next {!feed} call.
+    {1:model What a stream is made of}
 
-    Parsing never raises on malformed input. Unrecognized sequences become
-    {!Unknown} controls and invalid UTF-8 is replaced with U+FFFD. Maximum
-    sequence lengths ([max_escape_length] for CSI, [max_osc_length] for OSC and
-    other string controls) prevent unbounded buffering. *)
+    A terminal receives characters: graphic characters, which are shown, and the
+    coded forms of control functions, which are performed. ECMA-48 §5 codes a
+    control function in five ways:
+    - a C0 control: one character U+0000..U+001F, such as LF;
+    - a C1 control written ESC Fe: ESC, then a byte 0x40..0x5F. ESC D is IND;
+    - an escape sequence ESC I.. F: intermediate bytes 0x20..0x2F, then a final
+      byte 0x30..0x7E, as in ESC ( 0. The intermediates and the final byte name
+      the function (ECMA-35 §13.1);
+    - a control sequence CSI P.. I.. F: CSI is [ESC \[], then parameter bytes
+      0x30..0x3F, intermediates and a final byte 0x40..0x7E, as in
+      [CSI 1 ; 31 m];
+    - a control string: an opening (DCS, OSC, APC, PM or SOS, written [ESC P],
+      [ESC \]], [ESC _], [ESC ^] and [ESC X]), its content, then ST, written
+      [ESC \\] (ECMA-48 §5.6). xterm also ends an OSC with BEL.
+
+    The bytes are UTF-8, decoded first. Each ill-formed subsequence, such as a
+    lone byte 0x80..0xFF, is one U+FFFD (Unicode §3.9, maximal subparts). The
+    code points U+0080..U+009F are never controls: a UTF-8 stream is not the
+    8-bit code in which C1 controls are single bytes, and xterm, whose protocol
+    programs target, states that "it is not possible to use a C1 control
+    obtained from decoding the UTF-8 text". They have no glyph either, so they
+    are dropped wherever they occur. Performing them would let mis-encoded text
+    swallow the output that follows it: Windows-1252 "Ÿ" read as Latin-1 is
+    U+009F, APC.
+
+    {1:recovery What every character does in every state}
+
+    + ESC, CAN and SUB are never part of anything. Each ends the sequence or
+      string in progress (VT100 User Guide ch. 3, VT510 §4.3.5), so one ESC
+      always brings the parser back. CAN and SUB are then reported as
+      {!Control}; ESC starts a new escape sequence.
+    + A C0 control inside an escape or control sequence is performed where it
+      occurs, and the sequence continues: CSI 2 LF C is LF, then CSI 2 C (VT100
+      User Guide ch. 3: "Embedded control characters are executed as soon as
+      they are encountered"). Inside a DCS header or a string a C0 control is
+      never performed: BS..CR are string content (ECMA-48 §5.6), BEL ends an
+      OSC, and the others are dropped.
+    + DEL is dropped inside sequences and strings. Elsewhere it is reported,
+      since only the device knows whether a 96-character set makes it a graphic
+      character.
+    + A byte that may appear in a sequence but not where it occurs (a private
+      marker after a parameter, a parameter after an intermediate), a fifth
+      intermediate, or a 257th parameter field makes the sequence malformed. It
+      is consumed to its final byte, to the end of the string for a DCS, and has
+      no effect, never a partial one.
+    + A non-ASCII character belongs to no sequence. It ends an escape or control
+      sequence, which has no effect, and is dropped, as xterm does. In a DCS
+      header it makes the DCS malformed, because the content of a string never
+      becomes text.
+
+    {1:meaning Syntax, not meaning}
+
+    Tokens report how a function was written, not what it does. Its meaning and
+    the defaults of its parameters are the device's: ECMA-48 §6 makes HPR the
+    same as CUF only in a device "without a data component", and xterm reads CSI
+    s as SCOSC or DECSLRM depending on a mode. The device matches
+    [(marker, intermediates, final)].
+
+    {1:chunks Streaming}
+
+    Bytes may be fed in chunks split anywhere. Whatever the split, the tokens
+    are the same once adjacent {!Text} tokens, and adjacent {!Data} tokens, are
+    joined; neither is ever cut inside a character. The parser holds no text and
+    no string content, only the sequence in progress. *)
+
+(** {1:params Parameters} *)
+
+module Params : sig
+  type t
+  (** The type for the parameters of a control sequence or DCS header (ECMA-48
+      §5.4.2). Parameters are separated by [;]. Each has one or more fields
+      separated by [:], the sub-parameters SGR 38, 48 and 58 use. A field is
+      absent, as both are in [CSI ; H], or a non-negative integer. An integer
+      too large for [int] saturates at [max_int]: clamp a value to the distance
+      it can act on before adding it to anything.
+
+      ECMA-48 §5.4.3 sets no maximum count. A parser that holds bounded memory
+      must still bound the fields it keeps, because a sequence's meaning depends
+      on its final byte, which comes last. The bound is 256 fields, above the
+      number of distinct values any variadic function assigns; a sequence with
+      more has no effect. *)
+
+  val count : t -> int
+  (** [count p] is the number of parameters: 0 for [CSI m], 2 for [CSI ; m]. *)
+
+  val pn : t -> int -> default:int -> int
+  (** [pn p i ~default] reads parameter [i] as a count or a position (ECMA-48
+      §8.1, Pn). Absent, 0 or [i >= count p] means [default]: DEC terminals give
+      0 the default's meaning for these parameters (VT510 §4.3.3: "A 0 value or
+      omitted parameter indicates a default value"), as does ECMA-48's ZERO
+      DEFAULT MODE for the functions it lists (F.4.2). Reads the first field. *)
+
+  val ps : t -> int -> default:int -> int
+  (** [ps p i ~default] reads parameter [i] as a selector (ECMA-48 §8.1, Ps).
+      Absent or [i >= count p] means [default]; 0 is the value 0, as in ED 0 or
+      SGR 0. Reads the first field. *)
+
+  val value : t -> int -> int option
+  (** [value p i] is the first field of parameter [i], [None] if it is absent or
+      [i >= count p]. For functions that skip absent parameters, such as SM and
+      RM. *)
+
+  val fields : t -> int -> int
+  (** [fields p i] is the number of fields of parameter [i]: 1 for [5], 3 for
+      [5:1:2], 0 if [i >= count p]. *)
+
+  val field : t -> int -> int -> int option
+  (** [field p i j] is field [j] of parameter [i], [None] if it is absent or out
+      of range. Field 0 is the one {!value} reads. *)
+end
 
 (** {1:tokens Tokens} *)
 
-(** The type for control sequences other than SGR. *)
-type control =
-  | CUU of int  (** Cursor Up by [n] lines. *)
-  | CUD of int  (** Cursor Down by [n] lines. *)
-  | CUF of int  (** Cursor Forward by [n] columns (also HPR). *)
-  | CUB of int  (** Cursor Backward by [n] columns. *)
-  | CNL of int  (** Cursor Next Line (down [n], column 1). *)
-  | CPL of int  (** Cursor Previous Line (up [n], column 1). *)
-  | CHA of int  (** Cursor Horizontal Absolute to column [n] (also HPA). *)
-  | VPA of int  (** Vertical Position Absolute to row [n]. *)
-  | VPR of int
-      (** Vertical Position Relative: down [n] rows, ignoring the margins. *)
-  | CUP of int * int  (** Cursor Position to [(row, col)]. *)
-  | CHT of int  (** Cursor forward [n] tab stops. *)
-  | CBT of int  (** Cursor backward [n] tab stops. *)
-  | HTS  (** Set a tab stop at the cursor column ([ESC H]). *)
-  | TBC of int
-      (** Tab Clear: [0] the stop at the cursor column, [3] every stop. *)
-  | ED of int  (** Erase in Display. *)
-  | EL of int  (** Erase in Line. *)
-  | DECSED of int
-      (** Selective Erase in Display ([CSI ? Ps J]): {!ED} sparing the
-          characters {!DECSCA} protects. *)
-  | DECSEL of int
-      (** Selective Erase in Line ([CSI ? Ps K]): {!EL} sparing the characters
-          {!DECSCA} protects. *)
-  | DECSCA of int
-      (** Select Character Protection Attribute ([CSI Ps '"' q]): [1] protects
-          the characters written next from {!DECSED} and {!DECSEL}, [0] and [2]
-          do not. *)
-  | ECH of int  (** Erase [n] Characters from the cursor. *)
-  | IL of int  (** Insert [n] blank Lines. *)
-  | DL of int  (** Delete [n] Lines. *)
-  | DCH of int  (** Delete [n] Characters. *)
-  | ICH of int  (** Insert [n] blank Characters. *)
-  | DECALN  (** Screen alignment test: fill the screen with [E] ([ESC # 8]). *)
-  | SL of int  (** Scroll Left by [n] columns ([CSI n SP @]). *)
-  | SR of int  (** Scroll Right by [n] columns ([CSI n SP A]). *)
-  | DECIC of int  (** Insert [n] blank columns at the cursor ([CSI n ' }]). *)
-  | DECDC of int  (** Delete [n] columns at the cursor ([CSI n ' ~]). *)
-  | DECSTBM of int * int
-      (** Set top and bottom scrolling margins ([CSI top ; bottom r]). *)
-  | SU of int  (** Scroll Up by [n] lines. *)
-  | SD of int  (** Scroll Down by [n] lines. *)
-  | REP of int  (** Repeat the preceding graphic character [n] times. *)
-  | OSC of int * string  (** Generic OSC with code and payload. *)
-  | DCS of string  (** Device Control String payload. *)
-  | APC of string  (** Application Program Command payload. *)
-  | PM of string  (** Privacy Message payload. *)
-  | SOS of string  (** Start Of String payload. *)
-  | Hyperlink of ((string * string) list * string) option
-      (** OSC 8 hyperlink. [None] closes the current hyperlink.
-          [Some (params, url)] opens one, where [params] are key=value pairs
-          from the parameter string. *)
-  | Reset  (** RIS — reset to initial state ([ESC c]). *)
-  | DA  (** Primary device attributes query ([CSI c]). *)
-  | DA2  (** Secondary device attributes query ([CSI > c]). *)
-  | DSR of int  (** Device status report query ([CSI Ps n]). *)
-  | DECXCPR  (** Extended cursor position report query ([CSI ? 6 n]). *)
-  | DECSC  (** Save cursor position ([ESC 7]). *)
-  | DECSTR  (** Soft terminal reset ([CSI ! p]). *)
-  | DECRC  (** Restore cursor position ([ESC 8]). *)
-  | SCS of int * char
-      (** [SCS (g, c)] designates the 94-character set with final byte [c] as
-          G[g] ([ESC ( c] for G0 to [ESC + c] for G3). *)
-  | LS of int
-      (** [LS g] invokes G[g] into GL: LS2 ([ESC n]) and LS3 ([ESC o]). SO and
-          SI, which invoke G1 and G0, are C0 controls left in {!Text}. *)
-  | RI  (** Reverse index ([ESC M]). *)
-  | IND  (** Index ([ESC D]): down one line, scrolling at the bottom margin. *)
-  | NEL  (** Next line ([ESC E]): {!IND} then carriage return. *)
-  | SM of int list  (** Set Mode ([CSI Pm h]). *)
-  | RM of int list  (** Reset Mode ([CSI Pm l]). *)
-  | DECSET of int list  (** DEC private mode set ([CSI ? Pm h]). *)
-  | DECRST of int list  (** DEC private mode reset ([CSI ? Pm l]). *)
-  | Unknown of string  (** Unrecognized sequence, preserved as raw bytes. *)
+type sequence = {
+  marker : char option;
+      (** The private marker [<], [=], [>] or [?], written as the first
+          parameter byte (ECMA-48 §5.4.1 b): [Some '?'] in [CSI ? 25 h]. *)
+  params : Params.t;
+  intermediates : string;  (** Bytes 0x20..0x2F, at most 4. *)
+  final : char;
+      (** A byte 0x40..0x7E. With [marker] and [intermediates] it names the
+          function. *)
+}
+(** The type for the header of a control sequence or of a DCS. *)
 
-type sgr_attr =
-  [ `Reset
-  | `Bold
-  | `Dim
-  | `Italic
-  | `Underline
-  | `Double_underline
-  | `Blink
-  | `Inverse
-  | `Hidden
-  | `Strikethrough
-  | `Overline
-  | `Framed
-  | `Encircled
-  | `No_bold
-  | `No_dim
-  | `No_italic
-  | `No_underline
-  | `No_blink
-  | `No_inverse
-  | `No_hidden
-  | `No_strikethrough
-  | `No_overline
-  | `No_framed
-  | `No_encircled
-  | `Fg of Color.t
-  | `Bg of Color.t ]
-(** The type for SGR (Select Graphic Rendition) attributes. Represents
-    individual style changes from a single SGR sequence. A sequence like
-    [ESC \[ 1 ; 31 m] produces [[`Bold; `Fg Red]]. *)
+(** The type for the kinds of control strings. *)
+type opening =
+  | Dcs of sequence  (** DEVICE CONTROL STRING, with its header. *)
+  | Osc  (** OPERATING SYSTEM COMMAND. *)
+  | Apc  (** APPLICATION PROGRAM COMMAND. *)
+  | Pm  (** PRIVACY MESSAGE. *)
+  | Sos  (** START OF STRING. *)
 
-(** The type for parsed tokens. *)
+(** The type for tokens. *)
 type token =
   | Text of string
-      (** Plain UTF-8 text between escape sequences. Always contains complete
-          characters. *)
-  | SGR of sgr_attr list
-      (** SGR command. An empty list is equivalent to [[`Reset]]. *)
-  | Control of control  (** Non-SGR control sequence. *)
+      (** Graphic characters: valid UTF-8 without C0, DEL or U+0080..U+009F. *)
+  | Control of char
+      (** A C0 control other than ESC, DEL outside sequences and strings, or a
+          C1 control 0x80..0x9F written ESC Fe: ESC D is [Control '\x84'], IND.
+          CSI, DCS, OSC, APC, PM, SOS and ST are never reported this way; a lone
+          ST is dropped. *)
+  | Esc of { intermediates : string; final : char }
+      (** An escape sequence that is not ESC Fe: [ESC 7], [ESC ( B],
+          [ESC ( % 5], [ESC # 8], [ESC SP F]. ECMA-35 allows any number of
+          intermediates (§13.2.2); up to 4 are kept, and no device acts on more.
+          A DRCS designation, [ESC $ ( SP F], has 4 (§14.4.2). *)
+  | Csi of sequence  (** A control sequence. *)
+  | Open of opening
+      (** The start of a control string. Its content follows as {!Data}, then
+          exactly one {!Close}, with no other token in between. *)
+  | Data of string
+      (** Content of the open string: valid UTF-8, made of ECMA-48 §5.6's
+          command-string characters (BS..CR and 0x20..0x7E) and non-ASCII
+          characters other than U+0080..U+009F. *)
+  | Close of [ `St | `Bel | `Aborted ]
+      (** The end of the open string. [`St] ends any string, [`Bel] only an OSC;
+          xterm replies to an OSC with the terminator of its query. [`Aborted]
+          is a string ended by CAN, SUB, an ESC that does not begin ST, or the
+          end of the input. Its content is in error (ECMA-48 §8.3.6, CAN: "this
+          data shall be ignored"), so act on nothing that has not already been
+          acted on. *)
+
+val pp_token : Format.formatter -> token -> unit
+(** [pp_token] formats a token in ECMA-48's notation: [CSI ?25 h], [CSI 1;5 H],
+    [CSI 38:2::1:2:3 m], [CSI 1 SP @], [ESC ( B], [LF], [IND], [DCS $ q], [OSC],
+    [ST], [BEL], [Aborted]. Text and data are quoted strings. *)
 
 (** {1:parsers Parsers} *)
 
@@ -135,19 +176,21 @@ type t
 (** The type for parsers. Mutable and not thread-safe. *)
 
 val create : unit -> t
-(** [create ()] is a fresh parser in the default state. *)
+(** [create ()] is a parser at the start of a stream. *)
 
 val reset : t -> unit
-(** [reset p] clears internal buffers and returns [p] to the default state.
-    Discards buffered partial sequences. *)
-
-(** {1:feeding Feeding} *)
+(** [reset p] returns [p] to the start of a stream, dropping the character,
+    sequence or string in progress without reporting it. *)
 
 val feed : t -> bytes -> off:int -> len:int -> (token -> unit) -> unit
-(** [feed p buf ~off ~len f] processes [len] bytes from [buf] starting at [off],
-    calling [f] for each complete token. Incomplete sequences are buffered until
-    the next call. *)
+(** [feed p b ~off ~len f] reads the [len] bytes of [b] from [off] and calls [f]
+    on each token, in order. A character, sequence or string unfinished at the
+    end of the bytes continues with the next call.
+
+    Raises [Invalid_argument] if [off] and [len] do not designate a valid range
+    of [b]. *)
 
 val parse : string -> token list
-(** [parse s] parses a complete string into tokens. Creates a temporary parser.
-    Not suitable for streaming; use {!feed}. *)
+(** [parse s] are the tokens of the complete stream [s]. At the end of [s] an
+    unfinished character is U+FFFD, an open string is closed [`Aborted], and an
+    unfinished sequence has no effect. *)

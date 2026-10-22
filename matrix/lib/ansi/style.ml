@@ -184,6 +184,75 @@ let styled ?(reset = false) t str =
         Escape.literal str w;
         if reset then Escape.reset w)
 
+(* Reading SGR *)
+
+let set_color code color t =
+  if code = 38 then { t with fg = Some color }
+  else if code = 48 then { t with bg = Some color }
+  else t (* 58, the underline color, is not represented *)
+
+let apply_sgr p t =
+  let module P = Parser.Params in
+  let n = P.count p in
+  let field i j = Option.value (P.field p i j) ~default:0 in
+  let rec go i t =
+    if i >= n then t
+    else
+      let code = P.ps p i ~default:0 in
+      match code with
+      | 0 -> go (i + 1) { default with link = t.link }
+      | (38 | 48 | 58) when P.fields p i > 1 -> (
+          (* T.416: 38:5:n, 38:2:r:g:b and 38:2:cs:r:g:b *)
+          let fields = P.fields p i in
+          match field i 1 with
+          | 5 when fields >= 3 ->
+              go (i + 1) (set_color code (Color.of_palette_index (field i 2)) t)
+          | 2 when fields = 5 ->
+              let color = Color.of_rgb (field i 2) (field i 3) (field i 4) in
+              go (i + 1) (set_color code color t)
+          | 2 when fields >= 6 ->
+              let color = Color.of_rgb (field i 3) (field i 4) (field i 5) in
+              go (i + 1) (set_color code color t)
+          | _ -> go (i + 1) t)
+      | 38 | 48 | 58 -> (
+          (* xterm: 38;5;n and 38;2;r;g;b *)
+          let arg k = P.ps p (i + k) ~default:0 in
+          match arg 1 with
+          | 5 when i + 2 < n ->
+              go (i + 3) (set_color code (Color.of_palette_index (arg 2)) t)
+          | 2 when i + 4 < n ->
+              let color = Color.of_rgb (arg 2) (arg 3) (arg 4) in
+              go (i + 5) (set_color code color t)
+          | 2 | 5 -> t (* the parameters left are an incomplete color *)
+          | _ -> go (i + 1) t)
+      | 39 -> go (i + 1) { t with fg = Some Color.default_fg }
+      | 49 -> go (i + 1) { t with bg = Some Color.default_bg }
+      | _ when code >= 30 && code <= 37 ->
+          go (i + 1) { t with fg = Some (Color.of_palette_index (code - 30)) }
+      | _ when code >= 40 && code <= 47 ->
+          go (i + 1) { t with bg = Some (Color.of_palette_index (code - 40)) }
+      | _ when code >= 90 && code <= 97 ->
+          go (i + 1) { t with fg = Some (Color.of_palette_index (code - 82)) }
+      | _ when code >= 100 && code <= 107 ->
+          go (i + 1) { t with bg = Some (Color.of_palette_index (code - 92)) }
+      | _ ->
+          (* 4:0 is 24 and 4:2 is 21; the other underline styles are 4, and
+             rapid blink is blink. *)
+          let code =
+            if code = 4 && P.fields p i > 1 then
+              match field i 1 with 0 -> 24 | 2 -> 21 | _ -> 4
+            else if code = 6 then 5
+            else code
+          in
+          let on = Sgr_attrs.enabled_by code in
+          let off = Sgr_attrs.disabled_by code in
+          if on lor off = 0 then go (i + 1) t
+          else
+            let attrs = Attr.pack t.attrs land lnot off lor on in
+            go (i + 1) { t with attrs = Attr.unpack attrs }
+  in
+  if n = 0 then { default with link = t.link } else go 0 t
+
 let pp fmt t =
   Format.fprintf fmt "Style{";
   let first = ref true in

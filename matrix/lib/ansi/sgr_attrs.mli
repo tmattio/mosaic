@@ -17,3 +17,11 @@ val iter_enabled : (int -> unit) -> int -> unit
 val iter_disabled : (int -> unit) -> int -> unit
 (** [iter_enabled f attrs] and [iter_disabled f attrs] pass the corresponding
     codes to [f], in emission order. *)
+
+val enabled_by : int -> int
+
+val disabled_by : int -> int
+(** [enabled_by code] and [disabled_by code] are the attributes SGR [code]
+    enables or disables, 0 for none: the inverse of {!iter_enabled} and
+    {!iter_disabled}, so reading and writing share one table. [disabled_by 22]
+    is bold and dim. *)

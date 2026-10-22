@@ -911,6 +911,83 @@ let query_replies () =
   equal ~msg:"identity from the caller" string "\x1b[?62c\x1b[>1;2;0c"
     (Vte.take_replies vte)
 
+(* An OSC acts only when it ends with ST or BEL; one cut short does nothing.
+   Only OSC 0, 2 and 8 are kept, each up to 64 KiB. *)
+let osc_acts_only_when_terminated () =
+  let vte = Vte.create ~rows:1 ~cols:20 () in
+  Vte.feed_string vte "\x1b]2;kept\x1b\\";
+  List.iter
+    (fun cut ->
+      Vte.feed_string vte cut;
+      equal ~msg:(Printf.sprintf "%S" cut) string "kept" (Vte.title vte))
+    [
+      "\x1b]2;cut\x1b[m";
+      "\x1b]2;cut\x18";
+      "\x1b]2;cut\x1a";
+      "\x1b]0;cut\x1b7";
+      "\x1b]1;icon\x07";
+      "\x1b]2cut\x07";
+      "\x1b];cut\x07";
+    ];
+  (* Fed a byte at a time. *)
+  String.iter
+    (fun c -> Vte.feed_string vte (String.make 1 c))
+    "\x1b]0;by\xc3\xa9tes\x07";
+  equal ~msg:"split title" string "by\xc3\xa9tes" (Vte.title vte);
+  let budget = 65536 in
+  Vte.feed_string vte ("\x1b]2;" ^ String.make budget 'a' ^ "\x07");
+  equal ~msg:"title at the budget" int budget (String.length (Vte.title vte));
+  Vte.feed_string vte ("\x1b]2;" ^ String.make (budget + 1) 'b' ^ "\x07");
+  equal ~msg:"title over the budget is dropped whole" int budget
+    (String.length (Vte.title vte));
+  (* A hyperlink cut short is not installed. *)
+  let vte = Vte.create ~rows:1 ~cols:8 () in
+  Vte.feed_string vte "\x1b]8;;http://exa\x1b[ma\x1b]8;;http://b.test\x07b";
+  equal ~msg:"cut link" string "" (Grid.get_link (Vte.grid vte) 0);
+  equal ~msg:"BEL link" string "http://b.test" (Grid.get_link (Vte.grid vte) 1);
+  Vte.feed_string vte "\x1b]8;id=1;\x1b\\c";
+  equal ~msg:"empty URI closes, with parameters" string ""
+    (Grid.get_link (Vte.grid vte) 2)
+
+(* Counts and positions read 0 as their default, 1. *)
+let zero_counts_mean_one () =
+  let vte = Vte.create ~rows:5 ~cols:20 () in
+  Vte.feed_string vte "\x1b[3;5H\x1b[0A";
+  equal ~msg:"CUU 0" (pair int int) (1, 4) (Vte.cursor_pos vte);
+  Vte.feed_string vte "\x1b[0C";
+  equal ~msg:"CUF 0" (pair int int) (1, 5) (Vte.cursor_pos vte);
+  Vte.feed_string vte "\x1b[0I";
+  equal ~msg:"CHT 0" (pair int int) (1, 8) (Vte.cursor_pos vte);
+  Vte.feed_string vte "\x1b[0;0H";
+  equal ~msg:"CUP 0;0" (pair int int) (0, 0) (Vte.cursor_pos vte);
+  Vte.feed_string vte "abcd\x1b[0b";
+  equal ~msg:"REP 0" string "abcdd" (get_line (Vte.grid vte) 0);
+  Vte.feed_string vte "\x1b[1G\x1b[0P";
+  equal ~msg:"DCH 0" string "bcdd" (get_line (Vte.grid vte) 0);
+  Vte.feed_string vte "\x1b[0X";
+  equal ~msg:"ECH 0" string " cdd" (get_line (Vte.grid vte) 0)
+
+(* DA2 and DECXCPR are recognised by their parameter's value. *)
+let replies_by_parameter_value () =
+  let vte = Vte.create ~rows:3 ~cols:5 () in
+  Vte.feed_string vte "\x1b[>00c\x1b[?6;1n\x1b[>1c\x1b[?5n";
+  equal ~msg:"DA2 and DECXCPR" string "\x1b[>0;0;0c\x1b[?1;1;1R"
+    (Vte.take_replies vte)
+
+(* In UTF-8, U+0080..U+009F are not controls: they do nothing. *)
+let utf8_c1_is_not_a_control () =
+  let vte = Vte.create ~rows:3 ~cols:10 () in
+  Vte.feed_string vte "a\xc2\x8db\xc2\x9b2Cc\xc2\x9d0;t\xc2\x9c";
+  equal ~msg:"nothing performed" string "ab2Cc0;t" (get_line (Vte.grid vte) 0);
+  equal ~msg:"title untouched" string "" (Vte.title vte)
+
+(* A designation with a two-byte designator is one sequence: neither of its
+   bytes prints. *)
+let two_byte_designators () =
+  let vte = Vte.create ~rows:1 ~cols:10 () in
+  Vte.feed_string vte "\x1b(%6a\x1b(\">q\x1b%/Gr";
+  equal ~msg:"designators not printed" string "aqr" (get_line (Vte.grid vte) 0)
+
 (** {1 Resize} *)
 
 let resize_preserves_content () =
@@ -1463,6 +1540,11 @@ let tests =
     test "combined mode sequence" combined_mode_sequence;
     test "OSC set title" osc_set_title;
     test "query replies" query_replies;
+    test "OSC acts only when terminated" osc_acts_only_when_terminated;
+    test "zero counts mean one" zero_counts_mean_one;
+    test "replies by parameter value" replies_by_parameter_value;
+    test "UTF-8 C1 is not a control" utf8_c1_is_not_a_control;
+    test "two-byte designators" two_byte_designators;
     test "resize preserves content" resize_preserves_content;
     test "resize clamps cursor" resize_clamps_cursor;
     test "reset clears state" reset_clears_state;

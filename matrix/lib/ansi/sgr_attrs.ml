@@ -68,3 +68,24 @@ let rec iter_codes f codes i remaining =
 
 let iter_enabled f attrs = iter_codes f enabled 0 (attrs land Attr.pack all)
 let iter_disabled f attrs = iter_codes f disabled 0 (attrs land Attr.pack all)
+
+(* The reading direction: the attributes each code enables or disables,
+   indexed by code. *)
+let by_code codes =
+  let size = 1 + Array.fold_left (fun m (_, code) -> max m code) 0 codes in
+  let table = Array.make size 0 in
+  Array.iter (fun (mask, code) -> table.(code) <- table.(code) lor mask) codes;
+  table
+
+let enabled_by_code = by_code enabled
+let disabled_by_code = by_code disabled
+
+let enabled_by code =
+  if code >= 0 && code < Array.length enabled_by_code then
+    Array.unsafe_get enabled_by_code code
+  else 0
+
+let disabled_by code =
+  if code >= 0 && code < Array.length disabled_by_code then
+    Array.unsafe_get disabled_by_code code
+  else 0

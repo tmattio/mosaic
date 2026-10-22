@@ -365,8 +365,8 @@ val render : ?hyperlinks_enabled:bool -> (Style.t * string) list -> string
     sequences. *)
 
 val parse : string -> Parser.token list
-(** [parse s] tokenizes [s] into ANSI tokens. Never raises; malformed sequences
-    become {!Parser.Unknown} controls. *)
+(** [parse s] is {!Parser.parse}[ s]: the tokens of [s] as a complete stream.
+    Never raises; a malformed sequence has no effect. *)
 
 val strip : string -> string
 (** [strip s] removes all ANSI escape sequences from [s], returning plain text
