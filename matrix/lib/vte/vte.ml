@@ -306,6 +306,14 @@ let newest h i =
   let capacity = Array.length h.lines in
   h.lines.((h.head - 1 - i + capacity) mod capacity)
 
+let pop_line h =
+  let line = newest h 0 in
+  let capacity = Array.length h.lines in
+  h.lines.((h.head - 1 + capacity) mod capacity) <- empty_line;
+  h.head <- (h.head - 1 + capacity) mod capacity;
+  h.count <- h.count - 1;
+  line
+
 let clear_history t =
   let h = t.history in
   Array.fill h.lines 0 (Array.length h.lines) empty_line;
@@ -1232,25 +1240,74 @@ let reset t =
 
 (* {1:resize Resizing} *)
 
-(* The screens are cleared: a program repaints after a size change. *)
+(* Resize screen [s], keeping the rows around the cursor on [row]: a shrink
+   drops rows below it first, then moves rows off the top (into the
+   scrollback for the primary screen); a growth takes scrollback lines back.
+   The result is how far the rows moved down. *)
+let resize_screen t s ~row ~rows ~cols =
+  let primary = s == t.primary in
+  let old_rows = t.rows and old_cols = t.cols in
+  let up =
+    if rows >= old_rows then 0
+    else max 0 (old_rows - rows - (old_rows - 1 - row))
+  in
+  if up > 0 then begin
+    if primary then
+      for r = 0 to up - 1 do
+        push_line t s r
+      done;
+    Grid.shift s.grid
+      { Grid.x = 0; y = 0; width = old_cols; height = old_rows }
+      ~dx:0 ~dy:(-up) ~color:t.default_bg;
+    Bytes.blit s.wrapped up s.wrapped 0 (old_rows - up)
+  end;
+  Grid.resize s.grid ~width:cols ~height:rows;
+  if cols > old_cols then
+    Grid.clear_rect ~color:t.default_bg s.grid ~x:old_cols ~y:0
+      ~width:(cols - old_cols) ~height:rows;
+  if rows > old_rows then
+    Grid.clear_rect ~color:t.default_bg s.grid ~x:0 ~y:old_rows ~width:cols
+      ~height:(rows - old_rows);
+  let wrapped = Bytes.make rows '\000' in
+  Bytes.blit s.wrapped 0 wrapped 0 (min rows (old_rows - up));
+  s.wrapped <- wrapped;
+  let down =
+    if primary && rows > old_rows then min (rows - old_rows) t.history.count
+    else 0
+  in
+  if down > 0 then begin
+    Grid.shift s.grid
+      { Grid.x = 0; y = 0; width = cols; height = rows }
+      ~dx:0 ~dy:down ~color:t.default_bg;
+    Bytes.blit wrapped 0 wrapped down (rows - down);
+    for r = down - 1 downto 0 do
+      let line = pop_line t.history in
+      decompress_line line s.grid r;
+      Bytes.set wrapped r (if line.wrapped then '\001' else '\000')
+    done
+  end;
+  down - up
+
 let resize t ~rows ~cols =
   let rows = max 1 rows and cols = max 1 cols in
   if rows <> t.rows || cols <> t.cols then begin
     close t;
-    let clamp (c : cursor) =
+    let move (c : cursor) down =
       {
-        row = min c.row (rows - 1);
+        row = max 0 (min (rows - 1) (c.row + down));
         col = min c.col (cols - 1);
         last_column = false;
       }
     in
-    List.iter
-      (fun s ->
-        Grid.resize s.grid ~width:cols ~height:rows;
-        Grid.clear ~color:t.default_bg s.grid;
-        s.wrapped <- Bytes.make rows '\000';
-        s.saved <- { s.saved with cursor = clamp s.saved.cursor })
-      [ t.primary; t.alternate ];
+    let active = screen t in
+    let inactive = if active == t.primary then t.alternate else t.primary in
+    let down = resize_screen t active ~row:t.cursor.row ~rows ~cols in
+    let down' =
+      resize_screen t inactive ~row:inactive.saved.cursor.row ~rows ~cols
+    in
+    active.saved <- { active.saved with cursor = move active.saved.cursor down };
+    inactive.saved <-
+      { inactive.saved with cursor = move inactive.saved.cursor down' };
     let tabs = default_tabs cols in
     Array.blit t.tabs 0 tabs 0 (min cols (Array.length t.tabs));
     t.rows <- rows;
@@ -1260,7 +1317,7 @@ let resize t ~rows ~cols =
     t.dirty.rows <- Bytes.make rows '\001';
     t.dirty.any <- true;
     t.dirty.cursor <- true;
-    let c = clamp t.cursor in
+    let c = move t.cursor down in
     set_cursor t ~row:c.row ~col:c.col ~last_column:false
   end
 

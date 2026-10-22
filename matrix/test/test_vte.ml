@@ -1014,15 +1014,16 @@ let two_byte_designators () =
 
 (** {1 Resize} *)
 
+(* Resizing keeps the text: a shell's earlier output never repaints. *)
 let resize_preserves_content () =
   let vte = Vte.create ~rows:5 ~cols:10 () in
   feed vte "Hello\r\nWorld";
   Vte.resize vte ~rows:10 ~cols:20;
   equal ~msg:"rows resized" int 10 (Vte.rows vte);
   equal ~msg:"cols resized" int 20 (Vte.cols vte);
-  (* Note: resize clears grids - applications should redraw on resize *)
-  equal ~msg:"content cleared" string "" (get_line (Vte.grid vte) 0);
-  equal ~msg:"content cleared line 2" string "" (get_line (Vte.grid vte) 1)
+  equal ~msg:"content kept" string "Hello" (get_line (Vte.grid vte) 0);
+  equal ~msg:"content kept line 2" string "World" (get_line (Vte.grid vte) 1);
+  equal ~msg:"cursor kept" (pair int int) (1, 5) (Vte.cursor_pos vte)
 
 let resize_clamps_cursor () =
   let vte = Vte.create ~rows:10 ~cols:20 () in
@@ -1878,6 +1879,58 @@ let decstr_slots () =
      feed vte "\x1b[?47l\x1b8";
      (alt, Vte.cursor_pos vte))
 
+(* Resizing keeps the text around the cursor and moves rows to and from the
+   scrollback. *)
+let resize_keeps_text () =
+  let vte = Vte.create ~scrollback:10 ~rows:5 ~cols:4 () in
+  feed vte "1\r\n2\r\n3";
+  Vte.resize vte ~rows:3 ~cols:4;
+  equal ~msg:"rows below the cursor go first" string "1   \n2   \n3   "
+    (Vte.to_string vte);
+  Vte.resize vte ~rows:2 ~cols:4;
+  equal ~msg:"then rows off the top"
+    (pair string (list string))
+    ("2   \n3   ", [ "1" ])
+    (Vte.to_string vte, Vte.scrollback_lines vte);
+  equal ~msg:"the cursor moves with its row" (pair int int) (1, 1)
+    (Vte.cursor_pos vte);
+  Vte.resize vte ~rows:4 ~cols:4;
+  equal ~msg:"growing takes them back"
+    (pair string (list string))
+    ("1   \n2   \n3   \n    ", [])
+    (Vte.to_string vte, Vte.scrollback_lines vte);
+  let vte = Vte.create ~scrollback:10 ~rows:3 ~cols:4 () in
+  feed vte "abcdef\x1b[2;2H\x1b7\x1b[3H";
+  Vte.resize vte ~rows:2 ~cols:4;
+  is_true ~msg:"marks go into the scrollback" (Vte.wrapped vte (-1));
+  feed vte "\x1b8X";
+  equal ~msg:"DECSC slots move with their rows" string "eX  \n    "
+    (Vte.to_string vte);
+  Vte.resize vte ~rows:3 ~cols:4;
+  is_true ~msg:"and come back" (Vte.wrapped vte 0);
+  let vte = screen_of ~rows:3 ~cols:4 [ "abcd" ] in
+  Vte.resize vte ~rows:3 ~cols:6;
+  feed vte "X";
+  equal ~msg:"the Last Column Flag goes" string "abcX  \n      \n      "
+    (Vte.to_string vte);
+  let vte = screen_of ~rows:4 ~cols:4 [ "\x1b[2;3r\x1b[?1049hA\r\nB" ] in
+  Vte.resize vte ~rows:2 ~cols:4;
+  equal ~msg:"the alternate screen keeps its text" string "A   \nB   "
+    (Vte.to_string vte);
+  equal ~msg:"and has no scrollback" int 0 (Vte.scrollback_size vte);
+  feed vte "\x1b[H\n\n";
+  equal ~msg:"the margins are the screen" string "B   \n    "
+    (Vte.to_string vte);
+  let vte = screen_of ~rows:1 ~cols:4 [ "a\xe4\xb8\xad" ] in
+  Vte.resize vte ~rows:1 ~cols:2;
+  equal ~msg:"a wide character cut by the edge goes" string "a "
+    (Vte.to_string vte);
+  let vte = screen_of ~rows:2 ~cols:4 [ "e" ] in
+  Vte.resize vte ~rows:2 ~cols:5;
+  feed vte "\xcc\x81";
+  equal ~msg:"the unit in progress is ended" string "e\xcc\x81"
+    (Grid.get_text (Vte.grid vte) 0)
+
 (** {1 Test Suite} *)
 
 let tests =
@@ -2024,6 +2077,7 @@ let tests =
     test "parser probes" parser_probes;
     test "DECALN resets" decaln_resets;
     test "DECSTR resets both slots" decstr_slots;
+    test "resize keeps text" resize_keeps_text;
   ]
 
 let () = run "matrix.vte" [ group "vte" tests ]

@@ -182,11 +182,16 @@ val reset : t -> unit
     title cleared. It also drops a sequence left unfinished by {!feed}. *)
 
 val resize : t -> rows:int -> cols:int -> unit
-(** [resize t ~rows ~cols] changes the screen size and clears both screens,
-    which a program repaints after a size change. The scrollback is kept. The
-    cursor and the DECSC slots are clamped to the screen and lose the Last
-    Column Flag, the margins become the whole screen, and a unit in progress is
-    ended. [rows] and [cols] are at least [1]. *)
+(** [resize t ~rows ~cols] changes the screen size and keeps the text, without
+    reflowing it. Each screen keeps the rows around its cursor (the active
+    screen's cursor, or the cursor saved in the other's DECSC slot): shrinking
+    drops rows below that cursor first, then moves rows off the top, into the
+    scrollback for the primary screen; growing takes the newest scrollback lines
+    back onto the primary screen, then adds blank rows at the bottom. Rows keep
+    their wrap marks; a row back from the scrollback has its text, rendition and
+    mark, and no protection. Cursors and DECSC slots move with their rows and
+    lose the Last Column Flag, the margins become the whole screen, and a unit
+    in progress is ended. [rows] and [cols] are at least [1]. *)
 
 (** {1:state State} *)
 
