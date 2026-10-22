@@ -15,7 +15,7 @@
       [CSI 1 ; 31 m];
     - a control string: an opening (DCS, OSC, APC, PM or SOS, written [ESC P],
       [ESC \]], [ESC _], [ESC ^] and [ESC X]), its content, then ST, written
-      [ESC \\] (ECMA-48 §5.6). xterm also ends an OSC with BEL.
+      [ESC \\ ] (ECMA-48 §5.6). xterm also ends an OSC with BEL.
 
     The bytes are UTF-8, decoded first. Each ill-formed subsequence, such as a
     lone byte 0x80..0xFF, is one U+FFFD (Unicode §3.9, maximal subparts). The
