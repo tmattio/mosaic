@@ -12,27 +12,27 @@ type driver = {
   mutable alternate : bool;
 }
 
-let blocks = 5000
 let initial_width = 250
 let initial_height = 70
 let none = Mosaic.Cmd.none
 
-let transcript () =
-  Mosaic.memo ~key:() (fun () ->
-      Mosaic.fragment
-        (List.init blocks (fun i ->
-             Mosaic.memo ~key:i (fun i ->
-                 Mosaic.box ~key:(string_of_int i)
-                   ~flex_direction:Mosaic.Flex_direction.Column ~flex_shrink:0.
-                   [
-                     Mosaic.text (Printf.sprintf "message %04d" i);
-                     Mosaic.text
-                       "The worker completed its checkpoint; the next request \
-                        can reuse the retained result.";
-                     Mosaic.text "";
-                   ]))))
+let block i =
+  Mosaic.box ~key:(string_of_int i) ~flex_direction:Mosaic.Flex_direction.Column
+    ~flex_shrink:0.
+    [
+      Mosaic.text (Printf.sprintf "message %04d" i);
+      Mosaic.text
+        "The worker completed its checkpoint; the next request can reuse the \
+         retained result.";
+      Mosaic.text "";
+    ]
 
-let view model =
+let blocks_view blocks =
+  Mosaic.fragment (List.init blocks (fun i -> Mosaic.memo ~key:i block))
+
+let transcript blocks = Mosaic.memo ~key:blocks blocks_view
+
+let view blocks model =
   Mosaic.box ~flex_direction:Mosaic.Flex_direction.Column
     ~size:(Mosaic.size_wh (Mosaic.pct 100) (Mosaic.pct 100))
     [
@@ -41,7 +41,7 @@ let view model =
         ~scroll:model.scroll
         ~on_scroll:(fun next -> Scroll next)
         ~show_scrollbars:false
-        [ transcript () ];
+        [ transcript blocks ];
       Mosaic.input
         ~size:(Mosaic.size_wh (Mosaic.pct 100) (Mosaic.px 1))
         ~flex_shrink:0. ~focused:true ~state:model.editor
@@ -90,7 +90,7 @@ let close driver =
 let require condition message =
   if not condition then failwith ("runtime benchmark: " ^ message)
 
-let setup workload () =
+let setup ~blocks workload () =
   let continuation : (unit, unit) Effect.Deep.continuation option ref =
     ref None
   in
@@ -119,7 +119,7 @@ let setup workload () =
           in
           accepted := model;
           (model, none));
-      view;
+      view = view blocks;
       subscriptions = (fun _ -> Mosaic.Sub.none);
     }
   in
@@ -188,15 +188,27 @@ let () =
       |> Thumper.Config.deadline 60.
       |> Thumper.Config.metrics metrics)
     ~budgets:[ Thumper.Budget.no_more_alloc_than 0.05 ]
-    [
-      Thumper.group "transcript-5000"
-        (List.map
-           (fun (name, workload) ->
-             Thumper.bench_with_setup ~setup:(setup workload) ~teardown:close
-               name (measure workload))
+    (* Per-input cost must not grow with mounted content: the 20,000-block
+       transcript repeats the input workloads. *)
+    (List.map
+       (fun (blocks, workloads) ->
+         Thumper.group
+           (Printf.sprintf "transcript-%d" blocks)
+           (List.map
+              (fun (name, workload) ->
+                Thumper.bench_with_setup ~setup:(setup ~blocks workload)
+                  ~teardown:close name (measure workload))
+              workloads))
+       [
+         ( 5000,
            [
              ("keystroke-to-present", Keystroke);
              ("wheel-roundtrip-2x8", Wheel_burst);
              ("resize-250x70", Resize);
-           ]);
-    ]
+           ] );
+         ( 20000,
+           [
+             ("keystroke-to-present", Keystroke);
+             ("wheel-roundtrip-2x8", Wheel_burst);
+           ] );
+       ])
