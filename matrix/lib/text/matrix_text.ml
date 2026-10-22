@@ -70,11 +70,6 @@ let[@inline] codepoint_width_wcwidth ~tab_width cp =
     let w = Unicode.tty_width_hint (Uchar.unsafe_of_int cp) in
     if w = -1 then 0 else w
 
-let[@inline] codepoint_width_unicode ~tab_width cp =
-  if cp < 0x80 then
-    if cp = 0x09 then tab_width else if cp < 32 || cp = 127 then -1 else 1
-  else Unicode.tty_width_hint (Uchar.unsafe_of_int cp)
-
 let uchar_width ~tab_width uchar =
   codepoint_width_wcwidth
     ~tab_width:(normalize_tab_width tab_width)
@@ -136,33 +131,6 @@ let[@inline] ws_step ~wide cp cp_w state =
     in
     ws_make cp_w (flags lor ws_has_width lor emoji land lnot ws_virama)
   else state land lnot (ws_virama lor ws_emoji)
-
-let rec grapheme_width_unicode_loop ~wide str limit tab_width i state =
-  if i >= limit then ws_width state
-  else
-    let d = String.get_utf_8_uchar str i in
-    let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-    let cp_w = codepoint_width_unicode ~tab_width cp in
-    grapheme_width_unicode_loop ~wide str limit tab_width
-      (i + Uchar.utf_decode_length d)
-      (ws_step ~wide cp cp_w state)
-
-let rec grapheme_width_wcwidth_loop str limit tab_width i acc =
-  if i >= limit then acc
-  else
-    let d = String.get_utf_8_uchar str i in
-    let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-    let next = i + Uchar.utf_decode_length d in
-    grapheme_width_wcwidth_loop str limit tab_width next
-      (acc + codepoint_width_wcwidth ~tab_width cp)
-
-let cluster_width ~method_ ~tab_width str off len =
-  let limit = off + len in
-  match method_ with
-  | `Wcwidth -> grapheme_width_wcwidth_loop str limit tab_width off 0
-  | `Unicode | `Unicode_wide ->
-      grapheme_width_unicode_loop ~wide:(method_ = `Unicode_wide) str limit
-        tab_width off 0
 
 (* UTF-8 decoding
 
@@ -828,8 +796,8 @@ let iter_breaks ~intercharacter f s =
         && (is_cjk_ascii_transition prev_class curr_class
            || intercharacter && prev_class = Cjk_word && curr_class = Cjk_word
               && cp <> 0x3099 && cp <> 0x309A && cp <> 0x30A0 && cp <> 0x30FB
-              && cluster_width ~method_:`Unicode ~tab_width:2 s prev_byte_off
-                   (byte_off - prev_byte_off)
+              && measure_sub ~width_method:`Unicode ~tab_width:2 s
+                   ~pos:prev_byte_off ~len:(byte_off - prev_byte_off)
                  > 0)
       then
         f ~break_byte_offset:prev_byte_off ~next_byte_offset:byte_off
@@ -964,8 +932,8 @@ module Layout = struct
           for g = 0 to n - 1 do
             let off = t.offsets.(g) in
             let width =
-              cluster_width ~method_:width_method ~tab_width t.text off
-                (t.offsets.(g + 1) - off)
+              measure_sub ~width_method ~tab_width t.text ~pos:off
+                ~len:(t.offsets.(g + 1) - off)
             in
             if width = 0 then has_zero := true;
             columns.(g + 1) <- columns.(g) + width
