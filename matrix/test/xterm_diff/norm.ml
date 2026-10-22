@@ -1190,33 +1190,17 @@ let rewrite ctx bytes =
   in
   (* One scalar of text, with what xterm must get before it. *)
   let pending_lost = ref None in
-  let print sc =
-    if is_c1 sc.cp && on ctx "c1-utf8" then fire ctx "c1-utf8"
-    else begin
-      if width ctx sc = 2 then begin
-        let c = Vte_adapter.cursor m in
-        if c.cols >= 2 && c.col = c.cols - 1 && not c.last_column then
-          if c.auto_wrap then (
-            if on ctx "wrap-erase" then (
-              fire ctx "wrap-erase";
-              pending_lost := touch_cut ~row:c.row ~col:c.col;
-              emit "\027[K"))
-          else if on ctx "autowrap-off-wide" then (
-            fire ctx "autowrap-off-wide";
-            emit "\027[D")
-      end;
-      emit sc.bytes
-    end;
-    (* An ill-formed subsequence is one U+FFFD, which [m] gets whole: fed
-       alone, its bytes would leave a character pending. *)
-    let bytes = if sc.cp < 0 then replacement else sc.bytes in
+  let wide_seen = ref false in
+  (* [m] gets [bytes], which print a character of width [w]; the cells it
+     cuts and the cells xterm loses are tagged. *)
+  let place ~w bytes =
+    if w = 2 then wide_seen := true;
     (* cut-wide: the half of a wide character this one cuts. *)
     let c = Vte_adapter.cursor m in
-    let w = width ctx sc in
     (* Where the character lands: after the wrap the Last Column Flag or its
        width asks for, which scrolls at the bottom margin (no cut then). *)
     let target =
-      if w = 0 || is_c1 sc.cp then None
+      if w = 0 then None
       else
         let wraps =
           c.auto_wrap && (c.last_column || (c.col + w > c.cols && c.cols >= w))
@@ -1276,6 +1260,28 @@ let rewrite ctx bytes =
     in
     if cuts <> [] then Vte_adapter.tag tags ~text:cut_tag cuts
   in
+  let print sc =
+    if is_c1 sc.cp && on ctx "c1-utf8" then fire ctx "c1-utf8"
+    else begin
+      if width ctx sc = 2 then begin
+        let c = Vte_adapter.cursor m in
+        if c.cols >= 2 && c.col = c.cols - 1 && not c.last_column then
+          if c.auto_wrap then (
+            if on ctx "wrap-erase" then (
+              fire ctx "wrap-erase";
+              pending_lost := touch_cut ~row:c.row ~col:c.col;
+              emit "\027[K"))
+          else if on ctx "autowrap-off-wide" then (
+            fire ctx "autowrap-off-wide";
+            emit "\027[D")
+      end;
+      emit sc.bytes
+    end;
+    (* An ill-formed subsequence is one U+FFFD, which [m] gets whole: fed
+       alone, its bytes would leave a character pending. *)
+    let bytes = if sc.cp < 0 then replacement else sc.bytes in
+    place ~w:(if is_c1 sc.cp then 0 else width ctx sc) bytes
+  in
   (* The last unit of a text, as wcwidth cuts it: from its last character of
      positive width. *)
   let last_unit scalars =
@@ -1322,7 +1328,10 @@ let rewrite ctx bytes =
           List.length (List.filter (fun sc -> not (is_c1 sc.cp)) unit) > 1
         in
         let crossing = !crossed && on ctx "rep-after-control" in
-        if (multi && on ctx "rep-cluster") || w = 2 || crossing then begin
+        (* Written out too when a wide character came before, so that the
+           cuts each copy makes are followed. *)
+        if (multi && on ctx "rep-cluster") || w = 2 || crossing || !wide_seen
+        then begin
           if multi then fire ctx "rep-cluster";
           (* After bytes that form no token, REP repeats the unit; xterm
              repeats it after some and not after others. *)
@@ -1331,7 +1340,10 @@ let rewrite ctx bytes =
           (* Written out: each copy a unit of its own, as REP makes it. *)
           for _ = 1 to n do
             List.iter print unit
-          done
+          done;
+          (* REP is a control function, which ends the unit in progress:
+             [m], which got the copies instead, gets one too. *)
+          feed "\027[?0l"
         end
         else (
           emit (if reduced then Printf.sprintf "\027[%db" n else raw);
@@ -1440,6 +1452,10 @@ let rewrite ctx bytes =
           fire ctx "reverse-wrap-marks";
           feed "\x08";
           emit (cup ())
+      | Ctl '\x1a' ->
+          (* SUB prints its error character, which may cut a wide one. *)
+          emit "\x1a";
+          place ~w:1 "\x1a"
       | Ctl c ->
           let s = String.make 1 c in
           emit s;
@@ -2229,10 +2245,22 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
       false)
     else true
   in
-  let before =
-    String.concat "" (List.rev_map (fun (p : Gen.token) -> p.bytes) prev)
+  (* C0 controls are performed inside a sequence, which goes on, and DEL is
+     dropped there: neither keeps ESC and its final apart. *)
+  let bare s =
+    let b = Buffer.create (String.length s) in
+    String.iter
+      (fun c ->
+        if
+          (c >= '\x20' && c <> '\x7f') || c = '\027' || c = '\x18' || c = '\x1a'
+        then Buffer.add_char b c)
+      s;
+    Buffer.contents b
   in
-  let after = before ^ t.bytes in
+  let before =
+    bare (String.concat "" (List.rev_map (fun (p : Gen.token) -> p.bytes) prev))
+  in
+  let after = before ^ bare t.bytes in
   let n = String.length before in
   (* [forms sub]: [t] completes an occurrence of [sub]. *)
   let forms sub = occurs ~ending_after:n after sub in
