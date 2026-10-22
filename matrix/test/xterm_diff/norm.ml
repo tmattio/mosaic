@@ -1324,6 +1324,7 @@ let rewrite ctx bytes =
     in
     if cuts <> [] then Vte_adapter.tag tags ~text:cut_tag cuts
   in
+  let c1_text = ref false in
   let print sc =
     if is_c1 sc.cp && on ctx "c1-utf8" then fire ctx "c1-utf8"
     else begin
@@ -1339,7 +1340,9 @@ let rewrite ctx bytes =
             fire ctx "autowrap-off-wide";
             emit "\027[D")
       end;
-      emit sc.bytes
+      (* Where a C1 goes, the bytes around it would meet: an ill-formed
+         subsequence there gets xterm U+FFFD, as matrix reads it. *)
+      emit (if sc.cp < 0 && !c1_text then replacement else sc.bytes)
     end;
     (* An ill-formed subsequence is one U+FFFD, which [m] gets whole: fed
        alone, its bytes would leave a character pending. *)
@@ -1507,7 +1510,10 @@ let rewrite ctx bytes =
             feed (String.concat "" (List.map (fun sc -> sc.bytes) run))
           end
           else List.iter print run;
-          List.iter print rest
+          c1_text :=
+            on ctx "c1-utf8" && List.exists (fun sc -> is_c1 sc.cp) scalars;
+          List.iter print rest;
+          c1_text := false
       | Ctl '\x18' when ctx.decid >= 100 && ctx.decid < 200 ->
           if on ctx "can-checkerboard" then (
             fire ctx "can-checkerboard";
