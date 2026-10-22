@@ -1473,6 +1473,7 @@ let character_sets () =
   equal ~msg:"SO and SI" string "a\xe2\x94\x80q   " (line "\x1b)0a\x0eq\x0fq");
   equal ~msg:"LS2" string "\xe2\x94\x80     " (line "\x1b*0\x1bnq");
   equal ~msg:"British" string "a\xc2\xa3    " (line "\x1b(Aa#");
+  let line s = line ("\x1b[?42h" ^ s) in
   equal ~msg:"German" string "\xc3\x84\xc3\x9c\xc3\xa4\xc3\xbc  "
     (line "\x1b(K[]{}");
   equal ~msg:"Dutch and French" string "\u{0133}\u{00e0}    "
@@ -1879,6 +1880,23 @@ let decstr_slots () =
      feed vte "\x1b[?47l\x1b8";
      (alt, Vte.cursor_pos vte))
 
+let more_character_sets () =
+  let line s = Vte.to_string (screen_of [ s ]) in
+  equal ~msg:"DEC graphics 0x5F is a blank" string
+    "\xe2\x94\x80 \xe2\x94\x80   " (line "\x1b(0q_q");
+  equal ~msg:"SS2" string "\xe2\x94\x80q    " (line "\x1b*0\x1bNqq");
+  equal ~msg:"SS3" string "\xe2\x94\x80q    " (line "\x1b+0\x1bOqq");
+  equal ~msg:"SS2 consumed by a non-ASCII character" string "\xc3\xa9q    "
+    (line "\x1b*0\x1bN\xc3\xa9q");
+  let national s = line ("\x1b[?42h" ^ s) in
+  equal ~msg:"French Canadian 9" string "\u{00e0}     " (national "\x1b(9@");
+  equal ~msg:"French f" string "\u{00e0}     " (national "\x1b(f@");
+  equal ~msg:"Norwegian/Danish `" string "\u{00c6}     " (national "\x1b(`[");
+  equal ~msg:"a set without a table maps nothing" string "q     "
+    (line "\x1b(0\x1b(<q");
+  equal ~msg:"a 96-character set maps nothing" string "q     "
+    (line "\x1b)0\x1b-A\x0eq")
+
 (* Resizing keeps the text around the cursor and moves rows to and from the
    scrollback. *)
 let resize_keeps_text () =
@@ -1930,6 +1948,20 @@ let resize_keeps_text () =
   feed vte "\xcc\x81";
   equal ~msg:"the unit in progress is ended" string "e\xcc\x81"
     (Grid.get_text (Vte.grid vte) 0)
+
+(* National replacement sets need national mode (DECNRCM). *)
+let national_mode () =
+  let line s = Vte.to_string (screen_of [ s ]) in
+  equal ~msg:"outside national mode" string "`     " (line "\x1b(H`");
+  equal ~msg:"in national mode" string "\u{00e9}     " (line "\x1b[?42h\x1b(H`");
+  equal ~msg:"a designation waits for the mode" string "`\u{00e9}    "
+    (line "\x1b(H`\x1b[?42h`");
+  equal ~msg:"UK needs no national mode" string "\u{00a3}     " (line "\x1b(A#");
+  equal ~msg:"DEC graphics need none" string "\u{2500}     " (line "\x1b(0q");
+  is_false ~msg:"DECSTR resets it"
+    (Vte.modes (screen_of [ "\x1b[?42h\x1b[!p" ])).national;
+  is_false ~msg:"RIS resets it"
+    (Vte.modes (screen_of [ "\x1b[?42h\x1bc" ])).national
 
 (** {1 Test Suite} *)
 
@@ -2077,7 +2109,9 @@ let tests =
     test "parser probes" parser_probes;
     test "DECALN resets" decaln_resets;
     test "DECSTR resets both slots" decstr_slots;
+    test "more character sets" more_character_sets;
     test "resize keeps text" resize_keeps_text;
+    test "national mode" national_mode;
   ]
 
 let () = run "matrix.vte" [ group "vte" tests ]

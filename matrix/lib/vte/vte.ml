@@ -17,11 +17,13 @@ type cursor = {
 (* [style] is the SGR rendition, never with a link: OSC 8 sets [link]. *)
 type pen = { style : Ansi.Style.t; link : string option; protected : bool }
 
-(* A 94-character set: ASCII, or the code points that replace 0x20..0x7F. *)
-type charset = Ascii | Mapped of int array
+(* A 94-character set: ASCII, or the code points that replace 0x20..0x7F; a
+   national replacement set only replaces them in national mode. *)
+type charset = Ascii | Mapped of { table : int array; national : bool }
 
-(* [g] is never mutated: a designation makes a new array. *)
-type charsets = { g : charset array; gl : int }
+(* [g] is never mutated: a designation makes a new array. [single] is the set a
+   single shift invokes for the next character. *)
+type charsets = { g : charset array; gl : int; single : int option }
 
 (* What DECSC saves. *)
 type saved = { cursor : cursor; pen : pen; charsets : charsets; origin : bool }
@@ -46,6 +48,7 @@ type modes = {
   cursor_visible : bool;
   bracketed_paste : bool;
   alternate_screen : bool;
+  national : bool;
 }
 
 (* A scrollback line: its text, the style of each run of it from
@@ -115,7 +118,7 @@ type t = {
 
 let top_left = { row = 0; col = 0; last_column = false }
 let plain_pen = { style = Ansi.Style.default; link = None; protected = false }
-let ascii_sets = { g = [| Ascii; Ascii; Ascii; Ascii |]; gl = 0 }
+let ascii_sets = { g = [| Ascii; Ascii; Ascii; Ascii |]; gl = 0; single = None }
 
 let power_up =
   { cursor = top_left; pen = plain_pen; charsets = ascii_sets; origin = false }
@@ -130,6 +133,7 @@ let power_up_modes =
     cursor_visible = true;
     bracketed_paste = false;
     alternate_screen = false;
+    national = false;
   }
 
 (* Tab stops every eight columns, as at power-up. *)
@@ -418,7 +422,7 @@ let wrap t =
 (* {1:charsets Character sets} *)
 
 (* The set whose [chars] are replaced by [by], in order. *)
-let replacing chars by =
+let replacing ?(national = true) chars by =
   let table = Array.init 96 (fun i -> i + 0x20) in
   let i = ref 0 in
   String.iter
@@ -427,14 +431,17 @@ let replacing chars by =
       table.(Char.code c - 0x20) <- Uchar.to_int (Uchar.utf_decode_uchar d);
       i := !i + Uchar.utf_decode_length d)
     chars;
-  Mapped table
+  Mapped { table; national }
 
-(* DEC Special Graphics (VT100 User Guide table 3-9). *)
+(* DEC Special Graphics (VT100 User Guide table 3-9): 0x5F is a blank. *)
 let dec_graphics =
-  replacing "`abcdefghijklmnopqrstuvwxyz{|}~"
-    "\u{25c6}\u{2592}\u{2409}\u{240c}\u{240d}\u{240a}\u{00b0}\u{00b1}\u{2424}\u{240b}\u{2518}\u{2510}\u{250c}\u{2514}\u{253c}\u{23ba}\u{23bb}\u{2500}\u{23bc}\u{23bd}\u{251c}\u{2524}\u{2534}\u{252c}\u{2502}\u{2264}\u{2265}\u{03c0}\u{2260}\u{00a3}\u{00b7}"
+  replacing ~national:false "_`abcdefghijklmnopqrstuvwxyz{|}~"
+    " \
+     \u{25c6}\u{2592}\u{2409}\u{240c}\u{240d}\u{240a}\u{00b0}\u{00b1}\u{2424}\u{240b}\u{2518}\u{2510}\u{250c}\u{2514}\u{253c}\u{23ba}\u{23bb}\u{2500}\u{23bc}\u{23bd}\u{251c}\u{2524}\u{2534}\u{252c}\u{2502}\u{2264}\u{2265}\u{03c0}\u{2260}\u{00a3}\u{00b7}"
 
-let uk = replacing "#" "£"
+(* The UK set is the VT100's (VT100 User Guide table 3-9), not one of the
+   national replacement sets that need national mode. *)
+let uk = replacing ~national:false "#" "£"
 let dutch = replacing "#@[\\]{|}~" "£¾ĳ½|¨ƒ¼´"
 let finnish = replacing "[\\]^`{|}~" "ÄÖÅÜéäöåü"
 let french = replacing "#@[\\]{|}~" "£à°ç§éùè¨"
@@ -452,25 +459,46 @@ let charset_94 = function
   | 'A' -> uk
   | '4' -> dutch
   | 'C' | '5' -> finnish
-  | 'R' -> french
-  | 'Q' -> french_canadian
+  | 'R' | 'f' -> french
+  | 'Q' | '9' -> french_canadian
   | 'K' -> german
   | 'Y' -> italian
-  | 'E' | '6' -> norwegian_danish
+  | 'E' | '6' | '`' -> norwegian_danish
   | 'Z' -> spanish
   | 'H' | '7' -> swedish
   | '=' -> swiss
   | _ -> Ascii
 
-let translate t u =
-  match t.charsets.g.(t.charsets.gl) with
+(* The national replacement sets "are available when you select national
+   mode" (VT220 Programmer Reference Manual §2.4.3, DECNRCM §4.6.19). Out of
+   it, a slot designated with one leaves characters unchanged, as ASCII, and
+   it translates again once national mode is selected. *)
+let available t = function
+  | Mapped { national = true; _ } when not t.modes.national -> Ascii
+  | set -> set
+
+let map t set u =
+  match available t set with
   | Ascii -> u
-  | Mapped table ->
+  | Mapped { table; _ } ->
       let c = Uchar.to_int u in
       if c >= 0x20 && c < 0x80 then Uchar.unsafe_of_int table.(c - 0x20) else u
 
+(* A single shift is consumed by the next character, translated or not. *)
+let translate t u =
+  let cs = t.charsets in
+  match cs.single with
+  | None -> map t cs.g.(cs.gl) u
+  | Some g ->
+      t.charsets <- { cs with single = None };
+      map t cs.g.(g) u
+
 let untranslated t =
-  match t.charsets.g.(t.charsets.gl) with Ascii -> true | Mapped _ -> false
+  t.charsets.single = None
+  &&
+  match available t t.charsets.g.(t.charsets.gl) with
+  | Ascii -> true
+  | Mapped _ -> false
 
 (* {1:print Printing} *)
 
@@ -962,6 +990,7 @@ let set_dec_mode t mode on =
       t.modes <- { m with auto_wrap = on };
       if not on then t.cursor.last_column <- false
   | 25 -> set_cursor_visible t on
+  | 42 -> t.modes <- { m with national = on }
   | 45 -> t.modes <- { m with reverse_wrap = on }
   | 47 -> switch_screen t ~alternate:on
   | 1047 -> if on then switch_screen t ~alternate:true else leave_alternate t
@@ -1014,6 +1043,7 @@ let decstr t =
       auto_wrap = true;
       reverse_wrap = false;
       cursor_keys = false;
+      national = false;
     };
   t.margins <- { top = 0; bottom = t.rows - 1 };
   t.pen <- plain_pen;
@@ -1023,15 +1053,35 @@ let decstr t =
 
 (* {1:charset_functions Character set functions} *)
 
-(* SCS: [ESC ( F] to [ESC + F] designate the 94-character set [F] as G0 to
-   G3. *)
-let scs t g final =
-  let sets = Array.copy t.charsets.g in
-  sets.(g) <- charset_94 final;
-  t.charsets <- { t.charsets with g = sets }
+(* SCS: [ESC I F] with I one of ( ) * + designates a 94-character set as G0
+   to G3, and with - . / a 96-character set as G1 to G3. A set without a
+   table here (a 96-character set, or one named by a two-byte designator such
+   as [% 6]) maps nothing. *)
+let scs t intermediates final =
+  let designate g set =
+    let sets = Array.copy t.charsets.g in
+    sets.(g) <- set;
+    t.charsets <- { t.charsets with g = sets }
+  in
+  let set =
+    if String.length intermediates = 1 then charset_94 final else Ascii
+  in
+  match intermediates.[0] with
+  | '(' -> designate 0 set
+  | ')' -> designate 1 set
+  | '*' -> designate 2 set
+  | '+' -> designate 3 set
+  | '-' -> designate 1 Ascii
+  | '.' -> designate 2 Ascii
+  | '/' -> designate 3 Ascii
+  | _ -> ()
 
-(* SI, SO, LS2 and LS3 invoke G0, G1, G2 and G3 into GL. *)
+(* SI, SO, LS2 and LS3 invoke G0, G1, G2 and G3 into GL; SS2 and SS3 invoke
+   G2 or G3 for the next character. *)
 let ls t g = t.charsets <- { t.charsets with gl = g }
+let ss2 = Some 2
+let ss3 = Some 3
+let ss t single = t.charsets <- { t.charsets with single }
 
 (* {1:replies Replies} *)
 
@@ -1082,6 +1132,8 @@ let control t = function
       goto t ~row:t.cursor.row ~col:0
   | '\x88' -> hts t
   | '\x8d' -> reverse_index t
+  | '\x8e' -> ss t ss2
+  | '\x8f' -> ss t ss3
   | '\x9a' -> da t (* ESC Z, DECID: an obsolete form of DA (ctlseqs) *)
   | _ -> ()
 
@@ -1093,11 +1145,8 @@ let esc t intermediates final =
   | "", 'n' -> ls t 2
   | "", 'o' -> ls t 3
   | "#", '8' -> decaln t
-  | "(", f -> scs t 0 f
-  | ")", f -> scs t 1 f
-  | "*", f -> scs t 2 f
-  | "+", f -> scs t 3 f
-  | _ -> ()
+  | "", _ -> ()
+  | _ -> scs t intermediates final
 
 let csi t (s : Ansi.Parser.sequence) =
   let p = s.params in

@@ -20,7 +20,8 @@
     - the {e Last Column Flag};
     - the {e pen}: the rendition SGR selects, the hyperlink OSC 8 opens, and
       whether DECSCA protects the characters written next;
-    - the character sets designated as G0 to G3 and the one invoked into GL;
+    - the character sets designated as G0 to G3, the one invoked into GL, and a
+      pending single shift;
     - origin mode (DECOM).
 
     DECSC saves exactly this and DECRC restores it. Autowrap (DECAWM) is a
@@ -106,7 +107,13 @@
 
     Character sets translate characters before units are formed: DEC Special
     Graphics, the UK set and the national replacement sets (VT220 Programmer
-    Reference Manual tables 2-5 to 2-15), invoked by SI, SO, LS2 and LS3.
+    Reference Manual tables 2-5 to 2-15, with the final characters xterm's
+    ctlseqs lists), invoked by SI, SO, LS2 and LS3, or for one character by SS2
+    and SS3. The national sets "are available when you select national mode"
+    (§2.4.3), DECNRCM: out of it a slot designated with one leaves characters
+    unchanged, and translates once national mode is selected. A designation of a
+    set this terminal has no table for, such as DEC Supplemental, leaves the
+    characters unchanged.
 
     {2:parameters Parameters}
 
@@ -130,12 +137,12 @@
     {2:resets Resets}
 
     RIS returns to the power-up state. DECSTR returns each terminal setting to
-    its power-up value: insert, origin, autowrap and reverse-wrap modes, cursor
-    keys, cursor visibility and the margins; the pen and the character sets to
-    their defaults; both DECSC slots to the power-up cursor state. The VT510's
-    table gives "No autowrap", its own power-up value; this terminal powers up
-    with autowrap on, so DECSTR sets it on. The screen, the cursor position, the
-    active screen and bracketed paste stay. *)
+    its power-up value: insert, origin, autowrap, reverse-wrap and national
+    modes, cursor keys, cursor visibility and the margins; the pen and the
+    character sets to their defaults; both DECSC slots to the power-up cursor
+    state. The VT510's table gives "No autowrap", its own power-up value; this
+    terminal powers up with autowrap on, so DECSTR sets it on. The screen, the
+    cursor position, the active screen and bracketed paste stay. *)
 
 type t
 (** The type for terminal emulators. Mutable, not thread-safe. *)
@@ -224,6 +231,9 @@ type modes = {
   cursor_visible : bool;  (** DECTCEM (DECSET 25). *)
   bracketed_paste : bool;  (** xterm's bracketed paste (DECSET 2004). *)
   alternate_screen : bool;  (** The alternate screen is active. *)
+  national : bool;
+      (** DECNRCM (DECSET 42): the national replacement character sets are
+          available. *)
 }
 (** The type for the terminal's modes. At power-up autowrap is on, the cursor
     visible and the others off. *)
