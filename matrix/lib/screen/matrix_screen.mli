@@ -213,6 +213,10 @@ val set_width_method : t -> Matrix_text.width_method -> unit
     the current and next buffers. Use this after capability changes that affect
     width calculation to keep buffers consistent across swaps. *)
 
+val width_method : t -> Matrix_text.width_method
+(** [width_method t] is the grapheme width computation method of [t]'s buffers.
+    Unlike reading it from {!next_grid}, it leaves the next buffer as it is. *)
+
 (** {1:layout Layout} *)
 
 val resize : t -> width:int -> height:int -> unit

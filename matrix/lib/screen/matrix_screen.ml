@@ -727,6 +727,8 @@ let set_width_method (t : t) (method_ : Matrix_text.width_method) =
   Grid.set_width_method t.scroll_baseline method_;
   Grid.set_width_method t.next method_
 
+let width_method t = Grid.width_method t.next
+
 let add_hit_region frame ~x ~y ~width ~height ~id =
   ensure_next_fresh frame;
   frame.next_state <- Touched;
