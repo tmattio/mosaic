@@ -387,6 +387,91 @@ let paste_overflow_recovery =
       feed_chunks parser bytes 4096 0 ~on_event ~on_response;
       ignore (Sys.opaque_identity !count))
 
+(* The decoder, on the same workloads *)
+
+module D = I.Decoder
+
+(* Feeds [bytes] to [d] in reads of [chunk_size], counting the events. *)
+let decode d bytes chunk_size count =
+  let emit _ = incr count in
+  let len = Bytes.length bytes in
+  let rec loop offset =
+    if offset < len then begin
+      let chunk = min chunk_size (len - offset) in
+      D.feed d bytes ~off:offset ~len:chunk emit;
+      ignore (D.pending d);
+      loop (offset + chunk)
+    end
+  in
+  loop 0
+
+(* A decoder fed [bytes] in reads of [chunk_size], from the start of a stream
+   each run when [fresh], owed a string reply when [strings]. *)
+let decoder_bench ?(fresh = false) ?(strings = false) name bytes chunk_size =
+  let d = D.create () in
+  if strings then D.expect d { cursor_reports = 0; string_replies = 1 };
+  let count = ref 0 in
+  bench name (fun () ->
+      if fresh then D.reset d;
+      count := 0;
+      decode d bytes chunk_size count;
+      ignore (Sys.opaque_identity !count))
+
+let decoder_benchmarks =
+  let whole s = (Bytes.of_string s, String.length s) in
+  let legacy, legacy_len = whole legacy_keyboard_stream in
+  let kitty, kitty_len = whole kitty_keyboard_stream in
+  let mouse, mouse_len = whole mouse_stream in
+  let osc size =
+    Bytes.of_string ("\x1b]10;" ^ String.make size 'x' ^ "\x1b\\")
+  in
+  [
+    decoder_bench "typing/ascii-burst" (Bytes.of_string ascii_line) 32;
+    decoder_bench "typing/unicode-burst" (Bytes.of_string complex_line) 48;
+    decoder_bench "keyboard/legacy-hot" legacy legacy_len;
+    decoder_bench "keyboard/kitty-hot" kitty kitty_len;
+    decoder_bench ~fresh:true "fragmented/keyboard-bytewise" legacy 1;
+    decoder_bench ~fresh:true ~strings:true "fragmented/osc-256-bytes-chunk-1"
+      (osc 256) 1;
+    decoder_bench ~fresh:true ~strings:true "fragmented/osc-1024-bytes-chunk-1"
+      (osc 1024) 1;
+    decoder_bench ~fresh:true ~strings:true "fragmented/osc-3072-bytes-chunk-1"
+      (osc 3072) 1;
+    decoder_bench ~fresh:true ~strings:true "fragmented/osc-3072-bytes-chunk-32"
+      (osc 3072) 32;
+    decoder_bench "mouse/mixed" mouse mouse_len;
+    decoder_bench ~fresh:true "paste/ci-log"
+      (Bytes.of_string bracketed_paste_stream)
+      1024;
+    decoder_bench ~fresh:true "paste/valid-64KiB"
+      (paste_stream (String.make (64 * 1024) 'x'))
+      4096;
+    decoder_bench ~fresh:true "paste/valid-1MiB"
+      (paste_stream (String.make (1024 * 1024) 'x'))
+      4096;
+    (let prefix = Bytes.of_string ("\x1b[200~" ^ String.make (64 * 1024) 'x') in
+     let suffix = Bytes.of_string "\x1b[201~" in
+     let d = D.create () in
+     let count = ref 0 in
+     bench "paste/split-end-marker" (fun () ->
+         count := 0;
+         for split = 1 to Bytes.length suffix - 1 do
+           D.reset d;
+           decode d prefix 4096 count;
+           D.feed d suffix ~off:0 ~len:split (fun _ -> incr count);
+           D.feed d suffix ~off:split
+             ~len:(Bytes.length suffix - split)
+             (fun _ -> incr count)
+         done;
+         ignore (Sys.opaque_identity !count)));
+    (* The decoder holds no paste, so a paste over the previous parser's limit
+       is a paste like any other. *)
+    decoder_bench ~fresh:true "paste/overflow-recovery"
+      (Bytes.of_string
+         ("\x1b[200~" ^ String.make (1024 * 1024) 'x' ^ "\x1b[201~z"))
+      4096;
+  ]
+
 (* Benchmark tree *)
 
 let benchmarks =
@@ -413,6 +498,7 @@ let benchmarks =
         paste_split_end_marker;
         paste_overflow_recovery;
       ];
+    group "decoder" decoder_benchmarks;
   ]
 
 let () =
