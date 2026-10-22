@@ -27,7 +27,13 @@ val tty_width_hint : Uchar.t -> int
     - [-1] for control characters (C0, DEL, C1).
     - [0] for non-spacing marks and format characters.
     - [1] for most characters.
-    - [2] for wide and fullwidth East Asian characters. *)
+    - [2] for wide and fullwidth East Asian characters, and for symbols that
+      terminals with emoji fonts draw two cells wide, such as U+26A0. *)
+
+val wcwidth : Uchar.t -> int
+(** [wcwidth u] is {!tty_width_hint} [u], except that the symbols it widens for
+    emoji fonts keep the width [1] that wcwidth gives them. It is
+    [Uucp.Break.tty_width_hint u]. *)
 
 val is_emoji : Uchar.t -> bool
 (** [is_emoji u] is [true] iff [u] has the Emoji property. U+FE0F gives such a
@@ -38,7 +44,8 @@ val is_emoji : Uchar.t -> bool
 val packed_props : Uchar.t -> int
 (** [packed_props u] is all properties in a single table lookup. Bit layout:
     bits 0–4 = gcb, bits 5–6 = incb, bit 7 = extpic, bits 8–9 = width encoding
-    (0 = -1, 1 = 0, 2 = 1, 3 = 2), bit 10 = emoji. *)
+    (0 = -1, 1 = 0, 2 = 1, 3 = 2), bit 10 = emoji, bit 11 = wide symbol (a width
+    of [2] that {!wcwidth} gives as [1]). *)
 
 val grapheme_props : Uchar.t -> int
 (** [grapheme_props u] is all grapheme properties in a single lookup. Bit

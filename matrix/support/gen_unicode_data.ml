@@ -14,7 +14,8 @@
 
    Layout per 16-bit entry: - bits 0-4: grapheme_cluster_break (0-17) - bits
    5-6: indic_conjunct_break (0-3) - bit 7: extended_pictographic (boolean) -
-   bits 8-9: width (encoded: 0=-1, 1=0, 2=1, 3=2) - bit 10: emoji (boolean)
+   bits 8-9: width (encoded: 0=-1, 1=0, 2=1, 3=2) - bit 10: emoji (boolean) -
+   bit 11: wide symbol (boolean), a width of 2 that wcwidth gives as 1
 
    Surrogates (U+D800-U+DFFF) are excluded from the table.
 
@@ -109,16 +110,16 @@ let compute_prop_table () =
     let emoji = Uucp.Emoji.is_emoji u in
     let cp = Uchar.to_int u in
     let width_raw = Uucp.Break.tty_width_hint u in
-    let width_raw =
-      if width_raw = 1 && terminal_wide_symbol_override cp then 2 else width_raw
-    in
+    let wide_symbol = width_raw = 1 && terminal_wide_symbol_override cp in
+    let width_raw = if wide_symbol then 2 else width_raw in
     let width_enc = width_raw + 1 in
     let v =
       gcb land 0x1F
       lor ((incb land 0x03) lsl 5)
       lor (if extpic then 0x80 else 0)
       lor ((width_enc land 0x03) lsl 8)
-      lor if emoji then 0x400 else 0
+      lor (if emoji then 0x400 else 0)
+      lor if wide_symbol then 0x800 else 0
     in
     Bytes.set_uint16_le buf (packed * 2) v
   done;

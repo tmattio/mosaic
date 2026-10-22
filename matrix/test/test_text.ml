@@ -590,6 +590,23 @@ let emoji_presentation_widths () =
   check "dog face U+1F436" 0x1F436 2;
   check "melting face U+1FAE0" 0x1FAE0 2
 
+let wcwidth_symbol_widths () =
+  (* The Unicode method draws some symbols of East Asian width Neutral two
+     cells wide, as terminals with emoji fonts do. Wcwidth keeps the width a
+     wcwidth gives them, one cell, unless they have Emoji_Presentation. *)
+  let check label cp expected_w =
+    check_width label expected_w
+      (measure ~width_method:`Wcwidth ~tab_width:2 (uchar_to_utf8 cp))
+  in
+  check "warning sign U+26A0" 0x26A0 1;
+  check "red heart U+2764" 0x2764 1;
+  check "double exclamation U+203C" 0x203C 1;
+  check "radioactive U+2622" 0x2622 1;
+  check "mahjong east wind U+1F000" 0x1F000 1;
+  check "mahjong red dragon U+1F004" 0x1F004 2;
+  check "watch U+231A" 0x231A 2;
+  check "rocket U+1F680" 0x1F680 2
+
 let c1_control_widths () =
   let check_zero label cp =
     check_width label 0
@@ -663,6 +680,7 @@ let () =
       group "Width Tables"
         [
           test "emoji presentation widths" emoji_presentation_widths;
+          test "wcwidth symbol widths" wcwidth_symbol_widths;
           test "C1 control widths" c1_control_widths;
         ];
     ]

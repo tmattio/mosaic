@@ -63,7 +63,7 @@ let[@inline] codepoint_width_wcwidth ~tab_width cp =
   if cp < 0x80 then
     if cp = 0x09 then tab_width else if cp < 32 || cp = 127 then 0 else 1
   else
-    let w = Unicode.tty_width_hint (Uchar.unsafe_of_int cp) in
+    let w = Unicode.wcwidth (Uchar.unsafe_of_int cp) in
     if w = -1 then 0 else w
 
 let[@inline] codepoint_width_unicode ~tab_width cp =

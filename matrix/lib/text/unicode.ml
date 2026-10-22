@@ -29,6 +29,11 @@ let[@inline] grapheme_cluster_break u = packed_props u land 0x1F
 let[@inline] indic_conjunct_break u = (packed_props u lsr 5) land 0x03
 let[@inline] is_extended_pictographic u = packed_props u land 0x80 <> 0
 let[@inline] tty_width_hint u = ((packed_props u lsr 8) land 0x03) - 1
+
+let[@inline] wcwidth u =
+  let p = packed_props u in
+  if p land 0x800 <> 0 then 1 else ((p lsr 8) land 0x03) - 1
+
 let[@inline] is_emoji u = packed_props u land 0x400 <> 0
 
 (* Combined lookup - returns packed (gcb, incb, extpic) in one access. Returns:

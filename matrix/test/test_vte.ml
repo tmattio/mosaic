@@ -1222,6 +1222,13 @@ let unicode_mark_on_blank_across_writes () =
   equal ~msg:"later write" bool true
     (Ansi.Color.equal (fg [ " "; "\u{0301}" ]) Ansi.Color.default)
 
+let unicode_wcwidth_narrow_symbol () =
+  (* With wcwidth, a symbol without Emoji_Presentation takes one cell, so the
+     character after it stays on the row. *)
+  let vte = Vte.create ~width_method:`Wcwidth ~rows:2 ~cols:2 () in
+  Vte.feed_string vte "\u{2764}X";
+  equal ~msg:"screen" string "\u{2764}X\n  " (Vte.to_string vte)
+
 let unicode_prepend_across_writes () =
   (* A Prepend character draws apart from the character after it, as in
      xterm, so a read split between them draws the same screen. *)
@@ -1436,6 +1443,7 @@ let tests =
       unicode_wcwidth_cells_across_writes;
     test "unicode mark on blank across writes"
       unicode_mark_on_blank_across_writes;
+    test "unicode wcwidth narrow symbol" unicode_wcwidth_narrow_symbol;
     test "unicode prepend across writes" unicode_prepend_across_writes;
     test "unicode mark after dropped wide" unicode_mark_after_dropped_wide;
     test "unicode malformed utf8" unicode_malformed_utf8;
