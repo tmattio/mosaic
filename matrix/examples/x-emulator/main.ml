@@ -613,7 +613,11 @@ let main_loop state =
           Pty.read state.pty read_buffer 0 (Bytes.length read_buffer)
         in
         if bytes_read > 0 then (
-          Vte.feed state.vte read_buffer 0 bytes_read;
+          (* The program waits for the answers to its queries. *)
+          let replies = Vte.feed state.vte read_buffer 0 bytes_read in
+          if replies <> "" then
+            ignore
+              (Pty.write_string state.pty replies 0 (String.length replies));
           (* Auto-scroll to live terminal on new output (Alacritty behavior) *)
           state.display_offset <- 0)
         else

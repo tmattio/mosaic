@@ -6,9 +6,7 @@ let create ~rows ~cols =
   Vte.create ~scrollback:0 ~default_fg:Ansi.Color.default_fg
     ~default_bg:Ansi.Color.default_bg ~rows ~cols ()
 
-let feed t s =
-  Vte.feed_string t s;
-  Vte.take_replies t
+let feed t s = Vte.feed_string t s
 
 let color c =
   match Ansi.Color.intent c with

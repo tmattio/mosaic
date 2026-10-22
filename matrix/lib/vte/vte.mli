@@ -5,8 +5,8 @@
     or ask the terminal something ({!Ansi.Parser} reads them). [t] applies those
     bytes to a model of a DEC VT-series terminal as xterm extends it, and keeps
     what a renderer shows: the cells of the screen, the cursor, and the lines
-    scrolled off the top. It does no I/O: the answers the program asked for wait
-    in {!take_replies}.
+    scrolled off the top. It does no I/O: the answers the program asked for are
+    the result of {!feed}.
 
     The screen is a function of the bytes, never of how they were split into
     {!feed} calls.
@@ -117,8 +117,10 @@
     {2:replies Replies}
 
     The terminal answers:
-    - DA ([CSI c]) with [CSI ? 1 ; 2 c], a VT100 with Advanced Video, and DA2
-      ([CSI > c]) with [CSI > 0 ; 0 ; 0 c], unless {!create} is given others;
+    - DA ([CSI c]), and DECID ([ESC Z]), its obsolete form (ctlseqs), with
+      [CSI ? 1 ; 2 c], a VT100 with Advanced Video, and DA2 ([CSI > c]) with
+      [CSI > 0 ; 0 ; 0 c]. The identity is a promise: a VT220 (level 2) would
+      promise 8-bit controls and DECSCL, which this terminal lacks;
     - DSR 5 with [CSI 0 n], and CPR (DSR 6) with [CSI r ; c R], the row counted
       from the top margin in origin mode;
     - DECXCPR ([CSI ? 6 n]) with [CSI ? r ; c ; 1 R]. The VT510 manual shows no
@@ -145,8 +147,6 @@ val create :
   ?width_method:Matrix_text.width_method ->
   ?default_fg:Ansi.Color.t ->
   ?default_bg:Ansi.Color.t ->
-  ?da1:string ->
-  ?da2:string ->
   rows:int ->
   cols:int ->
   unit ->
@@ -159,27 +159,23 @@ val create :
       none or sets the default (SGR 39, 49). Default to {!Ansi.Color.white} and
       {!Ansi.Color.black}; {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}
       keep the terminal default in the cells.
-    - [da1] and [da2], the replies to DA and DA2. Default to ["\027\[?1;2c"] and
-      ["\027\[>0;0;0c"].
 
     [rows] and [cols] are at least [1]. *)
 
 (** {1:feeding Feeding output} *)
 
-val feed : t -> bytes -> int -> int -> unit
-(** [feed t b off len] applies the [len] bytes of [b] from [off].
+val feed : t -> bytes -> int -> int -> string
+(** [feed t b off len] applies the [len] bytes of [b] from [off] and is the
+    replies they asked for (DA, DA2, DSR, CPR, DECXCPR), in order: write them to
+    the program's input. It is [""], with no allocation, when there are none. A
+    sequence split across calls is answered by the call that completes it.
 
     Raises [Invalid_argument] if [off] and [len] do not designate a range of
     [b]. *)
 
-val feed_string : t -> string -> unit
+val feed_string : t -> string -> string
 (** [feed_string t s] is
     [feed t (Bytes.unsafe_of_string s) 0 (String.length s)]. *)
-
-val take_replies : t -> string
-(** [take_replies t] are the replies the bytes fed since the last call asked for
-    (DA, DA2, DSR, CPR, DECXCPR), in order: write them to the program's input.
-*)
 
 val reset : t -> unit
 (** [reset t] is RIS: the power-up state, with the scrollback emptied and the

@@ -29,7 +29,10 @@ let read_pty_output state =
       let rec read_loop () =
         match Pty.read pty buf 0 (Bytes.length buf) with
         | n when n > 0 ->
-            Vte.feed state.vte buf 0 n;
+            (* The program waits for the answers to its queries. *)
+            let replies = Vte.feed state.vte buf 0 n in
+            if replies <> "" then
+              ignore (Pty.write_string pty replies 0 (String.length replies));
             read_loop ()
         | _ -> ()
         | exception Unix.Unix_error (Unix.EAGAIN, _, _) -> ()

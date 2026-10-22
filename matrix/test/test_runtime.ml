@@ -1774,7 +1774,7 @@ let test_static_snapshots_scroll_exactly_once_per_row () =
       Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
       Matrix.submit app;
       let terminal = Vte.create ~rows:3 ~cols:6 ~scrollback:32 () in
-      Vte.feed_string terminal (output state);
+      ignore (Vte.feed_string terminal (output state) : string);
       equal
         ~msg:(Printf.sprintf "%d snapshot rows reach history once" rows)
         (list string) lines
@@ -1793,8 +1793,8 @@ let test_static_snapshot_clears_suffixes_and_keeps_blank_rows () =
   Matrix.submit app;
   (* A terminal widened after enqueue has stale cells beyond the old width. *)
   let terminal = Vte.create ~rows:3 ~cols:6 ~scrollback:16 () in
-  Vte.feed_string terminal "STALE!\r\nSTALE!\r\nSTALE!";
-  Vte.feed_string terminal (output state);
+  ignore (Vte.feed_string terminal "STALE!\r\nSTALE!\r\nSTALE!" : string);
+  ignore (Vte.feed_string terminal (output state) : string);
   equal ~msg:"complete rows clear suffixes and preserve intentional blanks"
     (list string) [ "A"; ""; "B" ]
     (Vte.scrollback_lines terminal);
@@ -1817,8 +1817,8 @@ let test_queued_static_snapshot_keeps_row_count_after_resize () =
   equal ~msg:"resize applies before the queued static frame" (pair int int)
     (3, 3) (Matrix.full_size app);
   let terminal = Vte.create ~rows:3 ~cols:3 ~scrollback:16 () in
-  Vte.feed_string terminal "old\r\nold\r\nold";
-  Vte.feed_string terminal (output state);
+  ignore (Vte.feed_string terminal "old\r\nold\r\nold" : string);
+  ignore (Vte.feed_string terminal (output state) : string);
   let history = Vte.scrollback_lines terminal in
   equal ~msg:"narrowing a queued snapshot does not add transcript rows" int 2
     (List.length history);

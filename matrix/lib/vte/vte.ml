@@ -108,10 +108,8 @@ type t = {
   parser : Ansi.Parser.t;
   mutable osc : osc;
   osc_text : Buffer.t;
-  (* The replies owed, until [take_replies], and the identity given. *)
+  (* The replies owed while [feed] runs; empty between calls. *)
   replies : Buffer.t;
-  da1 : string;
-  da2 : string;
   dirty : dirty;
 }
 
@@ -139,8 +137,8 @@ let default_tabs cols = Array.init cols (fun i -> i > 0 && i mod 8 = 0)
 let empty_line = { text = ""; styles = [||]; wrapped = false }
 
 let create ?(scrollback = 10000) ?(width_method = `Unicode)
-    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black)
-    ?(da1 = "\027[?1;2c") ?(da2 = "\027[>0;0;0c") ~rows ~cols () =
+    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ~rows
+    ~cols () =
   let rows = max 1 rows and cols = max 1 cols in
   let screen () =
     let grid = Grid.create ~width:cols ~height:rows ~width_method () in
@@ -180,8 +178,6 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
     osc = Osc_skip;
     osc_text = Buffer.create 64;
     replies = Buffer.create 16;
-    da1;
-    da2;
     dirty = { any = false; cursor = false; rows = Bytes.make rows '\000' };
   }
 
@@ -1032,8 +1028,8 @@ let ls t g = t.charsets <- { t.charsets with gl = g }
 (* {1:replies Replies} *)
 
 let reply t s = Buffer.add_string t.replies s
-let da t = reply t t.da1
-let da2 t = reply t t.da2
+let da t = reply t "\027[?1;2c"
+let da2 t = reply t "\027[>0;0;0c"
 
 (* The 1-based position cursor reports give: in origin mode the row counts
    from the top margin. *)
@@ -1078,6 +1074,7 @@ let control t = function
       goto t ~row:t.cursor.row ~col:0
   | '\x88' -> hts t
   | '\x8d' -> reverse_index t
+  | '\x9a' -> da t (* ESC Z, DECID: an obsolete form of DA (ctlseqs) *)
   | _ -> ()
 
 let esc t intermediates final =
@@ -1218,14 +1215,14 @@ let handle_token t = function
   | Close ending -> close_string t ending
 
 let feed t bytes off len =
-  Ansi.Parser.feed t.parser bytes ~off ~len (handle_token t)
+  Ansi.Parser.feed t.parser bytes ~off ~len (handle_token t);
+  if Buffer.length t.replies = 0 then ""
+  else
+    let replies = Buffer.contents t.replies in
+    Buffer.clear t.replies;
+    replies
 
 let feed_string t s = feed t (Bytes.unsafe_of_string s) 0 (String.length s)
-
-let take_replies t =
-  let replies = Buffer.contents t.replies in
-  Buffer.clear t.replies;
-  replies
 
 let reset t =
   Ansi.Parser.reset t.parser;

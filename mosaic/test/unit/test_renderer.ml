@@ -761,12 +761,12 @@ let hinted_scroll_emits_decstbm_and_correct_rows () =
   let sb = make_hint_transcript t in
   let vte = Vte.create ~rows:6 ~cols:20 () in
   Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
-  Vte.feed_string vte (Renderer.render ~full:true t);
+  ignore (Vte.feed_string vte (Renderer.render ~full:true t) : string);
   Scroll_box.scroll_by sb ~y:1 ();
   Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
   let out = Renderer.render t in
   contains ~msg:"output contains DECSTBM" ~sub:"\x1b[1;6r" out;
-  Vte.feed_string vte out;
+  ignore (Vte.feed_string vte out : string);
   let lines = String.split_on_char '\n' (Vte.to_string vte) in
   List.iteri
     (fun i line ->

@@ -84,7 +84,7 @@ let rstrip_rows s =
 
 let replay_matches t ~width ~height =
   let vte = Vte.create ~rows:height ~cols:width () in
-  Vte.feed_string vte (Matrix_test.output t);
+  ignore (Vte.feed_string vte (Matrix_test.output t) : string);
   equal ~msg:"replaying the emitted ANSI reconstructs the grid" text
     (rstrip_rows (Matrix_test.screen t))
     (rstrip_rows (Vte.to_string vte))
@@ -422,7 +422,7 @@ let%expect_test "replaying the output stream through a VTE matches the grid" =
       `Run
         (fun t ->
           let vte = Vte.create ~rows:2 ~cols:48 () in
-          Vte.feed_string vte (Matrix_test.output t);
+          ignore (Vte.feed_string vte (Matrix_test.output t) : string);
           result := Some (Vte.to_string vte, Matrix_test.screen t));
     ];
   let replayed, screen = Option.get !result in

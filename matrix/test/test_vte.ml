@@ -4,7 +4,7 @@ open Windtrap
 (** Test utilities *)
 
 (* Feed output whose replies the test does not read. *)
-let feed vte s = Vte.feed_string vte s
+let feed vte s = ignore (Vte.feed_string vte s : string)
 
 let get_char_at grid row col =
   let idx = (row * Grid.width grid) + col in
@@ -918,24 +918,25 @@ let osc_set_title () =
   feed vte "\x1b]2;New Title\x07";
   equal ~msg:"title set via OSC 2" string "New Title" (Vte.title vte)
 
+(* [feed] is the replies, in order; [""] when nothing is owed. The identity
+   is a constant: a VT100 with Advanced Video. *)
 let query_replies () =
   let vte = Vte.create ~rows:3 ~cols:5 () in
-  equal ~msg:"nothing owed" string "" (Vte.take_replies vte);
-  Vte.feed_string vte "\x1b[c\x1b[>c\x1b[5n";
+  equal ~msg:"nothing owed" string "" (Vte.feed_string vte "ab\r\n");
   equal ~msg:"DA1, DA2 and DSR 5" string "\x1b[?1;2c\x1b[>0;0;0c\x1b[0n"
-    (Vte.take_replies vte);
-  equal ~msg:"replies are taken once" string "" (Vte.take_replies vte);
-  Vte.feed_string vte "ab\r\n\x1b[6n\x1b[?6n";
+    (Vte.feed_string vte "\x1b[c\x1b[>c\x1b[5n");
   equal ~msg:"CPR and DECXCPR" string "\x1b[2;1R\x1b[?2;1;1R"
-    (Vte.take_replies vte);
-  Vte.feed_string vte "abcde\x1b[6n";
-  equal ~msg:"CPR at a pending wrap" string "\x1b[2;5R" (Vte.take_replies vte);
-  let vte =
-    Vte.create ~da1:"\x1b[?62c" ~da2:"\x1b[>1;2;0c" ~rows:1 ~cols:5 ()
-  in
-  Vte.feed_string vte "\x1b[0c\x1b[>0c";
-  equal ~msg:"identity from the caller" string "\x1b[?62c\x1b[>1;2;0c"
-    (Vte.take_replies vte)
+    (Vte.feed_string vte "\x1b[6n\x1b[?6n");
+  equal ~msg:"CPR with the Last Column Flag" string "\x1b[2;5R"
+    (Vte.feed_string vte "abcde\x1b[6n");
+  equal ~msg:"DA with parameter 0" string "\x1b[?1;2c\x1b[>0;0;0c"
+    (Vte.feed_string vte "\x1b[0c\x1b[>0c");
+  equal ~msg:"DECID, an obsolete form of DA" string "\x1b[?1;2c"
+    (Vte.feed_string vte "\x1bZ");
+  equal ~msg:"a query split across feeds is answered by the last" string
+    "\x1b[0n"
+    (ignore (Vte.feed_string vte "\x1b[5" : string);
+     Vte.feed_string vte "n")
 
 (* An OSC acts only when it ends with ST or BEL; one cut short does nothing.
    Only OSC 0, 2 and 8 are kept, each up to 64 KiB. *)
@@ -994,9 +995,8 @@ let zero_counts_mean_one () =
 (* DA2 and DECXCPR are recognised by their parameter's value. *)
 let replies_by_parameter_value () =
   let vte = Vte.create ~rows:3 ~cols:5 () in
-  Vte.feed_string vte "\x1b[>00c\x1b[?6;1n\x1b[>1c\x1b[?5n";
   equal ~msg:"DA2 and DECXCPR" string "\x1b[>0;0;0c\x1b[?1;1;1R"
-    (Vte.take_replies vte)
+    (Vte.feed_string vte "\x1b[>00c\x1b[?6;1n\x1b[>1c\x1b[?5n")
 
 (* In UTF-8, U+0080..U+009F are not controls: they do nothing. *)
 let utf8_c1_is_not_a_control () =
@@ -1351,7 +1351,7 @@ let unicode_malformed_utf8 () =
   (* Invalid UTF-8 byte *)
   Bytes.set malformed 3 'B';
   Bytes.set malformed 4 'C';
-  Vte.feed vte malformed 0 5;
+  ignore (Vte.feed vte malformed 0 5 : string);
   let output = Vte.to_string vte in
   (* Invalid UTF-8 bytes are replaced with U+FFFD (replacement character) *)
   (* U+FFFD in UTF-8 is \xEF\xBF\xBD (\239\191\189) *)
