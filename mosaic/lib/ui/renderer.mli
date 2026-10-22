@@ -186,10 +186,10 @@ val dispatch_key :
     node's handler; callers can inspect it to determine whether the key was
     consumed. *)
 
-val dispatch_mouse :
-  ?autofocus:bool -> t -> Matrix_input.Mouse.event -> Event.mouse
+val dispatch_mouse : t -> Matrix_input.Mouse.event -> Event.mouse
 (** [dispatch_mouse t mouse] runs the full mouse dispatch pipeline:
     - Updates pointer state.
+    - Requests focus for a primary press (see below).
     - Hit-tests the mouse position. Wheel events that hit nothing are retargeted
       at the focused renderable, so a scroll over dead space still reaches the
       nearest scrollable ancestor.
@@ -198,8 +198,6 @@ val dispatch_mouse :
     - Redirects events other than wheel events to the drag-captured node when
       active.
     - Dispatches with bubbling to the hit-tested node.
-    - Auto-focuses on left click when [autofocus] is [true] (the default).
-      Declarative runtimes pass [false] and derive focus from their model.
     - Clears stale selection if not prevented.
 
     Returns the event the tree saw, mirroring {!dispatch_key}: the drag-capture
@@ -207,14 +205,17 @@ val dispatch_mouse :
     and the [default_prevented] flag reflects whether a handler consumed the
     event.
 
-    With [autofocus:false], a primary press first invokes the nearest focusable
-    node's application focus request, if present and unfocused. It refreshes hit
-    geometry after acceptance. The press must still target the accepted
-    focusable node or one of its descendants. Selection callbacks are checked
-    again before mouse dispatch: losing focus, hiding or destroying the target,
-    or replacing the hit target cancels the press and its following drag and
-    release. Shift-click does not request focus. Without a request handler,
-    selection remains available without transferring focus. *)
+    A click never takes focus by itself; the focus owner grants it. A primary
+    press first invokes the focus request of the nearest focusable node, if that
+    node is unfocused and has one (see {!Renderable.Private.set_focus_request}).
+    It refreshes hit geometry after the request. The press proceeds only if the
+    node is then focused and still contains the hit target. Selection callbacks
+    are checked again before mouse dispatch: losing focus, hiding or destroying
+    the target, or replacing the hit target cancels the press and its following
+    drag and release. Shift-click does not request focus. Without a request
+    handler, the press and selection proceed without transferring focus; a
+    program that owns focus imperatively gives the node a request that calls
+    {!focus}. *)
 
 val dispatch_paste :
   ?capture:(Event.paste -> unit) -> t -> string -> Event.paste

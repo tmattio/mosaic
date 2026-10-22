@@ -361,20 +361,6 @@ let rec alive_visible node =
   | None -> true
   | Some parent -> alive_visible parent
 
-(* ───── Auto-Focus ───── *)
-
-(* Auto-focus on ordinary left click, walking up to the nearest focusable
-   ancestor. Native terminal Shift-selection may still arrive as mouse input,
-   but it should not steal application focus. *)
-let auto_focus_on_click t ~(modifiers : Input.Modifier.t) ~target_node ev =
-  if (not modifiers.shift) && not (Event.Mouse.default_prevented ev) then
-    match target_node with
-    | Some node when alive_visible node -> (
-        match find_focusable node with
-        | Some focusable -> ignore (focus_node t focusable : bool)
-        | None -> ())
-    | Some _ | None -> ()
-
 let query_input_hit t ~x ~y =
   match t.input_geometry with
   | None -> Screen.query_hit t.screen ~x ~y
@@ -410,11 +396,10 @@ let focus_request_accepted requested target =
           | Some ancestor -> ancestor == focus
           | None -> false))
 
-let valid_selection_target t ~autofocus ~requested ~x ~y node =
+let valid_selection_target t ~requested ~x ~y node =
   alive_visible node && Renderable.selectable node
-  && (autofocus
-     || query_input_hit t ~x ~y = Renderable.Private.num node
-        && focus_request_accepted requested (Some node))
+  && query_input_hit t ~x ~y = Renderable.Private.num node
+  && focus_request_accepted requested (Some node)
 
 let reject_press t ~x ~y ~modifiers kind =
   t.pointer.rejected_press <- true;
@@ -426,8 +411,8 @@ let reject_press t ~x ~y ~modifiers kind =
 
 (* When the selection state machine consumes the event, returns [Some ev]
    where [ev] is the event the tree saw; [None] means not consumed. *)
-let handle_selection t ~autofocus ~requested ~x ~y
-    ~(modifiers : Input.Modifier.t) ~target_node ~target_id kind =
+let handle_selection t ~requested ~x ~y ~(modifiers : Input.Modifier.t)
+    ~target_node ~target_id kind =
   match kind with
   | Event.Mouse.Down { button = Left } when not modifiers.ctrl -> (
       match target_node with
@@ -435,8 +420,8 @@ let handle_selection t ~autofocus ~requested ~x ~y
         when Renderable.selectable node
              && Renderable.Private.should_start_selection node ~x ~y ->
           clear_active_selection t;
-          if not (valid_selection_target t ~autofocus ~requested ~x ~y node)
-          then Some (reject_press t ~x ~y ~modifiers kind)
+          if not (valid_selection_target t ~requested ~x ~y node) then
+            Some (reject_press t ~x ~y ~modifiers kind)
           else
             let p = Selection.{ x; y } in
             let local_x = x - Renderable.x node in
@@ -459,8 +444,7 @@ let handle_selection t ~autofocus ~requested ~x ~y
               ];
             t.selection_state.touched_selectables <- [];
             notify_selectables t.selection_state (Some sel);
-            if not (valid_selection_target t ~autofocus ~requested ~x ~y node)
-            then begin
+            if not (valid_selection_target t ~requested ~x ~y node) then begin
               (match t.selection_state.current with
               | Some current when current == sel -> clear_active_selection t
               | Some _ | None -> ());
@@ -472,11 +456,6 @@ let handle_selection t ~autofocus ~requested ~x ~y
                   (Event.Mouse.Down { button = Left })
               in
               Renderable.Private.emit_mouse node ev;
-              (* Starting a selection must not swallow click-to-focus: mirror
-             OpenTUI's dispatchMouseEvent, which pairs event emission with
-             auto-focus. *)
-              if autofocus then
-                auto_focus_on_click t ~modifiers ~target_node:(Some node) ev;
               Some ev
       | _ -> None)
   | Event.Mouse.Drag { button = Left; _ } -> (
@@ -558,7 +537,7 @@ let map_button = function
    Returns the event the tree saw (mirroring [dispatch_key]), so a host can
    inspect [Event.Mouse.default_prevented] to tell whether a widget consumed
    the input. *)
-let dispatch_mouse_internal ?(autofocus = true) t ~x ~y ~modifiers kind =
+let dispatch_mouse_internal t ~x ~y ~modifiers kind =
   t.pointer.position <- Some (x, y);
   t.pointer.modifiers <- modifiers;
   let suppress =
@@ -585,8 +564,8 @@ let dispatch_mouse_internal ?(autofocus = true) t ~x ~y ~modifiers kind =
      layout, so query again and require the same focus target afterwards. *)
     let requested =
       match (kind, target_node) with
-      | Event.Mouse.Down { button = Left }, Some node
-        when (not autofocus) && not modifiers.shift -> (
+      | Event.Mouse.Down { button = Left }, Some node when not modifiers.shift
+        -> (
           match find_focusable node with
           | Some target when not (Renderable.focused target) ->
               if Renderable.Private.request_focus target then Some target
@@ -621,8 +600,8 @@ let dispatch_mouse_internal ?(autofocus = true) t ~x ~y ~modifiers kind =
       let target_id = if target_num > 0 then Some target_num else None in
       (* Selection state machine *)
       match
-        handle_selection t ~autofocus ~requested ~x ~y ~modifiers ~target_node
-          ~target_id kind
+        handle_selection t ~requested ~x ~y ~modifiers ~target_node ~target_id
+          kind
       with
       | Some ev -> ev
       | None -> (
@@ -648,11 +627,6 @@ let dispatch_mouse_internal ?(autofocus = true) t ~x ~y ~modifiers kind =
               (match target_node with
               | Some node -> Renderable.Private.emit_mouse node ev
               | None -> ());
-              (match kind with
-              | Event.Mouse.Down { button = Left } ->
-                  if autofocus then
-                    auto_focus_on_click t ~modifiers ~target_node ev
-              | _ -> ());
               (* Clear selection on left click if not prevented *)
               (match kind with
               | Event.Mouse.Down { button = Left }
@@ -1170,7 +1144,7 @@ let dispatch_click t pressed event =
     in
     if hit > 0 then Option.iter bubble (find_node t hit)
 
-let dispatch_mouse ?(autofocus = true) t (mouse : Input.Mouse.event) =
+let dispatch_mouse t (mouse : Input.Mouse.event) =
   let kind =
     match mouse.kind with
     | Input.Mouse.Down { button } ->
@@ -1193,8 +1167,8 @@ let dispatch_mouse ?(autofocus = true) t (mouse : Input.Mouse.event) =
       t.pointer.press_target <- None
   | _ -> ());
   let event =
-    dispatch_mouse_internal ~autofocus t ~x:mouse.x ~y:mouse.y
-      ~modifiers:mouse.modifiers kind
+    dispatch_mouse_internal t ~x:mouse.x ~y:mouse.y ~modifiers:mouse.modifiers
+      kind
   in
   if not (Event.Mouse.default_prevented event) then
     begin match kind with

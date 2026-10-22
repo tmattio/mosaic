@@ -653,9 +653,7 @@ let handle_input runtime input =
            key_event
           : Event.key)
   | Matrix.Input.Mouse mouse_event ->
-      let event =
-        Renderer.dispatch_mouse ~autofocus:false runtime.renderer mouse_event
-      in
+      let event = Renderer.dispatch_mouse runtime.renderer mouse_event in
       handle_mouse runtime event
   | Matrix.Input.Paste text ->
       ignore

@@ -199,7 +199,7 @@ let table_press_reconciliation ~trigger ~replacement expected =
     Matrix_input.Mouse.make ~x:1 ~y:1 ~modifiers:Matrix_input.Modifier.none
       (Down { button = Left })
   in
-  ignore (Renderer.dispatch_mouse ~autofocus:false renderer mouse : Event.mouse);
+  ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
   equal (list string) expected (List.rev !messages)
 
 let table_press_tests =

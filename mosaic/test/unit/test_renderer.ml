@@ -903,16 +903,31 @@ let focus_different_node_blurs_previous () =
   is_false ~msg:"a blurred" (Renderable.focused a);
   is_true ~msg:"b focused" (Renderable.focused b)
 
-let left_click_focuses_focusable_node () =
+(* A click requests focus; an imperative owner grants it by focusing. *)
+let grant_focus_on_request t node =
+  Renderable.Private.set_focus_request node
+    (Some (fun () -> ignore (Renderer.focus t node : bool)))
+
+let left_click_requests_focus () =
   let t = make_renderer () in
   let child =
     make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 ~focusable:true ()
   in
+  grant_focus_on_request t child;
   do_frame t;
   dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
   match Renderer.focused t with
   | Some n -> is_true ~msg:"child focused" (n == child)
   | None -> fail "expected focus after click"
+
+let left_click_without_request_does_not_focus () =
+  let t = make_renderer () in
+  let _child =
+    make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 ~focusable:true ()
+  in
+  do_frame t;
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  is_none ~msg:"a click does not take focus" (Renderer.focused t)
 
 let left_click_on_non_focusable_does_not_focus () =
   let t = make_renderer () in
@@ -927,6 +942,7 @@ let click_walks_up_to_focusable_parent () =
     make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:20 ~h:20 ~focusable:true
       ()
   in
+  grant_focus_on_request t parent;
   let _child = make_child ~parent ~x:2 ~y:2 ~w:5 ~h:5 () in
   do_frame t;
   dispatch_mouse t (mouse_press ~x:3 ~y:3 ());
@@ -935,12 +951,13 @@ let click_walks_up_to_focusable_parent () =
   | None -> fail "expected parent to be focused"
 
 let left_click_focuses_selectable_node () =
-  (* Starting a text selection consumes the Down event; auto-focus must still
-     run, mirroring OpenTUI's dispatchMouseEvent. *)
+  (* Starting a text selection consumes the Down event; the focus request
+     still runs before it. *)
   let t = make_renderer () in
   let child =
     make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 ~focusable:true ()
   in
+  grant_focus_on_request t child;
   Renderable.set_selection child
     ~should_start:(fun ~x:_ ~y:_ -> true)
     ~on_change:(fun _ -> true)
@@ -1849,7 +1866,7 @@ let accepted_focus_does_not_retarget_press () =
   do_frame ~width:20 ~height:4 renderer;
   List.iter
     (fun mouse ->
-      let event = Renderer.dispatch_mouse ~autofocus:false renderer mouse in
+      let event = Renderer.dispatch_mouse renderer mouse in
       is_true ~msg:"retargeted gesture suppressed"
         (Event.Mouse.default_prevented event))
     [
@@ -1899,8 +1916,7 @@ let selection_cleanup_revalidates_focus_target () =
       armed := true;
       let received = record_mouse target in
       let event =
-        Renderer.dispatch_mouse ~autofocus:false renderer
-          (mouse_press ~x:11 ~y:1 ())
+        Renderer.dispatch_mouse renderer (mouse_press ~x:11 ~y:1 ())
       in
       is_true ~msg:"cleanup invalidates the press"
         (Event.Mouse.default_prevented event);
@@ -1929,7 +1945,7 @@ let selection_notification_revalidates_focus_target () =
   do_frame ~width:20 ~height:4 renderer;
   List.iter
     (fun mouse ->
-      let event = Renderer.dispatch_mouse ~autofocus:false renderer mouse in
+      let event = Renderer.dispatch_mouse renderer mouse in
       is_true ~msg:"selection callback invalidates the gesture"
         (Event.Mouse.default_prevented event))
     [
@@ -2055,8 +2071,9 @@ let () =
           test "blur clears focus" blur_clears_focus;
           test "focus different node blurs previous"
             focus_different_node_blurs_previous;
-          test "left click focuses focusable node"
-            left_click_focuses_focusable_node;
+          test "left click requests focus" left_click_requests_focus;
+          test "left click without request does not focus"
+            left_click_without_request_does_not_focus;
           test "left click on non-focusable does not focus"
             left_click_on_non_focusable_does_not_focus;
           test "click walks up to focusable parent"
