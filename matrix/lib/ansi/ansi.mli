@@ -369,8 +369,11 @@ val parse : string -> Parser.token list
     Never raises; a malformed sequence has no effect. *)
 
 val strip : string -> string
-(** [strip s] removes all ANSI escape sequences from [s], returning plain text
-    only. *)
+(** [strip s] is [s] without its control functions other than C0 controls: the
+    {!Parser.Text} and C0 {!Parser.Control} tokens of {!parse}[ s], in order.
+    Line feeds and tabs stay; sequences, strings, DEL and C1 controls go, an
+    unfinished one at the end included. As {!Parser} reads UTF-8, ill-formed
+    bytes become U+FFFD and U+0080..U+009F are dropped. *)
 
 (** {1:submodules Sub-modules} *)
 

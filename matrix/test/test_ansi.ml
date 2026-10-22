@@ -1166,6 +1166,22 @@ let strip_protocol_string_controls () =
   equal ~msg:"strip DCS" string "ok" (Ansi.strip "\x1bP>|kitty(0.40.1)\x1b\\ok");
   equal ~msg:"strip APC" string "ok" (Ansi.strip "\x1b_Gi=1;OK\x1b\\ok")
 
+let strip_keeps_c0_and_follows_the_parser () =
+  (* Line feeds and tabs survive, so a multiline paste keeps its lines. *)
+  let plain = "line 1\n\tline 2\r\n" in
+  is_true ~msg:"plain text is returned as is" (Ansi.strip plain == plain);
+  equal ~msg:"C0 kept around sequences" string "a\nb\tc"
+    (Ansi.strip "\x1b[1ma\n\x1b[0mb\x1b[2\tCc");
+  (* Every recovery rule of the parser applies. *)
+  equal ~msg:"CAN ends a string" string "\x18abc" (Ansi.strip "\x1b]0;t\x18abc");
+  equal ~msg:"two-byte designator" string "a" (Ansi.strip "\x1b(%6a");
+  equal ~msg:"ESC then non-ASCII" string "b" (Ansi.strip "\x1b\xc3\xa9b");
+  equal ~msg:"unterminated string" string "a" (Ansi.strip "a\x1b]0;title");
+  equal ~msg:"DEL and C1 dropped" string "ab" (Ansi.strip "a\x7f\xc2\x9bb");
+  equal ~msg:"ill-formed UTF-8" string "a\xef\xbf\xbdb" (Ansi.strip "a\xffb");
+  equal ~msg:"text kept whole" string "\xc3\xa9\xe4\xb8\xad"
+    (Ansi.strip "\xc3\xa9\x1b[m\xe4\xb8\xad")
+
 let parameter_clamping () =
   (* Cursor movement: negative -> 0 -> empty string *)
   check_seq "negative lines" "" Ansi.(to_string (cursor_up ~n:(-5)));
@@ -1412,6 +1428,8 @@ let tests =
       [
         test "strip semantics" strip_edge_cases;
         test "strip protocol string controls" strip_protocol_string_controls;
+        test "strip keeps C0 and follows the parser"
+          strip_keeps_c0_and_follows_the_parser;
         test "param clamping" parameter_clamping;
         test "input validation" explicit_error_handling;
         test "cursor & explicit width" cursor_and_explicit_width_sequences;
