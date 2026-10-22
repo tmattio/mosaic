@@ -6,8 +6,8 @@ module Params = Ansi.Parser.Params
 
 (* [last_column] is DEC's Last Column Flag: the cursor is on the character just
    printed in the last column, and the next one wraps first. It implies
-   [col = cols - 1]. Only [set_cursor] changes the cursor, for [goto] and
-   printing; a saved cursor is a copy, never changed. *)
+   [col = cols - 1] and autowrap on. Only [set_cursor] changes the cursor, for
+   [goto] and printing; a saved cursor is a copy, never changed. *)
 type cursor = {
   mutable row : int;
   mutable col : int;
@@ -624,7 +624,7 @@ let settle t =
         rewrite_joined t cl.prev;
         cl.at <- Nowhere);
       if cl.at = Nowhere then begin
-        if t.cursor.last_column && t.modes.auto_wrap then wrap t;
+        if t.cursor.last_column then wrap t;
         cl.at <- Cells;
         cl.row <- t.cursor.row;
         cl.col <- t.cursor.col;
