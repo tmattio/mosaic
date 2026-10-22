@@ -444,9 +444,9 @@ let registry =
         "with autowrap off the Last Column Flag is never set (RFC 0004 §2 \
          Cursor; wraptest), so setting autowrap again lets the next character \
          replace the last column; xterm sets its wrap flag at the last column \
-         whatever the mode, and DECSET 7 or DECSTR then makes the next \
-         character wrap (observed in 398). xterm gets CHA to the cursor's \
-         column before them, there.";
+         whatever the mode, DECSC saves it, and after DECSET 7, DECSTR or a \
+         DECRC of it the next character wraps (observed in 398). xterm gets \
+         CHA to the cursor's column before them, or after DECRC.";
     };
     {
       name = "orphan-half";
@@ -1206,9 +1206,14 @@ let rewrite ctx bytes =
   let stale = [| false; false |] in
   (* decrc-origin-row: the row each screen's DECSC slot holds. *)
   let saved_rows = [| 0; 0 |] in
+  (* autowrap-off-flag: the DECSC slots where xterm saved its wrap flag set
+     with autowrap off. *)
+  let wrap_saved = [| false; false |] in
   let screen_index () = if (Vte_adapter.cursor m).alternate then 1 else 0 in
   let saved () =
     stale.(screen_index ()) <- false;
+    (let c = Vte_adapter.cursor m in
+     wrap_saved.(screen_index ()) <- (not c.auto_wrap) && c.col = c.cols - 1);
     saved_rows.(screen_index ()) <- (Vte_adapter.cursor m).row
   in
   let restored () =
@@ -1227,6 +1232,15 @@ let rewrite ctx bytes =
     if stale.(i) && on ctx "decsc-slots" then (
       fire ctx "decsc-slots";
       emit "\027[?6l\027[H\027[0m\027[0\"q\027(B\027)B\027*B\027+B\x0f")
+    else
+      let c = Vte_adapter.cursor m in
+      if
+        wrap_saved.(i) && c.auto_wrap && (not c.last_column)
+        && c.col = c.cols - 1
+        && on ctx "autowrap-off-flag"
+      then (
+        fire ctx "autowrap-off-flag";
+        emit (cha ()))
   in
   (* autowrap-off-flag: with autowrap off, xterm still sets its wrap flag
      at the last column, and acts on it once autowrap is set again; CHA to
@@ -1573,6 +1587,8 @@ let rewrite ctx bytes =
           else stale.(1) <- true;
           saved_rows.(0) <- 0;
           saved_rows.(1) <- 0;
+          wrap_saved.(0) <- false;
+          wrap_saved.(1) <- false;
           margins := (0, ctx.rows - 1)
       | Esc { raw; _ } ->
           emit raw;
@@ -1772,6 +1788,8 @@ let rewrite ctx bytes =
           stale.(1) <- true;
           saved_rows.(0) <- 0;
           saved_rows.(1) <- 0;
+          wrap_saved.(0) <- false;
+          wrap_saved.(1) <- false;
           autowrap_on ();
           if on ctx "decstr-rendition" then (
             fire ctx "decstr-rendition";
