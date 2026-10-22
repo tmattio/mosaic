@@ -1735,6 +1735,120 @@ let shift_carries_cell_contents () =
   is_true ~msg:"attrs" (Grid.get_attrs grid i <> 0);
   assert_valid_spans grid
 
+(* set_grapheme and protection *)
+
+let put ?protected ?(bg = Ansi.Color.blue) ?(attrs = Ansi.Attr.empty) grid x
+    width text =
+  Grid.set_grapheme grid ~x ~y:0 ~width ~fg:Ansi.Color.green ~bg ~attrs
+    ?protected text ~pos:0 ~len:(String.length text)
+
+let set_grapheme_places_exactly () =
+  let grid = Grid.create ~width:6 ~height:1 () in
+  put grid 0 3 "e\u{0301}";
+  equal ~msg:"caller's width" int 3 (Grid.cell_width grid 0);
+  equal ~msg:"text" string "e\u{0301}" (Grid.get_text grid 0);
+  put grid 3 1 "中";
+  equal ~msg:"clamped wide character" int 1 (Grid.cell_width grid 3);
+  put grid 4 2 "a";
+  equal ~msg:"a single scalar widened" int 2 (Grid.cell_width grid 4);
+  is_true ~msg:"its continuation" (Grid.is_continuation grid 5);
+  assert_valid_spans grid;
+  Grid.push_opacity grid 0.5;
+  Grid.push_clip grid (region 0 0 1 1);
+  put grid 1 1 "z";
+  equal ~msg:"no scissor" string "z" (Grid.get_text grid 1);
+  is_true ~msg:"no opacity, no blending"
+    (Ansi.Color.equal Ansi.Color.blue (Grid.get_bg grid 1));
+  equal ~msg:"cut grapheme blanked" string " " (Grid.get_text grid 0);
+  is_true ~msg:"on the written background"
+    (Ansi.Color.equal Ansi.Color.blue (Grid.get_bg grid 2));
+  assert_valid_spans grid
+
+let set_grapheme_rejects () =
+  let grid = Grid.create ~width:4 ~height:2 () in
+  let rejects msg ?(x = 0) ?(y = 0) ?(width = 1) ?(pos = 0) ?len text =
+    let len = Option.value len ~default:(String.length text - pos) in
+    expect_invalid_arg msg (fun () ->
+        Grid.set_grapheme grid ~x ~y ~width ~fg:Ansi.Color.white
+          ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty text ~pos ~len)
+  in
+  rejects "empty" "";
+  rejects "substring" ~pos:2 ~len:1 "ab";
+  rejects "width 0" ~width:0 "a";
+  rejects "past the right edge" ~x:3 ~width:2 "a";
+  rejects "left of the grid" ~x:(-1) "a";
+  rejects "below the grid" ~y:2 "a";
+  List.iter
+    (fun c -> rejects (Printf.sprintf "control %S" c) c)
+    [
+      "\x00";
+      "\x1b";
+      "\t";
+      "\n";
+      "\x7f";
+      "\u{80}";
+      "\u{9B}";
+      "\u{9F}";
+      "a\u{0301}\u{85}";
+    ];
+  equal ~msg:"nothing written" string "\n" (Grid.to_text grid);
+  put grid 0 1 "\u{A0}";
+  equal ~msg:"U+00A0 is no control" string "\u{A0}" (Grid.get_text grid 0)
+
+let protection_is_invisible () =
+  let bold = Ansi.Attr.bold in
+  let a = Grid.create ~width:2 ~height:1 () in
+  let b = Grid.create ~width:2 ~height:1 () in
+  put ~protected:true ~attrs:bold a 0 2 "中";
+  put ~attrs:bold b 0 2 "中";
+  is_true ~msg:"protected" (Grid.is_protected a 0 && Grid.is_protected a 1);
+  is_false ~msg:"unprotected" (Grid.is_protected b 0);
+  equal ~msg:"attrs" int (Grid.get_attrs b 0) (Grid.get_attrs a 0);
+  is_true ~msg:"cells_equal" (Grid.cells_equal a 0 b 0);
+  equal ~msg:"to_ansi" string (Grid.to_ansi b) (Grid.to_ansi a);
+  is_true ~msg:"style"
+    (Ansi.Style.equal (Grid.get_style b 0) (Grid.get_style a 0))
+
+let protection_moves_with_cells () =
+  let grid = Grid.create ~width:6 ~height:2 () in
+  put ~protected:true grid 0 1 "p";
+  Grid.shift grid (region 0 0 6 2) ~dx:2 ~dy:1 ~color:red;
+  is_true ~msg:"moved" (Grid.is_protected grid (idx grid 2 1));
+  is_false ~msg:"the blank left behind" (Grid.is_protected grid 0);
+  let copy = Grid.copy grid in
+  is_true ~msg:"copied" (Grid.is_protected copy (idx grid 2 1));
+  Grid.resize grid ~width:4 ~height:2;
+  is_true ~msg:"kept by resize" (Grid.is_protected grid (idx grid 2 1));
+  Grid.draw_text grid ~x:2 ~y:1 ~text:"q";
+  is_false ~msg:"replaced by a write" (Grid.is_protected grid (idx grid 2 1));
+  put ~protected:true grid 0 2 "中";
+  Grid.clear_rect grid ~x:1 ~y:0 ~width:1 ~height:1;
+  is_false ~msg:"erased" (Grid.is_protected grid 0)
+
+let erase_unprotected_keeps_rendition () =
+  let grid = Grid.create ~width:8 ~height:1 () in
+  let bold = Ansi.Attr.bold in
+  Grid.set_grapheme grid ~x:0 ~y:0 ~width:2 ~fg:Ansi.Color.green ~bg:red
+    ~attrs:bold ~link:"https://example.com" "中" ~pos:0 ~len:3;
+  put ~protected:true grid 2 1 "P";
+  put grid 3 2 "文";
+  put grid 5 1 "x";
+  Grid.erase_unprotected grid (region 1 0 3 1);
+  equal ~msg:"text" string "  P  x" (Grid.to_text grid);
+  List.iter
+    (fun i ->
+      is_true ~msg:"keeps bg" (Ansi.Color.equal red (Grid.get_bg grid i));
+      is_true ~msg:"keeps fg"
+        (Ansi.Color.equal Ansi.Color.green (Grid.get_fg grid i));
+      equal ~msg:"keeps attrs" int (Ansi.Attr.pack bold) (Grid.get_attrs grid i);
+      equal ~msg:"drops link" string "" (Grid.get_link grid i))
+    [ 0; 1 ];
+  is_true ~msg:"keeps the bg of the cut grapheme"
+    (Ansi.Color.equal Ansi.Color.blue (Grid.get_bg grid 4));
+  is_false ~msg:"no continuation left" (Grid.is_continuation grid 4);
+  equal ~msg:"no grapheme left" int 0 (fst (Grid.grapheme_stats grid));
+  assert_valid_spans grid
+
 let tests =
   [
     test "overwritten hyperlinks are collected"
@@ -1753,6 +1867,11 @@ let tests =
     test "a write repairs with the written bg" write_repairs_with_written_bg;
     test "shift moves cells" shift_moves_cells;
     test "shift carries cell contents" shift_carries_cell_contents;
+    test "set_grapheme places exactly" set_grapheme_places_exactly;
+    test "set_grapheme rejects" set_grapheme_rejects;
+    test "protection is invisible" protection_is_invisible;
+    test "protection moves with cells" protection_moves_with_cells;
+    test "erase_unprotected keeps rendition" erase_unprotected_keeps_rendition;
     test "create defaults" create_defaults;
     test "create with configuration" create_with_configuration;
     test "set width method" set_width_method_updates;

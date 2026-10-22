@@ -332,10 +332,15 @@ let[@inline] get_codepoint t idx =
   let code = Buf.get_cell t.chars idx in
   if Packed_cell.is_inline code then Packed_cell.codepoint code else -1
 
-let[@inline] get_attrs t idx = Buf.get t.attrs idx
+(* The attrs plane holds Ansi.Attr's 12 bits and, above them, DEC's
+   selective-erase attribute, which no reader of attributes sees. *)
+let protected_bit = 0x1000
+let attrs_mask = 0xFFF
+let[@inline] get_attrs t idx = Buf.get t.attrs idx land attrs_mask
+let[@inline] is_protected t idx = Buf.get t.attrs idx land protected_bit <> 0
 
 let get_style t idx =
-  let attrs = Ansi.Attr.unpack (Buf.get t.attrs idx) in
+  let attrs = Ansi.Attr.unpack (get_attrs t idx) in
   let url = get_link t idx in
   let link = if url = no_link then None else Some url in
   Ansi.Style.make ~fg:(get_fg t idx) ~bg:(get_bg t idx) ?link ()
@@ -364,7 +369,7 @@ let[@inline] cells_equal t1 idx1 t2 idx2 =
   let c1 = Buf.get_cell t1.chars idx1 and c2 = Buf.get_cell t2.chars idx2 in
   (if same_graphemes then c1 = c2
    else Packed_cell.equal t1.grapheme_store c1 t2.grapheme_store c2)
-  && Buf.get t1.attrs idx1 = Buf.get t2.attrs idx2
+  && get_attrs t1 idx1 = get_attrs t2 idx2
   && String.equal (get_link t1 idx1) (get_link t2 idx2)
   && Buf.get t1.fg_color idx1 = Buf.get t2.fg_color idx2
   && Buf.get t1.bg_color idx1 = Buf.get t2.bg_color idx2
@@ -616,6 +621,74 @@ let set_uchar t ~x ~y ~uchar ~fg ~bg ~attrs ?link ?(blend = false) () =
         ~code:cell ~fg_color ~bg_color ~attrs ~link ~blending:blend
     done
   end
+
+(* C0, DEL, and C1 encoded in UTF-8 (0xC2 0x80 to 0xC2 0x9F). *)
+let has_control s ~pos ~len =
+  let limit = pos + len in
+  let rec go i =
+    i < limit
+    &&
+    let b = Char.code (String.unsafe_get s i) in
+    b < 0x20 || b = 0x7F
+    || b = 0xC2
+       && i + 1 < limit
+       && Char.code (String.unsafe_get s (i + 1)) < 0xA0
+       && Char.code (String.unsafe_get s (i + 1)) >= 0x80
+    || go (i + 1)
+  in
+  go pos
+
+let set_grapheme t ~x ~y ~width ~fg ~bg ~attrs ?(link = no_link)
+    ?(protected = false) s ~pos ~len =
+  if pos < 0 || len <= 0 || pos > String.length s - len then
+    invalid_arg "Matrix_grid.set_grapheme: invalid substring";
+  if width < 1 || x < 0 || x + width > t.width || y < 0 || y >= t.height then
+    invalid_arg "Matrix_grid.set_grapheme: cells outside the grid";
+  if has_control s ~pos ~len then
+    invalid_arg "Matrix_grid.set_grapheme: control character";
+  let code =
+    Packed_cell.intern_sub t.grapheme_store ~width_method:t.width_method
+      ~tab_width:2 s ~pos ~len ~width
+  in
+  let fg_color = Color_packed.encode fg and bg_color = Color_packed.encode bg in
+  let attrs =
+    if protected then Ansi.Attr.pack attrs lor protected_bit
+    else Ansi.Attr.pack attrs
+  in
+  let idx = (y * t.width) + x in
+  set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link
+    ~blending:false;
+  for i = 1 to width - 1 do
+    let code =
+      Packed_cell.make_continuation ~code ~left:i ~right:(width - 1 - i)
+    in
+    set_cell_internal t ~idx:(idx + i) ~code ~fg_color ~bg_color ~attrs ~link
+      ~blending:false
+  done
+
+let erase_unprotected t (r : region) =
+  match Rect.clip_to_bounds t.width t.height r with
+  | None -> ()
+  | Some r ->
+      for y = r.y to r.y + r.height - 1 do
+        let row = y * t.width in
+        let first = row + r.x and last = row + r.x + r.width - 1 in
+        let stop = last + span_right (Buf.get_cell t.chars last) in
+        let i = ref (first - span_left (Buf.get_cell t.chars first)) in
+        while !i <= stop do
+          let w = max 1 (Packed_cell.cell_width (Buf.get_cell t.chars !i)) in
+          if not (is_protected t !i) then
+            for j = !i to !i + w - 1 do
+              let code = Buf.get_cell t.chars j in
+              if code <> space_cell then begin
+                Grapheme_tracker.remove t.grapheme_tracker code;
+                Buf.set_cell t.chars j space_cell
+              end;
+              set_link t j no_link
+            done;
+          i := !i + w
+        done
+      done
 
 (* {1 Bulk operations} *)
 

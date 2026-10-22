@@ -94,7 +94,8 @@ val get_codepoint : t -> int -> int
     or [-1] for a multi-codepoint grapheme or continuation cell. *)
 
 val get_attrs : t -> int -> int
-(** [get_attrs g idx] is the packed attribute integer at [idx]. *)
+(** [get_attrs g idx] is the packed attribute integer at [idx], as
+    {!Ansi.Attr.pack} gives it. *)
 
 val get_link : t -> int -> string
 (** [get_link g idx] is the hyperlink URL at [idx], or [""] for no link. *)
@@ -140,8 +141,9 @@ val cell_width : t -> int -> int
 
 val cells_equal : t -> int -> t -> int -> bool
 (** [cells_equal g1 idx1 g2 idx2] is [true] iff both cells have identical text,
-    span position, colors, attributes, and hyperlink URLs. Grids need not share
-    storage. Shared storage allows direct comparison without lookup. *)
+    span position, colors, attributes, and hyperlink URLs. Protection is not
+    compared: it does not show. Grids need not share storage. Shared storage
+    allows direct comparison without lookup. *)
 
 (** {1:manipulation Manipulation} *)
 
@@ -344,6 +346,59 @@ val set_uchar :
     write an empty cell without extending the previous grapheme. Use
     {!draw_text} for multi-codepoint graphemes. Drawn cells do not expose
     storage handles; use {!blit_region} to copy existing content. *)
+
+val set_grapheme :
+  t ->
+  x:int ->
+  y:int ->
+  width:int ->
+  fg:Ansi.Color.t ->
+  bg:Ansi.Color.t ->
+  attrs:Ansi.Attr.t ->
+  ?link:string ->
+  ?protected:bool ->
+  string ->
+  pos:int ->
+  len:int ->
+  unit
+(** [set_grapheme g ~x ~y ~width ~fg ~bg ~attrs s ~pos ~len] stores the grapheme
+    [s.[pos] .. s.[pos + len - 1]] in the [width] cells from [(x, y)], exactly:
+    the colors are stored as given, and neither the scissor nor the opacity
+    applies. The caller chooses [width], so a terminal places text by its own
+    display units and fits it to its line. [link] defaults to no link and
+    [protected] (see {!is_protected}) to [false]. The graphemes the write cuts
+    become blanks on [bg].
+
+    No cell holds a control character: it has no glyph, and {!to_ansi} would
+    send it to the terminal that receives the cells, where it would act.
+
+    Raises [Invalid_argument] if [len <= 0] or [pos] and [len] do not designate
+    a substring of [s], if the cells are not all in the grid ([width < 1],
+    [x < 0], [x + width > width g], or [y] outside the rows), or if the bytes
+    contain a control character: C0, DEL or C1 (U+0080 to U+009F). *)
+
+(** {1:protection Protection}
+
+    A DEC terminal can mark the characters it writes as not erasable by a
+    selective erase (DECSCA; VT220 Programmer Reference Manual §4.9), so that a
+    form's fields can be cleared while its labels stay. The mark belongs to the
+    character, so it lives in the cell and moves with it. It does not show:
+    {!get_attrs}, {!get_style}, {!cells_equal} and {!to_ansi} ignore it. Every
+    operation except {!erase_unprotected} treats it as part of the cell, and a
+    blank is not protected. *)
+
+val is_protected : t -> int -> bool
+(** [is_protected g idx] is [true] iff the cell at [idx] was written by
+    {!set_grapheme} with [~protected:true] and not replaced since. *)
+
+val erase_unprotected : t -> region -> unit
+(** [erase_unprotected g r] replaces with spaces the text of every unprotected
+    grapheme with a cell in [r], and drops its link, the text it named. Each
+    cell keeps its colors and attributes: a selective erase does not change the
+    rendition (VT220 Programmer Reference Manual §4.12, DECSEL: it "does not
+    affect video line attributes or video character attributes"). Protected
+    graphemes are left as they are. [r] is clipped to the grid; the scissor does
+    not apply. *)
 
 (** {1:clipping Clipping} *)
 
