@@ -83,6 +83,11 @@ let trim_right s =
 
 let row_trimmed grid y = trim_right (row_to_string grid y)
 
+let expect_invalid_arg msg f =
+  match f () with
+  | () -> fail (msg ^ ": expected Invalid_argument")
+  | exception Invalid_argument _ -> ()
+
 let assert_valid_spans grid =
   for y = 0 to Grid.height grid - 1 do
     let covered_until = ref (-1) in
@@ -1572,6 +1577,44 @@ let draw_text_overflow_clears_row_tail () =
   equal ~msg:"prefix preserved" string "XY"
     (String.sub (row_to_string grid 0) 0 2)
 
+(* A conjunct of [n] consonants is [n] columns wide. *)
+let conjunct n = String.concat "\u{094D}" (List.init n (fun _ -> "\u{0915}"))
+
+let wide_span_beyond_four_cells () =
+  let n = 300 in
+  let grid = Grid.create ~width:(n + 2) ~height:1 () in
+  Grid.draw_text grid ~x:1 ~y:0 ~text:(conjunct n);
+  equal ~msg:"start spans the grapheme" int n (Grid.cell_width grid 1);
+  is_true ~msg:"last cell continues it" (Grid.is_continuation grid n);
+  is_false ~msg:"cell after it is free" (Grid.is_continuation grid (n + 1));
+  assert_valid_spans grid;
+  Grid.draw_text grid ~x:150 ~y:0 ~text:"x";
+  equal ~msg:"overwriting its middle clears it whole" string
+    (String.make 150 ' ' ^ "x" ^ String.make 151 ' ')
+    (Grid.to_text ~trim:false grid);
+  assert_valid_spans grid
+
+let wide_span_survives_moves () =
+  let grid = Grid.create ~width:12 ~height:2 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:(conjunct 6);
+  Grid.blit_region ~src:grid ~dst:grid ~src_x:0 ~src_y:0 ~width:12 ~height:1
+    ~dst_x:3 ~dst_y:1;
+  equal ~msg:"copy keeps the width" int 6 (Grid.cell_width grid 15);
+  assert_valid_spans grid;
+  let dst = Grid.create ~width:12 ~height:1 () in
+  Grid.blit_region ~src:grid ~dst ~src_x:0 ~src_y:0 ~width:5 ~height:1 ~dst_x:0
+    ~dst_y:0;
+  equal ~msg:"a cut copy leaves no part" string "" (Grid.to_text dst);
+  assert_valid_spans dst
+
+let max_width_bounds_grid () =
+  ignore (Grid.create ~width:Grid.max_width ~height:1 () : Grid.t);
+  expect_invalid_arg "create" (fun () ->
+      ignore (Grid.create ~width:(Grid.max_width + 1) ~height:1 () : Grid.t));
+  let grid = Grid.create ~width:1 ~height:1 () in
+  expect_invalid_arg "resize" (fun () ->
+      Grid.resize grid ~width:(Grid.max_width + 1) ~height:1)
+
 let tests =
   [
     test "overwritten hyperlinks are collected"
@@ -1582,6 +1625,9 @@ let tests =
       combining_mark_stays_with_ascii_base;
     test "Thai spacing mark cell placement" thai_spacing_mark_cell_placement;
     test "Thai spacing mark wcwidth units" thai_spacing_mark_wcwidth_units;
+    test "wide span beyond four cells" wide_span_beyond_four_cells;
+    test "wide span survives moves" wide_span_survives_moves;
+    test "max width bounds the grid" max_width_bounds_grid;
     test "create defaults" create_defaults;
     test "create with configuration" create_with_configuration;
     test "set width method" set_width_method_updates;

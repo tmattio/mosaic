@@ -7,7 +7,8 @@
     Single codepoints are stored directly as packed integers. Multi-codepoint
     grapheme clusters (ZWJ emoji, combining characters) are stored in grid-owned
     grapheme storage. Wide characters span multiple cells: a start cell followed
-    by continuation markers.
+    by continuation markers. A grapheme may span a whole row: its width is
+    bounded by the grid's width alone.
 
     Drawing composites colors with source-over alpha blending; copying preserves
     stored colors. A stack of {e scissor} clipping regions constrains drawing.
@@ -34,7 +35,8 @@ val create :
     (terminal-default foreground, transparent background) with:
     - [width_method] grapheme width method. Defaults to [`Unicode].
 
-    Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
+    Raises [Invalid_argument] if [width <= 0], [height <= 0] or
+    [width > max_width]. *)
 
 val create_like : t -> width:int -> height:int -> t
 (** [create_like g ~width ~height] is a fresh empty grid that shares [g]'s
@@ -44,9 +46,14 @@ val create_like : t -> width:int -> height:int -> t
     {!blit} copy them without re-interning. Use this for double-buffered
     rendering where frames are diffed against each other.
 
-    Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
+    Raises [Invalid_argument] if [width <= 0], [height <= 0] or
+    [width > max_width]. *)
 
 (** {1:properties Properties} *)
+
+val max_width : int
+(** [max_width] is the greatest grid width, 262,144 cells. A cell records its
+    distance to both ends of its grapheme's span in 18 bits each. *)
 
 val width : t -> int
 (** [width g] is the grid width in cells. *)
@@ -119,8 +126,8 @@ val is_continuation : t -> int -> bool
     wide character. *)
 
 val cell_width : t -> int -> int
-(** [cell_width g idx] is the display width of the cell (0 for
-    empty/continuation, 1–2 for start). *)
+(** [cell_width g idx] is the display width of the grapheme that starts at
+    [idx]: [0] for an empty or continuation cell. *)
 
 val cells_equal : t -> int -> t -> int -> bool
 (** [cells_equal g1 idx1 g2 idx2] is [true] iff both cells have identical text,
@@ -134,14 +141,16 @@ val resize : t -> width:int -> height:int -> unit
     where possible. Cells outside the new bounds are released. No-op if
     dimensions are unchanged.
 
-    Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
+    Raises [Invalid_argument] if [width <= 0], [height <= 0] or
+    [width > max_width]. *)
 
 val resize_clear : ?color:Ansi.Color.t -> t -> width:int -> height:int -> unit
 (** [resize_clear g ~width ~height] resizes [g] and clears all cells with
     {!clear} when dimensions change. If dimensions are unchanged, this is a
     no-op; use {!clear} for an explicit same-size clear.
 
-    Raises [Invalid_argument] if [width <= 0] or [height <= 0]. *)
+    Raises [Invalid_argument] if [width <= 0], [height <= 0] or
+    [width > max_width]. *)
 
 val clear : ?color:Ansi.Color.t -> t -> unit
 (** [clear ~color g] resets all cells to spaces with white foreground and

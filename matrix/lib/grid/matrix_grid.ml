@@ -283,6 +283,8 @@ let fill_defaults t =
 let create_with_store ~width ~height ~grapheme_store ~width_method =
   if width <= 0 || height <= 0 then
     invalid_arg "Matrix_grid.create: width and height must be > 0";
+  if width > Packed_cell.max_width then
+    invalid_arg "Matrix_grid.create: width exceeds the maximum";
   let size = width * height in
   let t =
     {
@@ -314,6 +316,7 @@ let create_like g ~width ~height =
 
 (* {1 Accessors} *)
 
+let max_width = Packed_cell.max_width
 let width t = t.width
 let height t = t.height
 let width_method t = t.width_method
@@ -423,6 +426,8 @@ let clear ?color t =
 let resize t ~width ~height =
   if width <= 0 || height <= 0 then
     invalid_arg "Matrix_grid.resize: width and height must be > 0";
+  if width > Packed_cell.max_width then
+    invalid_arg "Matrix_grid.resize: width exceeds the maximum";
   if width = t.width && height = t.height then ()
   else
     let old_w = t.width and old_h = t.height in
@@ -475,6 +480,8 @@ let resize t ~width ~height =
 let resize_clear ?color t ~width ~height =
   if width <= 0 || height <= 0 then
     invalid_arg "Matrix_grid.resize_clear: width and height must be > 0";
+  if width > Packed_cell.max_width then
+    invalid_arg "Matrix_grid.resize_clear: width exceeds the maximum";
   if width <> t.width || height <> t.height then (
     resize t ~width ~height;
     clear ?color t)

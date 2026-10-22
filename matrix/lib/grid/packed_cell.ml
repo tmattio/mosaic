@@ -6,11 +6,19 @@ type width_method = Text.width_method
 
 let[@inline] to_int (x : t) = x
 let[@inline] unsafe_of_int (x : int) = x
+(* An inline cell holds a scalar (bits 0-20) and its width (bits 21-22). A
+   complex cell holds a grapheme store index (bits 0-17) and generation (bits
+   18-24), the distances to its span's first and last cells (bits 25-42 and
+   43-60), and its flags (bits 61-62). A span is therefore at most
+   [max_extent + 1] cells wide, which bounds the grid's width. *)
+
 let empty = 0
 let flag_grapheme = if Sys.word_size = 64 then 1 lsl 62 else 0
 let flag_continuation = if Sys.word_size = 64 then 1 lsl 61 else 0
-let shift_right_extent = 59
-let shift_left_extent = 57
+let shift_right_extent = 43
+let shift_left_extent = 25
+let max_extent = (1 lsl 18) - 1
+let max_width = max_extent + 1
 let shift_generation = 18
 let mask_generation = 0x7F
 let mask_index = 0x3FFFF
@@ -62,11 +70,11 @@ let normalize_malformed_utf8_slice str off len =
     normalize_loop off;
     Some (Buffer.contents b)
 
-let[@inline] clamp_extent v = if v < 0 then 0 else if v > 3 then 3 else v
+let[@inline] clamp_extent v =
+  if v < 0 then 0 else if v > max_extent then max_extent else v
 
 let[@inline] pack_start idx gen width =
-  let width = if width < 1 then 1 else width in
-  let right = if width > 4 then 3 else width - 1 in
+  let right = clamp_extent (width - 1) in
   flag_grapheme
   lor (right lsl shift_right_extent)
   lor (gen lsl shift_generation) lor (idx land mask_index)
@@ -86,8 +94,8 @@ let[@inline] is_continuation c =
   (not (is_inline c)) && c land flag_continuation <> 0
 
 let[@inline] is_empty c = c = 0
-let[@inline] left_extent c = (c lsr shift_left_extent) land 3
-let[@inline] right_extent c = (c lsr shift_right_extent) land 3
+let[@inline] left_extent c = (c lsr shift_left_extent) land max_extent
+let[@inline] right_extent c = (c lsr shift_right_extent) land max_extent
 let[@inline] codepoint c = c land mask_codepoint
 let[@inline] store_index c = c land mask_index
 let[@inline] store_payload c = c land 0x01FFFFFF
@@ -157,9 +165,10 @@ let intern_core store width_method tab_width precomputed_width str pos len =
     if width <= 0 then empty
     else
       let d = String.get_utf_8_uchar str pos in
-      if Uchar.utf_decode_length d = len then
-        let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-        if cp = 0x09 then pack_simple cp 0 else pack_simple cp width
+      let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
+      if Uchar.utf_decode_length d = len && cp = 0x09 then pack_simple cp 0
+      else if Uchar.utf_decode_length d = len && width <= 3 then
+        pack_simple cp width
       else
         let str, pos, len =
           match normalize_malformed_utf8_slice str pos len with
