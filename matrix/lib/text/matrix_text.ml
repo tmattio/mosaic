@@ -570,7 +570,7 @@ let rec find_units seg ~wide ~wcwidth str len tab isb columns i start count used
 
 let find_pos_units ~width_method ~tab_width ~include_start_before str ~columns =
   let len = Stdlib.String.length str in
-  if len = 0 || columns <= 0 then zero_position
+  if len = 0 then zero_position
   else if is_ascii_only str len 0 then
     find_pos_ascii str len tab_width include_start_before columns 0 0 0
   else

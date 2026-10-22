@@ -652,7 +652,21 @@ let unicode_position_semantics () =
     (find_pos ~width_method:`Unicode ~tab_width:8 "cafe\u{0301}test" ~columns:4);
   equal ~msg:"malformed offsets" position_testable
     { byte_offset = 1; grapheme_count = 1; columns_used = 1 }
-    (find_wrap_pos ~width_method:`Unicode ~tab_width:8 "\xC3(" ~max_columns:1)
+    (find_wrap_pos ~width_method:`Unicode ~tab_width:8 "\xC3(" ~max_columns:1);
+  (* No columns still hold the units of no width before the first that has
+     one. *)
+  let none = { byte_offset = 3; grapheme_count = 0; columns_used = 0 } in
+  List.iter
+    (fun m ->
+      equal ~msg:"zero-width unit in no columns" position_testable none
+        (find_wrap_pos ~width_method:m ~tab_width:8 "\u{200B}\u{4E2D}"
+           ~max_columns:0);
+      equal ~msg:"and in fewer" position_testable none
+        (find_pos ~width_method:m ~tab_width:8 "\u{200B}\u{4E2D}" ~columns:(-1)))
+    [ `Unicode; `Unicode_wide; `Wcwidth ];
+  equal ~msg:"an ASCII control in no columns" position_testable
+    { byte_offset = 1; grapheme_count = 0; columns_used = 0 }
+    (find_wrap_pos ~width_method:`Unicode ~tab_width:8 "\x01a" ~max_columns:0)
 
 let emoji_presentation_widths () =
   let check label cp expected_w =
