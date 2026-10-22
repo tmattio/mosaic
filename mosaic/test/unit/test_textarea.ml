@@ -911,6 +911,46 @@ let mouse_wheel_scrolls_surface () =
   is_true ~msg:"scroll default prevented" (Event.Mouse.default_prevented ev);
   equal ~msg:"scroll_y" int 2 (Text_surface.scroll_y (Textarea.surface ta))
 
+let wheel_down ta delta =
+  let ev =
+    Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier
+      (Scroll { direction = Scroll_down; delta })
+  in
+  Renderable.Private.emit_mouse (Textarea.node ta) ev
+
+(* The viewport belongs to the accepted value: a surface mounted again from it,
+   as after a key change, shows the same lines. *)
+let remounted_surface_keeps_wheel_viewport () =
+  let lines = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten" in
+  let accepted = ref None in
+  let _t, ta =
+    make_textarea ~value:lines ~on_change:(fun s -> accepted := Some s) ()
+  in
+  ignore (render_textarea ta ~width:20 ~height:3 : Matrix_grid.t);
+  wheel_down ta 2;
+  let state =
+    match !accepted with
+    | Some state -> state
+    | None -> fail "the wheel proposed no viewport"
+  in
+  let remounted =
+    Textarea.create
+      ~parent:(make_root (make_ctx ()))
+      ~state ~on_change:ignore ()
+  in
+  ignore (render_textarea remounted ~width:20 ~height:3 : Matrix_grid.t);
+  equal ~msg:"same first line" int 2
+    (Text_surface.scroll_y (Textarea.surface remounted))
+
+let rejected_wheel_proposal_does_not_scroll () =
+  let lines = "one\ntwo\nthree\nfour\nfive\nsix" in
+  let _t, ta = make_textarea ~value:lines ~accept:false () in
+  ignore (render_textarea ta ~width:20 ~height:3 : Matrix_grid.t);
+  wheel_down ta 2;
+  ignore (render_textarea ta ~width:20 ~height:3 : Matrix_grid.t);
+  equal ~msg:"viewport unchanged" int 0
+    (Text_surface.scroll_y (Textarea.surface ta))
+
 let resize_after_newline_clamps_scroll_y () =
   let t, ta = make_textarea () in
   focus_textarea t ta;
@@ -1244,6 +1284,10 @@ let () =
           test "selection disabled when not selectable"
             mouse_selection_disabled_when_not_selectable;
           test "wheel scrolls surface" mouse_wheel_scrolls_surface;
+          test "remounted surface keeps the wheel viewport"
+            remounted_surface_keeps_wheel_viewport;
+          test "rejected wheel proposal does not scroll"
+            rejected_wheel_proposal_does_not_scroll;
           test "resize after newline clamps scroll_y"
             resize_after_newline_clamps_scroll_y;
         ];

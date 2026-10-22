@@ -31,7 +31,7 @@ module Border = Matrix.Grid.Border
 *)
 
 module Editor = Mosaic_ui.Editor
-(** Persistent text, caret, selection and undo state. *)
+(** Persistent text, caret, selection, undo and viewport state. *)
 
 module Scroll = Mosaic_ui.Scroll
 (** Persistent viewport position and following intent. *)

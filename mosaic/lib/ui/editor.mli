@@ -1,9 +1,16 @@
 (** Persistent text editing state. *)
 
 type t
-(** Text, caret, selection and bounded undo history. Operations leave their
-    argument intact. Cursor-only changes share the indexed source and history;
-    text edits currently splice and index a flat string. *)
+(** Text, caret, selection, bounded undo history, and the viewport at which an
+    edit surface shows them. Operations leave their argument intact. Cursor-only
+    changes share the indexed source and history; text edits currently splice
+    and index a flat string.
+
+    The viewport is interaction state like the caret: wheel scrolling over an
+    edit surface proposes a value with a new viewport, and a surface shows the
+    viewport of the value it is given, so remounting a widget does not move it.
+    A value from {!of_string} shows the start of its text; a value from an
+    editing or movement operation keeps its caret visible. *)
 
 val empty : t
 (** [empty] has empty text and no history. *)
@@ -126,7 +133,16 @@ val accept : current:t -> t -> t
 
 (**/**)
 
-(* Widget support: the edit surface derives proposals from the accepted value. *)
+(* Widget support: the edit surface derives proposals from the accepted value.
+
+   The viewport is the display position, in columns and display rows, at which
+   an edit surface shows the value. A value from [of_string] shows its start. A
+   value produced by an editing or movement operation follows its caret: the
+   surface moves the viewport as little as needed to show the caret. A wheel
+   proposal sets a position that does not follow the caret. *)
+
+val viewport : t -> int * int * bool
+val with_viewport : x:int -> y:int -> follow:bool -> t -> t
 
 val select_carets :
   anchor:Matrix.Text.Layout.caret -> cursor:Matrix.Text.Layout.caret -> t -> t

@@ -18,6 +18,10 @@ module Engine = struct
     selection_anchor : int option;
   }
 
+  (* The display position at which a surface shows the value, and whether it
+     follows the caret. Shared between versions until it changes. *)
+  type viewport = { x : int; y : int; follow : bool }
+
   type t = {
     mutable content : string;
     mutable cursor_pos : int;
@@ -30,6 +34,7 @@ module Engine = struct
     mutable revision : unit ref;
     mutable base : unit ref option;
     mutable preferred_col : int option;
+    mutable viewport : viewport;
   }
 
   (* ───── Cache ───── *)
@@ -64,6 +69,7 @@ module Engine = struct
       revision = ref ();
       base = None;
       preferred_col = None;
+      viewport = { x = 0; y = 0; follow = false };
     }
 
   (* Copies share immutable content, source indexes and history entries. *)
@@ -77,6 +83,7 @@ module Engine = struct
     && a.max_length = b.max_length
     && a.undo_stack == b.undo_stack
     && a.redo_stack == b.redo_stack
+    && a.viewport = b.viewport
 
   (* ───── Content ───── *)
 
@@ -573,6 +580,8 @@ let transform f t =
     next.revision <- ref ();
     next.base <- Some t.revision;
     next.preferred_col <- None;
+    if not next.viewport.follow then
+      next.viewport <- { next.viewport with follow = true };
     next
   end
 
@@ -640,6 +649,14 @@ let move_line_end ?(select = false) =
   transform (fun t -> ignore (Engine.move_line_end ~select t : bool))
 
 let preferred_col t = t.Engine.preferred_col
+
+let viewport t =
+  let { Engine.x; y; follow } = t.Engine.viewport in
+  (x, y, follow)
+
+let with_viewport ~x ~y ~follow t =
+  let viewport = { Engine.x = max 0 x; y = max 0 y; follow } in
+  if viewport = t.Engine.viewport then t else { t with viewport }
 
 let select_carets ~anchor ~cursor =
   transform (fun t ->

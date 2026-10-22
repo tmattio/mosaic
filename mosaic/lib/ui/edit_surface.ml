@@ -315,12 +315,24 @@ let set_on_submit t h = t.on_submit <- h
 let fire_on_submit t =
   match t.on_submit with Some f -> f (value t) | None -> ()
 
+(* An edit follows its caret from the viewport the surface shows, not from the
+   one the accepted value declared. *)
 let propose t ~base next =
   if
     t.props.state == base && next != base
     && (t.mode <> `Single_line
        || Layout.Source.line_count (Editor.source next) = 1)
-  then t.on_change next
+  then
+    let next =
+      match Editor.viewport next with
+      | _, _, true ->
+          Editor.with_viewport
+            ~x:(Text_surface.scroll_x t.surface)
+            ~y:(Text_surface.scroll_y t.surface)
+            ~follow:true next
+      | _, _, false -> next
+    in
+    t.on_change next
 
 (* Sync *)
 
@@ -367,17 +379,12 @@ let display_line_end_offset t display_line =
 let caret_at_col t target_line target_col =
   Layout.hit (Text_surface.layout t.surface) ~row:target_line ~column:target_col
 
-(* Scroll *)
+(* Viewport *)
 
-let clamp_scroll_offsets t =
-  Text_surface.set_scroll_y t.surface (Text_surface.scroll_y t.surface);
-  if Renderable.focused t.node && Text_surface.wrap t.surface = `None then
-    Text_surface.set_scroll_x_for_cursor t.surface
-      (Text_surface.scroll_x t.surface)
-  else Text_surface.set_scroll_x t.surface (Text_surface.scroll_x t.surface)
-
-let ensure_cursor_visible t =
-  clamp_scroll_offsets t;
+(* The accepted value declares the viewport. The surface's offsets are its
+   resolution against the current geometry, recomputed from the value alone,
+   so a remounted surface shows the same lines. *)
+let reveal_caret t =
   let h = Renderable.height t.node in
   if h > 0 then begin
     let dl = find_cursor_display_line t in
@@ -397,26 +404,15 @@ let ensure_cursor_visible t =
     end
   end
 
-let handle_scroll t direction delta =
-  let delta = Int.max 0 delta in
-  match direction with
-  | Matrix_input.Mouse.Scroll_up ->
-      Text_surface.set_scroll_y t.surface
-        (Text_surface.scroll_y t.surface - delta)
-  | Scroll_down ->
-      Text_surface.set_scroll_y t.surface
-        (Text_surface.scroll_y t.surface + delta)
-  | Scroll_left when Text_surface.wrap t.surface = `None ->
-      Text_surface.set_scroll_x t.surface
-        (Text_surface.scroll_x t.surface - delta)
-  | Scroll_right when Text_surface.wrap t.surface = `None ->
-      Text_surface.set_scroll_x t.surface
-        (Text_surface.scroll_x t.surface + delta)
-  | Scroll_left | Scroll_right -> ()
+let show_viewport t =
+  let x, y, follow = Editor.viewport t.props.state in
+  Text_surface.set_scroll_y t.surface y;
+  if Renderable.focused t.node && Text_surface.wrap t.surface = `None then
+    Text_surface.set_scroll_x_for_cursor t.surface x
+  else Text_surface.set_scroll_x t.surface x;
+  if follow then reveal_caret t
 
-let handle_resize t _node =
-  if Renderable.focused t.node then ensure_cursor_visible t
-  else clamp_scroll_offsets t
+let handle_resize t _node = show_viewport t
 
 let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
   let source = Editor.source t.props.state in
@@ -454,7 +450,7 @@ let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
 (* Rendering *)
 
 let render_before t _self grid ~delta:_ =
-  clamp_scroll_offsets t;
+  show_viewport t;
   let w = Renderable.width t.node in
   let h = Renderable.height t.node in
   if w <= 0 || h <= 0 then ()
@@ -734,13 +730,35 @@ let handle_key t (ev : Event.key) =
 
 (* Mouse handling *)
 
+(* The wheel proposes a viewport that no longer follows the caret. *)
+let handle_scroll t direction delta =
+  let delta = Int.max 0 delta in
+  let sx = Text_surface.scroll_x t.surface
+  and sy = Text_surface.scroll_y t.surface in
+  let clamp maximum v = Int.max 0 (Int.min maximum v) in
+  let x, y =
+    match direction with
+    | Matrix_input.Mouse.Scroll_up -> (sx, sy - delta)
+    | Scroll_down -> (sx, sy + delta)
+    | Scroll_left when Text_surface.wrap t.surface = `None -> (sx - delta, sy)
+    | Scroll_right when Text_surface.wrap t.surface = `None -> (sx + delta, sy)
+    | Scroll_left | Scroll_right -> (sx, sy)
+  in
+  let x = clamp (Text_surface.max_scroll_x t.surface) x
+  and y = clamp (Text_surface.max_scroll_y t.surface) y in
+  if x <> sx || y <> sy then
+    let base = t.props.state in
+    let next = Editor.with_viewport ~x ~y ~follow:false base in
+    propose t ~base
+      (Editor.propose ~base ~preferred_col:(Editor.preferred_col base) next)
+
 let handle_mouse t ev =
   if Event.Mouse.default_prevented ev then ()
   else
     match Event.Mouse.kind ev with
     | Scroll { direction; delta } ->
-        handle_scroll t direction delta;
-        Event.Mouse.prevent_default ev
+        Event.Mouse.prevent_default ev;
+        handle_scroll t direction delta
     | _ -> ()
 
 (* Paste *)
@@ -843,7 +861,7 @@ let apply_props t (props : Props.t) =
   if selectable_changed then register_selection t;
   if style_changed then sync_style t ~focused:(Renderable.focused t.node);
   if source_changed || annotations_changed then sync t;
-  if state_changed then ensure_cursor_visible t;
+  if state_changed then show_viewport t;
   Renderable.request_render t.node
 
 (* Formatting *)
