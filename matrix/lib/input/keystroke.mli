@@ -23,13 +23,13 @@
     Shift+4 on a US layout is [Char '$']. Legacy bytes and modifyOtherKeys carry
     that character, and so does the kitty protocol's shifted key, which it
     reports with its "report alternate keys" enhancement. Shift is then
-    consumed: [shift] is set on a [Char] only when Shift did not change
-    the character, as for Shift+Space. A binding for Ctrl+Shift+g matches
-    [Char 'G'] with [ctrl], never [Char 'g'] with [shift].
+    consumed: [shift] is set on a [Char] only when Shift did not change the
+    character, as for Shift+Space. A binding for Ctrl+Shift+g matches [Char 'G']
+    with [ctrl], never [Char 'g'] with [shift].
 
     The kitty protocol without that enhancement carries less. Its key code is
-    "always the lower-case (or more technically, un-shifted) version of the
-    key" (kitty keyboard protocol, "Key codes"), so Ctrl+Shift+1 arrives as
+    "always the lower-case (or more technically, un-shifted) version of the key"
+    (kitty keyboard protocol, "Key codes"), so Ctrl+Shift+1 arrives as
     [Char '1'] with [ctrl] and [shift], where every other encoding gives
     [Char '!'] with [ctrl]. The value is then that key with [shift]: the
     character typed is not in the bytes.
@@ -40,39 +40,38 @@
     arrives as text with the lock already applied, so the [Char] is what was
     typed. A chord is another matter: Ctrl+s is [Char 's'] with [ctrl] whatever
     Caps Lock's state, as xterm sends it (0x13) and as the kitty protocol does
-    ([CSI 115 ; 69 u]), and [caps_lock] says the lock is on. The kitty
-    protocol reports the lock bits on chords and legacy bytes never do, so a
-    binding ignores [caps_lock] and [num_lock]. Legacy bytes lose this fact under
-    Alt: with Caps Lock on, Alt+a arrives as ESC A, [Char 'A'] with [alt], and
-    Alt+Shift+a as ESC a, because the terminal applies the lock to the
-    character before it adds the ESC.
+    ([CSI 115 ; 69 u]), and [caps_lock] says the lock is on. The kitty protocol
+    reports the lock bits on chords and legacy bytes never do, so a binding
+    ignores [caps_lock] and [num_lock]. Legacy bytes lose this fact under Alt:
+    with Caps Lock on, Alt+a arrives as ESC A, [Char 'A'] with [alt], and
+    Alt+Shift+a as ESC a, because the terminal applies the lock to the character
+    before it adds the ESC.
 
     {1:controls Controls}
 
     Legacy bytes send Ctrl with a key as a C0 control (kitty keyboard protocol,
     "Legacy ctrl mapping of ASCII keys"): 0x01..0x1A are Ctrl+a..z, 0x00 is
-    Ctrl+Space, and 0x1C..0x1F are Ctrl+\ ] ^ _. Four controls are named keys,
-    because legacy bytes cannot tell them from a chord: 0x09 is [Tab] (also
-    Ctrl+i), 0x0D [Enter] (Ctrl+m), 0x1B [Escape] (Ctrl+\[), and 0x08 and 0x7F
-    are [Backspace] (0x08 is also Ctrl+h, and Ctrl+Backspace in some
-    terminals). 0x0A is Ctrl+j. Enter sends 0x0D, but a terminal device that
-    translates carriage returns on input (the termios flag ICRNL, set unless
-    the terminal is in raw mode) delivers Enter as 0x0A, so Enter then arrives
-    as Ctrl+j. Legacy bytes also lose Shift under Ctrl (Ctrl+Shift+a is
+    Ctrl+Space, and 0x1C..0x1F are Ctrl+\\, Ctrl+\], Ctrl+^ and Ctrl+_. Four
+    controls are named keys, because legacy bytes cannot tell them from a chord:
+    0x09 is [Tab] (also Ctrl+i), 0x0D [Enter] (Ctrl+m), 0x1B [Escape] (Ctrl+\[),
+    and 0x08 and 0x7F are [Backspace] (0x08 is also Ctrl+h, and Ctrl+Backspace
+    in some terminals). 0x0A is Ctrl+j. Enter sends 0x0D, but a terminal device
+    that translates carriage returns on input (the termios flag ICRNL, set
+    unless the terminal is in raw mode) delivers Enter as 0x0A, so Enter then
+    arrives as Ctrl+j. Legacy bytes also lose Shift under Ctrl (Ctrl+Shift+a is
     Ctrl+a), and some chords alias a control (Ctrl+2 is Ctrl+Space). Under the
     kitty protocol's disambiguation all of these are distinct.
 
     {1:keypad The keypad}
 
-    [keypad] is set when the encoding says the key is on the numeric keypad:
-    the kitty protocol's keypad codes and xterm's application keypad (the SS3
-    forms of xterm's "PC-Style Function Keys"). Legacy bytes send a keypad key
-    as its main-keyboard equivalent ("All keypad keys are reported as their
-    equivalent non-keypad keys", kitty keyboard protocol, "Legacy functional
-    keys"), so the fact is absent there: keypad 8 without Num Lock is [Up]
-    without [keypad]. A binding ignores [keypad] unless it means the keypad.
-    [Begin], the keypad's 5 without Num Lock, exists only on the keypad and
-    always has [keypad]. *)
+    [keypad] is set when the encoding says the key is on the numeric keypad: the
+    kitty protocol's keypad codes and xterm's application keypad (the SS3 forms
+    of xterm's "PC-Style Function Keys"). Legacy bytes send a keypad key as its
+    main-keyboard equivalent ("All keypad keys are reported as their equivalent
+    non-keypad keys", kitty keyboard protocol, "Legacy functional keys"), so the
+    fact is absent there: keypad 8 without Num Lock is [Up] without [keypad]. A
+    binding ignores [keypad] unless it means the keypad. [Begin], the keypad's 5
+    without Num Lock, exists only on the keypad and always has [keypad]. *)
 
 (** {1:mods Modifiers} *)
 
