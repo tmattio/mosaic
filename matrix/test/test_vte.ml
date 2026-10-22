@@ -1523,7 +1523,7 @@ let check_splits ?(rows = 2) ?(cols = 6) ?width_method msg s =
 
 (* DECSC saves the Last Column Flag: a character after DECRC wraps. Every
    function that moves the cursor or changes cells clears it; HT, CHT, SGR,
-   settings and reports keep it. *)
+   settings and reports keep it; resetting DECAWM clears it. *)
 let last_column_flag () =
   let pos s =
     Vte.cursor_pos (screen_of ~rows:3 ~cols:10 [ "\x1b[1;9HAB" ^ s ])
@@ -1536,6 +1536,8 @@ let last_column_flag () =
   equal ~msg:"SGR keeps it" (pair int int) (1, 1) (pos "\x1b[1mX");
   equal ~msg:"a report keeps it" (pair int int) (1, 1) (pos "\x1b[6nX");
   equal ~msg:"CBT clears it and moves" (pair int int) (0, 9) (pos "\x1b[ZX");
+  equal ~msg:"resetting DECAWM clears it" (pair int int) (0, 9)
+    (pos "\x1b[?7l\x1b[?7hX");
   equal ~msg:"SU clears it" (pair int int) (0, 9) (pos "\x1b[SX");
   equal ~msg:"ICH clears it" (pair int int) (0, 9) (pos "\x1b[@X");
   equal ~msg:"CUF clears it" (pair int int) (0, 9) (pos "\x1b[CX");
@@ -1548,6 +1550,36 @@ let last_column_flag () =
     [ "\x1b[3J"; "\x1b[4J"; "\x1b[3K" ];
   let vte = screen_of ~rows:2 ~cols:4 [ "abcd\x1b[?7lX" ] in
   equal ~msg:"inert with autowrap off" string "abcX\n    " (Vte.to_string vte)
+
+(* VPR stops at the bottom margin in origin mode. *)
+let vpr_in_origin_mode () =
+  equal ~msg:"VPR" (pair int int) (2, 0)
+    (Vte.cursor_pos (screen_of ~rows:6 [ "\x1b[2;3r\x1b[?6h\x1b[5e" ]))
+
+(* Modes 47, 1047, 1048 and 1049 compose switching, erasing, DECSC and
+   DECRC. *)
+let alternate_screen_modes () =
+  let text s = Vte.to_string (screen_of ~rows:1 [ s ]) in
+  equal ~msg:"47 keeps the alternate screen" string "alt   "
+    (text "\x1b[?47halt\x1b[?47l\x1b[?47h");
+  equal ~msg:"1047 erases it on leaving" string "      "
+    (text "\x1b[?1047halt\x1b[?1047l\x1b[?47h");
+  equal ~msg:"1049 erases it on entering" string "      "
+    (text "\x1b[?47halt\x1b[?47l\x1b[?1049h");
+  equal ~msg:"1048 saves and restores the cursor" (pair int int) (1, 2)
+    (Vte.cursor_pos
+       (screen_of ~rows:6 [ "\x1b[2;3H\x1b[?1048h\x1b[5;5H\x1b[?1048l" ]));
+  let vte = screen_of ~rows:2 [ "ab\x1b[?1049h\x1b[2;4Hz\x1b[?1049lX" ] in
+  equal ~msg:"1049 restores the cursor" string "abX   \n      "
+    (Vte.to_string vte);
+  is_false ~msg:"and the primary screen" (Vte.modes vte).alternate_screen;
+  equal ~msg:"leaving 1049 on the primary screen restores the cursor"
+    (pair int int) (0, 0)
+    (Vte.cursor_pos (screen_of [ "a\x1b[?1049l" ]));
+  equal ~msg:"1049 on the alternate screen erases it" string "      "
+    (text "\x1b[?1047ha\x1b[?1049h");
+  equal ~msg:"entering 1049 clears the Last Column Flag" (pair int int) (0, 5)
+    (Vte.cursor_pos (screen_of ~rows:2 [ "abcdef\x1b[?1049ha" ]))
 
 (* REP repeats the unit before it, exactly, whatever the count. *)
 let repeat_exactly () =
@@ -1821,6 +1853,31 @@ let parser_probes () =
   equal ~msg:"VPR saturated" (pair int int) (1, 4)
     (pos "\x1b[4611686018427387904e")
 
+(* DECALN fills the screen with E and, as xterm, resets origin mode, the
+   rendition, the margins and the Last Column Flag. *)
+let decaln_resets () =
+  let vte =
+    screen_of ~rows:3 ~cols:4 [ "\x1b[2;3r\x1b[?6h\x1b[1;41mabcd\x1b#8X" ]
+  in
+  equal ~msg:"homes to the screen's first row" string "XEEE\nEEEE\nEEEE"
+    (Vte.to_string vte);
+  is_false ~msg:"origin mode off" (Vte.modes vte).origin;
+  equal ~msg:"rendition reset" int 0 (Grid.get_attrs (Vte.grid vte) 0);
+  equal ~msg:"margins reset" (pair int int) (2, 0)
+    (Vte.cursor_pos (screen_of ~rows:3 ~cols:4 [ "\x1b[1;2r\x1b#8\x1b[3H\n" ]))
+
+(* DECSTR resets both DECSC slots. *)
+let decstr_slots () =
+  equal ~msg:"both slots"
+    (pair (pair int int) (pair int int))
+    ((0, 0), (0, 0))
+    (let vte =
+       screen_of ~rows:3 [ "\x1b[2;2H\x1b7\x1b[?47h\x1b[3;3H\x1b7\x1b[!p\x1b8" ]
+     in
+     let alt = Vte.cursor_pos vte in
+     feed vte "\x1b[?47l\x1b8";
+     (alt, Vte.cursor_pos vte))
+
 (** {1 Test Suite} *)
 
 let tests =
@@ -1955,6 +2012,8 @@ let tests =
     test "unicode malformed utf8" unicode_malformed_utf8;
     test "character sets" character_sets;
     test "last column flag" last_column_flag;
+    test "VPR in origin mode" vpr_in_origin_mode;
+    test "alternate screen modes" alternate_screen_modes;
     test "REP repeats exactly" repeat_exactly;
     test "one blank" one_blank;
     test "zero-width units" zero_width_units;
@@ -1963,6 +2022,8 @@ let tests =
     test "wrap marks" wrap_marks;
     test "huge parameters" huge_parameters;
     test "parser probes" parser_probes;
+    test "DECALN resets" decaln_resets;
+    test "DECSTR resets both slots" decstr_slots;
   ]
 
 let () = run "matrix.vte" [ group "vte" tests ]

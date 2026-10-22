@@ -760,10 +760,13 @@ let origin_row t n =
 let cup t row col = goto t ~row:(origin_row t row) ~col:(min col t.cols - 1)
 let vpa t n = goto t ~row:(origin_row t n) ~col:t.cursor.col
 
-(* VPR: down [n] rows, ignoring the margins. *)
+(* VPR: down [n] rows, past the bottom margin, but not out of the region in
+   origin mode. *)
 let vpr t n =
+  let limit = if t.modes.origin then t.margins.bottom else t.rows - 1 in
+  let row = t.cursor.row in
   goto t
-    ~row:(toward ~from:t.cursor.row ~limit:(t.rows - 1) n)
+    ~row:(if row >= limit then row else toward ~from:row ~limit n)
     ~col:t.cursor.col
 
 let home t = goto t ~row:(if t.modes.origin then t.margins.top else 0) ~col:0
@@ -882,9 +885,13 @@ let decstbm t top bottom =
     t.margins <- { top = top - 1; bottom = bottom - 1 };
     home t)
 
-(* DECALN resets the margins, fills the screen with E in the default
-   rendition, and homes the cursor. *)
+(* DECALN fills the screen with E in the default rendition, resets origin
+   mode, the rendition, the margins and the Last Column Flag, and homes the
+   cursor. xterm, a datapoint (charproc.c, CASE_DECALN, citing DEC STD 070),
+   does the same, except that it keeps the pen's colours. *)
 let decaln t =
+  t.modes <- { t.modes with origin = false };
+  t.pen <- { t.pen with style = Ansi.Style.default };
   t.margins <- { top = 0; bottom = t.rows - 1 };
   let g = grid t in
   for y = 0 to t.rows - 1 do
@@ -933,19 +940,9 @@ let switch_screen t ~alternate =
 
 let erase_screen t = erase t ~x:0 ~y:0 ~width:t.cols ~height:t.rows
 
-(* Entering the alternate screen clears it; 1049 also saves the cursor on
-   entry and restores it on leaving. *)
-let enter_alternate t ~save =
-  if not t.modes.alternate_screen then (
-    if save then decsc t;
-    switch_screen t ~alternate:true;
-    erase_screen t;
-    t.margins <- { top = 0; bottom = t.rows - 1 })
-
-let leave_alternate t ~restore =
-  if t.modes.alternate_screen then (
-    switch_screen t ~alternate:false;
-    if restore then decrc t)
+let leave_alternate t =
+  if t.modes.alternate_screen then erase_screen t;
+  switch_screen t ~alternate:false
 
 let set_ansi_mode t mode on =
   match mode with 4 -> t.modes <- { t.modes with insert = on } | _ -> ()
@@ -957,12 +954,22 @@ let set_dec_mode t mode on =
   | 6 ->
       t.modes <- { m with origin = on };
       home t
-  | 7 -> t.modes <- { m with auto_wrap = on }
+  | 7 ->
+      t.modes <- { m with auto_wrap = on };
+      if not on then t.cursor.last_column <- false
   | 25 -> set_cursor_visible t on
   | 45 -> t.modes <- { m with reverse_wrap = on }
-  | 47 | 1047 | 1049 ->
-      if on then enter_alternate t ~save:(mode = 1049)
-      else leave_alternate t ~restore:(mode = 1049)
+  | 47 -> switch_screen t ~alternate:on
+  | 1047 -> if on then switch_screen t ~alternate:true else leave_alternate t
+  | 1048 -> if on then decsc t else decrc t
+  | 1049 ->
+      if on then (
+        decsc t;
+        switch_screen t ~alternate:true;
+        erase_screen t)
+      else (
+        leave_alternate t;
+        decrc t)
   | 2004 -> t.modes <- { m with bracketed_paste = on }
   | _ -> ()
 
@@ -1007,7 +1014,8 @@ let decstr t =
   t.margins <- { top = 0; bottom = t.rows - 1 };
   t.pen <- plain_pen;
   t.charsets <- ascii_sets;
-  (screen t).saved <- power_up
+  t.primary.saved <- power_up;
+  t.alternate.saved <- power_up
 
 (* {1:charset_functions Character set functions} *)
 

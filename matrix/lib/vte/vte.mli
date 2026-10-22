@@ -30,19 +30,24 @@
     A character printed into the last column with autowrap on leaves the cursor
     on it with the Last Column Flag set; the next character first moves to the
     start of the next line. Every function that sets the cursor position or
-    changes cells clears the flag. HT and CHT keep it, since they never leave
-    the last column; SGR, settings, DECSC and reports keep it too. With autowrap
-    off the flag is never set, and a character printed at the last column
-    replaces the one there. Cursor reports never show the flag: the cursor is in
-    the last column.
+    changes cells clears the flag, and so does resetting DECAWM. HT and CHT keep
+    it, since they never leave the last column; SGR, settings, DECSC and reports
+    keep it too. With autowrap off the flag is never set, and a character
+    printed at the last column replaces the one there. Cursor reports never show
+    the flag: the cursor is in the last column.
 
     {2:screens Screens}
 
     The terminal has two screens, primary and alternate. Each has its own cells,
     its own wrap marks and its own DECSC slot, which holds the power-up cursor
     state until DECSC fills it; everything else is shared. xterm's modes 47,
-    1047 and 1049 switch to the alternate screen and clear it; 1049 also saves
-    the cursor on entry and restores it on leaving.
+    1047, 1048 and 1049 compose four steps (switch screens, erase the alternate
+    screen, DECSC, DECRC):
+    - 47 switches;
+    - 1047 switches, and erases the alternate screen when leaving it;
+    - 1048 is DECSC when set and DECRC when reset;
+    - 1049 is DECSC, a switch and an erase when set, and the reset of 1047 then
+      DECRC when reset.
 
     A row's {e wrap mark} says that its text goes on at the start of the next
     row because autowrap moved there. Only printing sets it; an edit that
@@ -125,10 +130,10 @@
     RIS returns to the power-up state. DECSTR returns each terminal setting to
     its power-up value: insert, origin, autowrap and reverse-wrap modes, cursor
     keys, cursor visibility and the margins; the pen and the character sets to
-    their defaults; the active screen's DECSC slot to the power-up cursor state.
-    The VT510's table gives "No autowrap", its own power-up value; this terminal
-    powers up with autowrap on, so DECSTR sets it on. The screen, the cursor
-    position, the active screen and bracketed paste stay. *)
+    their defaults; both DECSC slots to the power-up cursor state. The VT510's
+    table gives "No autowrap", its own power-up value; this terminal powers up
+    with autowrap on, so DECSTR sets it on. The screen, the cursor position, the
+    active screen and bracketed paste stay. *)
 
 type t
 (** The type for terminal emulators. Mutable, not thread-safe. *)
