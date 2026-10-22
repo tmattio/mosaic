@@ -116,29 +116,21 @@ type syntax = {
   style : Syntax_style.t;
   highlighter : Code.Highlighter.t;
   conceal : bool;
-  draw_unstyled : bool;
-  streaming : bool;
 }
 
 let syntax ~language ?(style = Syntax_style.default) ?(conceal = true)
-    ?(draw_unstyled = true) ?(streaming = false) highlighter =
-  { language; style; highlighter; conceal; draw_unstyled; streaming }
+    highlighter =
+  { language; style; highlighter; conceal }
 
 let syntax_equal a b =
   String.equal a.language b.language
   && Syntax_style.equal a.style b.style
   && a.highlighter == b.highlighter
   && Bool.equal a.conceal b.conceal
-  && Bool.equal a.draw_unstyled b.draw_unstyled
-  && Bool.equal a.streaming b.streaming
 
-let code_syntax ?draw_unstyled syntax =
-  let draw_unstyled =
-    Option.value draw_unstyled ~default:syntax.draw_unstyled
-  in
+let code_syntax syntax =
   Code.with_highlighter ~language:syntax.language ~style:syntax.style
-    ~conceal:syntax.conceal ~draw_unstyled ~streaming:syntax.streaming
-    syntax.highlighter
+    ~conceal:syntax.conceal syntax.highlighter
 
 type highlight = { old : syntax; new_ : syntax }
 
@@ -997,8 +989,8 @@ let set_code_emphasis code (ranges : View.emphasis) =
     ranges
 
 (* The pane installed as [text] in [code], read through the index its buffer
-   and layout use. While Code streams or conceals, the buffer holds other text,
-   so [text] is indexed on its own. *)
+   and layout use. While Code conceals, the buffer holds other text, so [text]
+   is indexed on its own. *)
 let code_pane code text =
   let buffer = Code.buffer code in
   Pane.of_source
@@ -1034,24 +1026,8 @@ let make_or_update_code existing ~parent (props : Props.t) ~content ?syntax () =
 
 let old_syntax = function Some { old; _ } -> Some old | None -> None
 let new_syntax = function Some { new_; _ } -> Some new_ | None -> None
-
-let needs_stable_concealment (props : Props.t) (syntax : syntax) =
-  props.wrap <> `None && syntax.conceal
-
-let code_syntax_for_split props syntax =
-  let draw_unstyled =
-    if needs_stable_concealment props syntax then Some false else None
-  in
-  code_syntax ?draw_unstyled syntax
-
-let old_code_syntax props highlight =
-  Option.map (code_syntax_for_split props) (old_syntax highlight)
-
-let new_code_syntax props highlight =
-  Option.map (code_syntax_for_split props) (new_syntax highlight)
-
-let unified_code_syntax highlight =
-  Option.map code_syntax (new_syntax highlight)
+let old_code_syntax highlight = Option.map code_syntax (old_syntax highlight)
+let new_code_syntax highlight = Option.map code_syntax (new_syntax highlight)
 
 let make_or_update_side existing ~parent ~style ~theme =
   match existing with
@@ -1079,8 +1055,7 @@ let update_waiting_for_highlight t (props : Props.t) left_code right_code =
     && Renderable.width t.node > 0
     && Renderable.width (Code.node left_code) > 0
     && Renderable.width (Code.node right_code) > 0
-    && ((not (Code.line_info_stable left_code))
-       || not (Code.line_info_stable right_code))
+    && (Code.is_highlighting left_code || Code.is_highlighting right_code)
 
 let pending_work t =
   if t.pending_rebuild then
@@ -1092,8 +1067,8 @@ let pending_work t =
 let build_unified_view t (props : Props.t) =
   (* Coming from Split: drop the split children so exactly one side remains.
      A unified rebuild otherwise reconciles its Line_number and Code in place,
-     which keeps Code's streaming anti-flash state and running highlight jobs
-     alive across streaming patch updates. *)
+     which keeps Code's latest captures and running highlight jobs alive
+     across streaming patch updates. *)
   if t.right_side <> None || t.right_code <> None then destroy_children t;
   set_flex_direction t Toffee.Style.Flex_direction.Column;
   let rows =
@@ -1109,7 +1084,7 @@ let build_unified_view t (props : Props.t) =
   let code =
     make_or_update_code t.left_code ~parent:(Line_number.node side) props
       ~content:text
-      ?syntax:(unified_code_syntax props.highlight)
+      ?syntax:(new_code_syntax props.highlight)
       ()
   in
   t.left_pane <- Some (decorate_pane props side code ~text rows);
@@ -1120,8 +1095,8 @@ let build_unified_view t (props : Props.t) =
 
 let should_align_split t (props : Props.t) left_code right_code =
   props.wrap <> `None
-  && Code.line_info_stable left_code
-  && Code.line_info_stable right_code
+  && (not (Code.is_highlighting left_code))
+  && (not (Code.is_highlighting right_code))
   && Renderable.width t.node > 0
   && Renderable.width (Code.node left_code) > 0
   && Renderable.width (Code.node right_code) > 0
@@ -1146,7 +1121,7 @@ let build_split_view t (props : Props.t) =
     make_or_update_code t.left_code
       ~parent:(Line_number.node left_side)
       props ~content:initial_left_text
-      ?syntax:(old_code_syntax props props.highlight)
+      ?syntax:(old_code_syntax props.highlight)
       ()
   in
   let right_side =
@@ -1157,7 +1132,7 @@ let build_split_view t (props : Props.t) =
     make_or_update_code t.right_code
       ~parent:(Line_number.node right_side)
       props ~content:initial_right_text
-      ?syntax:(new_code_syntax props props.highlight)
+      ?syntax:(new_code_syntax props.highlight)
       ()
   in
   set_code_line_info_callback t left_code;
@@ -1183,11 +1158,11 @@ let build_split_view t (props : Props.t) =
   let right_text = View.text right_rows in
   Code.apply_props left_code
     (code_props props ~content:left_text
-       ?syntax:(old_code_syntax props props.highlight)
+       ?syntax:(old_code_syntax props.highlight)
        ());
   Code.apply_props right_code
     (code_props props ~content:right_text
-       ?syntax:(new_code_syntax props props.highlight)
+       ?syntax:(new_code_syntax props.highlight)
        ());
   t.left_pane <-
     Some (decorate_pane props left_side left_code ~text:left_text left_rows);

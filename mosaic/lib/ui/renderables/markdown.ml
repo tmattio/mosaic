@@ -966,7 +966,7 @@ let update_leaf_in_place ~(env : render_env) ~is_last (tb : tagged_block)
           let content = code_block_text cb in
           let syntax = fence_syntax ~env highlighter cb in
           (* Code.apply_props reconciles content and syntax in place, so the
-             widget's streaming anti-flash state survives the update. *)
+             widget keeps styling the unchanged bytes of a growing fence. *)
           Code.apply_props code (Code.Props.make ~content ?syntax ());
           Renderable.set_style (Code.node code) (block_style ~is_last);
           true

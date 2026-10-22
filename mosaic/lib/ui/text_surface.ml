@@ -14,7 +14,6 @@ type t = {
   mutable selection_bg : Ansi.Color.t option;
   mutable selection_fg : Ansi.Color.t option;
   mutable selection : (int * int) option;
-  mutable render_enabled : bool;
   (* Retain a bounded set of source-version/width geometries. Measurement
      probes use count-only results unless geometry already exists. Wrap-mode
      and truncation changes invalidate both caches. *)
@@ -29,7 +28,6 @@ let display_cache_capacity = 4
 let buffer t = t.buffer
 let node t = t.node
 let wrap t = t.wrap
-let render_enabled t = t.render_enabled
 
 let effective_wrap_width t ?override () =
   match override with
@@ -257,7 +255,7 @@ let render t _self grid ~delta:_ =
   let x0 = max ox clip.x and y0 = max oy clip.y in
   let x1 = min (ox + w) (clip.x + clip.width) in
   let y1 = min (oy + h) (clip.y + clip.height) in
-  if t.render_enabled && x0 < x1 && y0 < y1 then begin
+  if x0 < x1 && y0 < y1 then begin
     let geometry = layout t in
     let src = Layout.source geometry in
     let text = Layout.Source.text src in
@@ -383,7 +381,6 @@ let create node buffer =
       selection_bg = None;
       selection_fg = None;
       selection = None;
-      render_enabled = true;
       display_cache = [];
       measure_cache = [];
     }
@@ -391,9 +388,3 @@ let create node buffer =
   Renderable.set_render node (render t);
   Renderable.set_measure node (Some (measure t));
   t
-
-let set_render_enabled t enabled =
-  if t.render_enabled <> enabled then begin
-    t.render_enabled <- enabled;
-    Renderable.request_render t.node
-  end

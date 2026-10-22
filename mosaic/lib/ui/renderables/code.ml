@@ -101,31 +101,15 @@ type syntax = {
   style : Syntax_style.t;
   source : source;
   conceal : bool;
-  draw_unstyled : bool;
-  streaming : bool;
 }
 
 let syntax ?language ?(style = Syntax_style.default) ?(conceal = true)
     highlights =
-  {
-    language;
-    style;
-    source = Ranges highlights;
-    conceal;
-    draw_unstyled = true;
-    streaming = false;
-  }
+  { language; style; source = Ranges highlights; conceal }
 
 let with_highlighter ~language ?(style = Syntax_style.default) ?(conceal = true)
-    ?(draw_unstyled = true) ?(streaming = false) highlighter =
-  {
-    language = Some language;
-    style;
-    source = Highlighter highlighter;
-    conceal;
-    draw_unstyled;
-    streaming;
-  }
+    highlighter =
+  { language = Some language; style; source = Highlighter highlighter; conceal }
 
 let source_equal a b =
   match (a, b) with
@@ -141,8 +125,12 @@ let syntax_equal a b =
   && Syntax_style.equal a.style b.style
   && source_equal a.source b.source
   && Bool.equal a.conceal b.conceal
-  && Bool.equal a.draw_unstyled b.draw_unstyled
-  && Bool.equal a.streaming b.streaming
+
+(* Two settings with the same producer yield the same captures for the same
+   content; they may differ only in presentation. *)
+let same_producer a b =
+  Option.equal String.equal a.language b.language
+  && source_equal a.source b.source
 
 (* Props *)
 
@@ -195,13 +183,18 @@ type t = {
   mutable highlighting : bool;
   mutable job : running_job option;
   mutable pending : (string * syntax * Highlighter.t) option;
-  mutable had_initial_content : bool;
-  mutable last_highlights : Syntax_highlight.t option;
-  mutable visible_final : bool;
+  mutable latest : Syntax_highlight.t option;
+      (* The latest captures of the current producer. While a result is
+         pending they describe an earlier content. *)
   mutable on_line_info_change : (unit -> unit) option;
 }
 
-and running_job = { generation : int; content : string; job : Highlighter.job }
+and running_job = {
+  generation : int;
+  content : string;
+  syntax : syntax;
+  job : Highlighter.job;
+}
 
 (* Accessors *)
 
@@ -237,55 +230,99 @@ let cancel_job t =
       t.job <- None;
       t.highlighting <- false
 
-let apply_plain ?(final = true) t content =
-  Text_renderable.set_text t.text content;
-  t.visible_final <- final
+let apply_plain t content = Text_renderable.set_text t.text content
 
-let apply_empty ?(final = true) t = apply_plain ~final t ""
-
-let apply_highlights t content syntax highlights =
+(* [paint t content syntax captures] shows [content] styled by [captures], or
+   plain when [captures] describe other bytes. *)
+let paint t content syntax captures =
   try
-    let captured = Syntax_highlight.content highlights in
+    let captured = Syntax_highlight.content captures in
     if content != captured && not (String.equal content captured) then
       invalid_arg "Code: highlights do not match source";
     let annotations =
       Syntax_highlight.to_annotations ~conceal:syntax.conceal
-        ~style:syntax.style highlights
+        ~style:syntax.style captures
     in
     Text_renderable.set_annotations t.text annotations;
-    t.last_highlights <- Some highlights;
-    t.visible_final <- true;
     true
   with _ ->
     apply_plain t content;
     false
 
+let apply_result t content syntax captures =
+  if paint t content syntax captures then t.latest <- Some captures
+
+let common_prefix a b =
+  let n = min (String.length a) (String.length b) in
+  let rec loop i = if i < n && a.[i] = b.[i] then loop (i + 1) else i in
+  loop 0
+
+let common_suffix a b ~limit =
+  let la = String.length a and lb = String.length b in
+  let rec loop i =
+    if i < limit && a.[la - 1 - i] = b.[lb - 1 - i] then loop (i + 1) else i
+  in
+  loop 0
+
+(* [carry captures content] moves [captures] onto [content]. Ranges that lie
+   in the bytes [content] shares with their source, as a common prefix or a
+   common suffix, keep their scope; ranges that touch changed bytes are
+   dropped, so captures never style bytes they were not computed for. *)
+let carry captures content =
+  let source = Syntax_highlight.content captures in
+  if String.equal source content then captures
+  else
+    let prefix = common_prefix source content in
+    let limit = min (String.length source) (String.length content) - prefix in
+    let suffix = common_suffix source content ~limit in
+    let suffix_start = String.length source - suffix in
+    let shift = String.length content - String.length source in
+    let keep range =
+      let start_byte = Syntax_highlight.start_byte range in
+      let end_byte = Syntax_highlight.end_byte range in
+      if end_byte <= prefix then Some range
+      else if start_byte >= suffix_start then
+        Some
+          (Syntax_highlight.range
+             ~meta:(Syntax_highlight.meta range)
+             ~start_byte:(start_byte + shift) ~end_byte:(end_byte + shift)
+             ~scope:(Syntax_highlight.scope range)
+             ())
+      else None
+    in
+    Syntax_highlight.make ~content
+      (List.filter_map keep (Syntax_highlight.ranges captures))
+
+(* While a result is pending, [content] shows with the latest captures carried
+   onto it. *)
+let show_pending t content syntax =
+  match t.latest with
+  | Some captures ->
+      ignore (paint t content syntax (carry captures content) : bool)
+  | None -> apply_plain t content
+
 let finish_job t (running : running_job) outcome =
   if running.generation = t.generation then begin
     t.highlighting <- false;
-    (match outcome with
-    | Ok highlights -> (
-        match t.props.syntax with
-        | Some syntax ->
-            ignore (apply_highlights t running.content syntax highlights : bool)
-        | None -> apply_plain t running.content)
-    | Error _ -> apply_plain t running.content);
+    (match (outcome, t.props.syntax) with
+    | Ok captures, Some syntax -> apply_result t running.content syntax captures
+    | Ok _, None | Error _, _ -> apply_plain t running.content);
     notify_line_info_change t;
     request_render t
   end
-
-let visible_before_highlight t content syntax =
-  t.visible_final <- false;
-  if syntax.streaming && t.had_initial_content then begin
-    ()
-  end
-  else if syntax.draw_unstyled then begin
-    Text_renderable.set_text t.text content
-  end
-  else begin
-    Text_renderable.set_text t.text content;
-    Text_renderable.set_render_enabled t.text false
-  end
+  else
+    (* A result for content that has since changed still describes the bytes
+       the current content shares with it. *)
+    match (outcome, t.props.syntax) with
+    | Ok captures, Some syntax
+      when t.highlighting
+           && same_producer running.syntax syntax
+           && String.equal (Syntax_highlight.content captures) running.content
+      ->
+        t.latest <- Some captures;
+        show_pending t t.props.content syntax;
+        request_render t
+    | _ -> ()
 
 let launch_job t content syntax highlighter =
   let language = Option.value syntax.language ~default:"" in
@@ -294,7 +331,7 @@ let launch_job t content syntax highlighter =
   let job =
     Highlighter.start highlighter request ~notify:(fun () -> request_render t)
   in
-  t.job <- Some { generation; content; job }
+  t.job <- Some { generation; content; syntax; job }
 
 let rec poll_job t =
   match t.job with
@@ -313,58 +350,50 @@ let rec poll_job t =
               poll_job t))
 
 let start_highlighting t content syntax highlighter =
-  visible_before_highlight t content syntax;
   t.highlighting <- true;
-  t.had_initial_content <- true;
   (match t.job with
   | None -> launch_job t content syntax highlighter
   | Some _ -> t.pending <- Some (content, syntax, highlighter));
-  poll_job t
-
-let render_syntax t content syntax =
-  match syntax.source with
-  | Ranges highlights ->
-      clear_pending t;
-      t.had_initial_content <- not (String.equal content "");
-      ignore (apply_highlights t content syntax highlights : bool);
-      notify_line_info_change t
-  | Highlighter highlighter -> start_highlighting t content syntax highlighter
+  poll_job t;
+  if t.highlighting then show_pending t content syntax
 
 let render_new_content t (props : Props.t) =
-  t.last_highlights <- None;
   t.generation <- t.generation + 1;
-  if String.equal props.content "" then begin
-    clear_pending t;
-    t.had_initial_content <- false;
-    apply_empty t;
-    notify_line_info_change t
-  end
-  else
-    match props.syntax with
-    | Some syntax -> render_syntax t props.content syntax
-    | None ->
-        clear_pending t;
-        t.had_initial_content <- false;
-        apply_plain t props.content;
-        notify_line_info_change t
-
-let same_producer a b =
-  Option.equal String.equal a.language b.language
-  && source_equal a.source b.source
+  match props.syntax with
+  | Some ({ source = Highlighter highlighter; _ } as syntax)
+    when not (String.equal props.content "") ->
+      start_highlighting t props.content syntax highlighter
+  | Some ({ source = Ranges captures; _ } as syntax) ->
+      clear_pending t;
+      apply_result t props.content syntax captures;
+      notify_line_info_change t
+  | Some { source = Highlighter _; _ } | None ->
+      clear_pending t;
+      apply_plain t props.content;
+      notify_line_info_change t
 
 let render_content t (props : Props.t) =
-  let same_source = String.equal t.props.content props.content in
-  let previous = t.props.syntax in
+  let previous = t.props in
   t.props <- props;
-  match (previous, props.syntax) with
-  | Some old, Some syntax when same_source && same_producer old syntax -> (
-      match t.last_highlights with
-      | Some highlights ->
-          ignore (apply_highlights t props.content syntax highlights : bool);
-          notify_line_info_change t
-      | None when t.highlighting ->
-          visible_before_highlight t props.content syntax
-      | None -> render_new_content t props)
+  let same_producer =
+    match (previous.syntax, props.syntax) with
+    | Some old, Some syntax -> same_producer old syntax
+    | _ -> false
+  in
+  if not same_producer then t.latest <- None;
+  match props.syntax with
+  | Some syntax
+    when same_producer && String.equal previous.content props.content -> (
+      if
+        (* Only the presentation changed: restyle what is shown. *)
+        t.highlighting
+      then show_pending t props.content syntax
+      else
+        match t.latest with
+        | Some captures ->
+            ignore (paint t props.content syntax captures : bool);
+            notify_line_info_change t
+        | None -> render_new_content t props)
   | _ -> render_new_content t props
 
 let render_before t _node _grid ~delta:_ = poll_job t
@@ -393,9 +422,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content ?syntax
       highlighting = false;
       job = None;
       pending = None;
-      had_initial_content = false;
-      last_highlights = None;
-      visible_final = true;
+      latest = None;
       on_line_info_change = None;
     }
   in
@@ -462,6 +489,5 @@ let apply_props t (props : Props.t) =
 (* Query *)
 
 let is_highlighting t = t.highlighting
-let line_info_stable t = (not t.highlighting) && t.visible_final
 let line_count t = Text_renderable.line_count t.text
 let display_line_count t = Text_renderable.display_line_count t.text

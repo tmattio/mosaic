@@ -707,12 +707,12 @@ module Code : sig
     language:string ->
     ?style:Mosaic_ui.Syntax_style.t ->
     ?conceal:bool ->
-    ?draw_unstyled:bool ->
-    ?streaming:bool ->
     Highlighter.t ->
     syntax
   (** [with_highlighter ~language highlighter] is a source-code syntax
-      configuration produced by [highlighter]. *)
+      configuration produced by [highlighter]. See
+      {!Mosaic_ui.Code.with_highlighter} for what is shown while a result is
+      pending. *)
 end
 
 (** Syntax styles. The normative scope vocabulary and fallback rules are

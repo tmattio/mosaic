@@ -75,7 +75,9 @@ identity, so create one at module scope or in the model, never during a render.
 Styles and syntax settings are values and may be rebuilt on every render; an
 equal style changes nothing. Theme changes reuse the completed captures and source
 index without restarting the highlighter. Pending results use the latest
-accepted theme. A result bound to different source bytes is rejected and the
+accepted theme. While a result is pending, the view shows its current content
+and keeps the latest result's styling on the bytes they share, so a streaming
+fence keeps its highlighted prefix (see `Code.with_highlighter`). A result bound to different source bytes is rejected and the
 current source renders as plain text.
 
 ## Scope names and styling

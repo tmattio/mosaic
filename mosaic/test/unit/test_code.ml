@@ -108,48 +108,90 @@ let async_highlighter_applies_completed_result () =
       is_true ~msg:"highlighted style" (Ansi.Style.equal red (span_style first))
   | [] -> fail "expected highlighted span"
 
-let async_draw_unstyled_false_hides_pending_render () =
+let style_of code byte = fst (Text_buffer.style_at (Code.buffer code) byte)
+let is_red code byte = Ansi.Style.equal red (style_of code byte)
+
+let keyword_at content start_byte end_byte =
+  Syntax_highlight.of_triples ~content [ (start_byte, end_byte, "keyword") ]
+
+let pending_append_keeps_highlighted_prefix () =
   let jobs, highlighter = async_highlighter () in
   let syntax =
     Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
-      ~draw_unstyled:false highlighter
+      highlighter
   in
   let _ctx, code = make_code ~content:"let x" ~syntax () in
-  is_true ~msg:"highlighting" (Code.is_highlighting code);
-  equal ~msg:"content remains measurable" string "let x"
-    (Text_buffer.plain_text (Code.buffer code));
-  is_false ~msg:"render disabled while pending"
-    (Text_surface.render_enabled (Code.surface code));
   complete (List.hd !jobs) (Ok highlights);
   render_code code;
-  is_true ~msg:"render enabled after highlight"
-    (Text_surface.render_enabled (Code.surface code));
-  equal ~msg:"content after highlight" string "let x"
-    (Text_buffer.plain_text (Code.buffer code))
+  Code.set_content code "let x = 1";
+  is_true ~msg:"highlighting" (Code.is_highlighting code);
+  equal ~msg:"current content shown" string "let x = 1"
+    (Text_buffer.plain_text (Code.buffer code));
+  is_true ~msg:"shared prefix keeps its styling" (is_red code 0);
+  is_false ~msg:"appended tail is plain" (is_red code 8);
+  let second = List.nth !jobs 1 in
+  complete second (Ok (keyword_at second.request.content 6 7));
+  render_code code;
+  is_false ~msg:"done" (Code.is_highlighting code);
+  is_false ~msg:"fresh result replaces carried styling" (is_red code 0);
+  is_true ~msg:"fresh result applied" (is_red code 6)
 
-let async_streaming_retains_previous_buffer () =
+let pending_edit_keeps_shared_prefix_and_suffix () =
   let jobs, highlighter = async_highlighter () in
   let syntax =
     Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
-      ~streaming:true highlighter
+      highlighter
+  in
+  let _ctx, code = make_code ~content:"let x in y" ~syntax () in
+  complete (List.hd !jobs)
+    (Ok
+       (Syntax_highlight.of_triples ~content:"let x in y"
+          [ (0, 3, "keyword"); (4, 5, "keyword"); (6, 8, "keyword") ]));
+  render_code code;
+  Code.set_content code "let yy in y";
+  equal ~msg:"current content shown" string "let yy in y"
+    (Text_buffer.plain_text (Code.buffer code));
+  is_true ~msg:"prefix range kept" (is_red code 0);
+  is_false ~msg:"range over changed bytes dropped" (is_red code 4);
+  is_true ~msg:"suffix range shifted" (is_red code 7 && is_red code 8);
+  is_false ~msg:"shift is exact" (is_red code 6)
+
+let stale_result_styles_shared_bytes () =
+  let jobs, highlighter = async_highlighter () in
+  let syntax =
+    Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
+      highlighter
   in
   let _ctx, code = make_code ~content:"let x" ~syntax () in
-  let first_job = List.hd !jobs in
-  complete first_job (Ok highlights);
+  Code.set_content code "let x = 1";
+  is_false ~msg:"nothing to carry yet" (is_red code 0);
+  complete (List.hd !jobs) (Ok highlights);
   render_code code;
-  equal ~msg:"initial highlighted content" string "let x"
+  is_true ~msg:"still highlighting the current content"
+    (Code.is_highlighting code);
+  equal ~msg:"current content shown" string "let x = 1"
     (Text_buffer.plain_text (Code.buffer code));
-  Code.set_content code "var x";
-  equal ~msg:"previous content retained" string "let x"
-    (Text_buffer.plain_text (Code.buffer code));
-  let second_job = List.nth !jobs 1 in
-  complete second_job
-    (Ok
-       (Syntax_highlight.of_triples ~content:second_job.request.content
-          [ (0, 3, "keyword") ]));
+  is_true ~msg:"stale result styles the shared bytes" (is_red code 0);
+  equal ~msg:"current content requested" string "let x = 1"
+    (List.nth !jobs 1).request.content
+
+let new_producer_starts_plain () =
+  let jobs, highlighter = async_highlighter () in
+  let next_jobs, next_highlighter = async_highlighter () in
+  let syntax =
+    Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
+      highlighter
+  in
+  let _ctx, code = make_code ~content:"let x" ~syntax () in
+  complete (List.hd !jobs) (Ok highlights);
   render_code code;
-  equal ~msg:"fresh content after highlight" string "var x"
-    (Text_buffer.plain_text (Code.buffer code))
+  Code.set_syntax code
+    (Some
+       (Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
+          next_highlighter));
+  is_true ~msg:"highlighting" (Code.is_highlighting code);
+  is_false ~msg:"another producer's captures are not carried" (is_red code 0);
+  equal int 1 (List.length !next_jobs)
 
 let async_content_changes_coalesce () =
   let jobs, highlighter = async_highlighter () in
@@ -227,11 +269,11 @@ let async_line_info_stabilizes_on_completion () =
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   let changes = ref 0 in
   Code.set_on_line_info_change code (Some (fun () -> incr changes));
-  is_false ~msg:"pending line info" (Code.line_info_stable code);
+  is_true ~msg:"pending line info" (Code.is_highlighting code);
   complete (List.hd !jobs) (Ok highlights);
   equal ~msg:"callback waits for polling" int 0 !changes;
   render_code code;
-  is_true ~msg:"stable line info" (Code.line_info_stable code);
+  is_false ~msg:"stable line info" (Code.is_highlighting code);
   equal ~msg:"line info callback" int 1 !changes
 
 let async_starter_exception_falls_back_to_plain_text () =
@@ -246,9 +288,7 @@ let async_starter_exception_falls_back_to_plain_text () =
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   is_false ~msg:"not highlighting" (Code.is_highlighting code);
   equal ~msg:"plain fallback" string "let x"
-    (Text_buffer.plain_text (Code.buffer code));
-  is_true ~msg:"render enabled after fallback"
-    (Text_surface.render_enabled (Code.surface code))
+    (Text_buffer.plain_text (Code.buffer code))
 
 let async_poll_exception_falls_back_to_plain_text () =
   let highlighter =
@@ -624,10 +664,13 @@ let () =
           test "sync highlighter applies style" sync_highlighter_applies_style;
           test "async highlighter applies completed result"
             async_highlighter_applies_completed_result;
-          test "async draw_unstyled false hides pending render"
-            async_draw_unstyled_false_hides_pending_render;
-          test "async streaming retains previous buffer"
-            async_streaming_retains_previous_buffer;
+          test "pending append keeps highlighted prefix"
+            pending_append_keeps_highlighted_prefix;
+          test "pending edit keeps shared prefix and suffix"
+            pending_edit_keeps_shared_prefix_and_suffix;
+          test "stale result styles shared bytes"
+            stale_result_styles_shared_bytes;
+          test "new producer starts plain" new_producer_starts_plain;
           test "async content changes coalesce" async_content_changes_coalesce;
           test "async configuration changes coalesce"
             async_configuration_changes_coalesce;

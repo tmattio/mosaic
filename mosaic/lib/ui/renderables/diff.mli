@@ -187,17 +187,12 @@ val syntax :
   language:string ->
   ?style:Syntax_style.t ->
   ?conceal:bool ->
-  ?draw_unstyled:bool ->
-  ?streaming:bool ->
   Code.Highlighter.t ->
   syntax
-(** [syntax ~language highlighter] is a diff syntax configuration.
-
-    [draw_unstyled] controls whether plain source is visible before the first
-    result is available. Wrapped concealed split views may suppress unstyled
-    text while highlighting is pending so that alignment uses final line
-    metrics. [streaming] keeps the previous rendered buffer visible while a
-    fresh result is pending. *)
+(** [syntax ~language highlighter] is a diff syntax configuration. Each side is
+    a {!Code} view configured by {!Code.with_highlighter}, which states what a
+    side shows while a result is pending. Wrapped split views align their rows
+    once both sides have their results, since highlighting may conceal text. *)
 
 type highlight = { old : syntax; new_ : syntax }
 (** Syntax configurations for old and new content.

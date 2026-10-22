@@ -108,26 +108,20 @@ let register_line_info t =
 (* Content *)
 
 let set_text t s =
-  Text_surface.set_render_enabled t.surface true;
   Text_buffer.set_text t.buffer s;
   Text_surface.invalidate t.surface
 
 let set_styled_text t spans =
-  Text_surface.set_render_enabled t.surface true;
   Text_buffer.set_styled_text t.buffer spans;
   Text_surface.invalidate t.surface
 
 let set_annotations t annotations =
-  Text_surface.set_render_enabled t.surface true;
   let content = Text_buffer.Annotations.content annotations in
   let current = Text_buffer.plain_text t.buffer in
   if current != content && not (String.equal current content) then
     Text_buffer.set_text t.buffer content;
   Text_buffer.set_annotations t.buffer annotations;
   Text_surface.invalidate t.surface
-
-let set_render_enabled t enabled =
-  Text_surface.set_render_enabled t.surface enabled
 
 let set_text_style ?restyle t style =
   if not (Ansi.Style.equal (Text_buffer.default_style t.buffer) style) then begin

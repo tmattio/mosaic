@@ -45,9 +45,10 @@ module Highlighter : sig
   (** [job ~poll ~cancel] is an asynchronous job. [poll ()] returns [None] while
       the job is pending and [Some outcome] once it has completed. [cancel ()]
       asks the producer to stop work or discard its result when the widget is
-      destroyed. Content and syntax changes coalesce while a job runs; its
-      result is discarded if obsolete, then the latest request starts. A live
-      job must eventually complete even if its input has become obsolete. *)
+      destroyed. Content and syntax changes coalesce while a job runs; when it
+      completes, the latest request starts. An obsolete result is never shown as
+      such (see {!with_highlighter}). A live job must eventually complete even
+      if its input has become obsolete. *)
 
   val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
   (** [sync f] is a synchronous highlighter. Exceptions raised by [f] are
@@ -99,16 +100,22 @@ val with_highlighter :
   language:string ->
   ?style:Syntax_style.t ->
   ?conceal:bool ->
-  ?draw_unstyled:bool ->
-  ?streaming:bool ->
   Highlighter.t ->
   syntax
 (** [with_highlighter ~language highlighter] is a syntax configuration that
-    derives highlight ranges from [highlighter].
+    derives highlight ranges from [highlighter], which receives [language] and
+    the whole content in each request.
 
-    [draw_unstyled] controls whether plain source is visible before the first
-    result is available. [streaming] keeps the previous rendered buffer visible
-    while a fresh result is pending. *)
+    A synchronous highlighter's result is shown at once. While an asynchronous
+    result is pending, the code still shows its current content: bytes it shares
+    with the source of the latest result, as a common prefix or a common suffix,
+    keep that result's styling, and the other bytes are plain. A streaming
+    append therefore keeps its highlighted prefix and shows its new tail plain
+    until the result arrives, and content seen for the first time shows plain. A
+    result for content that has since changed is never shown as such, but it
+    becomes the latest result, so styling keeps up with content that changes
+    faster than it can be highlighted. A different highlighter or language
+    starts again from plain text. *)
 
 (** {1:props Props} *)
 
@@ -232,12 +239,10 @@ val line_count : t -> int
 (** [line_count t] is the number of logical lines in [t]. *)
 
 val is_highlighting : t -> bool
-(** [is_highlighting t] is [true] while asynchronous highlighting work is
-    pending. *)
-
-val line_info_stable : t -> bool
-(** [line_info_stable t] is [true] iff [t]'s current line metrics describe the
-    final visible buffer for the current content and syntax settings. *)
+(** [is_highlighting t] is [true] while a highlighter result for [t]'s current
+    content and syntax settings is pending. Meanwhile the shown buffer and its
+    line metrics are provisional (see {!with_highlighter}); once [false], they
+    are final until the content or syntax changes. *)
 
 val display_line_count : t -> int
 (** [display_line_count t] is the number of display lines in [t] after wrapping.
