@@ -726,7 +726,7 @@ let rec flatten_vnode ~cache ~viewport_width (vnode : unit Vnode.t)
       let view =
         match Hashtbl.find_opt memo_cache.previous slot with
         | Some (previous, view) when Vnode.memo_equal previous memo -> view
-        | _ -> memo.view ()
+        | _ -> Vnode.memo_view memo
       in
       Hashtbl.replace memo_cache.current slot (memo, view);
       flatten_vnode ~cache ~viewport_width view acc

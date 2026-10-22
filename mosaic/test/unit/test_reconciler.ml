@@ -796,11 +796,11 @@ let hidden_subtrees_do_not_contribute_focus () =
 let memo_reuses_equal_value_keys () =
   let renderer, reconciler = make () in
   let builds = ref 0 in
-  let view values =
-    Vnode.memo ~key:values (fun values ->
-        incr builds;
-        Vnode.text (String.concat "," values))
+  let build values =
+    incr builds;
+    Vnode.text (String.concat "," values)
   in
+  let view values = Vnode.memo ~key:values build in
   render_view reconciler (view [ String.make 1 'a' ]);
   render_view reconciler (view [ String.make 1 'a' ]);
   equal ~msg:"fresh structurally equal key skips view" int 1 !builds;
@@ -811,11 +811,11 @@ let memo_reuses_equal_value_keys () =
 let memo_refreshes_message_mapper () =
   let renderer, reconciler = make () in
   let builds = ref 0 and messages = ref [] in
-  let view () =
-    Vnode.memo ~key:0 (fun _ ->
-        incr builds;
-        Vnode.box ~focusable:true ~on_key:(fun _ -> Some "event") [])
+  let build _ =
+    incr builds;
+    Vnode.box ~focusable:true ~on_key:(fun _ -> Some "event") []
   in
+  let view () = Vnode.memo ~key:0 build in
   let first text = messages := ("first " ^ text) :: !messages in
   let second text = messages := ("second " ^ text) :: !messages in
   render_view reconciler (Vnode.map first (view ()));
@@ -836,16 +836,15 @@ let memo_refreshes_message_mapper () =
 let nested_memo_keeps_independent_keys () =
   let renderer, reconciler = make () in
   let outer_builds = ref 0 and inner_builds = ref 0 in
-  let view epoch value =
-    Vnode.memo ~key:(epoch, value) (fun (_, value) ->
-        incr outer_builds;
-        Vnode.box
-          [
-            Vnode.memo ~key:value (fun value ->
-                incr inner_builds;
-                Vnode.text value);
-          ])
+  let inner value =
+    incr inner_builds;
+    Vnode.text value
   in
+  let outer (_, value) =
+    incr outer_builds;
+    Vnode.box [ Vnode.memo ~key:value inner ]
+  in
+  let view epoch value = Vnode.memo ~key:(epoch, value) outer in
   render_view reconciler (view 0 "a");
   render_view reconciler (view 1 "a");
   equal ~msg:"outer rebuilt" int 2 !outer_builds;
@@ -857,22 +856,16 @@ let nested_memo_keeps_independent_keys () =
 let memo_belongs_to_keyed_parent () =
   let renderer, reconciler = make () in
   let builds_a = ref 0 and builds_b = ref 0 in
-  let a key =
-    Vnode.box ~key
-      [
-        Vnode.memo ~key:0 (fun _ ->
-            incr builds_a;
-            Vnode.text ~id:"A" "A");
-      ]
+  let build_a _ =
+    incr builds_a;
+    Vnode.text ~id:"A" "A"
   in
-  let b () =
-    Vnode.box ~key:"b"
-      [
-        Vnode.memo ~key:0 (fun _ ->
-            incr builds_b;
-            Vnode.text ~id:"B" "B");
-      ]
+  let build_b _ =
+    incr builds_b;
+    Vnode.text ~id:"B" "B"
   in
+  let a key = Vnode.box ~key [ Vnode.memo ~key:0 build_a ] in
+  let b () = Vnode.box ~key:"b" [ Vnode.memo ~key:0 build_b ] in
   render_view reconciler (Vnode.fragment [ a "a"; b () ]);
   render_view reconciler (Vnode.fragment [ b (); a "a" ]);
   let ids =
@@ -885,6 +878,99 @@ let memo_belongs_to_keyed_parent () =
   equal ~msg:"reorder retains B memo" int 1 !builds_b;
   render_view reconciler (Vnode.fragment [ b (); a "new-a" ]);
   equal ~msg:"new parent owns fresh memo" int 2 !builds_a
+
+let screen_row renderer row =
+  do_frame renderer;
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
+  String.trim
+    (String.concat ""
+       (List.init (Matrix_grid.width grid) (fun x ->
+            match
+              Matrix_grid.get_text grid ((row * Matrix_grid.width grid) + x)
+            with
+            | "" -> " "
+            | text -> text)))
+
+let column children =
+  Vnode.box
+    ~style:
+      (Toffee.Style.default
+      |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column)
+    children
+
+let a_view () = Vnode.text "AAA"
+let b_view () = Vnode.text "BBB"
+
+let memos_in_one_slot_keep_their_views () =
+  let renderer, reconciler = make () in
+  let view show_a =
+    column
+      [
+        Vnode.memo ~key:() b_view;
+        (if show_a then Vnode.memo ~key:() a_view else Vnode.empty);
+      ]
+  in
+  render_view reconciler (view true);
+  equal ~msg:"both memos" string "BBB" (screen_row renderer 0);
+  equal ~msg:"second memo" string "AAA" (screen_row renderer 1);
+  render_view reconciler (view false);
+  equal ~msg:"remaining memo keeps its view" string "BBB"
+    (screen_row renderer 0);
+  equal ~msg:"removed memo" string "" (screen_row renderer 1)
+
+let show_block id = Vnode.text ("show " ^ id)
+let edit_block id = Vnode.text ("edit " ^ id)
+
+let memo_view_function_is_part_of_identity () =
+  let renderer, reconciler = make () in
+  let view ~editing id =
+    if editing then Vnode.memo ~key:id edit_block
+    else Vnode.memo ~key:id show_block
+  in
+  render_view reconciler (view ~editing:false "b1");
+  equal ~msg:"show mode" string "show b1" (screen_row renderer 0);
+  render_view reconciler (view ~editing:true "b1");
+  equal ~msg:"same key, other view" string "edit b1" (screen_row renderer 0)
+
+let count_view n = Vnode.text (Printf.sprintf "count=%d" n)
+
+let option_view = function
+  | None -> Vnode.text "none"
+  | Some () -> Vnode.text "some"
+
+let memo_keys_of_different_types_do_not_alias () =
+  let renderer, reconciler = make () in
+  render_view reconciler (Vnode.memo ~key:0 count_view);
+  equal ~msg:"integer key" string "count=0" (screen_row renderer 0);
+  render_view reconciler (Vnode.memo ~key:None option_view);
+  equal ~msg:"None after 0" string "none" (screen_row renderer 0)
+
+let float_view x = Vnode.text (Printf.sprintf "%g" x)
+
+let memo_compares_float_bits () =
+  let renderer, reconciler = make () in
+  let builds = ref 0 in
+  let counted x =
+    incr builds;
+    float_view x
+  in
+  render_view reconciler (Vnode.memo ~key:Float.nan counted);
+  render_view reconciler (Vnode.memo ~key:Float.nan counted);
+  equal ~msg:"nan equals itself" int 1 !builds;
+  render_view reconciler (Vnode.memo ~key:0. float_view);
+  equal ~msg:"zero" string "0" (screen_row renderer 0);
+  render_view reconciler (Vnode.memo ~key:(-0.) float_view);
+  equal ~msg:"negative zero is another key" string "-0" (screen_row renderer 0)
+
+let memo_rejects_functions_in_key () =
+  let rejects key =
+    raises_match ~msg:"rejected at memo"
+      (function Invalid_argument _ -> true | _ -> false)
+      (fun () -> ignore (Vnode.memo ~key (fun _ -> Vnode.empty) : unit Vnode.t))
+  in
+  rejects (1, fun x -> x + 1);
+  rejects [ Some succ ];
+  rejects object end
 
 let removed_memo_releases_view () =
   let renderer, reconciler = make () in
@@ -960,6 +1046,15 @@ let () =
           test "nested memo keys" nested_memo_keeps_independent_keys;
           test "keyed parent ownership" memo_belongs_to_keyed_parent;
           test "removed memo releases view" removed_memo_releases_view;
+          test "memos in one slot keep their views"
+            memos_in_one_slot_keep_their_views;
+          test "view function is part of identity"
+            memo_view_function_is_part_of_identity;
+          test "keys of different types do not alias"
+            memo_keys_of_different_types_do_not_alias;
+          test "float keys compare by bits" memo_compares_float_bits;
+          test "functions in keys are rejected at memo"
+            memo_rejects_functions_in_key;
         ];
       group "Construction"
         [

@@ -1192,10 +1192,32 @@ val embed : Mosaic_ui.Renderable.t -> 'msg t
     the integration is responsible for their ownership. *)
 
 val memo : key:'key -> ('key -> 'msg t) -> 'msg t
-(** [memo ~key view] defers [view key] and reuses the mounted subtree while the
-    key remains structurally equal. The immutable, function-free key must
-    include all captured dependencies that affect content or callbacks. Changing
-    a message mapper invalidates the cached subtree. *)
+(** [memo ~key view] defers [view key]. When the previous render mounted an
+    equal memo at the same position, Mosaic reuses that subtree without calling
+    [view].
+
+    Two memos are equal when they have the same [view] function, compared
+    physically, equal keys, and the same message mappers ({!val-map}). Keys are
+    equal when they have the same representation: the same constructors and
+    integers, the same characters, and the same floating-point bits. Since a
+    [view] receives only its key, equal memos build equal subtrees whatever the
+    key's type.
+
+    Pass a [view] defined once, for example at top level, and put every value
+    the subtree depends on in [key]:
+    {[
+      let message_view (id, revision, theme) = ...
+      let transcript model =
+        List.map
+          (fun m -> memo ~key:(m.id, m.revision, model.theme) message_view)
+          model.messages
+    ]}
+    A closure allocated by each view call is a new function: it never matches,
+    so its subtree is rebuilt on every render. Keys must be immutable and
+    acyclic.
+
+    Raises [Invalid_argument] if [key] contains a function, an object or an
+    abstract value, which have no representation to compare. *)
 
 val viewport_switch :
   at_least_width:int -> wide:'msg t -> narrow:'msg t -> 'msg t

@@ -126,9 +126,9 @@ type attrs = {
 
 (** {1:vnodes Virtual nodes} *)
 
-type memo_key
-(** An opaque immutable, function-free value used for structural memo
-    comparison. *)
+type 'msg memo
+(** The type for a deferred subtree: a view function, the key it is applied to,
+    and the message mappers applied since. See {!val-memo}. *)
 
 type 'msg t =
   | Element of 'msg element
@@ -147,14 +147,6 @@ type 'msg t =
             but not managed by the reconciler. Use this as an escape hatch for
             imperative code.
           - [Empty] renders nothing. *)
-
-and 'msg memo = {
-  key : memo_key;
-  view : unit -> 'msg t;
-  mappings : memo_key list;
-}
-(** Deferred subtree and message-mapper identities. Reconciler caches are scoped
-    to a mounted position, never global. *)
 
 and 'msg element = {
   kind : kind;
@@ -191,14 +183,32 @@ val embed : Renderable.t -> 'msg t
     attached by the reconciler but not otherwise managed. *)
 
 val memo : key:'key -> ('key -> 'msg t) -> 'msg t
-(** [memo ~key view] defers [view key] and reuses its mounted subtree while
-    [key] is structurally equal. Keys must be immutable, contain no functions,
-    and include every value captured by [view] that affects content or
-    callbacks. A changed message mapper invalidates the cache. *)
+(** [memo ~key view] defers [view key]. A reconciler that mounted an equal memo
+    at the same position reuses that subtree instead of calling [view].
 
-val memo_equal : 'a memo -> 'b memo -> bool
-(** [memo_equal a b] compares value keys and message-mapper identities without
-    comparing the deferred view functions. *)
+    Two memos are equal when they have the same [view] function, compared
+    physically, equal keys, and the same message mappers ({!val-map}). Keys are
+    equal when they have the same representation: the same constructors and
+    integers, the same characters, and the same floating-point bits, so [nan]
+    equals itself and [0.] differs from [-0.]. Since a [view] receives only its
+    key, equal memos build equal subtrees whatever the key's type.
+
+    So that reuse is sound, pass a [view] that is defined once (for example at
+    top level) and captures nothing that changes, and put every value the
+    subtree depends on in [key]. A closure allocated by each view call is a new
+    function: it never matches, and its subtree is rebuilt on every render. Keys
+    must be immutable and acyclic.
+
+    Raises [Invalid_argument] if [key] contains a function, an object or an
+    abstract value, which have no representation to compare. *)
+
+val memo_equal : 'a memo -> 'a memo -> bool
+(** [memo_equal a b] is [true] iff [a] and [b] are equal in the sense of
+    {!val-memo}: then they build equal subtrees. *)
+
+val memo_view : 'msg memo -> 'msg t
+(** [memo_view m] calls [m]'s view function on its key, through its message
+    mappers. *)
 
 val viewport_switch :
   at_least_width:int -> wide:'msg t -> narrow:'msg t -> 'msg t

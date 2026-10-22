@@ -99,8 +99,6 @@ type attrs = {
 
 (* ───── Virtual Nodes ───── *)
 
-type memo_key = Obj.t
-
 type 'msg t =
   | Element of 'msg element
   | Fragment of 'msg t list
@@ -110,9 +108,10 @@ type 'msg t =
   | Empty
 
 and 'msg memo = {
-  key : memo_key;
-  view : unit -> 'msg t;
-  mappings : memo_key list;
+  key : Obj.t;
+  view : Obj.t;
+  build : unit -> 'msg t;
+  mappings : Obj.t list;
 }
 
 and 'msg element = {
@@ -136,8 +135,60 @@ let empty = Empty
 let fragment children = Fragment children
 let embed node = Embed node
 
+(* A memo key is compared by representation (see [memo] in the interface).
+   Functions, objects and abstract blocks have no comparable representation and
+   are rejected where the key is given. *)
+let rec check_memo_key v =
+  if Obj.is_block v then
+    let tag = Obj.tag v in
+    if
+      tag = Obj.closure_tag || tag = Obj.infix_tag || tag = Obj.object_tag
+      || tag = Obj.abstract_tag || tag = Obj.cont_tag
+    then invalid_arg "Vnode.memo: key contains a function or an abstract value"
+    else if tag < Obj.no_scan_tag then
+      for i = 0 to Obj.size v - 1 do
+        check_memo_key (Obj.field v i)
+      done
+
+let float_bits v i = Int64.bits_of_float (Obj.double_field v i)
+
+let rec same_memo_key a b =
+  a == b
+  || Obj.is_block a && Obj.is_block b
+     &&
+     let tag = Obj.tag a and size = Obj.size a in
+     tag = Obj.tag b
+     && size = Obj.size b
+     &&
+     if tag = Obj.double_tag then
+       Int64.equal
+         (Int64.bits_of_float (Obj.obj a))
+         (Int64.bits_of_float (Obj.obj b))
+     else if tag = Obj.double_array_tag then
+       let rec loop i =
+         i = size
+         || (Int64.equal (float_bits a i) (float_bits b i) && loop (i + 1))
+       in
+       loop 0
+     else if tag = Obj.string_tag then String.equal (Obj.obj a) (Obj.obj b)
+     else if tag < Obj.no_scan_tag then
+       let rec loop i =
+         i = size
+         || (same_memo_key (Obj.field a i) (Obj.field b i) && loop (i + 1))
+       in
+       loop 0
+     else compare a b = 0
+
 let memo ~key view =
-  Memo { key = Obj.repr key; view = (fun () -> view key); mappings = [] }
+  let key = Obj.repr key in
+  check_memo_key key;
+  Memo
+    {
+      key;
+      view = Obj.repr view;
+      build = (fun () -> view (Obj.obj key));
+      mappings = [];
+    }
 
 let memo_equal a b =
   let rec same_mappings xs ys =
@@ -146,7 +197,11 @@ let memo_equal a b =
     | x :: xs, y :: ys -> x == y && same_mappings xs ys
     | _ -> false
   in
-  same_mappings a.mappings b.mappings && a.key = b.key
+  a.view == b.view
+  && same_mappings a.mappings b.mappings
+  && same_memo_key a.key b.key
+
+let memo_view m = m.build ()
 
 let viewport_switch ~at_least_width ~wide ~narrow =
   if at_least_width < 1 then
@@ -991,7 +1046,7 @@ let rec map (f : 'a -> 'b) (vnode : 'a t) : 'b t =
       Memo
         {
           m with
-          view = (fun () -> map f (m.view ()));
+          build = (fun () -> map f (m.build ()));
           mappings = Obj.repr f :: m.mappings;
         }
   | Embed node -> Embed node
