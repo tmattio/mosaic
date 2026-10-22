@@ -842,7 +842,18 @@ let style_apply_sgr () =
     (Style.make ~bold:true ());
   check "an unknown color form is skipped alone" "\x1b[38;3;1m"
     (Style.make ~italic:true ~bold:true ());
-  check "unknown codes have no effect" "\x1b[10;26;50;60;1000m" Style.default
+  check "unknown codes have no effect" "\x1b[10;26;50;60;1000m" Style.default;
+  (* Sub-parameters are defined for the colours and the underline style
+     only: elsewhere the parameter has no effect, and the others act. *)
+  check "1:2 is not bold" "\x1b[1:2m" Style.default;
+  check "1:: is not bold" "\x1b[1::m" Style.default;
+  check "a lone colon is not 0" ~from:all "\x1b[:m" all;
+  check "the other parameters act" "\x1b[3;1:2;4:3m"
+    (Style.make ~italic:true ~underline:true ());
+  check "4:0 is 24"
+    ~from:(Style.make ~underline:true ())
+    "\x1b[4:0m" Style.default;
+  check "38:5:n" "\x1b[38:5:9m" (Style.make ~fg:(Color.indexed 9) ())
 
 let parser_mode_sequences () =
   (* Modes keep every parameter, so batched sequences like

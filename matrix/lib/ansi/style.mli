@@ -195,6 +195,9 @@ val apply_sgr : Parser.Params.t -> t -> t
       separate parameters, [38;5;n] or [38;2;r;g;b]; an incomplete color in the
       second form ends the list. [58], the underline color, is read the same way
       and has no effect.
+    - A parameter with sub-parameters, separated by colons, has no effect unless
+      its code is 4, 38, 48 or 58, the ones whose sub-parameters SGR defines
+      (ECMA-48 §5.4.2): [1:2] is not bold, and [:] is not 0.
     - Other codes have no effect. *)
 
 (** {1:fmt Formatting} *)
