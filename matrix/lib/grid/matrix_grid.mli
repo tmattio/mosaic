@@ -167,9 +167,9 @@ val resize_clear : ?color:Ansi.Color.t -> t -> width:int -> height:int -> unit
     [width > max_width]. *)
 
 val clear : ?color:Ansi.Color.t -> t -> unit
-(** [clear ~color g] resets all cells to spaces with white foreground and
-    [color] background. [color] defaults to transparent. Releases all stored
-    grapheme references. The scissor stack is preserved. *)
+(** [clear ~color g] resets all cells to spaces with the terminal's default
+    foreground and [color] background. [color] defaults to transparent. Releases
+    all stored grapheme references. The scissor stack is preserved. *)
 
 val blit : src:t -> dst:t -> unit
 (** [blit ~src ~dst] copies all cell data from [src] to [dst], resizing [dst] to
