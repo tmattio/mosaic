@@ -1400,6 +1400,7 @@ let resize t ~rows ~cols =
 let rows t = t.rows
 let cols t = t.cols
 let cursor_pos t = (t.cursor.row, t.cursor.col)
+let last_column t = t.cursor.last_column
 
 let wrapped t y =
   if y >= 0 then y < t.rows && wrapped_row t y

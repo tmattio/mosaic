@@ -1531,6 +1531,10 @@ let last_column_flag () =
     Vte.cursor_pos (screen_of ~rows:3 ~cols:10 [ "\x1b[1;9HAB" ^ s ])
   in
   equal ~msg:"set at the last column" (pair int int) (0, 9) (pos "");
+  is_true ~msg:"which last_column shows"
+    (Vte.last_column (screen_of ~rows:3 ~cols:10 [ "\x1b[1;9HAB" ]));
+  is_false ~msg:"and not before"
+    (Vte.last_column (screen_of ~rows:3 ~cols:10 [ "\x1b[1;9HA" ]));
   equal ~msg:"DECSC saves it" (pair int int) (1, 1)
     (pos "\x1b7\x1b[3;1HQ\x1b8X");
   equal ~msg:"HT keeps it" (pair int int) (1, 1) (pos "\tX");

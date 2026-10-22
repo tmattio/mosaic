@@ -226,6 +226,12 @@ val cursor_pos : t -> int * int
 (** [cursor_pos t] is the cursor's [(row, col)], from [(0, 0)], with
     [row < rows t] and [col < cols t]. *)
 
+val last_column : t -> bool
+(** [last_column t] is the Last Column Flag ({!section-cursor}): the cursor is
+    on the character just printed in the last column, and the next one wraps
+    first. It implies autowrap and [snd (cursor_pos t) = cols t - 1]. Cursor
+    reports never show it. *)
+
 val wrapped : t -> int -> bool
 (** [wrapped t y] is the wrap mark of row [y] of the active screen, or for
     [y < 0] of the [-y]th newest scrollback line. [false] outside them. *)
