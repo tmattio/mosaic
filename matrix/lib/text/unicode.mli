@@ -27,7 +27,15 @@ val tty_width_hint : Uchar.t -> int
     - [-1] for control characters (C0, DEL, C1).
     - [0] for non-spacing marks and format characters.
     - [1] for most characters.
-    - [2] for wide and fullwidth East Asian characters. *)
+    - [2] for the characters whose East_Asian_Width is Wide (W) or Fullwidth (F)
+      ({{:https://www.unicode.org/reports/tr11/}UAX #11}).
+
+    The W characters include every character with the Emoji_Presentation
+    property except the regional indicators. A character without it has a text
+    presentation by default ({{:https://www.unicode.org/reports/tr51/}UTS #51}
+    ED-7) and keeps its East_Asian_Width: U+2764 HEAVY BLACK HEART, U+26A0
+    WARNING SIGN and U+1F000 MAHJONG TILE EAST WIND are [1]. Only U+FE0F after
+    an emoji makes one [2] (see {!is_emoji}). *)
 
 val is_emoji : Uchar.t -> bool
 (** [is_emoji u] is [true] iff [u] has the Emoji property. U+FE0F gives such a

@@ -715,8 +715,8 @@ let emoji_presentation_widths () =
   check "wave U+1F44B" 0x1F44B 2;
   check "thumbs up U+1F44D" 0x1F44D 2;
   check "face with tears U+1F602" 0x1F602 2;
-  check "red heart U+2764" 0x2764 2;
-  check "red heart + VS16 base" 0x2764 2;
+  check "red heart U+2764" 0x2764 1;
+  check "red heart + VS16 base" 0x2764 1;
   let heart_vs16 = uchar_to_utf8 0x2764 ^ uchar_to_utf8 0xFE0F in
   check_width "heart with VS16 = width 2" 2
     (measure ~width_method:`Unicode ~tab_width:2 heart_vs16);
@@ -941,6 +941,50 @@ let method_name = function
   | `Unicode -> "Unicode"
   | `Unicode_wide -> "Unicode_wide"
   | `Wcwidth -> "Wcwidth"
+
+(* An emoji without Emoji_Presentation and a pictograph that is not an emoji
+   are East_Asian_Width N, so one cell, in every method (UAX #11; UTS #51 ED-7),
+   as in glibc, xterm, Ghostty, WezTerm and foot. VS16 widens an emoji to two
+   cells in the grapheme methods only: [`Wcwidth] adds the width of each
+   scalar, and U+FE0F has none. *)
+let text_default_pictograph_widths () =
+  let narrow =
+    [
+      ("red heart U+2764", "\u{2764}");
+      ("warning sign U+26A0", "\u{26A0}");
+      ("double exclamation U+203C", "\u{203C}");
+      ("helmet U+26D1", "\u{26D1}");
+      ("dove U+1F54A", "\u{1F54A}");
+      ("mahjong east wind U+1F000", "\u{1F000}");
+      ("domino U+1F030", "\u{1F030}");
+      ("alchemical U+1F700", "\u{1F700}");
+      ("chess king U+1FA00", "\u{1FA00}");
+    ]
+  in
+  List.iter
+    (fun m ->
+      let measure s = measure ~width_method:m ~tab_width:2 s in
+      let name = method_name m in
+      List.iter
+        (fun (label, s) -> check_width (name ^ " " ^ label) 1 (measure s))
+        narrow;
+      check_width (name ^ " grinning face U+1F600") 2 (measure "\u{1F600}");
+      check_width (name ^ " heart in text") 4 (measure "a\u{2764}bc");
+      check_width
+        (name ^ " VS16 after a non-emoji pictograph")
+        1
+        (measure "\u{1F000}\u{FE0F}");
+      let vs16 = if m = `Wcwidth then 1 else 2 in
+      check_width (name ^ " red heart + VS16") vs16 (measure "\u{2764}\u{FE0F}");
+      check_width
+        (name ^ " warning sign + VS16")
+        vs16
+        (measure "\u{26A0}\u{FE0F}"))
+    methods;
+  check_width "uchar_width red heart" 1
+    (uchar_width ~tab_width:2 (Uchar.of_int 0x2764));
+  check_width "uchar_width grinning face" 2
+    (uchar_width ~tab_width:2 (Uchar.of_int 0x1F600))
 
 (* The units of [chunks], fed one scalar at a time with [Segmenter.add], or
    with [Segmenter.ascii_run] wherever it applies when [runs]. Each unit is
@@ -1316,6 +1360,8 @@ let () =
       group "Width Tables"
         [
           test "emoji presentation widths" emoji_presentation_widths;
+          test "text-default pictographs are narrow"
+            text_default_pictograph_widths;
           test "C1 control widths" c1_control_widths;
         ];
     ]

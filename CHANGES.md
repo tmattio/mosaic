@@ -93,6 +93,7 @@
 - `matrix.pty`: a child that fails session setup, chdir, or exec exits without running cleanup inherited from the parent
 - VTE: scrollback rendering order, wide graphemes at the right margin, insert-mode wrap, DECRC style restore, typed DECSET/DECRST (multi-parameter modes), reverse-index scrolling, scrollback cleared on ED 3, default colors resolved for terminal text, and emulated scroll control sequences
 - Combining marks stay attached to ASCII bases in grapheme segmentation; wrapping keeps periods inside their token
+- `matrix.text` measures 897 East_Asian_Width N pictographs as one cell, as UAX #11 and terminals do, instead of two: emoji without Emoji_Presentation such as ❤ U+2764 and ⚠ U+26A0, and symbols such as mahjong tiles, dominoes, alchemical symbols and chess pieces. VS16 still widens an emoji to two cells
 - Charts: sub-cell circle rasterization, zoomed y-axis labels, candlestick hit-testing, charset-faithful glyphs
 - Grapheme storage no longer leaks ids for clipped draws
 
