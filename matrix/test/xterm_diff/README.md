@@ -12,7 +12,7 @@ runs it under `dune build @runtest`.
 
 ## Running it
 
-You need xterm (the campaign used xterm 398) and an X server. Xvfb is enough:
+You need xterm (tested with xterm 398) and an X server. Xvfb is enough:
 
 ```sh
 Xvfb :97 -screen 0 1024x768x24 -nolisten tcp &

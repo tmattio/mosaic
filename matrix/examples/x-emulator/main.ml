@@ -199,6 +199,16 @@ let cleanup state =
   Ttf.quit ();
   Sdl.quit ()
 
+(* Write all of [s] to [pty]. The PTY is non-blocking: after a short write,
+   or when it can take nothing, wait until it can take more. *)
+let rec write_all pty s off len =
+  if len > 0 then
+    match Pty.write_string pty s off len with
+    | n when n > 0 -> write_all pty s (off + n) (len - n)
+    | _ | (exception Unix.Unix_error ((EAGAIN | EWOULDBLOCK | EINTR), _, _)) ->
+        ignore (Unix.select [] [ Pty.out_fd pty ] [] (-1.));
+        write_all pty s off len
+
 (** Translates TSDL keyboard events into byte sequences for the PTY. *)
 let handle_key_down state (event : Sdl.event) =
   let scancode = Sdl.Event.(get event keyboard_scancode) in
@@ -311,8 +321,7 @@ let handle_key_down state (event : Sdl.event) =
 
   let str_to_write = Buffer.contents buf in
   if String.length str_to_write > 0 then (
-    ignore
-      (Pty.write_string state.pty str_to_write 0 (String.length str_to_write));
+    write_all state.pty str_to_write 0 (String.length str_to_write);
     (* Auto-scroll to live terminal on user input (Alacritty behavior) *)
     state.display_offset <- 0;
     state.force_render <- true)
@@ -381,7 +390,7 @@ let handle_event state event =
   | `Key_down -> handle_key_down state event
   | `Text_input ->
       let text = Sdl.Event.(get event text_input_text) in
-      ignore (Pty.write_string state.pty text 0 (String.length text))
+      write_all state.pty text 0 (String.length text)
   | `Mouse_button_down -> (
       let x = Sdl.Event.(get event mouse_button_x) in
       let y = Sdl.Event.(get event mouse_button_y) in
@@ -615,9 +624,7 @@ let main_loop state =
         if bytes_read > 0 then (
           (* The program waits for the answers to its queries. *)
           let replies = Vte.feed state.vte read_buffer 0 bytes_read in
-          if replies <> "" then
-            ignore
-              (Pty.write_string state.pty replies 0 (String.length replies));
+          write_all state.pty replies 0 (String.length replies);
           (* Auto-scroll to live terminal on new output (Alacritty behavior) *)
           state.display_offset <- 0)
         else

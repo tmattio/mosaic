@@ -21,6 +21,16 @@ let create_state ~cols ~rows =
 let cleanup state =
   match state.pty with Some pty -> Pty.close pty | None -> ()
 
+(* Write all of [s] to [pty]. The PTY is non-blocking: after a short write,
+   or when it can take nothing, wait until it can take more. *)
+let rec write_all pty s off len =
+  if len > 0 then
+    match Pty.write_string pty s off len with
+    | n when n > 0 -> write_all pty s (off + n) (len - n)
+    | _ | (exception Unix.Unix_error ((EAGAIN | EWOULDBLOCK | EINTR), _, _)) ->
+        ignore (Unix.select [] [ Pty.out_fd pty ] [] (-1.));
+        write_all pty s off len
+
 let read_pty_output state =
   match state.pty with
   | None -> ()
@@ -31,8 +41,7 @@ let read_pty_output state =
         | n when n > 0 ->
             (* The program waits for the answers to its queries. *)
             let replies = Vte.feed state.vte buf 0 n in
-            if replies <> "" then
-              ignore (Pty.write_string pty replies 0 (String.length replies));
+            write_all pty replies 0 (String.length replies);
             read_loop ()
         | _ -> ()
         | exception Unix.Unix_error (Unix.EAGAIN, _, _) -> ()
@@ -87,9 +96,7 @@ let send_key state (ke : Input.Key.event) =
       in
       match data with
       | Some s -> (
-          try
-            let _ = Pty.write_string pty s 0 (String.length s) in
-            ()
+          try write_all pty s 0 (String.length s)
           with Unix.Unix_error (Unix.EIO, _, _) ->
             Pty.close pty;
             state.pty <- None)
