@@ -110,14 +110,14 @@ let strip_ansi_block_bench =
 let parse_ansi_block_bench =
   Thumper.bench "parse_ansi_block" (fun () ->
       (* Parsing a chunk of colored logs for later reformatting / filtering *)
-      let tokens = Ansi.parse ansi_log_block in
+      let tokens = Ansi.Parser.parse ansi_log_block in
       ignore (Sys.opaque_identity tokens))
 
 let parse_tui_frame_bench =
   Thumper.bench "parse_tui_frame" (fun () ->
       (* Parsing a TUI frame: lots of CSI, SGR and control sequences mixed with
          text. Representative of terminal emulators or log recorders. *)
-      let tokens = Ansi.parse tui_frame in
+      let tokens = Ansi.Parser.parse tui_frame in
       ignore (Sys.opaque_identity tokens))
 
 (* Pre-allocated parser for callback benchmarks - reuse across iterations *)

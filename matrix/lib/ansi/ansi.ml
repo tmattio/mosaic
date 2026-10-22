@@ -9,8 +9,6 @@ module Sgr_state = Sgr_state
 let render ?hyperlinks_enabled segments =
   Segment.render ?hyperlinks_enabled segments
 
-let parse = Parser.parse
-
 (* A string without ESC, DEL or a non-ASCII byte has nothing to remove. *)
 let rec is_plain s i =
   i >= String.length s
