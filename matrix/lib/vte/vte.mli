@@ -109,7 +109,12 @@
     REP repeats the unit printed just before it, if nothing came between them
     (ECMA-48 §8.3.103), as many times as asked, each repetition a unit of its
     own. Its work is bounded by the screen and the scrollback, whatever the
-    count.
+    count: with autowrap, once every row it can reach holds the same units, the
+    screen repeats with the period of a row, so a unit [w] cells wide is placed
+    at most about [cols / w * (rows + scrollback)] times; without autowrap at
+    most [cols + 1] times. That bound is still large: a REP of a few bytes on an
+    80-column screen with 10,000 lines of scrollback places about 800,000 units,
+    a tenth of a second.
 
     Character sets translate characters before units are formed: DEC Special
     Graphics, the UK set and the national replacement sets (VT220 Programmer
