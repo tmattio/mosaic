@@ -35,12 +35,15 @@ let cold_reflow ((_, surface) as input) =
   Text_surface.set_wrap surface `Word;
   reflow input
 
-(* Five widths cycled through a cache of four: every step lays out again. *)
-let alternating_widths ((renderer, surface), step) =
+(* Five widths cycled through a cache of four: every width lays out again. *)
+let alternating_widths (renderer, surface) =
   ignore (Sys.opaque_identity renderer : Renderer.t);
-  incr step;
-  Text_surface.set_wrap_width surface (Some (76 + (!step mod 5)));
-  Text_surface.display_line_count surface
+  let rows = ref 0 in
+  for width = 76 to 80 do
+    Text_surface.set_wrap_width surface (Some width);
+    rows := !rows + Text_surface.display_line_count surface
+  done;
+  !rows
 
 let editor_text = String.make 1_000_000 'x'
 
@@ -412,7 +415,7 @@ let () =
             paint_surface editor_text ~height:1 ~scroll_x:999_900)
           "paint/horizontal-1m" paint;
         Thumper.bench_with_setup
-          ~setup:(fun () -> (make_surface styled, ref 0))
+          ~setup:(fun () -> make_surface styled)
           "reflow/alternating-widths-100k" alternating_widths;
         Thumper.bench_with_setup
           ~setup:(fun () -> viewport plain)
