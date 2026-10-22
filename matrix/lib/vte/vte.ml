@@ -51,10 +51,24 @@ type modes = {
   national : bool;
 }
 
-(* A scrollback line: its text, the style of each run of it from
-   [start_byte], and its wrap mark. *)
-type style_run = { start_byte : int; style : Ansi.Style.t }
-type line = { text : string; styles : style_run array; wrapped : bool }
+(* A scrollback line: the text of its graphemes; in [cells], the byte length
+   and the width of each, in order, as two varints, so that each comes back
+   whole at the column it left; the rendition of each run of them from
+   [start_byte]; and its wrap mark. *)
+type style_run = {
+  start_byte : int;
+  fg : Ansi.Color.t;
+  bg : Ansi.Color.t;
+  attrs : Ansi.Attr.t;
+  link : string;
+}
+
+type line = {
+  text : string;
+  cells : string;
+  styles : style_run array;
+  wrapped : bool;
+}
 
 (* A ring of the newest lines: [head] is where the next one goes. *)
 type history = { lines : line array; mutable head : int; mutable count : int }
@@ -138,7 +152,7 @@ let power_up_modes =
 
 (* Tab stops every eight columns, as at power-up. *)
 let default_tabs cols = Array.init cols (fun i -> i > 0 && i mod 8 = 0)
-let empty_line = { text = ""; styles = [||]; wrapped = false }
+let empty_line = { text = ""; cells = ""; styles = [||]; wrapped = false }
 
 let create ?(scrollback = 10000) ?(width_method = `Unicode)
     ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ~rows
@@ -230,71 +244,92 @@ let goto t ~row ~col =
 
 (* {1:history Scrollback} *)
 
-(* Styles are stored only when they change. Trailing spaces are dropped
-   unless they show a background, an attribute or a link. *)
+(* LEB128: seven bits a byte, the low ones first. *)
+let rec add_varint b n =
+  if n < 0x80 then Buffer.add_char b (Char.unsafe_chr n)
+  else (
+    Buffer.add_char b (Char.unsafe_chr (n land 0x7F lor 0x80));
+    add_varint b (n lsr 7))
+
+let read_varint s i =
+  let n = ref 0 and shift = ref 0 and more = ref true in
+  while !more do
+    let c = Char.code s.[!i] in
+    incr i;
+    n := !n lor ((c land 0x7F) lsl !shift);
+    shift := !shift + 7;
+    more := c >= 0x80
+  done;
+  !n
+
+(* A cell shows nothing when it is a space with no attribute and no link, on
+   the terminal's background or a transparent one. *)
+let shows_nothing t g idx =
+  let cp = Grid.get_codepoint g idx and bg = Grid.get_bg g idx in
+  (cp = 0x20 || cp = 0)
+  && Grid.get_attrs g idx = 0
+  && Grid.get_link g idx = ""
+  && (Ansi.Color.Packed.alpha (Ansi.Color.Packed.encode bg) = 0
+     || Ansi.Color.equal bg t.default_bg)
+
+(* The row up to its last cell that shows something. Styles are stored only
+   when they change. *)
 let compress_row t (s : screen) row =
-  let g = s.grid and cols = t.cols in
-  let buf = Buffer.create (cols * 2) in
+  let g = s.grid and base = row * t.cols in
+  let last = ref (t.cols - 1) in
+  while !last >= 0 && shows_nothing t g (base + !last) do
+    decr last
+  done;
+  let text = Buffer.create t.cols and cells = Buffer.create (2 * t.cols) in
   let styles = ref [] in
-  let current_fg = ref Ansi.Color.default_fg in
-  let current_bg = ref Ansi.Color.default_bg in
-  let current_attrs = ref 0 in
-  let current_link = ref "" in
-  let content_end = ref 0 in
-  for col = 0 to cols - 1 do
-    let idx = (row * cols) + col in
+  for idx = base to base + !last do
     if not (Grid.is_continuation g idx) then begin
-      let text = if Grid.is_empty g idx then " " else Grid.get_text g idx in
+      let grapheme = if Grid.is_empty g idx then " " else Grid.get_text g idx in
       let fg = Grid.get_fg g idx and bg = Grid.get_bg g idx in
-      let attrs = Grid.get_attrs g idx and link = Grid.get_link g idx in
-      if
-        !styles = []
-        || (not (Ansi.Color.equal fg !current_fg))
-        || (not (Ansi.Color.equal bg !current_bg))
-        || attrs <> !current_attrs || link <> !current_link
-      then begin
-        styles :=
-          { start_byte = Buffer.length buf; style = Grid.get_style g idx }
-          :: !styles;
-        current_fg := fg;
-        current_bg := bg;
-        current_attrs := attrs;
-        current_link := link
-      end;
-      Buffer.add_string buf text;
-      if
-        text <> " "
-        || Ansi.Color.Packed.alpha (Ansi.Color.Packed.encode bg) > 0
-           && not (Ansi.Color.equal bg t.default_bg)
-        || attrs <> 0 || link <> ""
-      then content_end := Buffer.length buf
+      let attrs = Ansi.Attr.unpack (Grid.get_attrs g idx) in
+      let link = Grid.get_link g idx in
+      (match !styles with
+      | r :: _
+        when Ansi.Color.equal r.fg fg && Ansi.Color.equal r.bg bg
+             && Ansi.Attr.equal r.attrs attrs
+             && r.link = link ->
+          ()
+      | _ ->
+          styles :=
+            { start_byte = Buffer.length text; fg; bg; attrs; link } :: !styles);
+      Buffer.add_string text grapheme;
+      add_varint cells (String.length grapheme);
+      add_varint cells (max 1 (Grid.cell_width g idx))
     end
   done;
-  let text = Buffer.sub buf 0 !content_end in
-  let rec trim_runs = function
-    | run :: rest when run.start_byte >= !content_end -> trim_runs rest
-    | runs -> runs
-  in
   {
-    text;
-    styles = Array.of_list (List.rev (trim_runs !styles));
+    text = Buffer.contents text;
+    cells = Buffer.contents cells;
+    styles = Array.of_list (List.rev !styles);
     wrapped = Bytes.get s.wrapped row <> '\000';
   }
 
+(* Write [line] on row [row] of [grid]: each grapheme as it was, at the column
+   it left, as far as the grid is wide. *)
 let decompress_line line grid row =
-  let col = ref 0 in
-  let width_method = Grid.width_method grid in
-  for i = 0 to Array.length line.styles - 1 do
-    let run = line.styles.(i) in
+  let cell = ref 0 and x = ref 0 and byte = ref 0 in
+  let runs = Array.length line.styles in
+  for k = 0 to runs - 1 do
+    let r = line.styles.(k) in
     let stop =
-      if i + 1 = Array.length line.styles then String.length line.text
-      else line.styles.(i + 1).start_byte
+      if k + 1 < runs then line.styles.(k + 1).start_byte
+      else String.length line.text
     in
-    if !col < Grid.width grid then begin
-      let text = String.sub line.text run.start_byte (stop - run.start_byte) in
-      Grid.draw_text grid ~x:!col ~y:row ~style:run.style ~text;
-      col := !col + Text.measure ~width_method ~tab_width:2 text
-    end
+    let link = if r.link = "" then None else Some r.link in
+    while !byte < stop do
+      let len = read_varint line.cells cell in
+      let width = read_varint line.cells cell in
+      if !x + width <= Grid.width grid then
+        Grid.set_grapheme grid ~x:!x ~y:row ~width ~fg:r.fg ~bg:r.bg
+          ~attrs:r.attrs ?link line.text ~pos:!byte ~len;
+      x := !x + width;
+      byte := !byte + len
+    done
   done
 
 let push_line t s row =

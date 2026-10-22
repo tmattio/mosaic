@@ -1981,6 +1981,46 @@ let resize_keeps_text () =
   equal ~msg:"the unit in progress is ended" string "e\xcc\x81"
     (Grid.get_text (Vte.grid vte) 0)
 
+(* A line comes back from the scrollback with the cells it left: each grapheme
+   whole, at its column and width, never segmented again. Two graphemes UAX
+   #29 would join, apart because a control function came between them, stay
+   apart; a unit clamped to the line keeps its width. *)
+let scrollback_keeps_cells () =
+  let row g y =
+    List.init (Grid.width g) (fun x ->
+        let i = (y * Grid.width g) + x in
+        Printf.sprintf "%S/%d/%b/%s" (Grid.get_text g i) (Grid.cell_width g i)
+          (Grid.is_continuation g i)
+          (Format.asprintf "%a" Ansi.Style.pp (Grid.get_style g i)))
+  in
+  let check ?(cols = 8) width_method s =
+    let vte = Vte.create ~width_method ~scrollback:8 ~rows:2 ~cols () in
+    feed vte s;
+    let cells = row (Vte.grid vte) 0 in
+    let text =
+      String.concat ""
+        (List.init cols (fun x -> Grid.get_text (Vte.grid vte) x))
+    in
+    feed vte "\x1b[m\r\n\r\n";
+    equal ~msg:"scrollback_lines" (list string)
+      [ String.trim text ]
+      (Vte.scrollback_lines vte);
+    let dst = Grid.create ~width:cols ~height:2 () in
+    Vte.render_with_scrollback vte ~offset:1 dst;
+    equal ~msg:"render_with_scrollback" (list string) cells (row dst 0);
+    Vte.resize vte ~rows:3 ~cols;
+    equal ~msg:"resize grow" (list string) cells (row (Vte.grid vte) 0)
+  in
+  List.iter
+    (fun m ->
+      check m "\u{1100}\x07\u{1100}xy";
+      check m "\x1b[31m\u{1100}\x1b[32m\u{1100}\x1b[44mxy";
+      check m "\u{1F1FA}\x07\u{1F1F8}xy";
+      check m "a\u{200D}\x07\u{1F600}";
+      check ~cols:1 m "\u{4E2D}";
+      check ~cols:1 m "\x1b[?7l\u{1F600}")
+    [ `Unicode; `Unicode_wide; `Wcwidth ]
+
 (* CAN ends a sequence or string and shows nothing; SUB shows the error
    character, also in the ground state. *)
 let can_and_sub () =
@@ -2159,6 +2199,7 @@ let tests =
     test "DECSTR resets both slots" decstr_slots;
     test "more character sets" more_character_sets;
     test "resize keeps text" resize_keeps_text;
+    test "scrollback keeps cells" scrollback_keeps_cells;
     test "CAN and SUB" can_and_sub;
     test "national mode" national_mode;
   ]
