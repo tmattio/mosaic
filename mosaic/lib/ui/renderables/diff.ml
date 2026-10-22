@@ -195,6 +195,64 @@ module Props = struct
     && Ansi.Style.equal a.text_style b.text_style
 end
 
+(* A pane's buffer text joins diff rows with LF; patch lines hold none, so
+   each LF ends a row. The buffer's source index decides where logical lines
+   start (RFC 0003 §5.1): a CR also ends one, so a row holding a lone CR spans
+   two lines and a final CR adds an empty one. Rows carry the diff's metadata;
+   logical lines and graphemes are buffer positions. This map is the only
+   crossing between them. *)
+module Pane = struct
+  module Source = Matrix.Text.Layout.Source
+
+  type t = {
+    source : Source.t;
+    row_starts : int array; (* The first byte of each row. *)
+    line_rows : int array; (* The row holding each logical line. *)
+  }
+
+  let join contents = String.concat "\n" contents
+
+  (* A line after an LF starts a row; a line after a lone CR continues one. *)
+  let of_source source =
+    let text = Source.text source in
+    let line_rows = Array.make (Source.line_count source) 0 in
+    let starts = ref [ 0 ] and row = ref 0 in
+    for line = 1 to Array.length line_rows - 1 do
+      let start = Source.byte_offset source (Source.line_start source line) in
+      if text.[start - 1] = '\n' then begin
+        starts := start :: !starts;
+        incr row
+      end;
+      line_rows.(line) <- !row
+    done;
+    { source; row_starts = Array.of_list (List.rev !starts); line_rows }
+
+  let row_count t = Array.length t.row_starts
+  let line_count t = Array.length t.line_rows
+
+  let row_of_line t line =
+    if line < 0 || line >= line_count t then None else Some t.line_rows.(line)
+
+  let starts_row t line =
+    line = 0 || t.line_rows.(line - 1) <> t.line_rows.(line)
+
+  (* The source graphemes of bytes [start_byte, end_byte) of [row]'s content,
+     clamped to it, or [None] if empty. A boundary inside a cluster moves past
+     it. *)
+  let graphemes t ~row ~start_byte ~end_byte =
+    let first = t.row_starts.(row) in
+    let last =
+      if row + 1 < row_count t then t.row_starts.(row + 1) - 1
+      else String.length (Source.text t.source)
+    in
+    let grapheme byte =
+      Source.grapheme_of_byte t.source ~affinity:Downstream
+        (first + max 0 (min byte (last - first)))
+    in
+    let start = grapheme start_byte and stop = grapheme end_byte in
+    if stop <= start then None else Some (start, stop)
+end
+
 module View = struct
   let transparent = Ansi.Color.transparent
 
@@ -326,87 +384,43 @@ module View = struct
   let line_sign_of_sources ~line_signs ~builtin sources =
     merge_sign (find_sign sources line_signs) builtin
 
-  (* Grapheme index — counted as the text surface counts for highlight
-     placement — of the grapheme starting at or after byte [b] in [content].
-     Tab width is irrelevant here: a tab is one grapheme cluster at any width. *)
-  let grapheme_of_byte content b =
-    if b <= 0 then 0
-    else begin
-      let gi = ref 0 in
-      Matrix.Text.iter_graphemes
-        (fun ~offset ~len:_ -> if offset < b then incr gi)
-        content;
-      !gi
-    end
-
-  (* Lower each [line_span] matching one of [sources] to a buffer grapheme range
-     [(start, stop, color)], with byte offsets clamped to [content] and empty
-     ranges dropped. [line_start] is the grapheme offset of the line's first
-     display row, so the ranges land in the same coordinate space as the
-     surface's highlight overlays. *)
-  let span_ranges ~line_start ~content sources line_spans acc =
-    List.fold_left
-      (fun acc (span : line_span) ->
-        if
-          List.exists
-            (fun (s : source_line) ->
-              s.side = span.side && s.number = span.line)
-            sources
-        then begin
-          let len = String.length content in
-          let start_byte = max 0 (min span.start_byte len) in
-          let end_byte = max 0 (min span.end_byte len) in
-          if end_byte <= start_byte then acc
-          else
-            let start = line_start + grapheme_of_byte content start_byte in
-            let stop = line_start + grapheme_of_byte content end_byte in
-            if stop <= start then acc else (start, stop, span.color) :: acc
-        end
-        else acc)
-      acc line_spans
-
-  type emphasis = (int * int * Ansi.Color.t) list
-
-  type unified = {
-    content : string;
-    line_colors : (int * Line_number.line_color) list;
-    line_signs : (int * Line_number.line_sign) list;
-    line_numbers : (int * int) list;
-    emphasis : emphasis;
+  type gutter_row = {
+    color : Line_number.line_color option;
+    sign : Line_number.line_sign option;
+    number : int option;
   }
 
-  let unified ~theme ~line_highlights ~line_spans ~line_signs (patch : Patch.t)
-      =
-    let buf = Buffer.create 256 in
-    let line_colors = ref [] in
-    let line_sign_rows = ref [] in
-    let line_numbers = ref [] in
-    let emphasis = ref [] in
-    let grapheme_offset = ref 0 in
-    let line_index = ref 0 in
-    let push_line tag line_no sources (line : Patch.line) =
-      let index = !line_index in
-      if index > 0 then Buffer.add_char buf '\n';
-      Buffer.add_string buf line.content;
-      line_colors :=
-        (index, line_color_of_sources ~theme ~line_highlights tag sources)
-        :: !line_colors;
-      line_numbers := (index, line_no) :: !line_numbers;
-      emphasis :=
-        span_ranges ~line_start:!grapheme_offset ~content:line.content sources
-          line_spans !emphasis;
-      grapheme_offset :=
-        !grapheme_offset + Matrix.Text.grapheme_count line.content + 1;
-      let builtin =
-        match tag with
-        | Patch.Added -> Some (added_sign theme)
-        | Patch.Removed -> Some (removed_sign theme)
-        | Patch.Context -> None
+  let gutter_row ~theme ~line_highlights ~line_signs tag sources number =
+    match tag with
+    | None -> { color = None; sign = None; number }
+    | Some tag ->
+        let builtin =
+          match tag with
+          | Patch.Added -> Some (added_sign theme)
+          | Patch.Removed -> Some (removed_sign theme)
+          | Patch.Context -> None
+        in
+        {
+          color =
+            Some (line_color_of_sources ~theme ~line_highlights tag sources);
+          sign = line_sign_of_sources ~line_signs ~builtin sources;
+          number;
+        }
+
+  type row = {
+    content : string;
+    sources : source_line list;
+    gutter : gutter_row;
+  }
+
+  let unified ~theme ~line_highlights ~line_signs (patch : Patch.t) =
+    let rows = ref [] in
+    let push_line tag number sources (line : Patch.line) =
+      let gutter =
+        gutter_row ~theme ~line_highlights ~line_signs (Some tag) sources
+          (Some number)
       in
-      (match line_sign_of_sources ~line_signs ~builtin sources with
-      | None -> ()
-      | Some sign -> line_sign_rows := (index, sign) :: !line_sign_rows);
-      incr line_index
+      rows := { content = line.content; sources; gutter } :: !rows
     in
     List.iter
       (fun (hunk : Patch.hunk) ->
@@ -436,13 +450,7 @@ module View = struct
                 incr new_line)
           hunk.lines)
       (Patch.hunks patch);
-    {
-      content = Buffer.contents buf;
-      line_colors = List.rev !line_colors;
-      line_signs = List.rev !line_sign_rows;
-      line_numbers = List.rev !line_numbers;
-      emphasis = List.rev !emphasis;
-    }
+    List.rev !rows
 
   type split_kind = Context | Added | Removed | Blank
 
@@ -543,82 +551,81 @@ module View = struct
       (Patch.hunks patch);
     { left = List.rev !left; right = List.rev !right }
 
-  let content lines =
-    String.concat "\n"
-      (List.map (fun (line : split_line) -> line.content) lines)
-
-  (* Emphasis ranges for one side's rendered lines. The content joins these
-     lines with newlines, so the running grapheme offset matches the surface
-     buffer, blank alignment rows included. *)
-  let split_emphasis ~line_spans lines =
-    let emphasis = ref [] in
-    let grapheme_offset = ref 0 in
-    List.iter
+  let split_rows ~theme ~line_highlights ~line_signs lines =
+    List.map
       (fun (line : split_line) ->
         let sources =
           match (line.side, line.line_num) with
           | Some side, Some number -> [ { side; number } ]
           | Some _, None | None, Some _ | None, None -> []
         in
-        emphasis :=
-          span_ranges ~line_start:!grapheme_offset ~content:line.content sources
-            line_spans !emphasis;
-        grapheme_offset :=
-          !grapheme_offset + Matrix.Text.grapheme_count line.content + 1)
-      lines;
-    List.rev !emphasis
+        let tag =
+          match line.kind with
+          | Added -> Some Patch.Added
+          | Removed -> Some Patch.Removed
+          | Context -> Some Patch.Context
+          | Blank -> None
+        in
+        {
+          content = line.content;
+          sources;
+          gutter =
+            gutter_row ~theme ~line_highlights ~line_signs tag sources
+              line.line_num;
+        })
+      lines
 
-  let line_number_props ~theme ~line_highlights ~line_signs ~show_line_numbers
-      lines =
-    let line_colors = ref [] in
-    let line_sign_rows = ref [] in
-    let line_numbers = ref [] in
-    let hidden_line_numbers = ref [] in
-    List.iteri
-      (fun index (line : split_line) ->
-        (match line.line_num with
-        | Some line_num -> line_numbers := (index, line_num) :: !line_numbers
-        | None -> hidden_line_numbers := index :: !hidden_line_numbers);
-        let color tag =
-          let sources =
-            match (line.side, line.line_num) with
-            | Some side, Some number -> [ { side; number } ]
-            | Some _, None | None, Some _ | None, None -> []
-          in
-          line_color_of_sources ~theme ~line_highlights tag sources
-        in
-        let sources =
-          match (line.side, line.line_num) with
-          | Some side, Some number -> [ { side; number } ]
-          | Some _, None | None, Some _ | None, None -> []
-        in
-        let custom_sign builtin =
-          line_sign_of_sources ~line_signs ~builtin sources
-        in
-        match line.kind with
-        | Added -> (
-            line_colors := (index, color Patch.Added) :: !line_colors;
-            match custom_sign (Some (added_sign theme)) with
-            | None -> ()
-            | Some sign -> line_sign_rows := (index, sign) :: !line_sign_rows)
-        | Removed -> (
-            line_colors := (index, color Patch.Removed) :: !line_colors;
-            match custom_sign (Some (removed_sign theme)) with
-            | None -> ()
-            | Some sign -> line_sign_rows := (index, sign) :: !line_sign_rows)
-        | Context -> (
-            line_colors := (index, color Patch.Context) :: !line_colors;
-            match custom_sign None with
-            | None -> ()
-            | Some sign -> line_sign_rows := (index, sign) :: !line_sign_rows)
-        | Blank -> ())
-      lines;
+  type emphasis = (int * int * Ansi.Color.t) list
+
+  (* Grapheme ranges of the spans on each row, in row then span order. *)
+  let emphasis ~line_spans pane rows =
+    let ranges = ref [] in
+    Array.iteri
+      (fun row ({ sources; _ } : row) ->
+        List.iter
+          (fun (span : line_span) ->
+            if
+              List.exists
+                (fun (source : source_line) ->
+                  source.side = span.side && source.number = span.line)
+                sources
+            then
+              match
+                Pane.graphemes pane ~row ~start_byte:span.start_byte
+                  ~end_byte:span.end_byte
+              with
+              | Some (start, stop) ->
+                  ranges := (start, stop, span.color) :: !ranges
+              | None -> ())
+          line_spans)
+      rows;
+    List.rev !ranges
+
+  (* Gutter entries keyed by the pane's logical lines. A row's later lines,
+     from a CR in its content, keep its color and hide their number. *)
+  let gutter_props ~theme ~show_line_numbers pane (rows : row array) =
+    let colors = ref [] and signs = ref [] in
+    let numbers = ref [] and hidden = ref [] in
+    for line = Pane.line_count pane - 1 downto 0 do
+      match Pane.row_of_line pane line with
+      | Some row when row < Array.length rows ->
+          let gutter = rows.(row).gutter in
+          Option.iter (fun c -> colors := (line, c) :: !colors) gutter.color;
+          if not (Pane.starts_row pane line) then hidden := line :: !hidden
+          else begin
+            Option.iter (fun s -> signs := (line, s) :: !signs) gutter.sign;
+            match gutter.number with
+            | Some n -> numbers := (line, n) :: !numbers
+            | None -> hidden := line :: !hidden
+          end
+      | Some _ | None -> ()
+    done;
     Line_number.Props.make ~fg:theme.line_number_fg ?bg:theme.line_number_bg
-      ~show_line_numbers ~line_colors:(List.rev !line_colors)
-      ~line_signs:(List.rev !line_sign_rows)
-      ~line_numbers:(List.rev !line_numbers)
-      ~hidden_line_numbers:(List.rev !hidden_line_numbers)
-      ()
+      ~show_line_numbers ~line_colors:!colors ~line_signs:!signs
+      ~line_numbers:!numbers ~hidden_line_numbers:!hidden ()
+
+  let text (rows : row array) =
+    Pane.join (Array.to_list (Array.map (fun (row : row) -> row.content) rows))
 end
 
 let line_matches source (line : View.source_line) =
@@ -755,17 +762,16 @@ let source_line_at_row_with_kind patch ~layout ?side row =
     | Split -> source_line_at_row_split patch ?side row
 
 module Split_layout = struct
-  let visual_counts line_count (info : Renderable.line_info) =
-    let counts = Array.make line_count 0 in
-    for row = 0 to info.display_line_count - 1 do
-      let source = info.logical_line row in
-      if source >= 0 && source < line_count then
-        counts.(source) <- counts.(source) + 1
-    done;
-    for i = 0 to line_count - 1 do
-      if counts.(i) = 0 then counts.(i) <- 1
-    done;
-    counts
+  (* Visual rows per diff row. This traverses the pane's complete layout, which
+     RFC 0003 §5.4 allows when pane geometry changes. *)
+  let visual_counts pane code =
+    let counts = Array.make (Pane.row_count pane) 0 in
+    Renderable.iter_lines (Code.node code) ~first:0 ~count:max_int
+      (fun ~row:_ ~logical_line ~continuation:_ ->
+        match Pane.row_of_line pane logical_line with
+        | Some row -> counts.(row) <- counts.(row) + 1
+        | None -> ());
+    Array.map (max 1) counts
 
   let pad acc n =
     let rec loop acc n =
@@ -773,11 +779,9 @@ module Split_layout = struct
     in
     loop acc n
 
-  let align (split : View.split) ~left_info ~right_info =
-    let left_count = List.length split.left in
-    let right_count = List.length split.right in
-    let left_visual_counts = visual_counts left_count left_info in
-    let right_visual_counts = visual_counts right_count right_info in
+  let align (split : View.split) ~left_visual_counts ~right_visual_counts =
+    let left_count = Array.length left_visual_counts in
+    let right_count = Array.length right_visual_counts in
     let rec loop acc_left acc_right left_visual right_visual i left right =
       match (left, right) with
       | [], [] ->
@@ -826,6 +830,8 @@ type t = {
   mutable right_side : Line_number.t option;
   mutable left_code : Code.t option;
   mutable right_code : Code.t option;
+  mutable left_pane : Pane.t option;
+  mutable right_pane : Pane.t option;
   mutable left_lines : View.split_line list;
   mutable right_lines : View.split_line list;
   mutable on_line_click : (line_hit -> unit) option;
@@ -852,23 +858,23 @@ let region_of_x ~code_node kind x =
     | (Added | Removed) when x >= code_x - 3 && x < code_x - 1 -> Sign
     | Context | Added | Removed | Blank -> Gutter
 
-let logical_row_at_visual code visual_row =
+let row_at_visual code pane visual_row =
   if visual_row < 0 then None
   else
     match Renderable.line_info (Code.node code) with
     | Some info ->
         let display_row = info.scroll_y + visual_row in
         if display_row < 0 || display_row >= info.display_line_count then None
-        else Some (info.logical_line display_row)
+        else Pane.row_of_line pane (info.logical_line display_row)
     | None -> Some visual_row
 
-let side_hit t ~x ~y side line_number code =
+let side_hit t ~x ~y side line_number code pane =
   let side_node = Line_number.node line_number in
   let code_node = Code.node code in
   if not (inside_side ~side_node x) then None
   else
     let visual_row = y - Renderable.y code_node in
-    Option.bind (logical_row_at_visual code visual_row) (fun logical_row ->
+    Option.bind (row_at_visual code pane visual_row) (fun logical_row ->
         let line =
           match t.props.layout with
           | Unified ->
@@ -895,15 +901,19 @@ let hit_test t ~x ~y =
   else
     match t.props.layout with
     | Unified -> (
-        match (t.left_side, t.left_code) with
-        | Some side, Some code -> side_hit t ~x ~y New side code
+        match (t.left_side, t.left_code, t.left_pane) with
+        | Some side, Some code, Some pane -> side_hit t ~x ~y New side code pane
         | _ -> None)
     | Split -> (
-        match (t.left_side, t.left_code, t.right_side, t.right_code) with
-        | Some left_side, Some left_code, Some right_side, Some right_code -> (
-            match side_hit t ~x ~y Old left_side left_code with
+        match
+          ( (t.left_side, t.left_code, t.left_pane),
+            (t.right_side, t.right_code, t.right_pane) )
+        with
+        | ( (Some left_side, Some left_code, Some left_pane),
+            (Some right_side, Some right_code, Some right_pane) ) -> (
+            match side_hit t ~x ~y Old left_side left_code left_pane with
             | Some _ as hit -> hit
-            | None -> side_hit t ~x ~y New right_side right_code)
+            | None -> side_hit t ~x ~y New right_side right_code right_pane)
         | _ -> None)
 
 let click_distance_ok (down_x, down_y) ~x ~y =
@@ -962,6 +972,8 @@ let destroy_children t =
   t.right_side <- None;
   t.left_code <- None;
   t.right_code <- None;
+  t.left_pane <- None;
+  t.right_pane <- None;
   t.left_lines <- [];
   t.right_lines <- [];
   t.pending_rebuild <- false;
@@ -983,6 +995,25 @@ let set_code_emphasis code (ranges : View.emphasis) =
            ~style:(Ansi.Style.make ~bg:color ())
            ~ref_id:emphasis_ref_id ()))
     ranges
+
+(* The pane installed as [text] in [code], read through the index its buffer
+   and layout use. While Code streams or conceals, the buffer holds other text,
+   so [text] is indexed on its own. *)
+let code_pane code text =
+  let buffer = Code.buffer code in
+  Pane.of_source
+    (if String.equal (Text_buffer.plain_text buffer) text then
+       Text_buffer.source buffer
+     else Pane.Source.of_string text)
+
+(* Key [rows]' gutter entries and emphasis to the pane installed as [text]. *)
+let decorate_pane (props : Props.t) side code ~text rows =
+  let pane = code_pane code text in
+  Line_number.apply_props side
+    (View.gutter_props ~theme:props.theme
+       ~show_line_numbers:props.show_line_numbers pane rows);
+  set_code_emphasis code (View.emphasis ~line_spans:props.line_spans pane rows);
+  pane
 
 let code_props (props : Props.t) ~content ?syntax () =
   Code.Props.make ~content ?syntax ~text_style:props.text_style ~wrap:props.wrap
@@ -1022,20 +1053,13 @@ let new_code_syntax props highlight =
 let unified_code_syntax highlight =
   Option.map code_syntax (new_syntax highlight)
 
-let make_side ~parent ~style ~theme ~props =
-  let side =
-    Line_number.create ~parent ~style ~fg:theme.line_number_fg
-      ?bg:theme.line_number_bg ()
-  in
-  Line_number.apply_props side props;
-  side
-
-let make_or_update_side existing ~parent ~style ~theme ~props =
+let make_or_update_side existing ~parent ~style ~theme =
   match existing with
-  | None -> make_side ~parent ~style ~theme ~props
+  | None ->
+      Line_number.create ~parent ~style ~fg:theme.line_number_fg
+        ?bg:theme.line_number_bg ()
   | Some side ->
       Renderable.set_style (Line_number.node side) style;
-      Line_number.apply_props side props;
       side
 
 let request_split_rebuild t =
@@ -1072,27 +1096,23 @@ let build_unified_view t (props : Props.t) =
      alive across streaming patch updates. *)
   if t.right_side <> None || t.right_code <> None then destroy_children t;
   set_flex_direction t Toffee.Style.Flex_direction.Column;
-  let unified =
-    View.unified ~theme:props.theme ~line_highlights:props.line_highlights
-      ~line_spans:props.line_spans ~line_signs:props.line_signs props.patch
+  let rows =
+    Array.of_list
+      (View.unified ~theme:props.theme ~line_highlights:props.line_highlights
+         ~line_signs:props.line_signs props.patch)
   in
-  let side_props =
-    Line_number.Props.make ~fg:props.theme.line_number_fg
-      ?bg:props.theme.line_number_bg ~show_line_numbers:props.show_line_numbers
-      ~line_colors:unified.View.line_colors ~line_signs:unified.View.line_signs
-      ~line_numbers:unified.View.line_numbers ()
-  in
+  let text = View.text rows in
   let side =
     make_or_update_side t.left_side ~parent:t.node ~style:full_style
-      ~theme:props.theme ~props:side_props
+      ~theme:props.theme
   in
   let code =
     make_or_update_code t.left_code ~parent:(Line_number.node side) props
-      ~content:unified.View.content
+      ~content:text
       ?syntax:(unified_code_syntax props.highlight)
       ()
   in
-  set_code_emphasis code unified.View.emphasis;
+  t.left_pane <- Some (decorate_pane props side code ~text rows);
   t.left_side <- Some side;
   t.left_code <- Some code;
   t.left_lines <- [];
@@ -1108,38 +1128,35 @@ let should_align_split t (props : Props.t) left_code right_code =
 
 let build_split_view t (props : Props.t) =
   set_flex_direction t Toffee.Style.Flex_direction.Row;
+  let split_rows lines =
+    Array.of_list
+      (View.split_rows ~theme:props.theme ~line_highlights:props.line_highlights
+         ~line_signs:props.line_signs lines)
+  in
   let initial = View.split props.patch in
-  let initial_left_props =
-    View.line_number_props ~theme:props.theme
-      ~line_highlights:props.line_highlights ~line_signs:props.line_signs
-      ~show_line_numbers:props.show_line_numbers initial.View.left
-  in
-  let initial_right_props =
-    View.line_number_props ~theme:props.theme
-      ~line_highlights:props.line_highlights ~line_signs:props.line_signs
-      ~show_line_numbers:props.show_line_numbers initial.View.right
-  in
+  let initial_left = split_rows initial.View.left in
+  let initial_right = split_rows initial.View.right in
+  let initial_left_text = View.text initial_left in
+  let initial_right_text = View.text initial_right in
   let left_side =
     make_or_update_side t.left_side ~parent:t.node ~style:half_style
-      ~theme:props.theme ~props:initial_left_props
+      ~theme:props.theme
   in
   let left_code =
     make_or_update_code t.left_code
       ~parent:(Line_number.node left_side)
-      props
-      ~content:(View.content initial.View.left)
+      props ~content:initial_left_text
       ?syntax:(old_code_syntax props props.highlight)
       ()
   in
   let right_side =
     make_or_update_side t.right_side ~parent:t.node ~style:half_style
-      ~theme:props.theme ~props:initial_right_props
+      ~theme:props.theme
   in
   let right_code =
     make_or_update_code t.right_code
       ~parent:(Line_number.node right_side)
-      props
-      ~content:(View.content initial.View.right)
+      props ~content:initial_right_text
       ?syntax:(new_code_syntax props props.highlight)
       ()
   in
@@ -1149,42 +1166,33 @@ let build_split_view t (props : Props.t) =
     (Some (fun _ -> request_split_rebuild t));
   Renderable.set_on_resize (Code.node right_code)
     (Some (fun _ -> request_split_rebuild t));
-  let split =
-    match
-      ( Renderable.line_info (Code.node left_code),
-        Renderable.line_info (Code.node right_code) )
-    with
-    | Some left_info, Some right_info
-      when should_align_split t props left_code right_code ->
-        Split_layout.align initial ~left_info ~right_info
-    | _ -> initial
+  let split, left_rows, right_rows =
+    if should_align_split t props left_code right_code then
+      let visual_counts code text =
+        Split_layout.visual_counts (code_pane code text) code
+      in
+      let split =
+        Split_layout.align initial
+          ~left_visual_counts:(visual_counts left_code initial_left_text)
+          ~right_visual_counts:(visual_counts right_code initial_right_text)
+      in
+      (split, split_rows split.View.left, split_rows split.View.right)
+    else (initial, initial_left, initial_right)
   in
-  let left_props =
-    View.line_number_props ~theme:props.theme
-      ~line_highlights:props.line_highlights ~line_signs:props.line_signs
-      ~show_line_numbers:props.show_line_numbers split.View.left
-  in
-  let right_props =
-    View.line_number_props ~theme:props.theme
-      ~line_highlights:props.line_highlights ~line_signs:props.line_signs
-      ~show_line_numbers:props.show_line_numbers split.View.right
-  in
-  Line_number.apply_props left_side left_props;
-  Line_number.apply_props right_side right_props;
+  let left_text = View.text left_rows in
+  let right_text = View.text right_rows in
   Code.apply_props left_code
-    (code_props props
-       ~content:(View.content split.View.left)
+    (code_props props ~content:left_text
        ?syntax:(old_code_syntax props props.highlight)
        ());
   Code.apply_props right_code
-    (code_props props
-       ~content:(View.content split.View.right)
+    (code_props props ~content:right_text
        ?syntax:(new_code_syntax props props.highlight)
        ());
-  set_code_emphasis left_code
-    (View.split_emphasis ~line_spans:props.line_spans split.View.left);
-  set_code_emphasis right_code
-    (View.split_emphasis ~line_spans:props.line_spans split.View.right);
+  t.left_pane <-
+    Some (decorate_pane props left_side left_code ~text:left_text left_rows);
+  t.right_pane <-
+    Some (decorate_pane props right_side right_code ~text:right_text right_rows);
   update_waiting_for_highlight t props left_code right_code;
   t.left_side <- Some left_side;
   t.right_side <- Some right_side;
@@ -1224,6 +1232,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?layout ?theme
       right_side = None;
       left_code = None;
       right_code = None;
+      left_pane = None;
+      right_pane = None;
       left_lines = [];
       right_lines = [];
       on_line_click = None;
