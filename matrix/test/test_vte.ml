@@ -1957,6 +1957,11 @@ let resize_keeps_text () =
   feed vte "\x1b[H\n\n";
   equal ~msg:"the margins are the screen" string "B   \n    "
     (Vte.to_string vte);
+  let vte = screen_of ~rows:1 ~cols:2 [ "\u{1F31C}\u{FE0E}" ] in
+  Vte.resize vte ~rows:16 ~cols:49;
+  equal ~msg:"a grapheme of several characters keeps its text" string
+    "\u{1F31C}\u{FE0E}"
+    (Grid.get_text (Vte.grid vte) 0);
   let vte = screen_of ~rows:1 ~cols:4 [ "a\xe4\xb8\xad" ] in
   Vte.resize vte ~rows:1 ~cols:2;
   equal ~msg:"a wide character cut by the edge goes" string "a "

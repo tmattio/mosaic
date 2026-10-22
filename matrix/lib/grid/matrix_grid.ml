@@ -119,7 +119,7 @@ type t = {
   mutable bg_color : (int, Bigarray.int_elt) Buf.t;
   mutable attrs : (int, Bigarray.int16_unsigned_elt) Buf.t;
   mutable links : string array;
-  grapheme_tracker : Grapheme_tracker.t;
+  mutable grapheme_tracker : Grapheme_tracker.t;
   scissor_stack : Scissor_stack.t;
   opacity_stack : float Dynarray.t;
   mutable opacity_product : float;
@@ -374,14 +374,18 @@ let[@inline] cells_equal t1 idx1 t2 idx2 =
   && Buf.get t1.fg_color idx1 = Buf.get t2.fg_color idx2
   && Buf.get t1.bg_color idx1 = Buf.get t2.bg_color idx2
 
+(* The cells' graphemes are counted in a new tracker before the old one
+   releases its references: the store frees a grapheme whose count reaches
+   zero, and the cells still name it. *)
 let rebuild_grapheme_tracker t =
-  Grapheme_tracker.clear t.grapheme_tracker;
+  let tracker = Grapheme_tracker.create t.grapheme_store in
   let len = t.width * t.height in
   for i = 0 to len - 1 do
     let code = Buf.get_cell t.chars i in
-    if Packed_cell.is_complex code then
-      Grapheme_tracker.add t.grapheme_tracker code
-  done
+    if Packed_cell.is_complex code then Grapheme_tracker.add tracker code
+  done;
+  Grapheme_tracker.clear t.grapheme_tracker;
+  t.grapheme_tracker <- tracker
 
 let sanitize_spans t =
   for y = 0 to t.height - 1 do

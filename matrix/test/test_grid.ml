@@ -643,6 +643,21 @@ let resize_shrink_clips_stored_grapheme () =
   equal ~msg:"stored grapheme still usable after shrink" string "👨‍🚀"
     (row_trimmed grid 0)
 
+(* A grapheme held only by the grid's store keeps its text through a resize
+   that keeps its cells, growing or shrinking either dimension. *)
+let resize_keeps_stored_grapheme () =
+  List.iter
+    (fun (width, height) ->
+      let grid = Grid.create ~width:2 ~height:1 () in
+      Grid.draw_text grid ~x:0 ~y:0 ~text:"👩‍🚀";
+      Grid.resize grid ~width ~height;
+      assert_valid_spans grid;
+      equal
+        ~msg:(Printf.sprintf "text after resize to %dx%d" width height)
+        string "👩‍🚀" (Grid.get_text grid 0);
+      equal ~msg:"width" int 2 (Grid.cell_width grid 0))
+    [ (49, 16); (2, 2); (3, 1); (2, 16) ]
+
 let resize_truncated_grapheme_does_not_bleed () =
   let grid = Grid.create ~width:5 ~height:2 () in
   Grid.draw_text grid ~x:3 ~y:0 ~text:"中";
@@ -1995,6 +2010,7 @@ let tests =
     test "resize shrink clips continuation" resize_shrink_clips_continuation;
     test "resize shrink clips stored grapheme"
       resize_shrink_clips_stored_grapheme;
+    test "resize keeps stored grapheme" resize_keeps_stored_grapheme;
     test "draw_text blends FG alpha over opaque BG"
       draw_text_blends_fg_alpha_over_opaque_bg;
     test "blit_region copies alpha" blit_region_copies_alpha;
