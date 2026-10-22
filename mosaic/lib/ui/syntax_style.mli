@@ -9,11 +9,20 @@
 
     Portable highlighters emit scopes whose first segment is one of: [comment],
     [string], [number], [constant], [keyword], [operator], [punctuation],
-    [function], [type], [variable], [module], [attribute], [label], [embedded],
-    or [tag]. Dotted refinements, such as [variable.member], [function.builtin],
-    and [keyword.control], retain the corresponding base category. [embedded]
-    identifies an embedded-language region; its contents may carry more specific
-    scopes.
+    [function], [type], [constructor], [variable], [property], [module],
+    [attribute], [label], [embedded], or [tag]. Dotted refinements, such as
+    [function.builtin] and [keyword.control], retain the corresponding base
+    category. [property] names a field, record label or object key;
+    [constructor] names a variant or data constructor. [embedded] identifies an
+    embedded-language region; its contents may carry more specific scopes.
+
+    These are the highlight names of tree-sitter's documentation ("Syntax
+    Highlighting",
+    {:https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html}) and
+    of its command-line tool's default theme, plus [label]. Some query
+    collections name fields [variable.member]; producers should emit [property]
+    instead. {!val-default} styles [variable.member] as a [property] so that
+    fields from such producers still read as fields.
 
     This vocabulary is the backend/theme contract, not a language registry.
     Producers should normalize backend-specific captures into these categories.

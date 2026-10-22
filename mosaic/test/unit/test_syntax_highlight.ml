@@ -128,7 +128,20 @@ let vocabulary_fallback_and_extensions () =
       "label";
       "embedded";
       "tag";
+      "property";
+      "constructor";
     ];
+  List.iter
+    (fun scope ->
+      is_false
+        ~msg:(scope ^ " is styled by the default theme")
+        (Ansi.Style.equal Ansi.Style.default
+           (Syntax_style.resolve_overlay Syntax_style.default scope)))
+    [ "property"; "constructor" ];
+  is_true ~msg:"variable.member is styled as a property"
+    (Ansi.Style.equal
+       (Syntax_style.resolve Syntax_style.default "property")
+       (Syntax_style.resolve Syntax_style.default "variable.member"));
   let style = Syntax_style.make ~base:green [ ("application.custom", red) ] in
   is_true ~msg:"unknown scope keeps base style"
     (Ansi.Style.equal green (Syntax_style.resolve style "unknown.scope"));

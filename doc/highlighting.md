@@ -85,9 +85,12 @@ current source renders as plain text.
 The normative vocabulary is documented in
 [`Syntax_style`](../mosaic/lib/ui/syntax_style.mli): `comment`, `string`,
 `number`, `constant`, `keyword`, `operator`, `punctuation`, `function`, `type`,
-`variable`, `module`, `attribute`, `label`, `embedded`, and `tag`. Normalize
-backend-specific capture names into those categories. Dotted refinements
-resolve through their parents: `variable.member` falls back to `variable`.
+`constructor`, `variable`, `property`, `module`, `attribute`, `label`,
+`embedded`, and `tag`, which are tree-sitter's highlight names plus `label`.
+Normalize backend-specific capture names into those categories; fields are
+`property`, which some query collections call `variable.member`. Dotted
+refinements resolve through their parents: `function.builtin` falls back to
+`function`.
 Unknown scopes are retained and fall back to the base style; applications may
 style their own extensions explicitly.
 

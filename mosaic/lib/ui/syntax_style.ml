@@ -27,6 +27,7 @@ let resolve t group =
 
 let default =
   let base = Ansi.Style.default in
+  let property = Ansi.Style.make ~fg:(Ansi.Color.of_rgb 224 108 117) () in
   make ~base
     [
       ( "comment",
@@ -46,6 +47,9 @@ let default =
       ("embedded", Ansi.Style.default);
       ("tag", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 224 108 117) ());
       ("attribute", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 229 192 123) ());
+      ("property", property);
+      ("variable.member", property);
+      ("constructor", Ansi.Style.make ~fg:(Ansi.Color.of_rgb 209 154 102) ());
     ]
 
 let base t = t.base
