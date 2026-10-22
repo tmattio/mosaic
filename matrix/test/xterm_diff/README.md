@@ -61,8 +61,9 @@ agent puts the tty in raw mode and, for each case, writes in one go:
 
 1. `ESC c` (RIS): xterm's power-up state; the matrix side is a fresh VTE.
    xterm's RIS leaves the alternate screen's saved cursor (DECSC) as it was,
-   so the agent also saves the home cursor there (`CSI ? 47 h`, `ESC 7`,
-   `CSI ? 47 l`), on the xterm side only.
+   and once in 24,000 cases left its text, so the agent also clears the
+   alternate screen and saves the home cursor there (`CSI ? 47 h`,
+   `CSI 2 J`, `ESC 7`, `CSI ? 47 l`), on the xterm side only.
 2. The case, then `ESC \` (ST), which ends any sequence or string the case left
    open. Both sides receive it.
 3. `CSI 6 n`: the cursor.

@@ -26,10 +26,12 @@ type t = {
   fifo_pending : Buffer.t;
 }
 
-(* RIS, then the alternate screen's saved cursor back to its power-up state:
-   xterm's RIS resets the normal screen's DECSC slot but not the alternate
-   one's, which would leak from one case to the next. *)
-let reset = "\027c\027[?47h\0277\027[?47l"
+(* RIS, then the alternate screen back to its power-up state, cleared and
+   with its saved cursor (DECSC) at home: xterm's RIS resets the normal
+   screen's slot but not the alternate one's, and has been seen to leave the
+   alternate screen's text, both of which would leak from one case to the
+   next. *)
+let reset = "\027c\027[?47h\027[2J\0277\027[?47l"
 let trailer = "\027\\"
 let probe = "\027[6n\027[i#\027[6n\027[>0q"
 let terminator_prefix = "\027P>|"
