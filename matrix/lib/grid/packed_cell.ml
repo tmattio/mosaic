@@ -154,43 +154,40 @@ let decref store cell =
 let pack_interned store idx width =
   pack_start idx (Grapheme_store.generation store idx) width
 
-let intern_core store width_method tab_width precomputed_width str pos len =
+(* [width] is the slice's, measured by the caller. *)
+let intern_core store width str pos len =
   if len = 0 then empty
+  else if width <= 0 then empty
   else
-    let width =
-      match precomputed_width with
-      | Some width -> width
-      | None -> Text.measure_sub ~width_method ~tab_width str ~pos ~len
-    in
-    if width <= 0 then empty
+    let d = String.get_utf_8_uchar str pos in
+    let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
+    if Uchar.utf_decode_length d = len && cp = 0x09 then pack_simple cp 0
+    else if Uchar.utf_decode_length d = len && width <= 3 then
+      pack_simple cp width
     else
-      let d = String.get_utf_8_uchar str pos in
-      let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-      if Uchar.utf_decode_length d = len && cp = 0x09 then pack_simple cp 0
-      else if Uchar.utf_decode_length d = len && width <= 3 then
-        pack_simple cp width
-      else
-        let str, pos, len =
-          match normalize_malformed_utf8_slice str pos len with
-          | None -> (str, pos, len)
-          | Some str -> (str, 0, String.length str)
-        in
-        let idx = Grapheme_store.intern store str ~off:pos ~len in
-        pack_interned store idx width
+      let str, pos, len =
+        match normalize_malformed_utf8_slice str pos len with
+        | None -> (str, pos, len)
+        | Some str -> (str, 0, String.length str)
+      in
+      let idx = Grapheme_store.intern store str ~off:pos ~len in
+      pack_interned store idx width
 
 let intern store ?(width_method = `Unicode) ?(tab_width = default_tab_width) str
     =
-  intern_core store width_method
-    (normalize_tab_width tab_width)
-    None str 0 (String.length str)
+  let len = String.length str in
+  let width =
+    Text.measure_sub ~width_method
+      ~tab_width:(normalize_tab_width tab_width)
+      str ~pos:0 ~len
+  in
+  intern_core store width str 0 len
 
-let intern_sub store ~width_method ~tab_width str ~pos ~len ~width =
+let intern_sub store str ~pos ~len ~width =
   check_sub "Matrix_grid.Packed_cell.intern_sub" str ~pos ~len;
   if width < 0 then
     invalid_arg "Matrix_grid.Packed_cell.intern_sub: negative width";
-  intern_core store width_method
-    (normalize_tab_width tab_width)
-    (Some width) str pos len
+  intern_core store width str pos len
 
 let length store cell =
   if is_inline cell then

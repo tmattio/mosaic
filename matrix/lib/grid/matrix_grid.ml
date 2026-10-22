@@ -622,21 +622,18 @@ let set_uchar t ~x ~y ~uchar ~fg ~bg ~attrs ?link ?(blend = false) () =
     done
   end
 
-(* C0, DEL, and C1 encoded in UTF-8 (0xC2 0x80 to 0xC2 0x9F). *)
-let has_control s ~pos ~len =
-  let limit = pos + len in
-  let rec go i =
-    i < limit
-    &&
-    let b = Char.code (String.unsafe_get s i) in
-    b < 0x20 || b = 0x7F
-    || b = 0xC2
-       && i + 1 < limit
-       && Char.code (String.unsafe_get s (i + 1)) < 0xA0
-       && Char.code (String.unsafe_get s (i + 1)) >= 0x80
-    || go (i + 1)
-  in
-  go pos
+(* C0, DEL, and C1 encoded in UTF-8 (0xC2 0x80 to 0xC2 0x9F), in [s] from
+   [i] to [limit]. A function of its own, so no closure is allocated. *)
+let rec has_control s i limit =
+  i < limit
+  &&
+  let b = Char.code (String.unsafe_get s i) in
+  b < 0x20 || b = 0x7F
+  || b = 0xC2
+     && i + 1 < limit
+     && Char.code (String.unsafe_get s (i + 1)) < 0xA0
+     && Char.code (String.unsafe_get s (i + 1)) >= 0x80
+  || has_control s (i + 1) limit
 
 let set_grapheme t ~x ~y ~width ~fg ~bg ~attrs ?(link = no_link)
     ?(protected = false) s ~pos ~len =
@@ -644,12 +641,9 @@ let set_grapheme t ~x ~y ~width ~fg ~bg ~attrs ?(link = no_link)
     invalid_arg "Matrix_grid.set_grapheme: invalid substring";
   if width < 1 || x < 0 || x + width > t.width || y < 0 || y >= t.height then
     invalid_arg "Matrix_grid.set_grapheme: cells outside the grid";
-  if has_control s ~pos ~len then
+  if has_control s pos (pos + len) then
     invalid_arg "Matrix_grid.set_grapheme: control character";
-  let code =
-    Packed_cell.intern_sub t.grapheme_store ~width_method:t.width_method
-      ~tab_width:2 s ~pos ~len ~width
-  in
+  let code = Packed_cell.intern_sub t.grapheme_store s ~pos ~len ~width in
   let fg_color = Color_packed.encode fg and bg_color = Color_packed.encode bg in
   let attrs =
     if protected then Ansi.Attr.pack attrs lor protected_bit
@@ -1123,8 +1117,8 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
 
           if bounds_ok && start_visible then begin
             let code =
-              Packed_cell.intern_sub t.grapheme_store ~width_method
-                ~tab_width:tabw text ~pos:offset ~len ~width:w
+              Packed_cell.intern_sub t.grapheme_store text ~pos:offset ~len
+                ~width:w
             in
             let w = Packed_cell.cell_width code in
             begin
