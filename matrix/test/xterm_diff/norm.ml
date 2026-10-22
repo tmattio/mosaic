@@ -383,11 +383,13 @@ let registry =
       kind = Deviation;
       how = "generator";
       why =
-        "a national set designated outside national mode leaves characters \
-         unchanged, and translates once DECNRCM selects national mode \
-         (vte.mli, after VT220 Programmer Reference Manual §2.4.3); xterm \
-         designates ASCII instead (charproc.c, CASE_GSETS). National sets are \
-         designated only after DECSET 42.";
+        "national sets are available in national mode only: designated outside \
+         it they leave characters unchanged until DECNRCM is set, and they do \
+         again once it is reset (vte.mli, after VT220 Programmer Reference \
+         Manual §2.4.3); xterm designates ASCII outside national mode, and \
+         keeps translating with a national set after DECRST 42 (charproc.c, \
+         CASE_GSETS). National sets are designated only after DECSET 42, and \
+         DECRST 42 does not follow them.";
     };
     {
       name = "wider-than-line";
@@ -2385,8 +2387,13 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
     go (max 0 (n - 300))
   in
   let national_designation () =
-    ctx.decid >= 200 && (not national)
-    && forms_any (designations [ '('; ')'; '*'; '+' ] (chars national_finals))
+    ctx.decid >= 200
+    && ((not national)
+        && forms_any
+             (designations [ '('; ')'; '*'; '+' ] (chars national_finals))
+       || forms "\027[?42l"
+          && List.exists (occurs before)
+               (designations [ '('; ')'; '*'; '+' ] (chars national_finals)))
   in
   let too_wide () =
     ctx.cols < 2 && List.exists (fun cp -> ctx.width cp = 2) (scalars t.bytes)
