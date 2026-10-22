@@ -219,6 +219,83 @@ let set_sync_capable app =
   let caps = Matrix.Terminal.capabilities terminal in
   Matrix.Terminal.set_capabilities terminal { caps with sync = true }
 
+(* A terminal for the runtime: a VTE fed everything the runtime writes, whose
+   replies, cursor position reports among them, are the runtime's input; the
+   runtime anchors the primary screen on those reports. [shell] is the output
+   before the application starts. Under {!Matrix.run}, each time the runtime
+   waits for input it takes the next step of [script], and stops once there is
+   none. *)
+type term = {
+  vte : Vte.t;
+  size : int * int;
+  replies : Buffer.t;
+  mutable script : (on_event:(Matrix.Input.t -> unit) -> unit) list;
+}
+
+let vte_app ?(mode = `Primary) ?(min_tui_height = 1) ?(shell = "") ~cols ~rows
+    () =
+  let vte = Vte.create ~scrollback:100 ~rows ~cols () in
+  ignore (Vte.feed_string vte shell : string);
+  let term =
+    { vte; size = (cols, rows); replies = Buffer.create 16; script = [] }
+  in
+  let now = ref 0. in
+  let app_ref = ref None in
+  let read_input buf off len =
+    let n = min len (Buffer.length term.replies) in
+    Buffer.blit term.replies 0 buf off n;
+    let rest = Buffer.sub term.replies n (Buffer.length term.replies - n) in
+    Buffer.clear term.replies;
+    Buffer.add_string term.replies rest;
+    if n = 0 then -1 else n
+  in
+  let wait ~timeout ~on_event =
+    if Buffer.length term.replies = 0 then (
+      now := !now +. Option.value timeout ~default:0.;
+      match (term.script, !app_ref) with
+      | step :: rest, Some _ ->
+          term.script <- rest;
+          step ~on_event
+      | [], Some app -> Matrix.stop app
+      | _, None -> ());
+    Buffer.length term.replies > 0
+  in
+  let backend : Matrix.Backend.t =
+    {
+      now = (fun () -> !now);
+      wake = ignore;
+      write_output =
+        (fun buf off len ->
+          Buffer.add_string term.replies (Vte.feed vte buf off len));
+      read_input;
+      wait;
+      input_is_tty = true;
+      output_is_tty = true;
+      terminal_size = (fun () -> term.size);
+      set_raw_mode = ignore;
+      flush_input = ignore;
+      protect = (fun f -> f ());
+      cleanup = ignore;
+    }
+  in
+  let app =
+    Matrix.attach ~mode ~target_fps:None ~mouse_enabled:false
+      ~bracketed_paste:false ~focus_reporting:false ~kitty_keyboard:`Disabled
+      ~resize_debounce:None ~pace_redraws:false ~min_tui_height ~backend ()
+  in
+  app_ref := Some app;
+  (app, term)
+
+let draw_rows app rows =
+  List.iteri
+    (fun y text -> Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y ~text)
+    rows
+
+let present ?required app rows =
+  Matrix.prepare app;
+  draw_rows app rows;
+  Matrix.submit ?primary_required_rows:required app
+
 let test_request_redraw_while_paused () =
   let app, _state =
     make_app ~target_fps:(Some 30.) ~input_timeout:(Some 0.)
@@ -2046,6 +2123,34 @@ let test_primary_required_rows_to_terminal_height_does_not_erase_past_bottom ()
     ~msg:"primary growth must not erase from row past terminal bottom"
     ~sub:"\027[25;1H\027[J" output
 
+(* Through a terminal *)
+
+let test_alt_default_cursor_is_shown () =
+  let app, term = vte_app ~mode:`Alt ~cols:6 ~rows:3 () in
+  let screen = Matrix.screen app in
+  Matrix.Screen.set_cursor screen
+    { (Matrix.Screen.cursor screen) with position = None; visible = true };
+  present app [ "x" ];
+  is_true ~msg:"a visible cursor at its default position shows"
+    (Vte.modes term.vte).cursor_visible;
+  equal ~msg:"it waits on the bottom row" (pair int int) (2, 0)
+    (Vte.cursor_pos term.vte)
+
+let test_primary_full_redraw_keeps_cursor_row () =
+  let app, term = vte_app ~cols:6 ~rows:4 () in
+  let screen = Matrix.screen app in
+  Matrix.Screen.set_cursor screen
+    {
+      (Matrix.Screen.cursor screen) with
+      position = Some (2, 3);
+      visible = true;
+    };
+  (* The first frame is a full redraw, which paints the one row that shows
+     anything. *)
+  present app [ "x" ];
+  equal ~msg:"the cursor is on its row, below the painted one" (pair int int)
+    (3, 2) (Vte.cursor_pos term.vte)
+
 let test_primary_mouse_event_is_offset_into_live_region () =
   let app, _state =
     make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
@@ -2365,6 +2470,12 @@ let () =
             test_full_height_consecutive_static_writes_scroll_once_per_row;
           test "static_write is ignored in alt mode"
             test_static_write_ignored_in_alt_mode;
+        ];
+      group "Through a terminal"
+        [
+          test "alt default cursor is shown" test_alt_default_cursor_is_shown;
+          test "full redraw keeps the cursor row"
+            test_primary_full_redraw_keeps_cursor_row;
         ];
       group "Primary input"
         [

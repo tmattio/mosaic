@@ -608,11 +608,14 @@ let cursor_output_position t ~(cursor : Screen.cursor) ~cursor_max_row =
         | `Alt -> clamp 0 (cursor_max_row - 1) y + 1
       in
       Some (row, max 1 (x + 1))
-  | None when cursor.visible && t.config.mode = `Primary ->
-      Some
-        ( Primary.default_terminal_cursor_row t.primary
-            ~live_height:cursor_max_row,
-          1 )
+  | None when cursor.visible -> (
+      match t.config.mode with
+      | `Primary ->
+          Some
+            ( Primary.default_terminal_cursor_row t.primary
+                ~live_height:cursor_max_row,
+              1 )
+      | `Alt -> Some (cursor_max_row, 1))
   | None -> None
 
 (* Allocation-free "changed since last frame" checks: comparing through the
@@ -737,13 +740,11 @@ let submit ?primary_required_rows t =
     | None -> ());
 
     (* Skip the write when nothing beyond the preamble was produced and cursor
-       state is unchanged. *)
+       state is unchanged. The cursor lives in the live region, whichever of
+       its rows this frame painted. *)
     let cursor_max_row =
       match t.config.mode with
-      | `Primary -> (
-          match render_height with
-          | Some limit -> max 1 limit
-          | None -> (Primary.live_region t.primary).height)
+      | `Primary -> (Primary.live_region t.primary).height
       | `Alt -> t.height
     in
     let position = cursor_output_position t ~cursor ~cursor_max_row in
