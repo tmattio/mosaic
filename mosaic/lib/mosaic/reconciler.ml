@@ -384,15 +384,12 @@ type callback_refs = {
   update_presence : unit Vnode.widget_callbacks -> unit;
 }
 
-type memo_cache = {
-  previous : (int, unit Vnode.memo * unit Vnode.t) Hashtbl.t;
-  current : (int, unit Vnode.memo * unit Vnode.t) Hashtbl.t;
-  mutable next : int;
-}
-
 type declared_focus = Focus_none | Focus_one of Renderable.t | Focus_many
 
-type child = Fiber of fiber | Embedded of Renderable.t
+(* A parent's children: elements, embedded nodes, and memo spans. A span owns
+   the children its memo's view produced, so an unchanged memo keeps them
+   without visiting them. *)
+type child = Fiber of fiber | Embedded of Renderable.t | Memo_span of span
 
 and fiber = {
   mutable kind : Vnode.kind;
@@ -407,9 +404,21 @@ and fiber = {
   size_ref : (w:int -> h:int -> unit option) option ref;
   mutable declared_children : unit Vnode.t list;
   mutable viewport_width : int;
-  mutable memos : memo_cache option;
   mutable declared_focus : declared_focus;
   callback_refs : callback_refs;
+}
+
+and span = {
+  mutable memo : unit Vnode.memo;
+  mutable view : unit Vnode.t;  (** The memo's view, built once. *)
+  mutable span_viewport_width : int;
+  mutable span_children : child list;
+  mutable node_count : int;
+      (** Renderable nodes in [span_children], spans flattened. *)
+  mutable first_node : Renderable.t option;
+  mutable span_focus : declared_focus;
+  mutable reused : bool;
+      (** The current render kept the span's children unchanged. *)
 }
 
 let fiber_node f = node_of f.instance
@@ -659,7 +668,6 @@ let create_fiber ~(parent : Renderable.t) (elem : unit Vnode.element) : fiber =
     size_ref;
     declared_children = [];
     viewport_width = 0;
-    memos = None;
     declared_focus = Focus_none;
     callback_refs;
   }
@@ -687,84 +695,42 @@ let update_fiber (f : fiber) (elem : unit Vnode.element) : bool =
   changed
 
 let rec destroy_fiber (f : fiber) : unit =
-  List.iter
-    (function
-      | Fiber child -> destroy_fiber child | Embedded n -> Renderable.detach n)
-    f.children;
+  List.iter destroy_child f.children;
   Renderable.destroy_recursively (fiber_node f)
+
+and destroy_child = function
+  | Fiber f -> destroy_fiber f
+  | Embedded n -> Renderable.detach n
+  | Memo_span span -> List.iter destroy_child span.span_children
 
 (* ───── Vnode Flattening ───── *)
 
 (* Fragments and Empty nodes are structural -- they group vnodes but don't
-   correspond to real widgets. Flattening collapses the tree into a flat list of
-   concrete children (elements and embeds) for positional matching. *)
+   correspond to real widgets. Flattening collapses them into the list of
+   concrete children: elements, embeds, and memos, whose views are built only
+   when they cannot be reused. *)
 type flattened =
   | Flat_element of unit Vnode.element
   | Flat_embed of Renderable.t
+  | Flat_memo of unit Vnode.memo
 
-let rec flatten_vnode ~cache ~viewport_width (vnode : unit Vnode.t)
+let rec flatten_vnode ~viewport_width (vnode : unit Vnode.t)
     (acc : flattened list) : flattened list =
   match vnode with
   | Vnode.Empty -> acc
-  | Vnode.Memo memo ->
-      let memo_cache =
-        match !cache with
-        | Some memo_cache -> memo_cache
-        | None ->
-            let memo_cache =
-              {
-                previous = Hashtbl.create 4;
-                current = Hashtbl.create 4;
-                next = 0;
-              }
-            in
-            cache := Some memo_cache;
-            memo_cache
-      in
-      let slot = memo_cache.next in
-      memo_cache.next <- slot + 1;
-      let view =
-        match Hashtbl.find_opt memo_cache.previous slot with
-        | Some (previous, view) when Vnode.memo_equal previous memo -> view
-        | _ -> Vnode.memo_view memo
-      in
-      Hashtbl.replace memo_cache.current slot (memo, view);
-      flatten_vnode ~cache ~viewport_width view acc
+  | Vnode.Memo memo -> Flat_memo memo :: acc
   | Vnode.Embed node -> Flat_embed node :: acc
   | Vnode.Element elem -> Flat_element elem :: acc
   | Vnode.Fragment children ->
-      List.fold_right
-        (fun child acc -> flatten_vnode ~cache ~viewport_width child acc)
-        children acc
+      List.fold_right (flatten_vnode ~viewport_width) children acc
   | Vnode.Viewport_switch { at_least_width; wide; narrow } ->
       let selected =
         if viewport_width >= at_least_width then wide else narrow
       in
-      flatten_vnode ~cache ~viewport_width selected acc
+      flatten_vnode ~viewport_width selected acc
 
-let flatten_children ~memos ~viewport_width children =
-  let cache =
-    ref
-      (Option.map
-         (fun previous ->
-           let cache =
-             {
-               previous = previous.current;
-               current = previous.previous;
-               next = 0;
-             }
-           in
-           Hashtbl.clear cache.current;
-           cache)
-         memos)
-  in
-  let flattened =
-    List.fold_right
-      (fun child acc -> flatten_vnode ~cache ~viewport_width child acc)
-      children []
-  in
-  Option.iter (fun cache -> Hashtbl.clear cache.previous) !cache;
-  (!cache, flattened)
+let flatten_children ~viewport_width children =
+  List.fold_right (flatten_vnode ~viewport_width) children []
 
 (* ───── Fiber Maps ───── *)
 
@@ -775,11 +741,13 @@ type fiber_maps = {
   used : bool array;
 }
 
-let fibers_of_children (children : child list) : fiber list =
-  List.filter_map (function Fiber f -> Some f | Embedded _ -> None) children
-
-let build_maps (fibers : fiber list) : fiber_maps =
-  let arr = Array.of_list fibers in
+let build_maps (children : child list) : fiber_maps =
+  let arr =
+    Array.of_list
+      (List.filter_map
+         (function Fiber f -> Some f | Embedded _ | Memo_span _ -> None)
+         children)
+  in
   let len = Array.length arr in
   let by_key = Hashtbl.create len in
   Array.iteri
@@ -821,64 +789,73 @@ let find_match (maps : fiber_maps) (pos : int) (elem : unit Vnode.element) :
 
 (* ───── Commit Placement ───── *)
 
-let child_node = function Fiber f -> fiber_node f | Embedded n -> n
+(* Placement of a parent's children happens after all of them are reconciled.
+   Unmatched fibers were destroyed, which detaches them; an embedded node that
+   left its list is detached unless it reappears elsewhere among the parent's
+   children. Then each child is placed at its target index.
 
-(* Two-pass placement: first detach stale managed children, then insert/reorder
-   the new managed children. We intentionally avoid scanning all concrete
-   Renderable children under [parent], because some widgets (e.g. Markdown)
-   manage internal children outside the reconciler.
+   We intentionally avoid scanning all concrete Renderable children under
+   [parent], because some widgets (e.g. Markdown) manage internal children
+   outside the reconciler. Position probes go through the O(1) [child_at]
+   accessor, and node sets are keyed by [Renderable.Private.num] -- hashing raw
+   nodes would apply polymorphic hash and compare to cyclic records of
+   closures. A reused span whose first node is in place is skipped whole: its
+   nodes were placed contiguously, and placement before it only shifts them. *)
+let rec iter_embeds f = function
+  | Fiber _ -> ()
+  | Embedded n -> f n
+  | Memo_span span -> List.iter (iter_embeds f) span.span_children
 
-   This runs for every element fiber on every reconcile, so the steady state
-   must stay cheap: position probes go through the O(1) [child_at] accessor
-   rather than re-materializing the child list per index, and the stale-child
-   set is keyed by [Renderable.Private.num] — hashing raw nodes would apply
-   polymorphic hash and compare to cyclic records of closures. *)
-let rec same_nodes (a : child list) (b : child list) : bool =
-  match (a, b) with
-  | [], [] -> true
-  | x :: a, y :: b -> child_node x == child_node y && same_nodes a b
-  | _ -> false
-
-let commit_placement (parent_node : Renderable.t) ~(old_children : child list)
-    ~(new_children : child list) : unit =
-  let parent = Renderable.child_target parent_node in
-  (* Pass 1: detach stale reconciler-managed children. Skipped when both
-     lists hold the same nodes in order — nothing can be stale. *)
-  if not (same_nodes old_children new_children) then begin
-    let target_set = Hashtbl.create (List.length new_children) in
+let detach_stale_embeds ~stale (new_children : child list) =
+  if stale <> [] then begin
+    let kept = Hashtbl.create 8 in
     List.iter
-      (fun c ->
-        Hashtbl.replace target_set (Renderable.Private.num (child_node c)) ())
+      (iter_embeds (fun n -> Hashtbl.replace kept (Renderable.Private.num n) ()))
       new_children;
     List.iter
-      (fun c ->
-        let node = child_node c in
-        if not (Hashtbl.mem target_set (Renderable.Private.num node)) then
-          Renderable.detach node)
-      old_children
-  end;
-  (* Pass 2: place each child at its target index. The probe reads the live
-     child array, so mutations from attach/detach are always visible. *)
-  List.iteri
-    (fun i c ->
-      let node = child_node c in
-      let already_correct =
-        match Renderable.Private.child_at parent i with
-        | Some n -> n == node
-        | None -> false
+      (fun n ->
+        if not (Hashtbl.mem kept (Renderable.Private.num n)) then
+          Renderable.detach n)
+      stale
+  end
+
+let place_node parent index node =
+  match Renderable.Private.child_at parent index with
+  | Some n when n == node -> ()
+  | Some _ | None -> Renderable.attach ~parent ~index node
+
+let rec place parent index = function
+  | [] -> index
+  | Fiber f :: rest ->
+      place_node parent index (fiber_node f);
+      place parent (index + 1) rest
+  | Embedded n :: rest ->
+      place_node parent index n;
+      place parent (index + 1) rest
+  | Memo_span span :: rest ->
+      let in_place =
+        span.reused
+        &&
+        match (span.first_node, Renderable.Private.child_at parent index) with
+        | Some first, Some n -> n == first
+        | None, _ -> true
+        | Some _, None -> false
       in
-      if not already_correct then Renderable.attach ~parent ~index:i node)
-    new_children
+      let index =
+        if in_place then index + span.node_count
+        else place parent index span.span_children
+      in
+      place parent index rest
+
+let commit_placement parent_node ~stale new_children =
+  detach_stale_embeds ~stale new_children;
+  ignore (place (Renderable.child_target parent_node) 0 new_children : int)
 
 (* ───── Reconciliation ───── *)
 
-type t = {
-  container : Renderable.t;
-  mutable root_children : child list;
-  mutable memos : memo_cache option;
-}
+type t = { container : Renderable.t; mutable root_children : child list }
 
-let create ~container = { container; root_children = []; memos = None }
+let create ~container = { container; root_children = [] }
 let container t = t.container
 
 let combine_focus left right =
@@ -890,7 +867,8 @@ let children_focus children =
   List.fold_left
     (fun focus -> function
       | Embedded _ -> focus
-      | Fiber fiber -> combine_focus focus fiber.declared_focus)
+      | Fiber fiber -> combine_focus focus fiber.declared_focus
+      | Memo_span span -> combine_focus focus span.span_focus)
     Focus_none children
 
 let update_declared_focus fiber =
@@ -901,6 +879,22 @@ let update_declared_focus fiber =
          (if fiber.attrs.focused then Focus_one (fiber_node fiber)
           else Focus_none)
          (children_focus fiber.children))
+
+let rec node_count children =
+  List.fold_left
+    (fun count -> function
+      | Fiber _ | Embedded _ -> count + 1
+      | Memo_span span -> count + span.node_count)
+    0 children
+
+and first_node = function
+  | [] -> None
+  | Fiber f :: _ -> Some (fiber_node f)
+  | Embedded n :: _ -> Some n
+  | Memo_span span :: rest -> (
+      match span.first_node with
+      | Some _ as node -> node
+      | None -> first_node rest)
 
 let rec reconcile_element ~(parent_node : Renderable.t) (maps : fiber_maps)
     (pos : int) ~viewport_width (elem : unit Vnode.element) : fiber =
@@ -916,13 +910,7 @@ let rec reconcile_element ~(parent_node : Renderable.t) (maps : fiber_maps)
       in
       ignore (update_fiber f elem : bool);
       if children_changed then begin
-        let memos, flattened =
-          flatten_children ~memos:f.memos ~viewport_width elem.children
-        in
-        f.memos <- memos;
-        f.children <-
-          reconcile_flattened ~parent_node:(fiber_node f) ~viewport_width
-            f.children flattened;
+        reconcile_children f ~viewport_width elem.children;
         f.declared_children <- elem.children;
         f.viewport_width <- viewport_width
       end;
@@ -931,66 +919,139 @@ let rec reconcile_element ~(parent_node : Renderable.t) (maps : fiber_maps)
   | None ->
       let f = create_fiber ~parent:parent_node elem in
       Option.iter (fun callback -> callback (fiber_node f)) elem.attrs.ref;
-      let memos, flattened =
-        flatten_children ~memos:None ~viewport_width elem.children
-      in
-      f.memos <- memos;
-      f.children <-
-        reconcile_flattened ~parent_node:(fiber_node f) ~viewport_width []
-          flattened;
+      reconcile_children f ~viewport_width elem.children;
       f.declared_children <- elem.children;
       f.viewport_width <- viewport_width;
       update_declared_focus f;
       f
 
-and reconcile_flattened ~(parent_node : Renderable.t) ~viewport_width
+and reconcile_children f ~viewport_width children =
+  let stale = ref [] in
+  let flattened = flatten_children ~viewport_width children in
+  let children =
+    reconcile_list ~parent_node:(fiber_node f) ~viewport_width ~stale f.children
+      flattened
+  in
+  f.children <- children;
+  commit_placement (fiber_node f) ~stale:!stale children
+
+(* Reconciles one list of children: a parent's, or a memo span's. Elements
+   match the list's old fibers, memos its old spans by position among memos.
+   Embedded nodes that leave the list are collected in [stale]. *)
+and reconcile_list ~(parent_node : Renderable.t) ~viewport_width ~stale
     (old_children : child list) (flattened : flattened list) : child list =
-  let old_fibers = fibers_of_children old_children in
-  let maps = build_maps old_fibers in
-  let old_len = Array.length maps.by_index in
-  (* elem_idx tracks position among elements only -- embedded nodes are not
-     managed by fiber maps, so they don't consume a positional slot. *)
+  let maps = build_maps old_children in
+  let old_spans =
+    ref
+      (List.filter_map
+         (function Memo_span span -> Some span | Fiber _ | Embedded _ -> None)
+         old_children)
+  in
+  List.iter
+    (function
+      | Embedded n -> stale := n :: !stale | Fiber _ | Memo_span _ -> ())
+    old_children;
+  (* elem_idx tracks position among elements only -- embedded nodes and memos
+     are not managed by fiber maps, so they don't consume a positional slot. *)
   let elem_idx = ref 0 in
   let new_children =
     List.map
-      (fun fc ->
-        match fc with
+      (function
         | Flat_element elem ->
             let idx = !elem_idx in
             incr elem_idx;
             Fiber (reconcile_element ~parent_node maps idx ~viewport_width elem)
-        | Flat_embed n -> Embedded n)
+        | Flat_embed n -> Embedded n
+        | Flat_memo memo ->
+            let previous =
+              match !old_spans with
+              | span :: rest ->
+                  old_spans := rest;
+                  Some span
+              | [] -> None
+            in
+            Memo_span
+              (reconcile_span ~parent_node ~viewport_width ~stale previous memo))
       flattened
   in
-  (* Destroy unused old fibers *)
-  for i = 0 to old_len - 1 do
-    if not maps.used.(i) then destroy_fiber maps.by_index.(i)
-  done;
-  commit_placement parent_node ~old_children ~new_children;
+  Array.iteri
+    (fun i fiber -> if not maps.used.(i) then destroy_fiber fiber)
+    maps.by_index;
+  List.iter
+    (fun span -> List.iter (destroy_child_collecting ~stale) span.span_children)
+    !old_spans;
   new_children
+
+(* A discarded span's embedded nodes may reappear elsewhere; leave them to
+   placement. *)
+and destroy_child_collecting ~stale = function
+  | Fiber f -> destroy_fiber f
+  | Embedded n -> stale := n :: !stale
+  | Memo_span span ->
+      List.iter (destroy_child_collecting ~stale) span.span_children
+
+(* Like Elm's lazy nodes, an equal memo stops the diff: its span keeps its
+   children untouched. *)
+and reconcile_span ~parent_node ~viewport_width ~stale previous memo =
+  match previous with
+  | Some span
+    when Vnode.memo_equal span.memo memo
+         && span.span_viewport_width = viewport_width ->
+      span.memo <- memo;
+      span.reused <- true;
+      span
+  | Some span ->
+      if not (Vnode.memo_equal span.memo memo) then
+        span.view <- Vnode.memo_view memo;
+      span.memo <- memo;
+      span.span_viewport_width <- viewport_width;
+      update_span ~parent_node ~viewport_width ~stale span;
+      span
+  | None ->
+      let span =
+        {
+          memo;
+          view = Vnode.memo_view memo;
+          span_viewport_width = viewport_width;
+          span_children = [];
+          node_count = 0;
+          first_node = None;
+          span_focus = Focus_none;
+          reused = false;
+        }
+      in
+      update_span ~parent_node ~viewport_width ~stale span;
+      span
+
+and update_span ~parent_node ~viewport_width ~stale span =
+  let children =
+    reconcile_list ~parent_node ~viewport_width ~stale span.span_children
+      (flatten_vnode ~viewport_width span.view [])
+  in
+  span.span_children <- children;
+  span.node_count <- node_count children;
+  span.first_node <- first_node children;
+  span.span_focus <- children_focus children;
+  span.reused <- false
 
 (* ───── Root Reconciliation ───── *)
 
 let render (t : t) ~viewport_width (vnode : unit Vnode.t) : unit =
   if viewport_width < 1 then
     invalid_arg "Reconciler.render: viewport_width must be positive";
-  let memos, flattened =
-    flatten_children ~memos:t.memos ~viewport_width [ vnode ]
+  let stale = ref [] in
+  let children =
+    reconcile_list ~parent_node:t.container ~viewport_width ~stale
+      t.root_children
+      (flatten_vnode ~viewport_width vnode [])
   in
-  t.memos <- memos;
-  let new_children =
-    reconcile_flattened ~parent_node:t.container ~viewport_width t.root_children
-      flattened
-  in
-  t.root_children <- new_children;
+  t.root_children <- children;
+  commit_placement t.container ~stale:!stale children;
   Renderable.request_render t.container
 
 let unmount (t : t) : unit =
-  List.iter
-    (function Fiber f -> destroy_fiber f | Embedded n -> Renderable.detach n)
-    t.root_children;
+  List.iter destroy_child t.root_children;
   t.root_children <- [];
-  t.memos <- None;
   Renderable.request_render t.container
 
 let focused t =

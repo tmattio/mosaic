@@ -972,6 +972,51 @@ let memo_rejects_functions_in_key () =
   rejects [ Some succ ];
   rejects object end
 
+let list_view () = column [ Vnode.text "one"; Vnode.text "two" ]
+let rows_view () = Vnode.fragment [ Vnode.text "one"; Vnode.text "two" ]
+
+let memo_spans_keep_sibling_order () =
+  let renderer, reconciler = make () in
+  let view ~top ~bottom =
+    column
+      [
+        (if top then Vnode.text "top" else Vnode.empty);
+        Vnode.memo ~key:() rows_view;
+        (if bottom then Vnode.text "bottom" else Vnode.empty);
+        Vnode.memo ~key:() list_view;
+      ]
+  in
+  let rows () = List.init 5 (screen_row renderer) in
+  render_view reconciler (view ~top:false ~bottom:false);
+  equal ~msg:"memos alone" (list string)
+    [ "one"; "two"; "one"; "two"; "" ]
+    (rows ());
+  render_view reconciler (view ~top:true ~bottom:true);
+  equal ~msg:"elements around reused spans" (list string)
+    [ "top"; "one"; "two"; "bottom"; "one" ]
+    (rows ());
+  render_view reconciler (view ~top:false ~bottom:true);
+  equal ~msg:"removal before a reused span" (list string)
+    [ "one"; "two"; "bottom"; "one"; "two" ]
+    (rows ())
+
+let switch_view () =
+  Vnode.viewport_switch ~at_least_width:30 ~wide:(Vnode.text "wide")
+    ~narrow:(Vnode.text "narrow")
+
+let reused_memo_follows_viewport () =
+  let renderer, reconciler = make () in
+  let builds = ref 0 in
+  let counted () =
+    incr builds;
+    switch_view ()
+  in
+  render_view ~viewport_width:40 reconciler (Vnode.memo ~key:() counted);
+  equal ~msg:"wide" string "wide" (screen_row renderer 0);
+  render_view ~viewport_width:20 reconciler (Vnode.memo ~key:() counted);
+  equal ~msg:"narrow" string "narrow" (screen_row renderer 0);
+  equal ~msg:"view built once" int 1 !builds
+
 let removed_memo_releases_view () =
   let renderer, reconciler = make () in
   let weak = Weak.create 1 in
@@ -1053,6 +1098,8 @@ let () =
           test "keys of different types do not alias"
             memo_keys_of_different_types_do_not_alias;
           test "float keys compare by bits" memo_compares_float_bits;
+          test "spans keep sibling order" memo_spans_keep_sibling_order;
+          test "reused memo follows the viewport" reused_memo_follows_viewport;
           test "functions in keys are rejected at memo"
             memo_rejects_functions_in_key;
         ];
