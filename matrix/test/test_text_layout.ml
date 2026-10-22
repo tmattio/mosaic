@@ -195,6 +195,38 @@ let locate_is_monotonic c =
 
 (* ───── Regressions the properties found ───── *)
 
+(* ───── Cells ───── *)
+
+(* From any first column, a row's cells are its clusters that take a cell and
+   end past that column, in order, at their columns: zero-width clusters and
+   line terminators are skipped, whichever the text holds. *)
+let cells_skip_zero_width c =
+  let l = layout c in
+  for row = 0 to Layout.row_count l - 1 do
+    let first = Layout.row_start l row and last = visible_last l row in
+    let row_width = Layout.row_width l row in
+    for first_column = 0 to row_width - 1 do
+      let expected =
+        List.filter_map
+          (fun g ->
+            let column = column_of c l row g
+            and width = columns c l ~first:g ~last:(g + 1) in
+            if width > 0 && column + width > first_column then
+              Some (g, column, width)
+            else None)
+          (List.init (last - first) (fun i -> first + i))
+      in
+      let visited = ref [] in
+      Layout.iter_cells l ~row ~first_column ~last_column:row_width
+        (fun ~first ~last:_ ~column ~width ~ellipsis ->
+          if not ellipsis then visited := (first, column, width) :: !visited);
+      equal
+        ~msg:(Printf.sprintf "row %d from column %d" row first_column)
+        (list (triple int int int))
+        expected (List.rev !visited)
+    done
+  done
+
 let plain ?(width = 20) ?(truncate = false) text =
   Layout.create ~truncate (Layout.Source.of_string text) ~width ~wrap:`None
 
@@ -251,5 +283,10 @@ let () =
             exact_round_trip;
           prop ~count:1000 "hit snaps canonically" gen_case canonical_snapping;
           prop ~count:1000 "locate is monotonic" gen_case locate_is_monotonic;
+        ];
+      group "Cells"
+        [
+          prop ~count:1000 "cells skip zero-width clusters" gen_case
+            cells_skip_zero_width;
         ];
     ]

@@ -856,6 +856,11 @@ module Layout = struct
     done;
     !lo
 
+  (* [columns.(g)] is the cells before grapheme [g]. [next_visible.(g)] is the
+     first grapheme at or after [g] that takes a cell; it exists only when a
+     zero-width cluster other than a line terminator does. A terminator ends
+     its line and so every row that could skip it, so without such a cluster
+     every grapheme a row covers takes a cell and the skip is the identity. *)
   type metrics = { columns : int array; next_visible : int array option }
 
   module Source = struct
@@ -936,7 +941,8 @@ module Layout = struct
               measure_sub ~width_method ~tab_width t.text ~pos:off
                 ~len:(t.offsets.(g + 1) - off)
             in
-            if width = 0 then has_zero := true;
+            let terminator = t.text.[off] = '\n' || t.text.[off] = '\r' in
+            if width = 0 && not terminator then has_zero := true;
             columns.(g + 1) <- columns.(g) + width
           done;
           let next_visible =

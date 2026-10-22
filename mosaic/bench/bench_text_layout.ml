@@ -327,7 +327,7 @@ let memory_widths_check () =
   Printf.printf "four-widths-retained=%d bytes; replace-heap-peak=%d bytes\n"
     retained peak;
   ignore (Sys.opaque_identity (renderer, surface));
-  if retained > 32 * mib || peak > 64 * mib then
+  if retained > 24 * mib || peak > 48 * mib then
     failwith "text layout memory budget exceeded at the cached widths"
 
 let history_check () =

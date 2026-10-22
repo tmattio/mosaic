@@ -38,7 +38,7 @@ Three checks run beside it in `dune runtest`:
   retained or a 256 MiB heap peak while a second layout is built.
 - `memory-widths` lays out 1 MB of prose at the four widths a text surface
   caches, prints the index, each width's rows and a count-only probe, and fails
-  above 32 MiB retained or a 64 MiB heap peak while the text is replaced. The
-  budget is the measured 28.1 MiB rounded up to the next power of two: one more
-  array per grapheme (8 MiB) exceeds it. The peak allows the old and the new
-  text's geometry together.
+  above 24 MiB retained or a 48 MiB heap peak while the text is replaced. The
+  measured 20.4 MiB retained and 42.0 MiB peak leave less room than one more
+  array per grapheme (7.6 MiB): such an array exceeds both budgets. The peak
+  allows the old and the new text's geometry together.
