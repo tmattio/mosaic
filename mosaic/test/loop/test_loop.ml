@@ -1408,3 +1408,16 @@ let%expect_test "on_size reports settle within the frame or the next one" =
     |40 20 21
     |
     |}]
+
+let%expect_test "timer ids must be unique across every and on_tick" =
+  let subs _ =
+    Mosaic.Sub.batch
+      [
+        Mosaic.Sub.every ~id:"clock" 1. (fun () -> Tick);
+        Mosaic.Sub.on_tick ~id:"clock" (fun ~dt:_ -> Tick);
+      ]
+  in
+  (match drive (app ~subs ()) [] with
+  | () -> print_endline "accepted"
+  | exception Invalid_argument message -> print_endline message);
+  [%expect {| Mosaic.Sub: empty or duplicate timer id: clock |}]
