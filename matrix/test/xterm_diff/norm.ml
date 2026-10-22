@@ -2409,8 +2409,18 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
           && List.exists (occurs before)
                (designations [ '('; ')'; '*'; '+' ] (chars national_finals)))
   in
+  (* Any wide character [t] completes, with the bytes before it. *)
   let too_wide () =
-    ctx.cols < 2 && List.exists (fun cp -> ctx.width cp = 2) (scalars t.bytes)
+    ctx.cols < 2
+    &&
+    let m = String.length after in
+    let rec go i =
+      i < m
+      &&
+      let cp, len = decode after i in
+      (cp >= 0 && i + len > n && ctx.width cp = 2) || go (i + len)
+    in
+    go (max 0 (n - 3))
   in
   let nrcm () = non_ascii && national in
   let ris () = national && forms "\027c" in
