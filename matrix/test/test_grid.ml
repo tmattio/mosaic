@@ -1034,6 +1034,18 @@ let blit_region_preserves_default_foreground_glyph () =
   equal ~msg:"default foreground intent retained" bool true
     (Ansi.Color.equal (Grid.get_fg dst 0) Ansi.Color.default)
 
+let draw_text_keeps_default_foreground_on_blank () =
+  (* A blank stays transparent, but its foreground, which an underline
+     shows, names the terminal's colour: there is nothing to blend. *)
+  let grid = Grid.create ~width:2 ~height:1 () in
+  Grid.clear_rect grid ~color:Ansi.Color.black ~x:0 ~y:0 ~width:2 ~height:1;
+  let style = Ansi.Style.make ~fg:Ansi.Color.default ~underline:true () in
+  Grid.draw_text ~style grid ~x:0 ~y:0 ~text:" x";
+  equal ~msg:"blank keeps default foreground intent" bool true
+    (Ansi.Color.equal (Grid.get_fg grid 0) Ansi.Color.default);
+  equal ~msg:"glyph keeps default foreground intent" bool true
+    (Ansi.Color.equal (Grid.get_fg grid 1) Ansi.Color.default)
+
 let to_ansi_handles_empty_glyph () =
   let grid = Grid.create ~width:1 ~height:1 () in
   Grid.set_cell grid ~x:0 ~y:0 ~cell:Grid.Cell.empty ~fg:Ansi.Color.white
@@ -1465,6 +1477,8 @@ let tests =
       blit_region_skips_transparent_source_with_respect_alpha;
     test "blit_region preserves terminal-default foreground glyph"
       blit_region_preserves_default_foreground_glyph;
+    test "draw_text keeps default foreground on blank"
+      draw_text_keeps_default_foreground_on_blank;
     test "to_ansi handles empty glyph" to_ansi_handles_empty_glyph;
     test "to_ansi handles orphan continuation"
       to_ansi_handles_orphan_continuation;

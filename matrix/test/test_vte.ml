@@ -1209,6 +1209,19 @@ let unicode_wcwidth_cells_across_writes () =
       ("e\u{0301}x", [ "e\u{0301}"; "x"; " "; " "; " "; " " ]);
     ]
 
+let unicode_mark_on_blank_across_writes () =
+  (* A mark joined to a blank in a later write keeps the blank's default
+     foreground, as one written with it does. *)
+  let fg chunks =
+    let vte = Vte.create ~default_fg:Ansi.Color.default ~rows:1 ~cols:4 () in
+    List.iter (Vte.feed_string vte) chunks;
+    Grid.get_fg (Vte.grid vte) 0
+  in
+  equal ~msg:"same write" bool true
+    (Ansi.Color.equal (fg [ " \u{0301}" ]) Ansi.Color.default);
+  equal ~msg:"later write" bool true
+    (Ansi.Color.equal (fg [ " "; "\u{0301}" ]) Ansi.Color.default)
+
 let unicode_prepend_across_writes () =
   (* A Prepend character draws apart from the character after it, as in
      xterm, so a read split between them draws the same screen. *)
@@ -1421,6 +1434,8 @@ let tests =
       unicode_mark_at_margin_across_writes;
     test "unicode wcwidth cells across writes"
       unicode_wcwidth_cells_across_writes;
+    test "unicode mark on blank across writes"
+      unicode_mark_on_blank_across_writes;
     test "unicode prepend across writes" unicode_prepend_across_writes;
     test "unicode mark after dropped wide" unicode_mark_after_dropped_wide;
     test "unicode malformed utf8" unicode_malformed_utf8;

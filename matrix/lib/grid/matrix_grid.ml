@@ -638,7 +638,8 @@ let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~fg_r ~fg_g ~fg_b ~fg_a
       write_cell t idx code;
       Buf.set t.attrs idx attrs;
       Buf.set t.links idx link_id;
-      if fg_a < 0.999 then
+      (* A blank's default foreground names the terminal's: nothing to mix. *)
+      if fg_a < 0.999 && Color_packed.intent fg_color <> Ansi.Color.Default then
         let pa = Color_plane.perceptual_alpha fg_a in
         let r = Color_plane.mix fg_r dr_bg pa in
         let g = Color_plane.mix fg_g dg_bg pa in
