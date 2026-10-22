@@ -414,6 +414,17 @@ let registry =
          No wide character is generated below two columns.";
     };
     {
+      name = "short-strings";
+      kind = Quirk;
+      how = "generator";
+      why =
+        "a DCS and an OSC are control strings that go on to ST (or BEL for an \
+         OSC) whatever they hold (ECMA-48 §5.6; RFC 0004 §1 Strings); xterm \
+         ends a DCS whose header's final is R at once, and an OSC that starts \
+         with P (the Linux console's palette) after seven characters, and \
+         prints the rest (observed in 398). They are not formed.";
+    };
+    {
       name = "decrc-sgr-background";
       kind = Quirk;
       how = "xterm rewrite";
@@ -2409,6 +2420,26 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
     in
     go (max 0 (n - 300))
   in
+  (* A DCS header that ends with R, an OSC that starts with P. *)
+  let short_strings () =
+    forms "\027]P"
+    ||
+    let m = String.length after in
+    let rec header i =
+      i < m
+      &&
+      match after.[i] with
+      | '0' .. '?' | ' ' .. '/' -> header (i + 1)
+      | 'R' -> i >= n
+      | _ -> false
+    in
+    let rec go i =
+      i + 1 < m
+      && ((after.[i] = '\027' && after.[i + 1] = 'P' && header (i + 2))
+         || go (i + 1))
+    in
+    go (max 0 (n - 300))
+  in
   let national_designation () =
     ctx.decid >= 200
     && ((not national)
@@ -2443,5 +2474,6 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
     || (ris () && not (reject "ris-national"))
     || (escapes () && not (reject "xterm-escapes"))
     || (media_copy () && not (reject "media-copy"))
+    || (short_strings () && not (reject "short-strings"))
     || (national_designation () && not (reject "national-designation"))
     || (too_wide () && not (reject "wider-than-line")))
