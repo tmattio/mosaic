@@ -4,4 +4,5 @@
  (instrumentation
   (backend ppx_windtrap.mutate))
  (name matrix_input)
- (public_name matrix.input))
+ (public_name matrix.input)
+ (libraries matrix.ansi))

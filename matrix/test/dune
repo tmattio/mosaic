@@ -98,3 +98,15 @@
  (package matrix)
  (modules test_render_props)
  (libraries windtrap matrix matrix.vte matrix.ansi matrix.grid matrix.text))
+
+(test
+ (name test_decoder)
+ (package matrix)
+ (modules test_decoder)
+ (libraries windtrap matrix.input))
+
+(test
+ (name test_decoder_props)
+ (package matrix)
+ (modules test_decoder_props)
+ (libraries windtrap matrix.input))

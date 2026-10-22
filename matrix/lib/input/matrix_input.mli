@@ -56,3 +56,21 @@ include module type of Event
 
 module Parser = Parser
 (** Incremental input parser. See {!Parser}. *)
+
+(** {1:decoding Decoding}
+
+    {!Decoder} reads the same bytes with no clock, the caller saying when the
+    terminal has been silent. A keystroke has one value whatever the terminal's
+    encoding, and a reply is never a key. *)
+
+module Keystroke = Keystroke
+(** Keystrokes. See {!Keystroke}. *)
+
+module Mouse_report = Mouse_report
+(** Mouse reports. See {!Mouse_report}. *)
+
+module Reply = Reply
+(** Terminal replies. See {!Reply}. *)
+
+module Decoder = Decoder
+(** Decoding terminal input. See {!Decoder}. *)
