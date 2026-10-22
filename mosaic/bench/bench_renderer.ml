@@ -190,6 +190,60 @@ let editor_typing =
   Thumper.bench_with_setup ~setup:make_typing "typing-wrapped-150-lines"
     typing_frame
 
+(* Primary-mode frame: an inline region under the shell's output, laid out
+   against the terminal's 50 rows and drawn into a region as tall as its
+   content, as a primary-mode host does. A transcript viewport sits above a
+   prompt line that changes every frame. *)
+let primary_terminal_rows = 50
+
+let primary_root_style =
+  Toffee.Style.default
+  |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column
+  |> Toffee.Style.set_width (Toffee.Style.Dimension.pct 100.)
+  |> Toffee.Style.set_height Toffee.Style.Dimension.auto
+
+type primary_state = {
+  primary_renderer : Renderer.t;
+  prompt : Text.t;
+  mutable typed : bool;
+}
+
+let primary_frame st =
+  st.typed <- not st.typed;
+  Text.set_content st.prompt (if st.typed then "> ab" else "> a");
+  let renderer = st.primary_renderer in
+  Renderer.prepare_layout renderer ~width:viewport_width
+    ~height:primary_terminal_rows;
+  let rows = Renderable.height (Renderer.root renderer) in
+  Renderer.render_frame renderer ~layout_height:primary_terminal_rows
+    ~width:viewport_width ~height:rows ~delta:16.;
+  ignore (Renderer.render renderer : string)
+
+let make_primary () =
+  let renderer = Renderer.create ~style:primary_root_style () in
+  let scroll =
+    Scroll_box.create ~parent:(Renderer.root renderer) ~style:viewport_style
+      ~show_scrollbars:false ()
+  in
+  Scroll_box.set_on_scroll scroll (Some (Scroll_box.set_scroll scroll));
+  for _ = 1 to transcript_rows do
+    ignore
+      (Text.create ~parent:(Scroll_box.node scroll) ~style:row_style
+         ~content:row_text ~selectable:false ()
+        : Text.t)
+  done;
+  let prompt =
+    Text.create ~parent:(Renderer.root renderer) ~content:"> a"
+      ~selectable:false ()
+  in
+  let st = { primary_renderer = renderer; prompt; typed = false } in
+  primary_frame st;
+  st
+
+let primary_typing =
+  Thumper.bench_with_setup ~setup:make_primary "typing-inline-transcript-1000"
+    primary_frame
+
 let () =
   (* Frame loops care about retention as much as speed: promotions are
      objects escaping the minor heap mid-frame, and minor collections count
@@ -210,4 +264,5 @@ let () =
       Thumper.group "viewport" [ steady_scrolled_transcript; scroll_by_one ];
       Thumper.group "idle" [ idle_full_frame ];
       Thumper.group "editor" [ editor_typing ];
+      Thumper.group "primary" [ primary_typing ];
     ]

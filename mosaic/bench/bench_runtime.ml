@@ -9,11 +9,24 @@ type workload = Keystroke | Wheel_burst | Resize
 type driver = {
   terminal : Matrix_test.t;
   continuation : (unit, unit) Effect.Deep.continuation option ref;
+  wheel_down : string;
+  wheel_up : string;
   mutable alternate : bool;
 }
 
 let initial_width = 250
 let initial_height = 70
+
+(* In [`Primary] mode the application is an inline region under 20 rows of
+   earlier output, so its live region is shorter than the terminal: its scroll
+   box takes 40 of the terminal's 70 rows. *)
+let primary_viewport_height = 40
+
+let earlier_output =
+  Mosaic.fragment
+    (List.init 20 (fun i ->
+         Mosaic.text (Printf.sprintf "earlier output %02d" i)))
+
 let none = Mosaic.Cmd.none
 
 let block i =
@@ -30,18 +43,34 @@ let block i =
 let blocks_view blocks =
   Mosaic.fragment (List.init blocks (fun i -> Mosaic.memo ~key:i block))
 
-let transcript blocks = Mosaic.memo ~key:blocks blocks_view
+let transcript_view blocks = Mosaic.memo ~key:blocks blocks_view
 
-let view blocks model =
-  Mosaic.box ~flex_direction:Mosaic.Flex_direction.Column
-    ~size:(Mosaic.size_wh (Mosaic.pct 100) (Mosaic.pct 100))
+let view ~mode blocks model =
+  let size, flex_grow, flex_basis, flex_shrink, scroll_size =
+    match mode with
+    | `Alt ->
+        ( Mosaic.size_wh (Mosaic.pct 100) (Mosaic.pct 100),
+          Some 1.,
+          Some (Mosaic.px 0),
+          None,
+          None )
+    | `Primary ->
+        ( Mosaic.size_wh (Mosaic.pct 100) Mosaic.auto,
+          None,
+          None,
+          Some 0.,
+          Some
+            (Mosaic.size_wh (Mosaic.pct 100)
+               (Mosaic.px primary_viewport_height)) )
+  in
+  Mosaic.box ~flex_direction:Mosaic.Flex_direction.Column ~size
     [
-      Mosaic.scroll_box ~flex_grow:1. ~flex_basis:(Mosaic.px 0)
+      Mosaic.scroll_box ?flex_grow ?flex_basis ?flex_shrink ?size:scroll_size
         ~min_size:(Mosaic.size ~width:0 ~height:0)
         ~scroll:model.scroll
         ~on_scroll:(fun next -> Scroll next)
         ~show_scrollbars:false
-        [ transcript blocks ];
+        [ transcript_view blocks ];
       Mosaic.input
         ~size:(Mosaic.size_wh (Mosaic.pct 100) (Mosaic.px 1))
         ~flex_shrink:0. ~focused:true ~state:model.editor
@@ -56,8 +85,11 @@ let resume driver =
       driver.continuation := None;
       Effect.Deep.continue continuation ()
 
-let wheel_down = String.concat "" (List.init 8 (fun _ -> "\027[<65;2;2M"))
-let wheel_up = String.concat "" (List.init 8 (fun _ -> "\027[<64;2;2M"))
+(* Eight wheel events over the transcript's second row, [row] counting the
+   terminal's rows from 1. *)
+let wheel ~button ~row =
+  String.concat ""
+    (List.init 8 (fun _ -> Printf.sprintf "\027[<%d;2;%dM" button row))
 
 let step workload driver =
   driver.alternate <- not driver.alternate;
@@ -67,7 +99,7 @@ let step workload driver =
         (if driver.alternate then "x" else "\127")
   | Wheel_burst ->
       Matrix_test.feed driver.terminal
-        (if driver.alternate then wheel_down else wheel_up)
+        (if driver.alternate then driver.wheel_down else driver.wheel_up)
   | Resize ->
       let width, height = if driver.alternate then (249, 69) else (250, 70) in
       Matrix_test.resize driver.terminal ~width ~height);
@@ -90,7 +122,7 @@ let close driver =
 let require condition message =
   if not condition then failwith ("runtime benchmark: " ^ message)
 
-let setup ~blocks workload () =
+let setup ~mode ~blocks workload () =
   let continuation : (unit, unit) Effect.Deep.continuation option ref =
     ref None
   in
@@ -98,7 +130,7 @@ let setup ~blocks workload () =
     ref { editor = Mosaic.Editor.of_string "a"; scroll = Mosaic.Scroll.at 7500 }
   in
   let terminal =
-    Matrix_test.create ~width:initial_width ~height:initial_height
+    Matrix_test.create ~mode ~width:initial_width ~height:initial_height
       ~on_idle:(fun terminal ~timeout ->
         match timeout with
         | Some delay ->
@@ -109,7 +141,12 @@ let setup ~blocks workload () =
   in
   let application =
     {
-      Mosaic.init = (fun () -> (!accepted, none));
+      Mosaic.init =
+        (fun () ->
+          ( !accepted,
+            match mode with
+            | `Alt -> none
+            | `Primary -> Mosaic.Cmd.static_commit earlier_output ));
       update =
         (fun message model ->
           let model =
@@ -119,7 +156,7 @@ let setup ~blocks workload () =
           in
           accepted := model;
           (model, none));
-      view = view blocks;
+      view = view ~mode blocks;
       subscriptions = (fun _ -> Mosaic.Sub.none);
     }
   in
@@ -138,7 +175,26 @@ let setup ~blocks workload () =
                   continuation := Some k)
           | _ -> None);
     };
-  let driver = { terminal; continuation; alternate = false } in
+  (* The live region ends at the terminal's last row. *)
+  let app = Matrix_test.app terminal in
+  let top = snd (Matrix.full_size app) - snd (Matrix.size app) in
+  require
+    (top > 0 = (mode = `Primary))
+    "only a primary-mode live region is shorter than the terminal";
+  let viewport_height =
+    match mode with
+    | `Alt -> initial_height - 1
+    | `Primary -> primary_viewport_height
+  in
+  let driver =
+    {
+      terminal;
+      continuation;
+      wheel_down = wheel ~button:65 ~row:(top + 2);
+      wheel_up = wheel ~button:64 ~row:(top + 2);
+      alternate = false;
+    }
+  in
   (* Validate both directions before measuring. Captured ANSI and frame text
      are deliberately inspected here, never copied in the measured loop. *)
   for _ = 1 to 2 do
@@ -159,8 +215,9 @@ let setup ~blocks workload () =
           "editor proposal was not accepted"
     | Wheel_burst ->
         let _, y =
-          Mosaic.Scroll.resolve !accepted.scroll ~width:250 ~height:69
-            ~content_width:250 ~content_height:(blocks * 3)
+          Mosaic.Scroll.resolve !accepted.scroll ~width:250
+            ~height:viewport_height ~content_width:250
+            ~content_height:(blocks * 3)
         in
         require
           (y = if driver.alternate then 7508 else 7500)
@@ -189,24 +246,36 @@ let () =
       |> Thumper.Config.metrics metrics)
     ~budgets:[ Thumper.Budget.no_more_alloc_than 0.05 ]
     (* Per-input cost must not grow with mounted content: the 20,000-block
-       transcript repeats the input workloads. *)
+       transcript repeats the input workloads. The primary-mode group runs them
+       in an inline region shorter than the terminal. *)
     (List.map
-       (fun (blocks, workloads) ->
+       (fun (mode, blocks, workloads) ->
          Thumper.group
-           (Printf.sprintf "transcript-%d" blocks)
+           (match mode with
+           | `Alt -> Printf.sprintf "transcript-%d" blocks
+           | `Primary -> Printf.sprintf "primary-transcript-%d" blocks)
            (List.map
               (fun (name, workload) ->
-                Thumper.bench_with_setup ~setup:(setup ~blocks workload)
+                Thumper.bench_with_setup
+                  ~setup:(setup ~mode ~blocks workload)
                   ~teardown:close name (measure workload))
               workloads))
        [
-         ( 5000,
+         ( `Alt,
+           5000,
            [
              ("keystroke-to-present", Keystroke);
              ("wheel-roundtrip-2x8", Wheel_burst);
              ("resize-250x70", Resize);
            ] );
-         ( 20000,
+         ( `Alt,
+           20000,
+           [
+             ("keystroke-to-present", Keystroke);
+             ("wheel-roundtrip-2x8", Wheel_burst);
+           ] );
+         ( `Primary,
+           5000,
            [
              ("keystroke-to-present", Keystroke);
              ("wheel-roundtrip-2x8", Wheel_burst);
