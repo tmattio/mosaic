@@ -37,6 +37,16 @@ let zero_in_grapheme u gcb =
   || Uucp.Emoji.is_emoji_modifier u
   || gcb = 15 || gcb = 14 || gcb = 11
 
+(* Uucp's tty_width_hint, except that the Hangul conjoining vowels and
+   trailing consonants are zero width: a leading consonant before them composes
+   them into one syllable (Unicode §3.12), whose width is the leading
+   consonant's. Markus Kuhn's wcwidth, glibc and xterm give them 0; Uucp gives
+   them their East_Asian_Width, N. *)
+let width u =
+  let cp = Uchar.to_int u in
+  if (cp >= 0x1160 && cp <= 0x11FF) || (cp >= 0xD7B0 && cp <= 0xD7FF) then 0
+  else Uucp.Break.tty_width_hint u
+
 let compute_prop_table () =
   let buf = Bytes.create (unicode_packed_size * 2) in
   for packed = 0 to unicode_packed_size - 1 do
@@ -52,7 +62,7 @@ let compute_prop_table () =
        are text
        by default (UTS #51 ED-7) and take one cell; VS16 widens an emoji at
        run time. *)
-    let width_enc = Uucp.Break.tty_width_hint u + 1 in
+    let width_enc = width u + 1 in
     let v =
       gcb land 0x1F
       lor ((incb land 0x03) lsl 5)

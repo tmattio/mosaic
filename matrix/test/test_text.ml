@@ -986,6 +986,33 @@ let text_default_pictograph_widths () =
   check_width "uchar_width grinning face" 2
     (uchar_width ~tab_width:2 (Uchar.of_int 0x1F600))
 
+(* A leading consonant composes the conjoining vowels and trailing consonants
+   after it into one syllable (Unicode §3.12): they take no cells of their own,
+   as in wcwidth (Markus Kuhn's, glibc's, xterm's), under every method. *)
+let hangul_conjoining_widths () =
+  List.iter
+    (fun (label, cp) ->
+      check_width ("uchar_width " ^ label) 0
+        (uchar_width ~tab_width:2 (Uchar.of_int cp)))
+    [
+      ("filler U+1160", 0x1160);
+      ("vowel U+1161", 0x1161);
+      ("trailing consonant U+11A8", 0x11A8);
+      ("trailing consonant U+11FF", 0x11FF);
+      ("extended-B vowel U+D7B0", 0xD7B0);
+      ("extended-B consonant U+D7FB", 0xD7FB);
+    ];
+  check_width "uchar_width leading consonant U+1100" 2
+    (uchar_width ~tab_width:2 (Uchar.of_int 0x1100));
+  List.iter
+    (fun m ->
+      let measure s = measure ~width_method:m ~tab_width:2 s in
+      let name = method_name m in
+      check_width (name ^ " syllable L V T") 2
+        (measure "\u{1100}\u{1161}\u{11A8}");
+      check_width (name ^ " syllable L V") 2 (measure "\u{1100}\u{1161}"))
+    [ `Unicode; `Wcwidth ]
+
 (* The units of [chunks], fed one scalar at a time with [Segmenter.add], or
    with [Segmenter.ascii_run] wherever it applies when [runs]. Each unit is
    its bytes and its width when it closed. *)
@@ -1363,5 +1390,6 @@ let () =
           test "text-default pictographs are narrow"
             text_default_pictograph_widths;
           test "C1 control widths" c1_control_widths;
+          test "Hangul conjoining jamo are zero width" hangul_conjoining_widths;
         ];
     ]

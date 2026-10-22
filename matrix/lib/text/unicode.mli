@@ -25,7 +25,11 @@ val is_extended_pictographic : Uchar.t -> bool
 val tty_width_hint : Uchar.t -> int
 (** [tty_width_hint u] is the suggested terminal display width of [u]:
     - [-1] for control characters (C0, DEL, C1).
-    - [0] for non-spacing marks and format characters.
+    - [0] for non-spacing marks and format characters, and for the Hangul
+      conjoining vowels and trailing consonants (U+1160..U+11FF,
+      U+D7B0..U+D7FF): a leading consonant before them composes them into one
+      syllable (Unicode §3.12), as wide as the consonant. wcwidth gives them 0
+      (Markus Kuhn's, glibc's, xterm's).
     - [1] for most characters.
     - [2] for the characters whose East_Asian_Width is Wide (W) or Fullwidth (F)
       ({{:https://www.unicode.org/reports/tr11/}UAX #11}).
