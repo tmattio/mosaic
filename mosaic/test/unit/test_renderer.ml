@@ -1800,6 +1800,45 @@ let geometry_changes_route_mouse_before_paint () =
   dispatch_mouse renderer (mouse_press ~x:1 ~y:1 ());
   equal ~msg:"fresh bounds are used without painting" int 1 !presses
 
+(* Between frames a press hits the topmost node under it, inside every
+   scissor that encloses that node, as the next frame's hit grid would. *)
+let fresh_hits_respect_stacking_and_scissors () =
+  let renderer = make_renderer () in
+  let root = Renderer.root renderer in
+  let back = make_child ~parent:root ~x:0 ~y:0 ~w:20 ~h:5 () in
+  let clipper = make_child ~parent:root ~x:0 ~y:0 ~w:6 ~h:3 () in
+  Renderable.set_style clipper
+    (Renderable.style clipper
+    |> Toffee.Style.set_overflow
+         { x = Toffee.Style.Overflow.Hidden; y = Toffee.Style.Overflow.Hidden }
+    );
+  let wide = make_child ~parent:clipper ~x:0 ~y:0 ~w:12 ~h:2 () in
+  let above = make_child ~parent:root ~x:2 ~y:1 ~w:2 ~h:2 () in
+  let presses node =
+    let count = ref 0 in
+    Renderable.on_mouse node (fun event ->
+        match Event.Mouse.kind event with
+        | Down _ ->
+            incr count;
+            Event.Mouse.stop_propagation event
+        | _ -> ());
+    count
+  in
+  let back_presses = presses back and clipper_presses = presses clipper in
+  let wide_presses = presses wide and above_presses = presses above in
+  do_frame ~width:20 ~height:5 renderer;
+  Renderer.prepare_layout renderer ~width:20 ~height:5;
+  let press x y = dispatch_mouse renderer (mouse_press ~x ~y ()) in
+  press 1 0;
+  press 8 0;
+  press 3 1;
+  press 1 2;
+  press 25 0;
+  equal ~msg:"inside its scissor" int 1 !wide_presses;
+  equal ~msg:"a later sibling on top" int 1 !above_presses;
+  equal ~msg:"below the clipped child" int 1 !clipper_presses;
+  equal ~msg:"clipped away, and nothing outside the frame" int 1 !back_presses
+
 let layout_updates_settle_before_first_paint () =
   let renderer = make_renderer () in
   let child =
@@ -2028,6 +2067,8 @@ let () =
         selection_notification_revalidates_focus_target;
       test "mouse uses changed geometry before paint"
         geometry_changes_route_mouse_before_paint;
+      test "fresh hits respect stacking and scissors"
+        fresh_hits_respect_stacking_and_scissors;
       test "layout updates settle before first paint"
         layout_updates_settle_before_first_paint;
       test "layout preparation never advances live widgets"

@@ -69,9 +69,7 @@ type t = {
   (* Render command buffer — reused across frames. *)
   mutable commands : render_command array;
   mutable cmd_len : int;
-  input_hits : Screen.Hit_grid.t;
   mutable input_geometry : (int * int) option;
-  mutable input_hits_dirty : bool;
   (* Hover tracking *)
   mutable hover_node : Renderable.t option;
   mutable hover_num : int;
@@ -365,27 +363,45 @@ let rec alive_visible node =
   | None -> true
   | Some parent -> alive_visible parent
 
+(* Between frames, a point hits the last node the command list draws over it,
+   as in a hit grid built from the commands: the node's box and every
+   enclosing scissor contain the point. Walking the commands costs one test
+   per command, where filling a grid would cost one store per covered cell. *)
 let query_input_hit t ~x ~y =
   match t.input_geometry with
   | None -> Screen.query_hit t.screen ~x ~y
   | Some (width, height) ->
-      if t.input_hits_dirty then begin
-        Screen.Hit_grid.resize t.input_hits ~width ~height;
-        Screen.Hit_grid.clear_clip t.input_hits;
+      if x < 0 || y < 0 || x >= width || y >= height then 0
+      else begin
+        let contains ~rx ~ry ~rw ~rh =
+          x >= rx && x < rx + rw && y >= ry && y < ry + rh
+        in
+        (* [depth] counts open scissors; [outside] is the depth of the first
+           one that excludes the point, or 0. *)
+        let hit = ref 0 and depth = ref 0 and outside = ref 0 in
         for i = 0 to t.cmd_len - 1 do
           match t.commands.(i) with
           | Render node ->
-              let bounds = Renderable.bounds node in
-              Screen.Hit_grid.add t.input_hits ~x:bounds.x ~y:bounds.y
-                ~width:bounds.width ~height:bounds.height
-                ~id:(Renderable.Private.num node)
-          | Push_scissor clip -> Screen.Hit_grid.push_clip t.input_hits clip
-          | Pop_scissor -> Screen.Hit_grid.pop_clip t.input_hits
+              if
+                !outside = 0
+                && contains ~rx:(Renderable.x node) ~ry:(Renderable.y node)
+                     ~rw:(Renderable.width node) ~rh:(Renderable.height node)
+              then hit := Renderable.Private.num node
+          | Push_scissor clip ->
+              incr depth;
+              if
+                !outside = 0
+                && not
+                     (contains ~rx:clip.x ~ry:clip.y ~rw:clip.width
+                        ~rh:clip.height)
+              then outside := !depth
+          | Pop_scissor ->
+              if !outside = !depth then outside := 0;
+              decr depth
           | Push_opacity _ | Pop_opacity -> ()
         done;
-        t.input_hits_dirty <- false
-      end;
-      Screen.Hit_grid.get t.input_hits ~x ~y
+        !hit
+      end
 
 let focus_request_accepted requested target =
   match requested with
@@ -794,9 +810,7 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
     lifecycle_set;
     commands = Array.make 64 Pop_scissor;
     cmd_len = 0;
-    input_hits = Screen.Hit_grid.create ~width:0 ~height:0;
     input_geometry = None;
-    input_hits_dirty = false;
     hover_node = None;
     hover_num = 0;
     pointer;
@@ -1005,8 +1019,7 @@ let prepare_layout t ~width ~height =
   prepare_commands t ~width ~height ~frame:false ~delta:0.;
   if t.size_round.shallowest < max_int then
     t.size_round.limit <- t.size_round.shallowest;
-  t.input_geometry <- Some (width, height);
-  t.input_hits_dirty <- true
+  t.input_geometry <- Some (width, height)
 
 let layout_frame t ~width ~height ~delta =
   t.input_geometry <- None;
