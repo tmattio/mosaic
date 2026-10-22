@@ -183,7 +183,9 @@ val create :
       {!Ansi.Color.black}; {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}
       keep the terminal default in the cells.
 
-    [rows] and [cols] are at least [1]. *)
+    [rows] and [cols] below [1] are taken as [1].
+
+    Raises [Invalid_argument] if [cols > Matrix_grid.max_width]. *)
 
 (** {1:feeding Feeding output} *)
 
@@ -214,7 +216,10 @@ val resize : t -> rows:int -> cols:int -> unit
     their wrap marks; a row back from the scrollback has its text, rendition and
     mark, and no protection. Cursors and DECSC slots move with their rows and
     lose the Last Column Flag, the margins become the whole screen, and a unit
-    in progress is ended. [rows] and [cols] are at least [1]. *)
+    in progress is ended. [rows] and [cols] below [1] are taken as [1].
+
+    Raises [Invalid_argument], and changes nothing, if
+    [cols > Matrix_grid.max_width]. *)
 
 (** {1:state State} *)
 

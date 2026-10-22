@@ -995,10 +995,17 @@ let ris t =
   t.title <- "";
   touch_rows t 0 (t.rows - 1)
 
+(* A grid is at most [Grid.max_width] wide; the check comes before any
+   change. *)
+let check_cols fn cols =
+  if cols > Grid.max_width then
+    invalid_arg (Printf.sprintf "Vte.%s: cols > %d" fn Grid.max_width)
+
 (* The structure, which RIS gives its power-up state. *)
 let create ?(scrollback = 10000) ?(width_method = `Unicode)
     ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ~rows
     ~cols () =
+  check_cols "create" cols;
   let rows = max 1 rows and cols = max 1 cols in
   let screen () =
     let grid = Grid.create ~width:cols ~height:rows ~width_method () in
@@ -1377,6 +1384,7 @@ let resize_screen t s ~row ~rows ~cols =
   down - up
 
 let resize t ~rows ~cols =
+  check_cols "resize" cols;
   let rows = max 1 rows and cols = max 1 cols in
   if rows <> t.rows || cols <> t.cols then begin
     close t;

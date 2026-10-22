@@ -2021,6 +2021,22 @@ let scrollback_keeps_cells () =
       check ~cols:1 m "\x1b[?7l\u{1F600}")
     [ `Unicode; `Unicode_wide; `Wcwidth ]
 
+(* A width the grid cannot hold is refused before anything changes. *)
+let too_wide () =
+  let cols = Grid.max_width + 1 in
+  raises_match (Exn.invalid_arg ~substring:"Vte.create") (fun () ->
+      Vte.create ~rows:1 ~cols ());
+  let vte = Vte.create ~scrollback:10 ~rows:3 ~cols:4 () in
+  feed vte "1\r\n2\r\n3";
+  raises_match (Exn.invalid_arg ~substring:"Vte.resize") (fun () ->
+      Vte.resize vte ~rows:1 ~cols);
+  equal ~msg:"resize changed nothing"
+    (pair string (list string))
+    ("1   \n2   \n3   ", [])
+    (Vte.to_string vte, Vte.scrollback_lines vte);
+  Vte.resize vte ~rows:1 ~cols:Grid.max_width;
+  equal ~msg:"the widest grid" int Grid.max_width (Vte.cols vte)
+
 (* CAN ends a sequence or string and shows nothing; SUB shows the error
    character, also in the ground state. *)
 let can_and_sub () =
@@ -2200,6 +2216,7 @@ let tests =
     test "more character sets" more_character_sets;
     test "resize keeps text" resize_keeps_text;
     test "scrollback keeps cells" scrollback_keeps_cells;
+    test "too wide" too_wide;
     test "CAN and SUB" can_and_sub;
     test "national mode" national_mode;
   ]
