@@ -13,6 +13,12 @@
  (libraries windtrap matrix.text))
 
 (test
+ (name test_text_layout)
+ (package matrix)
+ (modules test_text_layout)
+ (libraries windtrap matrix.text))
+
+(test
  (name test_grid)
  (package matrix)
  (modules test_grid)

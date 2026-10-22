@@ -330,9 +330,3 @@
   matrix.input
   matrix.grid
   matrix.screen))
-
-(test
- (name test_text_layout)
- (modules test_text_layout)
- (package mosaic)
- (libraries windtrap matrix.text))

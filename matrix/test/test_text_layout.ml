@@ -1,5 +1,5 @@
-(* Properties of Matrix.Text.Layout's hit testing, the geometry every Mosaic
-   text consumer asks: paint, selection, editor movement, gutters and diff.
+(* Properties of Matrix_text.Layout's hit testing, the geometry every text
+   consumer asks: paint, selection, editor movement, gutters and diff.
 
    Two contracts, with different preconditions:
    - An exact round trip, [hit (locate c)] = [c], holds only for a boundary
@@ -232,7 +232,7 @@ let omitted_suffix_end_locates_after_ellipsis () =
     (Layout.locate l Layout.{ grapheme = 4; affinity = Upstream })
 
 let () =
-  run "mosaic.text_layout"
+  run "matrix.text_layout"
     [
       group "Regressions"
         [
