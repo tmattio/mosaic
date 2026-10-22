@@ -153,54 +153,9 @@ let power_up_modes =
 (* Tab stops every eight columns, as at power-up. *)
 let default_tabs cols = Array.init cols (fun i -> i > 0 && i mod 8 = 0)
 let empty_line = { text = ""; cells = ""; styles = [||]; wrapped = false }
-
-let create ?(scrollback = 10000) ?(width_method = `Unicode)
-    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ~rows
-    ~cols () =
-  let rows = max 1 rows and cols = max 1 cols in
-  let screen () =
-    let grid = Grid.create ~width:cols ~height:rows ~width_method () in
-    Grid.clear ~color:default_bg grid;
-    { grid; wrapped = Bytes.make rows '\000'; saved = power_up }
-  in
-  {
-    rows;
-    cols;
-    primary = screen ();
-    alternate = screen ();
-    history =
-      { lines = Array.make (max 0 scrollback) empty_line; head = 0; count = 0 };
-    cursor = { row = 0; col = 0; last_column = false };
-    pen = plain_pen;
-    charsets = ascii_sets;
-    modes = power_up_modes;
-    margins = { top = 0; bottom = rows - 1 };
-    tabs = default_tabs cols;
-    title = "";
-    cluster =
-      {
-        seg = Text.Segmenter.create width_method;
-        text = Bytes.create 16;
-        len = 0;
-        width = 0;
-        grown = false;
-        at = Nowhere;
-        row = 0;
-        col = 0;
-        cells = 0;
-        prev = "";
-      };
-    default_fg;
-    default_bg;
-    parser = Ansi.Parser.create ();
-    osc = Osc_skip;
-    osc_text = Buffer.create 64;
-    replies = Buffer.create 16;
-    dirty = { any = false; cursor = false; rows = Bytes.make rows '\000' };
-  }
-
 let screen t = if t.modes.alternate_screen then t.alternate else t.primary
 let grid t = (screen t).grid
+let full_margins t = { top = 0; bottom = t.rows - 1 }
 
 (* A colour of the pen, or the default for none and for SGR 39/49. *)
 let resolve ~default = function
@@ -216,6 +171,11 @@ let protected_yes = Some true
 let protection t = if t.pen.protected then protected_yes else None
 
 (* {1:dirty Changes} *)
+
+let clear_dirty t =
+  t.dirty.any <- false;
+  t.dirty.cursor <- false;
+  Bytes.fill t.dirty.rows 0 t.rows '\000'
 
 let touch_row t row =
   t.dirty.any <- true;
@@ -926,7 +886,7 @@ let decstbm t top bottom =
 let decaln t =
   t.modes <- { t.modes with origin = false };
   t.pen <- { t.pen with style = Ansi.Style.default };
-  t.margins <- { top = 0; bottom = t.rows - 1 };
+  t.margins <- full_margins t;
   let g = grid t in
   for y = 0 to t.rows - 1 do
     for x = 0 to t.cols - 1 do
@@ -1030,10 +990,64 @@ let ris t =
   set_cursor t ~row:0 ~col:0 ~last_column:false;
   t.pen <- plain_pen;
   t.charsets <- ascii_sets;
-  t.margins <- { top = 0; bottom = t.rows - 1 };
+  t.margins <- full_margins t;
   t.tabs <- default_tabs t.cols;
   t.title <- "";
   touch_rows t 0 (t.rows - 1)
+
+(* The structure, which RIS gives its power-up state. *)
+let create ?(scrollback = 10000) ?(width_method = `Unicode)
+    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ~rows
+    ~cols () =
+  let rows = max 1 rows and cols = max 1 cols in
+  let screen () =
+    let grid = Grid.create ~width:cols ~height:rows ~width_method () in
+    { grid; wrapped = Bytes.make rows '\000'; saved = power_up }
+  in
+  let t =
+    {
+      rows;
+      cols;
+      primary = screen ();
+      alternate = screen ();
+      history =
+        {
+          lines = Array.make (max 0 scrollback) empty_line;
+          head = 0;
+          count = 0;
+        };
+      cursor = { row = 0; col = 0; last_column = false };
+      pen = plain_pen;
+      charsets = ascii_sets;
+      modes = power_up_modes;
+      margins = { top = 0; bottom = 0 };
+      tabs = [||];
+      title = "";
+      cluster =
+        {
+          seg = Text.Segmenter.create width_method;
+          text = Bytes.create 16;
+          len = 0;
+          width = 0;
+          grown = false;
+          at = Nowhere;
+          row = 0;
+          col = 0;
+          cells = 0;
+          prev = "";
+        };
+      default_fg;
+      default_bg;
+      parser = Ansi.Parser.create ();
+      osc = Osc_skip;
+      osc_text = Buffer.create 64;
+      replies = Buffer.create 16;
+      dirty = { any = false; cursor = false; rows = Bytes.make rows '\000' };
+    }
+  in
+  ris t;
+  clear_dirty t;
+  t
 
 (* DECSTR: the settings, the pen and the character sets to their power-up
    values (VT510 DECSTR, Table 5-9), autowrap on as at power-up. *)
@@ -1041,15 +1055,11 @@ let decstr t =
   set_cursor_visible t true;
   t.modes <-
     {
-      t.modes with
-      insert = false;
-      origin = false;
-      auto_wrap = true;
-      reverse_wrap = false;
-      cursor_keys = false;
-      national = false;
+      power_up_modes with
+      bracketed_paste = t.modes.bracketed_paste;
+      alternate_screen = t.modes.alternate_screen;
     };
-  t.margins <- { top = 0; bottom = t.rows - 1 };
+  t.margins <- full_margins t;
   t.pen <- plain_pen;
   t.charsets <- ascii_sets;
   t.primary.saved <- power_up;
@@ -1391,7 +1401,7 @@ let resize t ~rows ~cols =
     t.rows <- rows;
     t.cols <- cols;
     t.tabs <- tabs;
-    t.margins <- { top = 0; bottom = rows - 1 };
+    t.margins <- full_margins t;
     t.dirty.rows <- Bytes.make rows '\001';
     t.dirty.any <- true;
     t.dirty.cursor <- true;
@@ -1458,11 +1468,6 @@ let dirty_rows t =
   !rows
 
 let is_cursor_dirty t = t.dirty.cursor
-
-let clear_dirty t =
-  t.dirty.any <- false;
-  t.dirty.cursor <- false;
-  Bytes.fill t.dirty.rows 0 t.rows '\000'
 
 let to_string t =
   let g = grid t in
