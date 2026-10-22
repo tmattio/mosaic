@@ -2325,7 +2325,21 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
   in
   let chars s = List.init (String.length s) (String.get s) in
   let non_ascii = String.exists (fun c -> Char.code c >= 0x80) t.bytes in
-  let national = occurs before "\027[?42h" in
+  (* National mode is on: DECSET 42 came after the last DECRST 42, RIS and
+     DECSTR. *)
+  let last_index sub =
+    let m = String.length sub in
+    let rec go i =
+      if i < 0 then -1 else if String.sub before i m = sub then i else go (i - 1)
+    in
+    go (String.length before - m)
+  in
+  let national =
+    last_index "\027[?42h"
+    > List.fold_left max (-1)
+        (List.map last_index [ "\027[?42l"; "\027c"; "\027[!p" ])
+  in
+  let national_ever = occurs before "\027[?42h" in
   let vt_level () =
     ctx.decid < 200
     && forms_any
@@ -2462,8 +2476,8 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
     in
     go (max 0 (n - 3))
   in
-  let nrcm () = non_ascii && national in
-  let ris () = national && forms "\027c" in
+  let nrcm () = non_ascii && national_ever in
+  let ris () = national_ever && forms "\027c" in
   not
     ((vt_level () && not (reject "vt-level"))
     || (s8c1t () && not (reject "s8c1t"))
