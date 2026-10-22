@@ -1308,9 +1308,10 @@ let rewrite ctx bytes =
         x >= col && (Vte_adapter.cell m ~row ~col:(x + 1)).cont
       else false
     in
-    feed bytes;
+    (* Before the character, which may scroll the cell. *)
     lose !pending_lost;
     pending_lost := None;
+    feed bytes;
     if insert_push then (
       fire ctx "margin-cut-wide";
       Vte_adapter.tag tags ~protected:true ~text:lost_tag [ (row, c.cols - 1) ]);
