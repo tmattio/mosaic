@@ -57,10 +57,13 @@ plain. Language aliases, filename extensions, and caching on
 Construct a highlighter once and reuse it across renders and code blocks.
 `threaded f` serializes calls to `f` on at most one worker systhread per
 highlighter. The worker starts when needed and exits when its queue empties.
-Only live requests remain queued: replacing content, changing syntax, or
-destroying a code widget removes its pending request. Cancellation cannot
-interrupt a running function; its result is discarded. A slow running call
-therefore delays later requests on the same highlighter.
+Each code view has at most one request queued or running. Content and syntax
+changes made meanwhile coalesce into a single follow-up request, sent when that
+one completes; its result, though obsolete, still styles the bytes the current
+content shares with it. Destroying a code view cancels its request: a queued
+request is removed, and a running call, which cannot be interrupted, has its
+result discarded. A slow running call therefore delays later requests on the
+same highlighter.
 
 The worker publishes immutable ranges and schedules a render. Polling applies
 them on the rendering thread. Exceptions produce plain text for that request;
@@ -70,15 +73,16 @@ concurrency, not CPU parallelism; native code that retains the OCaml runtime
 lock can still block rendering. Use `Highlighter.async` with your own
 poll/cancel jobs for a different scheduler or a worker process.
 
-A highlighter is a resource: `Code` compares highlighters by physical
-identity, so create one at module scope or in the model, never during a render.
-Styles and syntax settings are values and may be rebuilt on every render; an
-equal style changes nothing. Theme changes reuse the completed captures and source
-index without restarting the highlighter. Pending results use the latest
-accepted theme. While a result is pending, the view shows its current content
-and keeps the latest result's styling on the bytes they share, so a streaming
-fence keeps its highlighted prefix (see `Code.with_highlighter`). A result bound to different source bytes is rejected and the
-current source renders as plain text.
+A highlighter is a resource: `Code`, `Diff` and `Markdown` compare
+highlighters by physical identity, so create one at module scope or in the
+model, never during a render. Styles and syntax settings are values and may be
+rebuilt on every render; an equal style changes nothing. Theme changes reuse
+the completed captures and source index without restarting the highlighter.
+Pending results use the latest accepted theme. While a result is pending, the
+view shows its current content and keeps the latest result's styling on the
+bytes they share, so a streaming fence keeps its highlighted prefix (see
+`Code.with_highlighter`). A result whose captures are bound to bytes other than
+its request's content is rejected, and the source renders as plain text.
 
 ## Scope names and styling
 
@@ -90,8 +94,7 @@ The normative vocabulary is documented in
 Normalize backend-specific capture names into those categories; fields are
 `property`, which some query collections call `variable.member`. Dotted
 refinements resolve through their parents: `function.builtin` falls back to
-`function`.
-Unknown scopes are retained and fall back to the base style; applications may
+`function`. Unknown scopes are retained and fall back to the base style; applications may
 style their own extensions explicitly.
 
 Start with `Syntax_style.default`, or provide a palette:
