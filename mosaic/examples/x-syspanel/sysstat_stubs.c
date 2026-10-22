@@ -766,9 +766,15 @@ CAMLprim value caml_sysstat_getmounts(value unit) {
   while ((mnt = getmntent(f)) != NULL) {
     if (count >= capacity) {
       capacity *= 2;
+      /* Keep each array valid as soon as it is moved, so the cleanup below
+         never reads one that realloc freed. */
       char** new_dirs = realloc(dirs, capacity * sizeof(char*));
-      char** new_devs = realloc(devs, capacity * sizeof(char*));
-      char** new_types = realloc(types, capacity * sizeof(char*));
+      if (new_dirs) dirs = new_dirs;
+      char** new_devs = new_dirs ? realloc(devs, capacity * sizeof(char*)) : NULL;
+      if (new_devs) devs = new_devs;
+      char** new_types =
+          new_devs ? realloc(types, capacity * sizeof(char*)) : NULL;
+      if (new_types) types = new_types;
       if (!new_dirs || !new_devs || !new_types) {
         /* Clean up on allocation failure */
         for (int j = 0; j < count; j++) {
@@ -776,16 +782,13 @@ CAMLprim value caml_sysstat_getmounts(value unit) {
           free(devs[j]);
           free(types[j]);
         }
-        free(new_dirs ? new_dirs : dirs);
-        free(new_devs ? new_devs : devs);
-        free(new_types ? new_types : types);
+        free(dirs);
+        free(devs);
+        free(types);
         endmntent(f);
         result = caml_alloc(0, 0);
         CAMLreturn(result);
       }
-      dirs = new_dirs;
-      devs = new_devs;
-      types = new_types;
     }
     dirs[count] = strdup(mnt->mnt_dir);
     devs[count] = strdup(mnt->mnt_fsname);
