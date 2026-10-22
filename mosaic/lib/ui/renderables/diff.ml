@@ -333,7 +333,7 @@ module View = struct
     if b <= 0 then 0
     else begin
       let gi = ref 0 in
-      Matrix.Text.iter_grapheme_info ~width_method:`Unicode ~tab_width:1
+      Matrix.Text.iter_units ~width_method:`Unicode ~tab_width:1
         (fun ~offset ~len:_ ~width:_ -> if offset < b then incr gi)
         content;
       !gi

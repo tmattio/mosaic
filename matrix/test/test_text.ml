@@ -203,7 +203,7 @@ let grapheme_iteration () =
 
 let grapheme_info_skips_zero_width () =
   let seen = ref [] in
-  iter_grapheme_info ~width_method:`Unicode ~tab_width:2
+  iter_units ~width_method:`Unicode ~tab_width:2
     (fun ~offset ~len ~width -> seen := (offset, len, width) :: !seen)
     ("a" ^ "\u{200B}" ^ "界");
   equal ~msg:"zero-width grapheme is skipped"
@@ -213,7 +213,7 @@ let grapheme_info_skips_zero_width () =
 
 let grapheme_info_ascii_base_with_combining_mark () =
   let seen = ref [] in
-  iter_grapheme_info ~width_method:`Unicode ~tab_width:2
+  iter_units ~width_method:`Unicode ~tab_width:2
     (fun ~offset ~len ~width -> seen := (offset, len, width) :: !seen)
     "e\u{0301}x";
   equal ~msg:"e + U+0301 is one 3-byte cluster"
@@ -221,7 +221,7 @@ let grapheme_info_ascii_base_with_combining_mark () =
     [ (0, 3, 1); (3, 1, 1) ]
     (List.rev !seen);
   let seen = ref [] in
-  iter_grapheme_info ~width_method:`Unicode ~tab_width:2
+  iter_units ~width_method:`Unicode ~tab_width:2
     (fun ~offset ~len ~width -> seen := (offset, len, width) :: !seen)
     "abce\u{0301}";
   equal ~msg:"mark extends the last byte of an ASCII run"
@@ -270,9 +270,9 @@ let line_break_testable =
 
 let position_testable =
   Testable.make
-    ~pp:(fun ppf { byte_offset; grapheme_count; columns_used } ->
-      Format.fprintf ppf "{byte_offset=%d; grapheme_count=%d; columns_used=%d}"
-        byte_offset grapheme_count columns_used)
+    ~pp:(fun ppf { byte_offset; units; columns_used } ->
+      Format.fprintf ppf "{byte_offset=%d; units=%d; columns_used=%d}"
+        byte_offset units columns_used)
     ~equal:( = )
 
 let wrap_breaks_ascii_spaces () =
@@ -564,21 +564,21 @@ let wcwidth_position_semantics () =
   equal ~msg:"wcwidth ZWJ codepoint" int 0
     (width_at ~width_method:`Wcwidth ~tab_width:4 zwj ~byte_offset:4);
   equal ~msg:"wcwidth find_pos snap back" position_testable
-    { byte_offset = 2; grapheme_count = 2; columns_used = 2 }
+    { byte_offset = 2; units = 2; columns_used = 2 }
     (find_pos ~width_method:`Wcwidth ~tab_width:4 "AB👋🏿CD" ~columns:3);
   equal ~msg:"wcwidth find_pos include start" position_testable
-    { byte_offset = 6; grapheme_count = 3; columns_used = 4 }
+    { byte_offset = 6; units = 3; columns_used = 4 }
     (find_pos ~width_method:`Wcwidth ~tab_width:4 ~include_start_before:true
        "AB👋🏿CD" ~columns:3);
   equal ~msg:"wcwidth wrap through emoji" position_testable
-    { byte_offset = 6; grapheme_count = 3; columns_used = 4 }
+    { byte_offset = 6; units = 3; columns_used = 4 }
     (find_wrap_pos ~width_method:`Wcwidth ~tab_width:4 "Hi👋🏿Bye" ~max_columns:4)
 
 let malformed_wcwidth_positions () =
   let text = "\xF0\x9F" in
   equal ~msg:"position uses the measurement replacement policy"
     position_testable
-    { byte_offset = 2; grapheme_count = 1; columns_used = 1 }
+    { byte_offset = 2; units = 1; columns_used = 1 }
     (find_pos ~width_method:`Wcwidth ~tab_width:2 text ~columns:2)
 
 let wcwidth_decoder_matches_stdlib () =
@@ -595,7 +595,7 @@ let wcwidth_decoder_matches_stdlib () =
     let actual =
       find_pos ~width_method:`Wcwidth ~tab_width:2 text ~columns:max_int
     in
-    equal ~msg:"maximal-subpart count" int !count actual.grapheme_count;
+    equal ~msg:"maximal-subpart count" int !count actual.units;
     equal ~msg:"measurement agrees" int
       (measure ~width_method:`Wcwidth ~tab_width:2 text)
       actual.columns_used
@@ -635,27 +635,27 @@ let wcwidth_decoder_matches_stdlib () =
 let unicode_position_semantics () =
   let input = "A🌍B世C" in
   equal ~msg:"find_pos after ASCII" position_testable
-    { byte_offset = 1; grapheme_count = 1; columns_used = 1 }
+    { byte_offset = 1; units = 1; columns_used = 1 }
     (find_pos ~width_method:`Unicode ~tab_width:8 input ~columns:2);
   equal ~msg:"find_pos include start before wide" position_testable
-    { byte_offset = 5; grapheme_count = 2; columns_used = 3 }
+    { byte_offset = 5; units = 2; columns_used = 3 }
     (find_pos ~width_method:`Unicode ~tab_width:8 ~include_start_before:true
        input ~columns:2);
   equal ~msg:"find_wrap_pos includes fitting wide grapheme" position_testable
-    { byte_offset = 5; grapheme_count = 2; columns_used = 3 }
+    { byte_offset = 5; units = 2; columns_used = 3 }
     (find_wrap_pos ~width_method:`Unicode ~tab_width:8 input ~max_columns:3);
   equal ~msg:"find_wrap_pos stops before too-wide grapheme" position_testable
-    { byte_offset = 1; grapheme_count = 1; columns_used = 1 }
+    { byte_offset = 1; units = 1; columns_used = 1 }
     (find_wrap_pos ~width_method:`Unicode ~tab_width:8 input ~max_columns:2);
   equal ~msg:"combining mark included" position_testable
-    { byte_offset = 6; grapheme_count = 4; columns_used = 4 }
+    { byte_offset = 6; units = 4; columns_used = 4 }
     (find_pos ~width_method:`Unicode ~tab_width:8 "cafe\u{0301}test" ~columns:4);
   equal ~msg:"malformed offsets" position_testable
-    { byte_offset = 1; grapheme_count = 1; columns_used = 1 }
+    { byte_offset = 1; units = 1; columns_used = 1 }
     (find_wrap_pos ~width_method:`Unicode ~tab_width:8 "\xC3(" ~max_columns:1);
   (* No columns still hold the units of no width before the first that has
      one. *)
-  let none = { byte_offset = 3; grapheme_count = 0; columns_used = 0 } in
+  let none = { byte_offset = 3; units = 0; columns_used = 0 } in
   List.iter
     (fun m ->
       equal ~msg:"zero-width unit in no columns" position_testable none
@@ -665,7 +665,7 @@ let unicode_position_semantics () =
         (find_pos ~width_method:m ~tab_width:8 "\u{200B}\u{4E2D}" ~columns:(-1)))
     [ `Unicode; `Unicode_wide; `Wcwidth ];
   equal ~msg:"an ASCII control in no columns" position_testable
-    { byte_offset = 1; grapheme_count = 0; columns_used = 0 }
+    { byte_offset = 1; units = 0; columns_used = 0 }
     (find_wrap_pos ~width_method:`Unicode ~tab_width:8 "\x01a" ~max_columns:0)
 
 let emoji_presentation_widths () =
@@ -1221,12 +1221,11 @@ let folds_agree_with_segmenter () =
             List.rev !out
           in
           let visited = ref [] in
-          iter_grapheme_info ~width_method:m ~tab_width:2
+          iter_units ~width_method:m ~tab_width:2
             (fun ~offset ~len ~width ->
               visited := (offset, len, width) :: !visited)
             text;
-          equal
-            ~msg:(msg ^ " iter_grapheme_info")
+          equal ~msg:(msg ^ " iter_units")
             (list (triple int int int))
             expected (List.rev !visited);
           let total =
@@ -1249,14 +1248,14 @@ let folds_agree_with_segmenter () =
             equal
               ~msg:(Printf.sprintf "%s find_wrap_pos %d" msg columns)
               (triple int int int) (fit 0 0 expected)
-              (p.byte_offset, p.grapheme_count, p.columns_used)
+              (p.byte_offset, p.units, p.columns_used)
           done;
           let p =
             find_wrap_pos ~width_method:m ~tab_width:2 text ~max_columns:max_int
           in
           equal ~msg:(msg ^ " find_wrap_pos") (pair int int)
             (List.length expected, total)
-            (p.grapheme_count, p.columns_used))
+            (p.units, p.columns_used))
         texts)
     methods
 

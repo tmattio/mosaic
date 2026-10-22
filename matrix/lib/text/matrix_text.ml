@@ -2,7 +2,7 @@ open StdLabels
 
 type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
 type line_break_kind = [ `LF | `CR | `CRLF ]
-type position = { byte_offset : int; grapheme_count : int; columns_used : int }
+type position = { byte_offset : int; units : int; columns_used : int }
 
 let default_tab_width = 2
 
@@ -438,7 +438,7 @@ let iter_graphemes f str =
     iter_graphemes_unicode seg str len f (Uchar.utf_decode_length d) 0
 
 (* The fold of {!Segmenter} that visits units of positive width. *)
-let rec iter_units f seg ~wide ~wcwidth str len tab i start u =
+let rec visit_units f seg ~wide ~wcwidth str len tab i start u =
   if i >= len then begin
     let w = unit_width u in
     if w > 0 then f ~offset:start ~len:(len - start) ~width:w
@@ -453,7 +453,7 @@ let rec iter_units f seg ~wide ~wcwidth str len tab i start u =
         f ~offset:j ~len:1 ~width:1
       done;
       if not ends then
-        iter_units f seg ~wide ~wcwidth str len tab (i + k)
+        visit_units f seg ~wide ~wcwidth str len tab (i + k)
           (i + k - 1)
           (after_ascii_run seg ~wcwidth str i k)
     end
@@ -465,28 +465,27 @@ let rec iter_units f seg ~wide ~wcwidth str len tab i start u =
       if unit_starts u' && i > start then begin
         let w = unit_width u in
         if w > 0 then f ~offset:start ~len:(i - start) ~width:w;
-        iter_units f seg ~wide ~wcwidth str len tab next i u'
+        visit_units f seg ~wide ~wcwidth str len tab next i u'
       end
-      else iter_units f seg ~wide ~wcwidth str len tab next start u'
+      else visit_units f seg ~wide ~wcwidth str len tab next start u'
 
-let iter_grapheme_info ~width_method ~tab_width f str =
+let iter_units ~width_method ~tab_width f str =
   let tab_width = normalize_tab_width tab_width in
   let len = Stdlib.String.length str in
   if len > 0 then
-    iter_units f (unit_seg width_method)
+    visit_units f (unit_seg width_method)
       ~wide:(width_method = `Unicode_wide)
       ~wcwidth:(width_method = `Wcwidth) str len tab_width 0 0 0
 
 (* Width-position helpers *)
 
-let zero_position = { byte_offset = 0; grapheme_count = 0; columns_used = 0 }
+let zero_position = { byte_offset = 0; units = 0; columns_used = 0 }
 
 (* Top-level loops share fitting and positioning without allocating a closure
    for each query. *)
 let rec find_pos_ascii str len tab_width include_start_before columns i count
     used =
-  if i >= len then
-    { byte_offset = len; grapheme_count = count; columns_used = used }
+  if i >= len then { byte_offset = len; units = count; columns_used = used }
   else
     let width = ascii_width ~tab_width (Char.code (String.unsafe_get str i)) in
     if width <= 0 then
@@ -497,7 +496,7 @@ let rec find_pos_ascii str len tab_width include_start_before columns i count
       if
         (include_start_before && used >= columns)
         || ((not include_start_before) && next_used > columns)
-      then { byte_offset = i; grapheme_count = count; columns_used = used }
+      then { byte_offset = i; units = count; columns_used = used }
       else
         find_pos_ascii str len tab_width include_start_before columns (i + 1)
           (count + 1) next_used
@@ -515,21 +514,16 @@ let rec find_units seg ~wide ~wcwidth str len tab isb columns i start count used
     let w = unit_width u in
     if w > 0 && start < len then
       if not (fits ~isb ~columns used w) then
-        { byte_offset = start; grapheme_count = count; columns_used = used }
-      else
-        {
-          byte_offset = len;
-          grapheme_count = count + 1;
-          columns_used = used + w;
-        }
-    else { byte_offset = len; grapheme_count = count; columns_used = used }
+        { byte_offset = start; units = count; columns_used = used }
+      else { byte_offset = len; units = count + 1; columns_used = used + w }
+    else { byte_offset = len; units = count; columns_used = used }
   else
     let k = ascii_run ~final:true seg ~wcwidth ~ascii_left:false u str i len in
     if k > 0 then
       let w = unit_width u in
       let closes = i > start && w > 0 in
       if closes && not (fits ~isb ~columns used w) then
-        { byte_offset = start; grapheme_count = count; columns_used = used }
+        { byte_offset = start; units = count; columns_used = used }
       else
         let count, used =
           if closes then (count + 1, used + w) else (count, used)
@@ -539,11 +533,7 @@ let rec find_units seg ~wide ~wcwidth str len tab isb columns i start count used
         let complete = if ends then k else k - 1 in
         let n = min complete (max 0 (columns - used)) in
         if n < complete || ends then
-          {
-            byte_offset = i + n;
-            grapheme_count = count + n;
-            columns_used = used + n;
-          }
+          { byte_offset = i + n; units = count + n; columns_used = used + n }
         else
           find_units seg ~wide ~wcwidth str len tab isb columns (i + k)
             (i + k - 1)
@@ -560,7 +550,7 @@ let rec find_units seg ~wide ~wcwidth str len tab isb columns i start count used
           find_units seg ~wide ~wcwidth str len tab isb columns next i count
             used u'
         else if not (fits ~isb ~columns used w) then
-          { byte_offset = start; grapheme_count = count; columns_used = used }
+          { byte_offset = start; units = count; columns_used = used }
         else
           find_units seg ~wide ~wcwidth str len tab isb columns next i
             (count + 1) (used + w) u'

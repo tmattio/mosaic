@@ -1161,10 +1161,10 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
           end
         in
 
-        (* Text.iter_grapheme_info skips units of no width, controls among
+        (* Text.iter_units skips units of no width, controls among
            them: no cell holds a control. *)
         try
-          Text.iter_grapheme_info ~width_method ~tab_width:tabw
+          Text.iter_units ~width_method ~tab_width:tabw
             (fun ~offset ~len ~width:w ->
               let start_x = !cur_x in
               let end_x = start_x + w in

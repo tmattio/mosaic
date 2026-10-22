@@ -24,11 +24,10 @@ type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
 type line_break_kind = [ `LF | `CR | `CRLF ]
 (** The type for line terminators. *)
 
-type position = { byte_offset : int; grapheme_count : int; columns_used : int }
+type position = { byte_offset : int; units : int; columns_used : int }
 (** The type for a byte position found by display width.
 
-    [grapheme_count] counts the display units of positive width before
-    [byte_offset]. *)
+    [units] counts the display units of positive width before [byte_offset]. *)
 
 val uchar_width : tab_width:int -> Uchar.t -> int
 (** [uchar_width ~tab_width u] is the display width of [u] in isolation.
@@ -60,8 +59,8 @@ val uchar_width : tab_width:int -> Uchar.t -> int
     ({{:https://www.unicode.org/reports/tr51/}UTS #51} §4), does not narrow an
     emoji already two cells wide.
 
-    {!measure}, {!iter_grapheme_info}, {!find_wrap_pos}, {!find_pos} and
-    {!width_at} measure these units, with a TAB [tab_width] cells wide. *)
+    {!measure}, {!iter_units}, {!find_wrap_pos}, {!find_pos} and {!width_at}
+    measure these units, with a TAB [tab_width] cells wide. *)
 
 module Segmenter : sig
   type t
@@ -138,16 +137,15 @@ val iter_graphemes : (offset:int -> len:int -> unit) -> string -> unit
     [s]. Invalid UTF-8 byte sequences are treated as individual replacement
     characters. *)
 
-val iter_grapheme_info :
+val iter_units :
   width_method:width_method ->
   tab_width:int ->
   (offset:int -> len:int -> width:int -> unit) ->
   string ->
   unit
-(** [iter_grapheme_info ~width_method ~tab_width f s] calls
-    [f ~offset ~len ~width] for each display unit of [s] of positive width, in
-    order. A TAB is [tab_width] wide. Invalid UTF-8 byte sequences are treated
-    as U+FFFD. *)
+(** [iter_units ~width_method ~tab_width f s] calls [f ~offset ~len ~width] for
+    each display unit of [s] of positive width, in order. A TAB is [tab_width]
+    wide. Invalid UTF-8 byte sequences are treated as U+FFFD. *)
 
 val iter_wrap_breaks :
   (break_byte_offset:int -> next_byte_offset:int -> grapheme_offset:int -> unit) ->
