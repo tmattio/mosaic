@@ -339,43 +339,28 @@ val unset_selection : t -> unit
 val selectable : t -> bool
 (** [selectable t] is [true] iff [t] has selection callbacks registered. *)
 
-(** {1:line_info Line information} *)
+(** {1:text_rows Text rows} *)
 
-type line_info = {
-  line_count : int;
-  display_line_count : int;
-  logical_line : int -> int;
-  continuation : int -> int;
-  scroll_y : int;
-}
-(** The type for display line metrics used by line-numbering widgets.
-    - [line_count]: number of logical lines.
-    - [display_line_count]: number of visual lines after wrapping.
-    - [logical_line i]: logical line index for display line [i].
-    - [continuation i]: sub-line index within the logical line — [0] for the
-      first display line, [1] for the first continuation, and so on.
-    - [scroll_y]: vertical scroll offset in display lines. *)
+type text_rows = { layout : Matrix.Text.Layout.t; scroll_y : int }
+(** The type for the rows a text node shows.
+    - [layout] is the node's current geometry: one immutable value whose counts
+      and row queries all describe the same source and width. Its rows are
+      absolute visual rows, before scrolling.
+    - [scroll_y] is the absolute row shown at the node's top edge.
 
-val set_line_info_provider : t -> (unit -> line_info) option -> unit
-(** [set_line_info_provider t f] registers a function that supplies line metrics
-    for [t]. Used by composite widgets (e.g. line-number gutters) to read
-    display line information from a content child without coupling to its
-    concrete type. [None] clears the provider. *)
+    A row [r] of the node's own coordinates is the layout's row [scroll_y + r].
+    Read only the rows you draw, with {!Matrix.Text.Layout.iter_rows}; a reader
+    never needs every row unless it aligns the whole text. *)
 
-val line_info : t -> line_info option
-(** [line_info t] is the current line metrics from [t]'s provider, or [None] if
-    no provider is registered. *)
+val set_text_rows_provider : t -> (unit -> text_rows) option -> unit
+(** [set_text_rows_provider t f] registers a function that supplies [t]'s rows.
+    Composite widgets, such as line-number gutters, read a content child's rows
+    through it without depending on the child's concrete type. [None] clears the
+    provider. *)
 
-val iter_lines :
-  t ->
-  first:int ->
-  count:int ->
-  (row:int -> logical_line:int -> continuation:int -> unit) ->
-  unit
-(** [iter_lines t ~first ~count f] observes bounded absolute visual rows against
-    one provider revision. Negative counts visit nothing; [first] is clamped. A
-    provider's counts, scroll origin and query functions describe one geometry
-    value and remain consistent for this iteration. *)
+val text_rows : t -> text_rows option
+(** [text_rows t] is the current rows from [t]'s provider, or [None] if no
+    provider is registered. *)
 
 (** {1:pending_work Pending render work} *)
 

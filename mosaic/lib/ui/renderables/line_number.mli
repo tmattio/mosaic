@@ -2,7 +2,7 @@
 
     A composite container that pairs a line number gutter with a content area.
     Children are routed to the content area via {!Renderable.child_target}. On
-    render, the gutter discovers the first child with a {!Renderable.line_info}
+    render, the gutter discovers the first child with a {!Renderable.text_rows}
     provider and draws line numbers accordingly.
 
     The gutter renders line numbers, optional signs, and per-line background

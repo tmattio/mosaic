@@ -995,7 +995,7 @@ val line_number :
   'msg t ->
   'msg t
 (** [line_number child] is a line-number gutter container wrapping [child]. The
-    gutter discovers the child via a {!Renderable.line_info} provider and draws
+    gutter discovers the child via a {!Renderable.text_rows} provider and draws
     line numbers accordingly.
 
     Line_number-specific attributes:

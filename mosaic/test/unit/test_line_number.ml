@@ -94,6 +94,51 @@ let signs_reserve_measured_width () =
   equal ~msg:"line number shifted past the sign column" string "1"
     (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:3 ~y:0))
 
+let gutter_text grid ~y =
+  String.concat ""
+    (List.init 3 (fun x ->
+         Matrix_grid.get_text grid (Matrix_grid.idx grid ~x ~y)))
+
+let gutter_numbers_follow_scrolled_rows () =
+  (* The gutter reads the content's rows from its scroll origin, so the first
+     visible row of a scrolled editor is numbered by its own logical line. *)
+  let renderer = Renderer.create () in
+  let ln = Line_number.create ~parent:(Renderer.root renderer) () in
+  let state =
+    Editor.of_string "a\nb\nc\nd\ne"
+    |> Editor.with_viewport ~x:0 ~y:2 ~follow:false
+  in
+  let (_ : Textarea.t) =
+    Textarea.create ~parent:(Line_number.node ln)
+      ~style:
+        (Toffee.Style.make
+           ~size:
+             (Toffee.Geometry.Size.make Toffee.Style.Dimension.auto
+                (Toffee.Style.Dimension.length 3.))
+           ())
+      ~state
+      ~on_change:(fun _ -> ())
+      ()
+  in
+  let grid = render renderer in
+  equal ~msg:"first visible row" string " 3 " (gutter_text grid ~y:0);
+  equal ~msg:"last visible row" string " 5 " (gutter_text grid ~y:2)
+
+let gutter_numbers_only_first_rows () =
+  (* A wrapped continuation shows no number; the next logical line keeps its
+     own. *)
+  let renderer = Renderer.create () in
+  let ln = Line_number.create ~parent:(Renderer.root renderer) () in
+  let (_ : Text.t) =
+    Text.create ~parent:(Line_number.node ln) ~wrap:`Char
+      ~content:(String.make 30 'x' ^ "\ny")
+      ()
+  in
+  let grid = render renderer in
+  equal ~msg:"wrapped line numbered once" string " 1 " (gutter_text grid ~y:0);
+  equal ~msg:"continuation unnumbered" string "   " (gutter_text grid ~y:1);
+  equal ~msg:"next line" string " 2 " (gutter_text grid ~y:2)
+
 (* ── Runner ── *)
 
 let () =
@@ -111,5 +156,8 @@ let () =
           test "apply_props refreshes line colors"
             apply_props_refreshes_line_colors;
           test "signs reserve measured width" signs_reserve_measured_width;
+          test "numbers follow scrolled rows"
+            gutter_numbers_follow_scrolled_rows;
+          test "numbers only first rows" gutter_numbers_only_first_rows;
         ];
     ]

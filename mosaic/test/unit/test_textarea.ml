@@ -238,13 +238,16 @@ let create_surface_accessible () =
   let _surface = Textarea.surface ta in
   is_true ~msg:"surface accessible" true
 
-let create_registers_line_info_provider () =
+let create_registers_text_rows_provider () =
   let _t, ta = make_textarea ~value:"one\ntwo\nthree" () in
-  match Renderable.line_info (Textarea.node ta) with
-  | None -> fail "expected line info provider"
-  | Some info ->
-      equal ~msg:"line count" int 3 info.Renderable.line_count;
-      ge ~msg:"display lines" ~than:3 info.display_line_count
+  match Renderable.text_rows (Textarea.node ta) with
+  | None -> fail "expected text rows provider"
+  | Some rows ->
+      let layout = rows.Renderable.layout in
+      equal ~msg:"line count" int 3
+        (Matrix_text.Layout.Source.line_count
+           (Matrix_text.Layout.source layout));
+      ge ~msg:"display lines" ~than:3 (Matrix_text.Layout.row_count layout)
 
 let focus_repaints_without_changing_geometry () =
   let ctx, ta =
@@ -1152,7 +1155,7 @@ let () =
           test "buffer accessible" create_buffer_accessible;
           test "surface accessible" create_surface_accessible;
           test "registers line info provider"
-            create_registers_line_info_provider;
+            create_registers_text_rows_provider;
         ];
       group "Paint"
         [

@@ -260,7 +260,7 @@ let async_clear_discards_pending_request () =
   equal string "pending" (Text_buffer.plain_text (Code.buffer code));
   is_false (Code.is_highlighting code)
 
-let async_line_info_stabilizes_on_completion () =
+let async_rows_stabilize_on_completion () =
   let jobs, highlighter = async_highlighter () in
   let syntax =
     Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
@@ -268,7 +268,7 @@ let async_line_info_stabilizes_on_completion () =
   in
   let _ctx, code = make_code ~content:"let x" ~syntax () in
   let changes = ref 0 in
-  Code.set_on_line_info_change code (Some (fun () -> incr changes));
+  Code.set_on_rows_change code (Some (fun () -> incr changes));
   is_true ~msg:"pending line info" (Code.is_highlighting code);
   complete (List.hd !jobs) (Ok highlights);
   equal ~msg:"callback waits for polling" int 0 !changes;
@@ -635,7 +635,7 @@ let equivalent_capture_declaration_does_not_repaint () =
   in
   ignore ctx;
   let notifications = ref 0 in
-  Code.set_on_line_info_change code (Some (fun () -> incr notifications));
+  Code.set_on_rows_change code (Some (fun () -> incr notifications));
   let fresh =
     Syntax_highlight.of_triples
       ~content:(String.init 5 (String.get "let x"))
@@ -677,7 +677,7 @@ let () =
           test "async clear discards pending request"
             async_clear_discards_pending_request;
           test "async line info stabilizes on completion"
-            async_line_info_stabilizes_on_completion;
+            async_rows_stabilize_on_completion;
           test "async starter exception falls back to plain text"
             async_starter_exception_falls_back_to_plain_text;
           test "async poll exception falls back to plain text"

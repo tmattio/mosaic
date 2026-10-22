@@ -186,7 +186,7 @@ type t = {
   mutable latest : Syntax_highlight.t option;
       (* The latest captures of the current producer. While a result is
          pending they describe an earlier content. *)
-  mutable on_line_info_change : (unit -> unit) option;
+  mutable on_rows_change : (unit -> unit) option;
 }
 
 and running_job = {
@@ -202,10 +202,8 @@ let node t = Text_renderable.node t.text
 let buffer t = Text_renderable.buffer t.text
 let surface t = Text_renderable.surface t.text
 let set_on_selection t h = Text_renderable.set_on_selection t.text h
-let set_on_line_info_change t h = t.on_line_info_change <- h
-
-let notify_line_info_change t =
-  Option.iter (fun f -> f ()) t.on_line_info_change
+let set_on_rows_change t h = t.on_rows_change <- h
+let notify_rows_change t = Option.iter (fun f -> f ()) t.on_rows_change
 
 let pending_work t =
   if t.highlighting then
@@ -307,7 +305,7 @@ let finish_job t (running : running_job) outcome =
     (match (outcome, t.props.syntax) with
     | Ok captures, Some syntax -> apply_result t running.content syntax captures
     | Ok _, None | Error _, _ -> apply_plain t running.content);
-    notify_line_info_change t;
+    notify_rows_change t;
     request_render t
   end
   else
@@ -366,11 +364,11 @@ let render_new_content t (props : Props.t) =
   | Some ({ source = Ranges captures; _ } as syntax) ->
       clear_pending t;
       apply_result t props.content syntax captures;
-      notify_line_info_change t
+      notify_rows_change t
   | Some { source = Highlighter _; _ } | None ->
       clear_pending t;
       apply_plain t props.content;
-      notify_line_info_change t
+      notify_rows_change t
 
 let render_content t (props : Props.t) =
   let previous = t.props in
@@ -392,7 +390,7 @@ let render_content t (props : Props.t) =
         match t.latest with
         | Some captures ->
             ignore (paint t props.content syntax captures : bool);
-            notify_line_info_change t
+            notify_rows_change t
         | None -> render_new_content t props)
   | _ -> render_new_content t props
 
@@ -423,7 +421,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content ?syntax
       job = None;
       pending = None;
       latest = None;
-      on_line_info_change = None;
+      on_rows_change = None;
     }
   in
   Renderable.set_render_before
@@ -484,7 +482,7 @@ let apply_props t (props : Props.t) =
   if t.props.selectable <> props.selectable then
     Text_renderable.set_selectable t.text props.selectable;
   if content_changed then render_content t props else t.props <- props;
-  if !metrics_changed then notify_line_info_change t
+  if !metrics_changed then notify_rows_change t
 
 (* Query *)
 

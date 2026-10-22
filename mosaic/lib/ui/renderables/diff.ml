@@ -758,11 +758,14 @@ module Split_layout = struct
      RFC 0003 §5.4 allows when pane geometry changes. *)
   let visual_counts pane code =
     let counts = Array.make (Pane.row_count pane) 0 in
-    Renderable.iter_lines (Code.node code) ~first:0 ~count:max_int
-      (fun ~row:_ ~logical_line ~continuation:_ ->
-        match Pane.row_of_line pane logical_line with
-        | Some row -> counts.(row) <- counts.(row) + 1
-        | None -> ());
+    Option.iter
+      (fun (rows : Renderable.text_rows) ->
+        Matrix.Text.Layout.iter_rows rows.layout ~first:0 ~count:max_int
+          (fun ~row:_ ~logical_line ~continuation:_ ->
+            match Pane.row_of_line pane logical_line with
+            | Some row -> counts.(row) <- counts.(row) + 1
+            | None -> ()))
+      (Renderable.text_rows (Code.node code));
     Array.map (max 1) counts
 
   let pad acc n =
@@ -866,11 +869,14 @@ let region_of_x ~code_node kind x =
 let row_at_visual code pane visual_row =
   if visual_row < 0 then None
   else
-    match Renderable.line_info (Code.node code) with
-    | Some info ->
-        let display_row = info.scroll_y + visual_row in
-        if display_row < 0 || display_row >= info.display_line_count then None
-        else Pane.row_of_line pane (info.logical_line display_row)
+    match Renderable.text_rows (Code.node code) with
+    | Some rows ->
+        let row = ref None in
+        Matrix.Text.Layout.iter_rows rows.layout
+          ~first:(rows.scroll_y + visual_row) ~count:1
+          (fun ~row:_ ~logical_line ~continuation:_ ->
+            row := Pane.row_of_line pane logical_line);
+        !row
     | None -> Some visual_row
 
 let side_hit t ~x ~y side line_number code pane =
@@ -962,7 +968,7 @@ let set_flex_direction t direction =
 
 let destroy_code = function
   | None -> ()
-  | Some code -> Code.set_on_line_info_change code None
+  | Some code -> Code.set_on_rows_change code None
 
 let destroy_side = function
   | None -> ()
@@ -1059,8 +1065,8 @@ let request_split_rebuild t =
     Renderable.request_render t.node
   end
 
-let set_code_line_info_callback t code =
-  Code.set_on_line_info_change code
+let set_code_rows_callback t code =
+  Code.set_on_rows_change code
     (Some (fun () -> if t.waiting_for_highlight then request_split_rebuild t))
 
 let update_waiting_for_highlight t (props : Props.t) left_code right_code =
@@ -1176,8 +1182,8 @@ let build_split_view t (props : Props.t) =
       ?syntax:(new_code_syntax props.highlight)
       ()
   in
-  set_code_line_info_callback t left_code;
-  set_code_line_info_callback t right_code;
+  set_code_rows_callback t left_code;
+  set_code_rows_callback t right_code;
   Renderable.set_on_resize (Code.node left_code)
     (Some (fun _ -> request_split_rebuild t));
   Renderable.set_on_resize (Code.node right_code)

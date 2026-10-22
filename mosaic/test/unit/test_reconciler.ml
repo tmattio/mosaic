@@ -1007,8 +1007,9 @@ let plain_rich_transitions_reuse_text_and_select_wrapped_content () =
   do_frame renderer;
   is_true ~msg:"plain to rich retains native node"
     (node == List.hd (children_of renderer));
-  let info = Option.get (Renderable.line_info node) in
-  equal ~msg:"wrapping crosses style boundaries" int 2 info.display_line_count;
+  let rows = Option.get (Renderable.text_rows node) in
+  equal ~msg:"wrapping crosses style boundaries" int 2
+    (Matrix_text.Layout.row_count rows.layout);
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   is_true ~msg:"nested style rendered"
     (Ansi.Attr.mem Ansi.Attr.Bold (Matrix_grid.get_style grid 2).attrs);

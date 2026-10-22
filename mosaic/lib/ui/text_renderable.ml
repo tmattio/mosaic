@@ -90,18 +90,14 @@ let clear_highlights t =
   Text_buffer.clear_highlights t.buffer;
   Renderable.request_render t.node
 
-(* Line information *)
+(* Text rows *)
 
-let register_line_info t =
-  Renderable.set_line_info_provider t.node
+let register_text_rows t =
+  Renderable.set_text_rows_provider t.node
     (Some
        (fun () ->
-         let di = Text_surface.layout t.surface in
          {
-           Renderable.line_count = Text_buffer.line_count t.buffer;
-           display_line_count = Matrix.Text.Layout.row_count di;
-           logical_line = Matrix.Text.Layout.logical_line di;
-           continuation = Matrix.Text.Layout.continuation di;
+           Renderable.layout = Text_surface.layout t.surface;
            scroll_y = Text_surface.scroll_y t.surface;
          }))
 
@@ -170,7 +166,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?text_style
   Text_surface.set_selection_bg surface selection_bg;
   Text_surface.set_selection_fg surface selection_fg;
   register_selection t;
-  register_line_info t;
+  register_text_rows t;
   t
 
 (* Query *)

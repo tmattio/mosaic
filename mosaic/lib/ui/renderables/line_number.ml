@@ -181,17 +181,27 @@ let is_hidden lk line = Hashtbl.mem lk.hidden line
 
 (* ───── Target Discovery ───── *)
 
-let find_line_info_child (content_node : Renderable.t) :
-    Renderable.line_info option =
-  let children = Renderable.children content_node in
-  let rec search = function
-    | [] -> None
-    | child :: rest -> (
-        match Renderable.line_info child with
-        | Some info -> Some info
-        | None -> search rest)
-  in
-  search children
+let find_text_rows_child (content_node : Renderable.t) :
+    Renderable.text_rows option =
+  List.find_map Renderable.text_rows (Renderable.children content_node)
+
+let line_count (rows : Renderable.text_rows option) =
+  match rows with
+  | None -> 0
+  | Some rows ->
+      Matrix.Text.Layout.Source.line_count
+        (Matrix.Text.Layout.source rows.layout)
+
+(* Visits the content rows that the grid's clip shows in a node at [y] of
+   [height] rows, as node-relative rows. *)
+let iter_clipped_rows (rows : Renderable.text_rows) grid ~y ~height f =
+  let clip = Matrix_grid.clip_region grid in
+  let first = max 0 (clip.y - y) in
+  let last = min height (clip.y + clip.height - y) in
+  if last > first then
+    Matrix.Text.Layout.iter_rows rows.layout ~first:(rows.scroll_y + first)
+      ~count:(last - first) (fun ~row ~logical_line ~continuation ->
+        f ~row:(row - rows.scroll_y) ~logical_line ~continuation)
 
 (* ───── Gutter Width Calculation ───── *)
 
@@ -209,27 +219,13 @@ let compute_gutter_width lk (props : Props.t) line_count =
 (* ───── Gutter Rendering ───── *)
 
 let render_gutter t _self grid ~delta:_ =
-  let info = find_line_info_child t.content in
+  let rows = find_text_rows_child t.content in
   let gutter_w = Renderable.width t.gutter in
   let gutter_h = Renderable.height t.gutter in
   let gx = Renderable.x t.gutter in
   let gy = Renderable.y t.gutter in
   if gutter_w <= 0 || gutter_h <= 0 then ()
-  else
-    let ( line_count,
-          display_line_count,
-          logical_line_at,
-          continuation_at,
-          scroll_y ) =
-      match info with
-      | None -> (0, 0, (fun i -> i), (fun _ -> 0), 0)
-      | Some i ->
-          ( i.line_count,
-            i.display_line_count,
-            i.logical_line,
-            i.continuation,
-            i.scroll_y )
-    in
+  else begin
     (* Draw gutter background *)
     (match t.props.bg with
     | Some bg ->
@@ -241,97 +237,90 @@ let render_gutter t _self grid ~delta:_ =
     let bw = lk.max_before in
     let num_width =
       if t.props.show_line_numbers then
-        let max_line = line_count + t.props.line_number_offset in
+        let max_line = line_count rows + t.props.line_number_offset in
         digits (max 1 (max max_line lk.max_custom_number))
       else 0
     in
-    let clip = Matrix_grid.clip_region grid in
-    for
-      row = max 0 (clip.y - gy) to min gutter_h (clip.y + clip.height - gy) - 1
-    do
-      let display_line = scroll_y + row in
-      if display_line < display_line_count then begin
-        let logical_line = logical_line_at display_line in
-        let wrap_index = continuation_at display_line in
-        (* Line color: apply gutter background for this row *)
-        (match find_line_color lk logical_line with
-        | Some lc ->
-            Matrix_grid.fill_rect grid ~x:gx ~y:(gy + row) ~width:gutter_w
-              ~height:1 ~color:lc.gutter
-        | None -> ());
-        (* Only render number/signs on the first visual line of a logical
-           line *)
-        if wrap_index = 0 && not (is_hidden lk logical_line) then begin
-          let col = ref 0 in
-          (* Before sign — right-aligned within max before width *)
-          (match find_line_sign lk logical_line with
-          | Some sign -> (
-              match sign.before with
-              | Some s ->
-                  let sw = display_width ~width_method s in
-                  let padding = bw - sw in
-                  col := !col + padding;
-                  let fg = Option.value ~default:t.props.fg sign.before_color in
-                  let style = Ansi.Style.make ~fg () in
-                  Matrix_grid.draw_text ~style ~width_method grid ~x:(gx + !col)
-                    ~y:(gy + row) ~text:s;
-                  col := !col + sw
-              | None -> col := !col + bw)
-          | None -> col := !col + bw);
-          (* Line number — right-aligned with 1 col left padding *)
-          if t.props.show_line_numbers then begin
-            col := !col + 1;
-            let line_num =
-              match find_line_number lk logical_line with
-              | Some custom -> custom
-              | None -> logical_line + 1 + t.props.line_number_offset
-            in
-            let num_str = string_of_int line_num in
-            let pad = num_width - String.length num_str in
-            col := !col + pad;
-            let style = Ansi.Style.make ~fg:t.props.fg () in
-            Matrix_grid.draw_text ~style ~width_method grid ~x:(gx + !col)
-              ~y:(gy + row) ~text:num_str;
-            col := !col + String.length num_str
-          end;
-          (* After sign *)
-          match find_line_sign lk logical_line with
-          | Some sign -> (
-              match sign.after with
-              | Some s ->
-                  let fg = Option.value ~default:t.props.fg sign.after_color in
-                  let style = Ansi.Style.make ~fg () in
-                  Matrix_grid.draw_text ~style ~width_method grid ~x:(gx + !col)
-                    ~y:(gy + row) ~text:s
-              | None -> ())
-          | None -> ()
-        end
-      end
-    done
+    Option.iter
+      (fun rows ->
+        iter_clipped_rows rows grid ~y:gy ~height:gutter_h
+          (fun ~row ~logical_line ~continuation ->
+            (* Line color: apply gutter background for this row *)
+            (match find_line_color lk logical_line with
+            | Some lc ->
+                Matrix_grid.fill_rect grid ~x:gx ~y:(gy + row) ~width:gutter_w
+                  ~height:1 ~color:lc.gutter
+            | None -> ());
+            (* Only render number/signs on the first visual line of a logical
+               line *)
+            if continuation = 0 && not (is_hidden lk logical_line) then begin
+              let col = ref 0 in
+              (* Before sign — right-aligned within max before width *)
+              (match find_line_sign lk logical_line with
+              | Some sign -> (
+                  match sign.before with
+                  | Some s ->
+                      let sw = display_width ~width_method s in
+                      let padding = bw - sw in
+                      col := !col + padding;
+                      let fg =
+                        Option.value ~default:t.props.fg sign.before_color
+                      in
+                      let style = Ansi.Style.make ~fg () in
+                      Matrix_grid.draw_text ~style ~width_method grid
+                        ~x:(gx + !col) ~y:(gy + row) ~text:s;
+                      col := !col + sw
+                  | None -> col := !col + bw)
+              | None -> col := !col + bw);
+              (* Line number — right-aligned with 1 col left padding *)
+              if t.props.show_line_numbers then begin
+                col := !col + 1;
+                let line_num =
+                  match find_line_number lk logical_line with
+                  | Some custom -> custom
+                  | None -> logical_line + 1 + t.props.line_number_offset
+                in
+                let num_str = string_of_int line_num in
+                let pad = num_width - String.length num_str in
+                col := !col + pad;
+                let style = Ansi.Style.make ~fg:t.props.fg () in
+                Matrix_grid.draw_text ~style ~width_method grid ~x:(gx + !col)
+                  ~y:(gy + row) ~text:num_str;
+                col := !col + String.length num_str
+              end;
+              (* After sign *)
+              match find_line_sign lk logical_line with
+              | Some sign -> (
+                  match sign.after with
+                  | Some s ->
+                      let fg =
+                        Option.value ~default:t.props.fg sign.after_color
+                      in
+                      let style = Ansi.Style.make ~fg () in
+                      Matrix_grid.draw_text ~style ~width_method grid
+                        ~x:(gx + !col) ~y:(gy + row) ~text:s
+                  | None -> ())
+              | None -> ()
+            end))
+      rows
+  end
 
 (* ───── Content Line Color Rendering ───── *)
 
 let render_content_colors t _self grid ~delta:_ =
-  let info = find_line_info_child t.content in
-  match info with
+  match find_text_rows_child t.content with
   | None -> ()
-  | Some info ->
+  | Some rows ->
       let cx = Renderable.x t.content in
       let cy = Renderable.y t.content in
       let cw = Renderable.width t.content in
       let ch = Renderable.height t.content in
-      if cw <= 0 || ch <= 0 then ()
-      else
+      if cw > 0 && ch > 0 then
         let lk =
           lookup t ~width_method:(Renderable.Private.width_method t.content)
         in
-        let clip = Matrix_grid.clip_region grid in
-        for
-          row = max 0 (clip.y - cy) to min ch (clip.y + clip.height - cy) - 1
-        do
-          let display_line = info.scroll_y + row in
-          if display_line < info.display_line_count then begin
-            let logical_line = info.logical_line display_line in
+        iter_clipped_rows rows grid ~y:cy ~height:ch
+          (fun ~row ~logical_line ~continuation:_ ->
             match find_line_color lk logical_line with
             | Some lc ->
                 let bg =
@@ -341,15 +330,12 @@ let render_content_colors t _self grid ~delta:_ =
                 in
                 Matrix_grid.fill_rect grid ~x:cx ~y:(cy + row) ~width:cw
                   ~height:1 ~color:bg
-            | None -> ()
-          end
-        done
+            | None -> ())
 
 (* ───── Gutter Measure Function ───── *)
 
 let gutter_measure t ~known_dimensions ~available_space:_ ~style:_ =
-  let info = find_line_info_child t.content in
-  let line_count = match info with None -> 0 | Some i -> i.line_count in
+  let line_count = line_count (find_text_rows_child t.content) in
   let width_method = Renderable.Private.width_method t.gutter in
   let w = compute_gutter_width (lookup t ~width_method) t.props line_count in
   let width =

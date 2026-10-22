@@ -6,7 +6,7 @@
 
     [Code] differs from {!Text} in its defaults: wrapping defaults to [`None],
     tab width defaults to [4], and it registers as a
-    {!type:Renderable.line_info} provider. See doc/highlighting.md for backend
+    {!type:Renderable.text_rows} provider. See doc/highlighting.md for backend
     integration and Markdown fence recipes. *)
 
 (** {1:types Types} *)
@@ -222,10 +222,10 @@ val set_on_selection : t -> ((int * int) option -> unit) option -> unit
 (** [set_on_selection t f] sets the selection-change callback used when
     [selectable = true]. [None] clears it. *)
 
-val set_on_line_info_change : t -> (unit -> unit) option -> unit
-(** [set_on_line_info_change t f] sets the callback called when content,
-    highlighting, or layout configuration may have changed [t]'s line metrics.
-    [None] clears it. *)
+val set_on_rows_change : t -> (unit -> unit) option -> unit
+(** [set_on_rows_change t f] sets the callback called when content,
+    highlighting, or layout configuration may have changed [t]'s
+    {!Renderable.text_rows}. [None] clears it. *)
 
 (** {1:props_application Props application} *)
 

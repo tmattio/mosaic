@@ -2,13 +2,7 @@
 
 module Grid = Matrix_grid
 
-type line_info = {
-  line_count : int;
-  display_line_count : int;
-  logical_line : int -> int;
-  continuation : int -> int;
-  scroll_y : int;
-}
+type text_rows = { layout : Matrix.Text.Layout.t; scroll_y : int }
 
 type cursor = {
   x : int;
@@ -135,8 +129,8 @@ and node = {
   mutable selection : selection_handler option;
   (* Child clipping *)
   mutable child_clip : (node -> Grid.region option) option;
-  (* Line information *)
-  mutable line_info_provider : (unit -> line_info) option;
+  (* Text rows *)
+  mutable text_rows_provider : (unit -> text_rows) option;
   (* Pending render work *)
   mutable pending_provider : (unit -> Pending.t option) option;
   (* Lifecycle *)
@@ -357,7 +351,7 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     paste_handler = None;
     selection = None;
     child_clip = None;
-    line_info_provider = None;
+    text_rows_provider = None;
     pending_provider = None;
     on_update = None;
     on_frame = None;
@@ -690,7 +684,7 @@ let destroy t =
     t.blur_handler <- None;
     t.selection <- None;
     t.child_clip <- None;
-    t.line_info_provider <- None;
+    t.text_rows_provider <- None;
     t.pending_provider <- None;
     t.on_update <- None;
     t.on_frame <- None;
@@ -1014,21 +1008,10 @@ let should_start_selection t ~x ~y =
 let get_selected_text t =
   Option.fold ~none:"" ~some:(fun h -> h.get_text ()) t.selection
 
-(* ───── Line Information ───── *)
+(* ───── Text Rows ───── *)
 
-let set_line_info_provider t provider = t.line_info_provider <- provider
-let line_info t = Option.map (fun f -> f ()) t.line_info_provider
-
-let iter_lines t ~first ~count f =
-  match line_info t with
-  | None -> ()
-  | Some info ->
-      let first = max 0 (min info.display_line_count first) in
-      let count = max 0 (min count (info.display_line_count - first)) in
-      for row = first to first + count - 1 do
-        f ~row ~logical_line:(info.logical_line row)
-          ~continuation:(info.continuation row)
-      done
+let set_text_rows_provider t provider = t.text_rows_provider <- provider
+let text_rows t = Option.map (fun f -> f ()) t.text_rows_provider
 
 (* ───── Pending Render Work ───── *)
 

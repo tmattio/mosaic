@@ -291,19 +291,14 @@ let strip_newlines s =
 let sanitize_text t s =
   match t.mode with `Multiline -> s | `Single_line -> strip_newlines s
 
-(* Line info *)
+(* Text rows *)
 
-let register_line_info t =
-  Renderable.set_line_info_provider t.node
+let register_text_rows t =
+  Renderable.set_text_rows_provider t.node
     (Some
        (fun () ->
-         let di = Text_surface.layout t.surface in
          {
-           Renderable.line_count =
-             Layout.Source.line_count (Editor.source t.props.state);
-           display_line_count = Matrix.Text.Layout.row_count di;
-           logical_line = Matrix.Text.Layout.logical_line di;
-           continuation = Matrix.Text.Layout.continuation di;
+           Renderable.layout = Text_surface.layout t.surface;
            scroll_y = Text_surface.scroll_y t.surface;
          }))
 
@@ -823,7 +818,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
   | `Single_line -> Renderable.set_measure node (Some (measure_single_line t)));
   Renderable.on_mouse node (handle_mouse t);
   register_selection t;
-  register_line_info t;
+  register_text_rows t;
   sync t;
   sync_style t ~focused:false;
   t

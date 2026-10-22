@@ -177,6 +177,7 @@
   mosaic.ui
   toffee
   matrix.grid
+  matrix.text
   matrix.ansi
   matrix.input
   matrix.screen))
