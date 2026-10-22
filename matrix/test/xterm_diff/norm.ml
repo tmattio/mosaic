@@ -574,6 +574,17 @@ let registry =
          such a DECSED, which turns the mode on again.";
     };
     {
+      name = "ris-alternate";
+      kind = Quirk;
+      how = "xterm rewrite";
+      why =
+        "RIS returns both screens to the power-up state (RFC 0004 §2 Resets); \
+         xterm's RIS leaves the alternate screen's cells and saved cursor as \
+         they were (charproc.c, ReallyReset saves the cursor of the normal \
+         screen only). After RIS xterm gets the alternate screen cleared and \
+         its cursor saved at home, as between cases.";
+    };
+    {
       name = "margin-cut-wide";
       kind = Quirk;
       how = "screen";
@@ -1337,6 +1348,8 @@ let rewrite ctx bytes =
              repeats it after some and not after others. *)
           if crossing then fire ctx "rep-after-control";
           drop ();
+          (* REP's ESC ends a sequence left open before it, in [m] too. *)
+          feed "\027[?0l";
           (* Written out: each copy a unit of its own, as REP makes it. *)
           for _ = 1 to n do
             List.iter print unit
@@ -1495,8 +1508,12 @@ let rewrite ctx bytes =
       | Esc { inter = ""; final = 'c'; raw } ->
           emit raw;
           feed raw;
-          (* xterm's RIS resets the normal screen's slot only. *)
-          stale.(1) <- true;
+          (* xterm's RIS resets neither the alternate screen nor its slot:
+             it gets them cleared, as the harness does between cases. *)
+          if on ctx "ris-alternate" then (
+            fire ctx "ris-alternate";
+            emit "\027[?47h\027[2J\0277\027[?47l")
+          else stale.(1) <- true;
           saved_rows.(0) <- 0;
           saved_rows.(1) <- 0;
           margins := (0, ctx.rows - 1)
