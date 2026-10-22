@@ -541,28 +541,29 @@ module Private : sig
   (** [iter_children_z t f] applies [f] to each child of [t] in z-index order.
   *)
 
-  val children_in_viewport :
-    parent:t -> viewport:Matrix_grid.region -> padding:int -> t list
-  (** [children_in_viewport ~parent ~viewport ~padding] is the children of
-      [parent] whose bounds intersect [viewport] expanded by [padding] cells,
-      sorted by z-index. *)
+  val children_in_viewport : parent:t -> viewport:Matrix_grid.region -> t list
+  (** [children_in_viewport ~parent ~viewport] is the visible children of
+      [parent] whose subtrees may paint inside [viewport], in z-index order.
+
+      A subtree may paint inside its node's box, grown on both axes by its
+      visible children's subtrees unless the node clips them. A child kept here
+      may still paint nothing; a child left out cannot paint inside [viewport].
+      A region with zero extent on an axis is kept on that axis when it lies on
+      [viewport]'s closed interval. *)
 
   val iter_children_in_viewport :
-    parent:t ->
-    viewport:Matrix_grid.region ->
-    padding:int ->
-    (t -> unit) ->
-    unit
-  (** [iter_children_in_viewport ~parent ~viewport ~padding f] applies [f] to
-      each child of [parent] whose bounds intersect [viewport] expanded by
-      [padding] cells, in z-index order. Children's cached layouts are refreshed
-      from the layout tree first so intersection tests read current positions.
-  *)
+    parent:t -> viewport:Matrix_grid.region -> (t -> unit) -> unit
+  (** [iter_children_in_viewport ~parent ~viewport f] applies [f] to
+      {!children_in_viewport}, in order. The cost is that of a binary search
+      over [parent]'s children and of the children kept, unless the layout of
+      [parent]'s subtree, its children or their translations changed since the
+      last call; then it is linear in the children, and their cached layouts are
+      refreshed from the layout tree. *)
 
   val set_viewport_cull : t -> bool -> unit
   (** [set_viewport_cull t v] enables or disables viewport culling of [t]'s
       children. When enabled, the renderer traverses only the children whose
-      bounds intersect the effective ancestor clip (via
+      subtrees may paint inside the effective ancestor clip (via
       {!iter_children_in_viewport}); offscreen children are neither updated
       ([on_frame], resize hooks) nor rendered nor hit-testable until they scroll
       back into view. Scroll containers enable this on their content node. *)

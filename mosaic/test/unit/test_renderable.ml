@@ -949,18 +949,37 @@ let iter_children_z_visits_all () =
 let children_in_viewport_filters_small_sets () =
   let t = make_ctx () in
   let root = make_root t in
-  let near_high =
-    Renderable.create ~parent:root ~id:"near-high" ~z_index:3 ()
+  let length n = Toffee.Style.Length_percentage_auto.length (Float.of_int n) in
+  let placed ~id ~z_index ~x =
+    let style =
+      Toffee.Style.default
+      |> Toffee.Style.set_position Absolute
+      |> Toffee.Style.set_inset
+           {
+             left = length x;
+             top = length 1;
+             right = Toffee.Style.Length_percentage_auto.auto;
+             bottom = Toffee.Style.Length_percentage_auto.auto;
+           }
+      |> Toffee.Style.set_width (Toffee.Style.Dimension.length 2.)
+      |> Toffee.Style.set_height (Toffee.Style.Dimension.length 2.)
+    in
+    Renderable.create ~parent:root ~id ~z_index ~style ()
   in
-  let near_low = Renderable.create ~parent:root ~id:"near-low" ~z_index:1 () in
-  let far = Renderable.create ~parent:root ~id:"far" ~z_index:0 () in
-  layout_node near_high ~x:1 ~y:1 ~width:2 ~height:2;
-  layout_node near_low ~x:2 ~y:1 ~width:2 ~height:2;
-  layout_node far ~x:30 ~y:1 ~width:2 ~height:2;
+  let _ = placed ~id:"near-high" ~z_index:3 ~x:1 in
+  let _ = placed ~id:"near-low" ~z_index:1 ~x:2 in
+  let _ = placed ~id:"far" ~z_index:0 ~x:30 in
+  ignore
+    (Toffee.compute_layout t.ctx.tree
+       (Renderable.Private.toffee_node root)
+       (Toffee.Geometry.Size.make
+          (Toffee.Available_space.of_float 40.)
+          (Toffee.Available_space.of_float 10.))
+      : unit Toffee.result);
+  layout_node root ~x:0 ~y:0 ~width:40 ~height:10;
   let visible =
     Renderable.Private.children_in_viewport ~parent:root
       ~viewport:{ x = 0; y = 0; width = 10; height = 5 }
-      ~padding:0
   in
   equal ~msg:"visible children are filtered and z-sorted" (list string)
     [ "near-low"; "near-high" ]

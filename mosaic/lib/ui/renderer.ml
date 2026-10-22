@@ -911,7 +911,7 @@ let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
       in
       if Renderable.Private.viewport_cull node then
         Renderable.Private.iter_children_in_viewport ~parent:node
-          ~viewport:child_clip ~padding:0 recurse
+          ~viewport:child_clip recurse
       else Renderable.Private.iter_children_z node recurse
     in
     (match child_clip with

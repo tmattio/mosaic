@@ -63,6 +63,39 @@ type context = {
   admit_size_report : node -> bool;
 }
 
+(* The region a subtree may paint, in cells relative to its node's layout
+   origin, and the layout value it was computed from. *)
+and paint_region = {
+  layout : Toffee.Layout.t;
+  x0 : int;
+  y0 : int;
+  x1 : int;
+  y1 : int;
+}
+
+(* A visible child of a culling node, with its paint region relative to the
+   parent's origin: [p0, p1) on the primary axis, [c0, c1) on the cross axis.
+   [rank] is its index among the parent's children, which orders equal
+   z-indices. *)
+and cull_entry = {
+  child : node;
+  rank : int;
+  p0 : int;
+  p1 : int;
+  c0 : int;
+  c1 : int;
+}
+
+(* A culling node's visible children sorted by [p0], with [reach.(i)] the
+   largest [p1] among the first [i + 1] entries, built from the parent's layout
+   value [built_from]. *)
+and cull_index = {
+  built_from : Toffee.Layout.t;
+  entries : cull_entry array;
+  reach : int array;
+  column : bool;
+}
+
 and node = {
   ctx : context;
   toffee_node : Toffee.Node_id.t;
@@ -90,14 +123,14 @@ and node = {
   mutable z_sorted : node array;
   mutable z_len : int;
   mutable z_dirty : bool;
-  mutable primary_sorted : node array;
-  mutable primary_len : int;
-  mutable primary_dirty : bool;
   (* Viewport culling: when [true], the renderer restricts this node's child
-     traversal to children intersecting the effective clip. [cull_marked] is
-     transient renderer state used to filter the z-ordered walk. *)
+     traversal to children whose paint region intersects the effective clip.
+     [cull_dirty] records a change the layout tree does not show: children
+     added, removed or translated, or this node's style. *)
   mutable viewport_cull : bool;
-  mutable cull_marked : bool;
+  mutable cull_index : cull_index option;
+  mutable cull_dirty : bool;
+  mutable paint_region : paint_region option;
   (* Rendering *)
   mutable render : render;
   mutable render_before : render option;
@@ -260,7 +293,7 @@ let insert_child_at parent idx child =
   parent.children.(idx) <- Some child;
   parent.child_count <- parent.child_count + 1;
   parent.z_dirty <- true;
-  parent.primary_dirty <- true;
+  parent.cull_dirty <- true;
   adjust_live_count parent child.live_count;
   parent.ctx.schedule ()
 
@@ -286,7 +319,7 @@ let remove_child_ref parent child =
         parent.children.(parent.child_count - 1) <- None;
       parent.child_count <- max 0 (parent.child_count - 1);
       parent.z_dirty <- true;
-      parent.primary_dirty <- true;
+      parent.cull_dirty <- true;
       adjust_live_count parent (-child.live_count);
       parent.ctx.schedule ()
 
@@ -321,11 +354,10 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     z_sorted = [||];
     z_len = 0;
     z_dirty = false;
-    primary_sorted = [||];
-    primary_len = 0;
-    primary_dirty = false;
     viewport_cull = false;
-    cull_marked = false;
+    cull_index = None;
+    cull_dirty = false;
+    paint_region = None;
     render;
     render_before = None;
     render_after = None;
@@ -512,7 +544,7 @@ let apply_style t ~preserve_hidden new_style =
     update_self_live t;
     if (not now_visible) && t.focused then blur t);
   t.layout_dirty <- true;
-  t.primary_dirty <- true;
+  t.cull_dirty <- true;
   t.ctx.schedule ()
 
 let set_style t new_style = apply_style t ~preserve_hidden:true new_style
@@ -558,11 +590,30 @@ let height t =
 let bounds t : Grid.region =
   { x = x t; y = y t; width = width t; height = height t }
 
+(* A node clips its children to its box when either axis's overflow is not
+   visible. *)
+let clips t =
+  let overflow = Toffee.Style.overflow t.style in
+  overflow.x <> Toffee.Style.Overflow.Visible
+  || overflow.y <> Toffee.Style.Overflow.Visible
+
+(* A translation moves where [t] paints without changing the layout tree, so
+   forget the paint regions and cull indexes that include it, up to the first
+   ancestor that clips. *)
+let rec forget_paint_region t =
+  match t.parent with
+  | None -> ()
+  | Some parent ->
+      parent.cull_dirty <- true;
+      if not (clips parent) then (
+        parent.paint_region <- None;
+        forget_paint_region parent)
+
 let set_translate t ~x:ox ~y:oy =
   if t.translate_x <> ox || t.translate_y <> oy then (
     t.translate_x <- ox;
     t.translate_y <- oy;
-    Option.iter (fun p -> p.primary_dirty <- true) t.parent;
+    forget_paint_region t;
     t.ctx.schedule ())
 
 let translate t = (t.translate_x, t.translate_y)
@@ -666,9 +717,8 @@ let destroy t =
     t.z_sorted <- [||];
     t.z_len <- 0;
     t.z_dirty <- false;
-    t.primary_sorted <- [||];
-    t.primary_len <- 0;
-    t.primary_dirty <- false;
+    t.cull_index <- None;
+    t.paint_region <- None;
     detach_impl t;
     t.ctx.unregister t;
     ignore (Toffee.remove t.ctx.tree t.toffee_node);
@@ -755,128 +805,6 @@ let iter_children_z (t : t) (f : t -> unit) : unit =
   for i = 0 to t.z_len - 1 do
     f arr.(i)
   done
-
-(* ───── Primary-Sorted Children (Viewport Culling) ───── *)
-
-let children_sorted_by_primary (t : t) : t array =
-  if t.child_count = 0 then (
-    if t.primary_len <> 0 || Array.length t.primary_sorted <> 0 then (
-      t.primary_sorted <- [||];
-      t.primary_len <- 0;
-      t.primary_dirty <- false);
-    [||])
-  else if t.primary_dirty || t.primary_len <> t.child_count then (
-    let module FD = Toffee.Style.Flex_direction in
-    let sort_key =
-      match Toffee.Style.flex_direction t.style with
-      | FD.Row | FD.Row_reverse -> fun n -> x n
-      | FD.Column | FD.Column_reverse -> fun n -> y n
-    in
-    t.primary_sorted <- rebuild_sorted_cache t ~sort_key;
-    t.primary_len <- t.child_count;
-    t.primary_dirty <- false;
-    t.primary_sorted)
-  else t.primary_sorted
-
-(* ───── Viewport Culling ───── *)
-
-(* Viewport culling for scroll containers.
-
-   Children sorted by primary axis position enable binary search for the first
-   visible child. We skip binary search for fewer than 16 children (linear scan
-   is faster at that scale). After finding the entry point, walk_left extends
-   backwards with a gap tolerance of 50 non-overlapping children to handle
-   sparse layouts where large gaps separate visible clusters. Both primary and
-   cross-axis intersection tests are applied before including a child. Results
-   are z-sorted for correct paint order. *)
-
-let children_in_viewport ~(parent : t) ~(viewport : Grid.region)
-    ~(padding : int) : t list =
-  let module FD = Toffee.Style.Flex_direction in
-  let arr = children_sorted_by_primary parent in
-  let total = Array.length arr in
-  if total = 0 then []
-  else
-    (* Project a clip_rect onto primary/cross axes based on flex direction. *)
-    let primary_pos, primary_size, cross_pos, cross_size =
-      match Toffee.Style.flex_direction (style parent) with
-      | FD.Row | FD.Row_reverse ->
-          ( (fun (r : Grid.region) -> r.x),
-            (fun (r : Grid.region) -> r.width),
-            (fun (r : Grid.region) -> r.y),
-            fun (r : Grid.region) -> r.height )
-      | FD.Column | FD.Column_reverse ->
-          ( (fun (r : Grid.region) -> r.y),
-            (fun (r : Grid.region) -> r.height),
-            (fun (r : Grid.region) -> r.x),
-            fun (r : Grid.region) -> r.width )
-    in
-    let vp_start = primary_pos viewport - padding in
-    let vp_end = primary_pos viewport + primary_size viewport + padding in
-    let cross_start = cross_pos viewport - padding in
-    let cross_end = cross_pos viewport + cross_size viewport + padding in
-    let left, right =
-      if total < 16 then (0, total)
-      else
-        (* Binary search for first child overlapping the viewport. *)
-        let rec bin lo hi candidate =
-          if lo > hi then candidate
-          else
-            let mid = (lo + hi) lsr 1 in
-            let cb = bounds arr.(mid) in
-            let start = primary_pos cb in
-            let stop = start + primary_size cb in
-            if stop < vp_start then bin (mid + 1) hi candidate
-            else if start > vp_end then bin lo (mid - 1) candidate
-            else bin lo (mid - 1) (Some mid)
-        in
-        let start_index =
-          match bin 0 (total - 1) None with None -> 0 | Some i -> i
-        in
-        (* Walk left to catch children that overlap but sort earlier. *)
-        let rec walk_left i gaps =
-          if i <= 0 then 0
-          else
-            let cb = bounds arr.(i - 1) in
-            let prev_end = primary_pos cb + primary_size cb in
-            if prev_end < vp_start then
-              if gaps + 1 >= 50 then i else walk_left (i - 1) (gaps + 1)
-            else walk_left (i - 1) 0
-        in
-        let left = walk_left start_index 0 in
-        (* Walk right to find the end of the visible range. *)
-        let rec walk_right i =
-          if i >= total then total
-          else
-            let start = primary_pos (bounds arr.(i)) in
-            if start > vp_end then i else walk_right (i + 1)
-        in
-        let right = walk_right (start_index + 1) in
-        (left, right)
-    in
-    (* Collect children that pass both primary and cross-axis tests. A child
-       with interior overlaps strictly. A child with zero extent on an axis
-       has no interior to overlap, but overflow is [Visible] by default, so
-       its subtree is still free to paint: a wrapper sized by its content — a
-       gutter, a badge layer, a row that shrinks to nothing at some width —
-       must survive the cull, and it sits exactly on an edge in the common
-       case (every child of a column starts at the container's left edge).
-       Zero extent therefore keeps the closed interval. *)
-    let overlaps a0 a1 lo hi =
-      if a0 = a1 then a0 >= lo && a0 <= hi else a1 > lo && a0 < hi
-    in
-    let result = ref [] in
-    for i = left to right - 1 do
-      let child = arr.(i) in
-      let cb = bounds child in
-      let p0 = primary_pos cb in
-      let p1 = p0 + primary_size cb in
-      if overlaps p0 p1 vp_start vp_end then
-        let c0 = cross_pos cb in
-        let c1 = c0 + cross_size cb in
-        if overlaps c0 c1 cross_start cross_end then result := child :: !result
-    done;
-    List.sort (fun a b -> compare a.z_index b.z_index) !result
 
 (* ───── Visual Properties ───── *)
 
@@ -1035,24 +963,16 @@ let run_lifecycle_pass t = Option.iter (fun f -> f t) t.on_lifecycle_pass
 (* ───── Render Pipeline ───── *)
 
 let update_layout t ~x ~y ~width ~height =
-  let prev_x = t.abs_x and prev_y = t.abs_y in
-  let was_valid = t.layout_valid in
   t.abs_x <- x;
   t.abs_y <- y;
   t.abs_w <- width;
   t.abs_h <- height;
-  t.layout_valid <- true;
-  let pos_changed =
-    was_valid
-    && (Float.round prev_x <> Float.round x
-       || Float.round prev_y <> Float.round y)
-  in
-  if pos_changed then Option.iter (fun p -> p.primary_dirty <- true) t.parent
+  t.layout_valid <- true
 
-(* Refresh direct children's cached layout from the layout tree so viewport
-   culling reads current positions, mirroring OpenTUI's updateFromLayout pass
-   before [_getVisibleChildren]. [t.abs_x]/[t.abs_y] are current because the
-   renderer updates a node's layout before descending into its children. *)
+(* Refresh direct children's cached layout from the layout tree, mirroring
+   OpenTUI's updateFromLayout pass before [_getVisibleChildren].
+   [t.abs_x]/[t.abs_y] are current because the renderer updates a node's layout
+   before descending into its children. *)
 let update_children_layout t =
   for i = 0 to t.child_count - 1 do
     match t.children.(i) with
@@ -1066,15 +986,151 @@ let update_children_layout t =
     | Some _ | None -> ()
   done
 
-let iter_children_in_viewport ~(parent : t) ~(viewport : Grid.region)
-    ~(padding : int) (f : t -> unit) : unit =
-  update_children_layout parent;
-  let visible = children_in_viewport ~parent ~viewport ~padding in
-  List.iter (fun child -> child.cull_marked <- true) visible;
-  iter_children_z parent (fun child ->
-      if child.cull_marked then (
-        child.cull_marked <- false;
-        f child))
+(* ───── Viewport Culling ─────
+
+   A scroll container's content node culls: the renderer descends only into
+   the children that can paint inside the effective clip. Culling works in the
+   parent's coordinates, where scrolling moves nothing, from an index of the
+   children sorted by where their subtrees may paint. The layout tree replaces
+   a node's layout value whenever the layout of the node or of any node below
+   it changes, so an index, and a subtree's paint region, stay valid while the
+   layout value they were built from is the same value. Rebuilding is linear in
+   the children; a query costs a binary search and the children it keeps. *)
+
+let toffee_layout t =
+  match Toffee.layout t.ctx.tree t.toffee_node with
+  | Ok layout -> layout
+  | Error _ -> Toffee.Layout.default
+
+(* The region [t]'s subtree may paint, relative to its layout origin: its box,
+   grown on both axes by its visible children's regions unless [t] clips them.
+   A node's own paint and its clip lie within its box. *)
+let rec paint_region t =
+  let layout = toffee_layout t in
+  match t.paint_region with
+  | Some region when region.layout == layout -> region
+  | Some _ | None ->
+      let x1 = terminal_edge layout.size.width
+      and y1 = terminal_edge layout.size.height in
+      let region = ref { layout; x0 = 0; y0 = 0; x1; y1 } in
+      if not (clips t) then
+        for i = 0 to t.child_count - 1 do
+          match t.children.(i) with
+          | Some child when child.visible ->
+              let r = !region and c = child_region child in
+              region :=
+                {
+                  r with
+                  x0 = min r.x0 c.x0;
+                  y0 = min r.y0 c.y0;
+                  x1 = max r.x1 c.x1;
+                  y1 = max r.y1 c.y1;
+                }
+          | Some _ | None -> ()
+        done;
+      t.paint_region <- Some !region;
+      !region
+
+(* [child]'s paint region relative to its parent's layout origin. *)
+and child_region child =
+  let layout = toffee_layout child and r = paint_region child in
+  let x = terminal_edge layout.location.x + child.translate_x
+  and y = terminal_edge layout.location.y + child.translate_y in
+  { r with x0 = x + r.x0; y0 = y + r.y0; x1 = x + r.x1; y1 = y + r.y1 }
+
+let cull_index t =
+  let layout = toffee_layout t in
+  match t.cull_index with
+  | Some index when index.built_from == layout && not t.cull_dirty -> index
+  | Some _ | None ->
+      update_children_layout t;
+      let column =
+        match Toffee.Style.flex_direction t.style with
+        | Toffee.Style.Flex_direction.Column | Column_reverse -> true
+        | Row | Row_reverse -> false
+      in
+      let entries = ref [] in
+      for rank = t.child_count - 1 downto 0 do
+        match t.children.(rank) with
+        | Some child when child.visible ->
+            let r = child_region child in
+            let entry =
+              if column then
+                { child; rank; p0 = r.y0; p1 = r.y1; c0 = r.x0; c1 = r.x1 }
+              else { child; rank; p0 = r.x0; p1 = r.x1; c0 = r.y0; c1 = r.y1 }
+            in
+            entries := entry :: !entries
+        | Some _ | None -> ()
+      done;
+      (* Children are usually already in primary order: an insertion sort is
+         linear then. *)
+      let entries = Array.of_list !entries in
+      for i = 1 to Array.length entries - 1 do
+        let e = entries.(i) in
+        let j = ref (i - 1) in
+        while !j >= 0 && entries.(!j).p0 > e.p0 do
+          entries.(!j + 1) <- entries.(!j);
+          decr j
+        done;
+        entries.(!j + 1) <- e
+      done;
+      let reach = Array.make (Array.length entries) min_int in
+      Array.iteri
+        (fun i e ->
+          reach.(i) <- (if i = 0 then e.p1 else max reach.(i - 1) e.p1))
+        entries;
+      let index = { built_from = layout; entries; reach; column } in
+      t.cull_index <- Some index;
+      t.cull_dirty <- false;
+      index
+
+(* A region overlaps [lo, hi) strictly. One with zero extent on an axis has no
+   interior there, but its subtree can still paint, and it sits exactly on an
+   edge in the common case (every child of a column starts at the container's
+   left edge), so zero extent keeps the closed interval. *)
+let overlaps a0 a1 lo hi =
+  if a0 = a1 then a0 >= lo && a0 <= hi else a1 > lo && a0 < hi
+
+let children_in_viewport ~(parent : t) ~(viewport : Grid.region) : t list =
+  let index = cull_index parent in
+  let px = x parent and py = y parent in
+  let lo, hi, cross_lo, cross_hi =
+    if index.column then
+      ( viewport.y - py,
+        viewport.y + viewport.height - py,
+        viewport.x - px,
+        viewport.x + viewport.width - px )
+    else
+      ( viewport.x - px,
+        viewport.x + viewport.width - px,
+        viewport.y - py,
+        viewport.y + viewport.height - py )
+  in
+  (* Every entry before the first whose reach meets [lo] ends above it. *)
+  let n = Array.length index.entries in
+  let first = ref 0 and last = ref n in
+  while !first < !last do
+    let mid = (!first + !last) / 2 in
+    if index.reach.(mid) < lo then first := mid + 1 else last := mid
+  done;
+  let kept = ref [] in
+  let i = ref !first in
+  while !i < n && index.entries.(!i).p0 <= hi do
+    let e = index.entries.(!i) in
+    if overlaps e.p0 e.p1 lo hi && overlaps e.c0 e.c1 cross_lo cross_hi then
+      kept := e :: !kept;
+    incr i
+  done;
+  List.sort
+    (fun a b ->
+      match Int.compare a.child.z_index b.child.z_index with
+      | 0 -> Int.compare a.rank b.rank
+      | order -> order)
+    !kept
+  |> List.map (fun e -> e.child)
+
+let iter_children_in_viewport ~parent ~viewport f =
+  List.iter f (children_in_viewport ~parent ~viewport)
 
 let pre_render_update ?(frame = true) t ~delta =
   Option.iter (fun f -> f t ~delta) t.on_update;

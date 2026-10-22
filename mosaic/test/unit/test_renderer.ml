@@ -506,7 +506,7 @@ let culling_column t extents =
 
 let kept_in ~parent ~x ~y ~width ~height =
   let viewport : Matrix_grid.region = { x; y; width; height } in
-  Renderable.Private.children_in_viewport ~parent ~viewport ~padding:0
+  Renderable.Private.children_in_viewport ~parent ~viewport
 
 let zero_height_child_on_the_viewport_edge_is_kept () =
   (* Rows: a zero-height one at y=0, then a one-cell row also at y=0. The
@@ -544,6 +544,66 @@ let child_ending_on_the_viewport_edge_is_culled () =
   let kept = kept_in ~parent ~x:0 ~y:2 ~width:10 ~height:3 in
   is_false ~msg:"child entirely above the viewport is culled"
     (List.memq kids.(0) kept)
+
+let child_far_before_the_viewport_is_kept () =
+  (* A tall child sorts first and reaches the viewport, but 200 one-row
+     siblings that end above the viewport sort between it and the viewport.
+     Culling must not give up on it after a run of misses. *)
+  let t = make_renderer () in
+  let parent = culling_column t (List.init 300 (fun _ -> (10, 1))) |> fst in
+  let tall = make_child ~parent ~x:0 ~y:0 ~w:10 ~h:300 () in
+  do_frame ~width:20 ~height:20 t;
+  let kept =
+    kept_in ~parent ~x:0 ~y:(Renderable.y parent + 200) ~width:10 ~height:10
+  in
+  is_true ~msg:"tall child reaching the viewport is traversed"
+    (List.memq tall kept)
+
+(* Children at arbitrary positions, some overlapping, against arbitrary
+   viewports: culling keeps exactly the children whose box meets the viewport
+   under the overlap rule, in z order, then in child order. *)
+let culling_matches_a_scan =
+  let gen =
+    Gen.pair
+      (Gen.list ~size:(Gen.int_range 0 60)
+         (Gen.quad (Gen.int_range 0 9) (Gen.int_range (-5) 60)
+            (Gen.int_range 0 12) (Gen.int_range 0 3)))
+      (Gen.quad (Gen.int_range (-5) 15) (Gen.int_range (-5) 65)
+         (Gen.int_range 0 12) (Gen.int_range 0 12))
+  in
+  prop ~count:200 "culling matches a scan of every child" gen
+    (fun (children, (vx, vy, vw, vh)) ->
+      let t = make_renderer () in
+      let parent, _ = culling_column t [] in
+      let nodes =
+        List.map
+          (fun (x, y, h, z_index) ->
+            let child = make_child ~parent ~x ~y ~w:(1 + (x mod 3)) ~h () in
+            Renderable.set_z_index child z_index;
+            child)
+          children
+      in
+      do_frame ~width:20 ~height:20 t;
+      let overlaps a0 a1 lo hi =
+        if a0 = a1 then a0 >= lo && a0 <= hi else a1 > lo && a0 < hi
+      in
+      let viewport : Matrix_grid.region =
+        { x = vx; y = vy; width = vw; height = vh }
+      in
+      let expected =
+        List.filter
+          (fun child ->
+            let b = Renderable.bounds child in
+            overlaps b.y (b.y + b.height) vy (vy + vh)
+            && overlaps b.x (b.x + b.width) vx (vx + vw))
+          nodes
+        |> List.stable_sort (fun a b ->
+            Int.compare (Renderable.z_index a) (Renderable.z_index b))
+      in
+      let kept = Renderable.Private.children_in_viewport ~parent ~viewport in
+      is_true ~msg:"same children in the same order"
+        (List.length kept = List.length expected
+        && List.for_all2 ( == ) kept expected))
 
 (* ── Viewport culling: frames ── *)
 
@@ -624,8 +684,9 @@ let zero_width_wrapper_keeps_its_overflowing_row () =
 let descendant_reaching_the_viewport_survives_its_offscreen_parent () =
   (* [overflow_visible_descendant_reaching_viewport_renders] states the
      contract for an ordinary parent. A scroll box's content node must not
-     weaken it: culling gates the subtree on the child's own box, so a
-     descendant positioned back into view is lost with its parent. *)
+     weaken it: culling tests where a child's subtree may paint, not the
+     child's own box, so a descendant positioned back into view survives its
+     offscreen parent. *)
   let t = make_renderer () in
   Renderable.set_style (Renderer.root t)
     (Toffee.Style.default
@@ -2017,14 +2078,11 @@ let () =
             zero_width_child_on_the_viewport_edge_is_kept;
           test "zero-width wrapper keeps its overflowing row"
             zero_width_wrapper_keeps_its_overflowing_row;
-          xfail
-            ~reason:
-              "ff51f8627: culling gates a subtree on the child's own box, so a \
-               descendant painting back into the viewport is lost with its \
-               offscreen parent"
-            (test
-               "descendant reaching the viewport survives its offscreen parent"
-               descendant_reaching_the_viewport_survives_its_offscreen_parent);
+          test "descendant reaching the viewport survives its offscreen parent"
+            descendant_reaching_the_viewport_survives_its_offscreen_parent;
+          test "child far before the viewport is kept"
+            child_far_before_the_viewport_is_kept;
+          culling_matches_a_scan;
         ];
       group "Scroll hints"
         [
