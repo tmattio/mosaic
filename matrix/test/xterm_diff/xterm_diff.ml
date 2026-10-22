@@ -202,7 +202,7 @@ let compare_case session ~width ?(fired = []) bytes =
   let x = Xterm.run session ~decid:!decid rw.xterm in
   let xs = Screen.decode ~width ~rows:!rows ~cols:!cols x.dump in
   let x_replies, x_cpr1 = Xterm.split_last_cpr x.replies in
-  let x_replies = Norm.replies ctx x_replies in
+  let x_replies = Norm.replies ctx ~input:bytes x_replies in
   let mismatch kind where a b =
     if a = b then []
     else

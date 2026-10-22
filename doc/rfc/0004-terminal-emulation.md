@@ -111,10 +111,22 @@ commits that follow them change:
 - Prepend clusters are drawn whole.
 - `Grid.scroll` becomes `Grid.shift ~color`.
 - Blanks repaired by the grid take the operation's colour.
+- A parameter with sub-parameters has no effect outside SGR, and in SGR outside 4, 38, 48 and 58
+  (ECMA-48 §5.4.2; the fuzzer found the VTE and `Style.apply_sgr` reading their first field).
+- The Hangul conjoining vowels and finals (U+1160..U+11FF, U+D7B0..U+D7FF) are zero width, as in
+  wcwidth (glibc, xterm), under every width method.
 
 ## 6. Verification
 Every behaviour is pinned by a unit test. A differential fuzzer compares the VTE with xterm 398
 under Xvfb: random sequences drawn from the implemented functions are written to both, and their
 screens are compared, xterm's dumped through its print-screen control. Each difference is either
-fixed, or recorded as a deviation this RFC decides (§2: the wrap erase, DECSTR's autowrap, BCE on
-selective erase, C1 handling, the identity).
+fixed, or removed by a named normalisation that fires only on its pattern and cites its reason
+(`matrix/test/xterm_diff/norm.ml`, `xterm_diff list`): a deviation this RFC decides (§1, §2:
+grapheme clusters, the zero-width join, the wrap erase, autowrap off at the margin, REP of a
+cluster and after a control function, the flag after scrolls and edits, BCE on selective erase,
+C1 handling, CAN and SUB, the identity and DECXCPR, the parameter budget, the DECSC slots on
+reset, 1049's reset, unknown and national sets), an xterm quirk cited to its source or changelog,
+or a difference of configuration (xterm's level and print-screen). A clean campaign reports
+"0 unexplained differences"; over 300,000 cases at 12x6, 80x24, 2x2 and 1x1, at decTerminalID 100
+and 420 and up to 200 tokens, ran clean. A second fuzzer, in CI, checks totality, the screen's
+invariants and split invariance on arbitrary bytes, and the parser's tokens under any chunking.

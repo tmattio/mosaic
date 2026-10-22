@@ -450,7 +450,7 @@ let registry =
       kind = Quirk;
       how = "xterm rewrite";
       why =
-        "SU scrolls the scroll region only (ECMA-48 §8.3.147; DEC STBM); when \
+        "SU scrolls the scroll region only (ECMA-48 §8.3.147; DECSTBM); when \
          it scrolls by the region's whole height or more, xterm also blanks \
          the rows outside the region (observed in 398, with jumpScroll off). \
          xterm gets SU h - 1 then SU 1, h the region's height.";
@@ -496,12 +496,12 @@ let registry =
     };
     {
       name = "decstr-national";
-      kind = Deviation;
+      kind = Quirk;
       how = "xterm rewrite";
       why =
-        "DECSTR returns national mode (DECNRCM) to its power-up value, off \
-         (vte.mli, after VT510 DECSTR Table 5-9); xterm keeps it (charproc.c, \
-         ReallyReset). xterm gets DECRST 42 after it.";
+        "DECSTR returns national mode to the multinational set (VT510 DECSTR, \
+         Table 5-9: DECNRCM); xterm keeps it (charproc.c, ReallyReset). xterm \
+         gets DECRST 42 after it.";
     };
     {
       name = "decstr-protection";
@@ -585,6 +585,27 @@ let registry =
          it moves.";
     };
     {
+      name = "dcs-requests";
+      kind = Configuration;
+      how = "replies";
+      why =
+        "a DCS this terminal does not implement has no effect and no answer \
+         (RFC 0004 §2 Replies: the identity promises only what is \
+         implemented); xterm answers its requests (DECRQSS, XTGETTCAP) with a \
+         report or, when it cannot parse one, with CAN (ctlseqs). In a case \
+         with a DCS, xterm's DCS reports and CAN replies are removed.";
+    };
+    {
+      name = "media-copy";
+      kind = Configuration;
+      how = "generator";
+      why =
+        "media copy (MC, CSI Pm i) has no effect here, a terminal without a \
+         printer; the harness reads xterm's screen through MC, so a case's own \
+         MC would take the place of the harness's print, or turn printer \
+         controller mode on (ctlseqs). It is not formed.";
+    };
+    {
       name = "vt-level";
       kind = Configuration;
       how = "generator";
@@ -632,12 +653,12 @@ let registry =
       kind = Quirk;
       how = "generator";
       why =
-        "a single shift applies to the next GL character (VT220 Programmer \
-         Reference Manual §2.4.2); xterm prints the previous character again \
-         when anything else follows SS2 or SS3, the case's end included, or \
-         when that previous character is beyond U+00FF (observed in 398). Only \
-         printable ASCII follows a single shift, and none follows such a \
-         character.";
+        "a single shift invokes G2 or G3 for the next character only (VT220 \
+         Programmer Reference Manual ch. 2; vte.mli); xterm prints the \
+         previous character again when anything but a GL character follows SS2 \
+         or SS3, the case's end included, or when that previous character is \
+         beyond U+00FF (observed in 398). Only printable ASCII follows a \
+         single shift, and none follows such a character.";
     };
   ]
 
@@ -706,6 +727,13 @@ let decode s i =
       ( ((c0 land 0x07) lsl 18) lor (tail 1 lsl 12) lor (tail 2 lsl 6) lor tail 3,
         4 )
   else (-1, 1)
+
+(* Whether [sub] occurs in [s], ending after [ending_after]. *)
+let occurs ?(ending_after = -1) s sub =
+  let n = String.length s and m = String.length sub in
+  let rec matches i j = j = m || (s.[i + j] = sub.[j] && matches i (j + 1)) in
+  let rec go i = i + m <= n && (matches i 0 || go (i + 1)) in
+  go (max 0 (ending_after - m + 1))
 
 let utf8 cp =
   let b = Buffer.create 4 in
@@ -1925,7 +1953,8 @@ let csi_reply s i =
     go (i + 2)
   else None
 
-let replies ctx s =
+let replies ctx ~input s =
+  let dcs = occurs input "\027P" in
   let b = Buffer.create (String.length s) in
   let n = String.length s in
   let rec go i =
@@ -1956,6 +1985,25 @@ let replies ctx s =
       | Some (_, _, j) ->
           Buffer.add_string b (String.sub s i (j - i));
           go j
+      | None when dcs && s.[i] = '\x18' && on ctx "dcs-requests" ->
+          fire ctx "dcs-requests";
+          go (i + 1)
+      | None
+        when dcs
+             && i + 1 < n
+             && s.[i] = '\027'
+             && s.[i + 1] = 'P'
+             && on ctx "dcs-requests" -> (
+          fire ctx "dcs-requests";
+          match occurs (String.sub s i (n - i)) "\027\\" with
+          | true ->
+              let rec st k =
+                if k + 1 >= n then n
+                else if s.[k] = '\027' && s.[k + 1] = '\\' then k + 2
+                else st (k + 1)
+              in
+              go (st (i + 2))
+          | false -> ())
       | None ->
           Buffer.add_char b s.[i];
           go (i + 1)
@@ -2091,7 +2139,8 @@ let screens ctx ~orphans ~erased ~cut ~lost ~(xterm : Screen.t)
                       (not l.(c).cont)
                       && ctx.width (first_scalar l.(c).text) = 2
                       && (not l.(c + 1).cont) && l.(c + 1).text = " "
-                      && not (List.mem (r, c) lost)
+                      && (not (List.mem (r, c) lost))
+                      && not (List.mem (r, c) cut)
                     then
                       l.(c + 1) <- { (l.(c + 1)) with text = ""; cont = true }
                   done;
@@ -2170,6 +2219,9 @@ let screens ctx ~orphans ~erased ~cut ~lost ~(xterm : Screen.t)
 
 let national_finals = "4C5RfQ9KYE6`ZH7="
 
+(* [allow ctx ~prev ~last t] restricts the generator. Tokens may form a
+   sequence together (ESC, then text that starts with c), so the checks read
+   the bytes so far, [before], and the bytes with [t], [after]. *)
 let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
   let reject name =
     if on ctx name then (
@@ -2177,121 +2229,125 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
       false)
     else true
   in
-  let has_label l = String.starts_with ~prefix:l t.label in
+  let before =
+    String.concat "" (List.rev_map (fun (p : Gen.token) -> p.bytes) prev)
+  in
+  let after = before ^ t.bytes in
+  let n = String.length before in
+  (* [forms sub]: [t] completes an occurrence of [sub]. *)
+  let forms sub = occurs ~ending_after:n after sub in
+  let forms_any subs = List.exists forms subs in
+  let designations sets finals =
+    List.concat_map
+      (fun g -> List.map (fun f -> Printf.sprintf "\027%c%c" g f) finals)
+      sets
+  in
+  let chars s = List.init (String.length s) (String.get s) in
+  let non_ascii = String.exists (fun c -> Char.code c >= 0x80) t.bytes in
+  let national = occurs before "\027[?42h" in
   let vt_level () =
     ctx.decid < 200
-    && (has_label "SS2" || has_label "SS3" || has_label "LS2" || has_label "LS3"
-       || has_label "SCS"
-          && String.length t.bytes = 3
-          && String.contains national_finals t.bytes.[2]
-       || (has_label "DECSET" || has_label "DECRST")
-          && String.equal
-               (String.sub t.bytes 3 (String.length t.bytes - 4))
-               "42")
-    || (ctx.decid < 400 && (has_label "DECIC" || has_label "DECDC"))
+    && forms_any
+         ([ "\027N"; "\027O"; "\027n"; "\027o"; "\027[?42h"; "\027[?42l" ]
+         @ designations [ '('; ')'; '*'; '+' ] (chars national_finals))
+    || ctx.decid < 400
+       && (String.starts_with ~prefix:"DECIC" t.label
+          || String.starts_with ~prefix:"DECDC" t.label)
   in
-  let s8c1t () = ctx.decid >= 200 && String.equal t.bytes "\027 G" in
+  let s8c1t () = ctx.decid >= 200 && forms "\027 G" in
+  (* Once G2 holds a set other than ASCII. *)
   let g2 () =
-    String.exists (fun c -> Char.code c >= 0x80) t.bytes
-    && List.exists
-         (fun (p : Gen.token) ->
-           String.length p.bytes = 3
-           && String.starts_with ~prefix:"\027*" p.bytes
-           && p.bytes.[2] <> 'B')
-         prev
+    non_ascii
+    &&
+    let rec go i =
+      i + 2 < String.length before
+      && ((before.[i] = '\027' && before.[i + 1] = '*' && before.[i + 2] <> 'B')
+         || go (i + 1))
+    in
+    go 0
   in
+
   (* UK # and DEC Special Graphics _ after a designation of their set. *)
   let internal () =
-    String.starts_with ~prefix:"text" t.label
-    && List.exists
-         (fun (p : Gen.token) ->
-           String.length p.bytes = 3
-           && p.bytes.[0] = '\027'
-           && String.contains "()*+" p.bytes.[1]
-           && ((p.bytes.[2] = 'A' && String.contains t.bytes '#')
-              || (p.bytes.[2] = '0' && String.contains t.bytes '_')))
-         prev
+    String.contains t.bytes '#'
+    && List.exists (occurs before) (designations [ '('; ')'; '*'; '+' ] [ 'A' ])
+    || String.contains t.bytes '_'
+       && List.exists (occurs before)
+            (designations [ '('; ')'; '*'; '+' ] [ '0' ])
   in
-  (* A single shift: SS2 or SS3, or ESC then text that starts with N or O.
-     [shift_ends p before] says the shift is the last thing [p] wrote. *)
-  let shift (p : Gen.token) ~(before : Gen.token list) =
-    p.label = "SS2" || p.label = "SS3"
-    || String.starts_with ~prefix:"text" p.label
-       && (String.starts_with ~prefix:"N" p.bytes
-          || String.starts_with ~prefix:"O" p.bytes)
-       && match before with q :: _ -> q.bytes = "\027" | [] -> false
+  (* A single shift: [t] completes ESC N or ESC O, or follows one. *)
+  let shifted = forms "\027N" || forms "\027O" in
+  let after_shift =
+    String.ends_with ~suffix:"\027N" before
+    || String.ends_with ~suffix:"\027O" before
   in
-  let shift_ends (p : Gen.token) ~(before : Gen.token list) =
-    shift p ~before && (String.length p.bytes = 1 || p.bytes.[0] = '\027')
+  let shift_last =
+    String.ends_with ~suffix:"\027N" after
+    || String.ends_with ~suffix:"\027O" after
   in
-  (* The last character printed before [t], roughly: the last scalar of the
-     latest text token. *)
-  let last_printed =
-    match
-      List.find_opt
-        (fun (p : Gen.token) -> String.starts_with ~prefix:"text" p.label)
-        prev
-    with
-    | Some p when p.bytes <> "" ->
-        let rec last i =
-          if i <= 0 || Char.code p.bytes.[i] land 0xC0 <> 0x80 then i
-          else last (i - 1)
-        in
-        let i = last (String.length p.bytes - 1) in
-        Uchar.to_int (Uchar.utf_decode_uchar (String.get_utf_8_uchar p.bytes i))
-    | _ -> 0
+  (* A character beyond U+00FF printed before. *)
+  let wide_before =
+    List.exists
+      (fun (p : Gen.token) ->
+        String.starts_with ~prefix:"text" p.label
+        && List.exists (fun cp -> cp > 0xFF) (scalars p.bytes))
+      prev
   in
   let ss () =
-    shift t ~before:prev
-    && ((last && shift_ends t ~before:prev)
-       || last_printed > 0xFF
-       || List.exists
-            (fun (p : Gen.token) ->
-              String.starts_with ~prefix:"text" p.label
-              && List.exists (fun cp -> cp > 0xFF) (scalars p.bytes))
-            prev)
-    ||
-    match prev with
-    | p :: before when shift_ends p ~before ->
-        not
-          (String.length t.bytes > 0
-          && String.for_all (fun c -> c >= '\x20' && c <= '\x7E') t.bytes
-          && String.starts_with ~prefix:"text" t.label)
-    | _ -> false
+    (shifted && ((last && shift_last) || wide_before))
+    || after_shift
+       && not
+            (String.length t.bytes > 0
+            && String.for_all (fun c -> c >= '\x20' && c <= '\x7E') t.bytes
+            && String.starts_with ~prefix:"text" t.label)
   in
   (* Escape sequences xterm performs and matrix, a VT100, does not. *)
   let escapes () =
-    match prev with
-    | p :: _ when p.bytes = "\027" && String.length t.bytes > 0 ->
-        let f = t.bytes.[0] in
-        f = 'V' || f = 'W' || f = 'l' || f = 'm'
-        || String.length t.bytes > 1
-           && f = '#'
-           && String.contains "3456" t.bytes.[1]
-        || String.length t.bytes > 1
-           && f = ' '
-           && String.contains "LMN" t.bytes.[1]
-        || (ctx.decid >= 200 && (f = '~' || f = '}' || f = '|'))
-        || (ctx.decid >= 400 && (f = '6' || f = '9'))
-    | _ -> false
+    forms_any
+      ([
+         "\027V";
+         "\027W";
+         "\027l";
+         "\027m";
+         "\027#3";
+         "\027#4";
+         "\027#5";
+         "\027#6";
+         "\027 L";
+         "\027 M";
+         "\027 N";
+       ]
+      @ (if ctx.decid >= 200 then [ "\027~"; "\027}"; "\027|" ] else [])
+      @ if ctx.decid >= 400 then [ "\027" ^ "6"; "\027" ^ "9" ] else [])
+  in
+  (* Media copy, CSI Pm i: it prints, or turns printer controller mode on,
+     which takes the harness's own print. *)
+  let media_copy () =
+    let m = String.length after in
+    let rec csi i =
+      i < m
+      &&
+      match after.[i] with
+      | '0' .. '9' | ';' | '?' -> csi (i + 1)
+      | 'i' -> i >= n
+      | _ -> false
+    in
+    let rec go i =
+      i + 1 < m
+      && ((after.[i] = '\027' && after.[i + 1] = '[' && csi (i + 2))
+         || go (i + 1))
+    in
+    go (max 0 (n - 300))
   in
   let national_designation () =
-    ctx.decid >= 200 && has_label "SCS"
-    && String.length t.bytes = 3
-    && String.contains national_finals t.bytes.[2]
-    && not (List.exists (fun (p : Gen.token) -> p.bytes = "\027[?42h") prev)
+    ctx.decid >= 200 && (not national)
+    && forms_any (designations [ '('; ')'; '*'; '+' ] (chars national_finals))
   in
   let too_wide () =
     ctx.cols < 2 && List.exists (fun cp -> ctx.width cp = 2) (scalars t.bytes)
   in
-  let nrcm () =
-    String.exists (fun c -> Char.code c >= 0x80) t.bytes
-    && List.exists (fun (p : Gen.token) -> p.bytes = "\027[?42h") prev
-  in
-  let ris () =
-    t.bytes = "\027c"
-    && List.exists (fun (p : Gen.token) -> p.bytes = "\027[?42h") prev
-  in
+  let nrcm () = non_ascii && national in
+  let ris () = national && forms "\027c" in
   not
     ((vt_level () && not (reject "vt-level"))
     || (s8c1t () && not (reject "s8c1t"))
@@ -2301,5 +2357,6 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
     || (nrcm () && not (reject "national-utf8"))
     || (ris () && not (reject "ris-national"))
     || (escapes () && not (reject "xterm-escapes"))
+    || (media_copy () && not (reject "media-copy"))
     || (national_designation () && not (reject "national-designation"))
     || (too_wide () && not (reject "wider-than-line")))

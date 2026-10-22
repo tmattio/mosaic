@@ -190,7 +190,22 @@ let split_last_cpr s =
 
 type result = { replies : string; cpr2 : string; dump : string }
 
+(* Drops what the FIFO holds: a print a case caused itself would otherwise
+   be read as the next case's. *)
+let drain_fifo t =
+  let chunk = Bytes.create 4096 in
+  let rec go () =
+    match Unix.select [ t.fifo ] [] [] 0. with
+    | [], _, _ -> ()
+    | _ ->
+        ignore (Unix.read t.fifo chunk 0 (Bytes.length chunk));
+        go ()
+  in
+  go ();
+  Buffer.clear t.fifo_pending
+
 let run t ~decid bytes =
+  drain_fifo t;
   write_all t.tty_out (reset ~decid ^ bytes ^ trailer ^ probe);
   let replies = read_replies t in
   let dump = read_dump t in
