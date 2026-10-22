@@ -204,8 +204,9 @@ let pp fmt mask =
   in
   Format.pp_print_char fmt ']'
 
+let bits = Array.length all_flags
 let pack mask = mask
-let unpack mask = mask land 0xFFF (* clamp to valid 12-bit range *)
+let unpack mask = mask land ((1 lsl bits) - 1)
 
 let fold f mask init =
   Array.fold_left

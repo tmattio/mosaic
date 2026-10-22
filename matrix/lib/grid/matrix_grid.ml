@@ -332,10 +332,12 @@ let[@inline] get_codepoint t idx =
   let code = Buf.get_cell t.chars idx in
   if Packed_cell.is_inline code then Packed_cell.codepoint code else -1
 
-(* The attrs plane holds Ansi.Attr's 12 bits and, above them, DEC's
-   selective-erase attribute, which no reader of attributes sees. *)
-let protected_bit = 0x1000
-let attrs_mask = 0xFFF
+(* The attrs plane holds Ansi.Attr's bits and, above them, DEC's
+   selective-erase attribute, which no reader of attributes sees. The plane
+   has 16 bits. *)
+let protected_bit = 1 lsl Ansi.Attr.bits
+let attrs_mask = protected_bit - 1
+let () = assert (protected_bit <= 0x8000)
 let[@inline] get_attrs t idx = Buf.get t.attrs idx land attrs_mask
 let[@inline] is_protected t idx = Buf.get t.attrs idx land protected_bit <> 0
 

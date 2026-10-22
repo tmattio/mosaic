@@ -162,7 +162,13 @@ val pack : t -> int
 (** [pack s] is the integer representation of [s]. Stable across releases. *)
 
 val unpack : int -> t
-(** [unpack n] is the attribute set from the integer [n]. Inverse of {!pack}. *)
+(** [unpack n] is the attribute set from the integer [n]. Inverse of {!pack}.
+    Bits from {!bits} up are ignored. *)
+
+val bits : int
+(** [bits] is the number of low bits {!pack} uses, one a flag: [pack s] is below
+    [1 lsl bits], so a store of packed sets may keep other facts in the bits
+    above. *)
 
 (** {1:fmt Formatting} *)
 
