@@ -69,6 +69,16 @@
 
 (rule
  (alias runtest)
+ (action
+  (run %{exe:bench_text_layout.exe} memory-widths)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{exe:bench_text_layout.exe} paint)))
+
+(rule
+ (alias runtest)
  (locks /bench)
  (action
   (run %{exe:bench_text_layout.exe} history)))

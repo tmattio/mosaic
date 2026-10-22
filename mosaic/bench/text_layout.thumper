@@ -1,6 +1,33 @@
 # thumper baseline v1
 # suite: text_layout
 
+# machine: 83e4f30ba5340e6b
+# host: fudge · Intel(R) Core(TM) Ultra 5 235 · x86_64 · linux
+# ocaml: 5.5.1 · 64-bit · release
+
+edit-1mb-middle-undo	alloc_words	exact	2562669
+focus-layout-128b	alloc_words	exact	108
+focus-layout-1mb	alloc_words	exact	108
+fragments-normalize-10k	alloc_words	exact	53700
+fragments-normalize-1k	alloc_words	exact	4010
+index-create-1mb	alloc_words	exact	1000054
+paint-horizontal-100k	alloc_words	exact	120
+paint-horizontal-1m	alloc_words	exact	120
+paint-label	alloc_words	exact	1020
+paint-overlays-dense-200	alloc_words	exact	17012
+paint-overlays-hidden-10k	alloc_words	exact	1859
+paint-styled-100k-middle	alloc_words	exact	7459
+paint-tall-100k	alloc_words	exact	1859
+paint-tall-100k-middle	alloc_words	exact	1859
+paint-tall-1k	alloc_words	exact	1859
+reflow-alternating-widths-100k	alloc_words	exact	14325
+reflow-label	alloc_words	exact	20
+reflow-styled-100k	alloc_words	exact	20
+reflow-styled-100k-cold	alloc_words	exact	27963
+styles-nested-revision-200	alloc_words	exact	295823
+styles-same-text-layout-100k	alloc_words	exact	28
+text-plain-props	alloc_words	exact	11
+
 # machine: ca352e279bc47cb1
 # host: Thibauts-MacBook-2.local · Apple M1 Max · arm64 · macos
 # ocaml: 5.5.1 · 64-bit · release
