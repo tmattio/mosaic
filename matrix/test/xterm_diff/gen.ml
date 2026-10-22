@@ -7,7 +7,13 @@
    a few tokens. *)
 
 type token = { label : string; bytes : string; simpler : string list }
-type config = { rows : int; cols : int; exclude : string list }
+
+type config = {
+  rows : int;
+  cols : int;
+  exclude : string list;
+  max_tokens : int;  (** The longest case, in tokens. *)
+}
 
 let tok ?(simpler = []) label bytes = { label; bytes; simpler }
 
@@ -277,7 +283,7 @@ let sgr st =
     ~simpler:
       (List.map (fun c -> "\027[" ^ c ^ "m") codes |> List.filter (( <> ) bytes))
 
-let dec_modes = [ 1; 6; 7; 25; 45; 47; 1047; 1048; 1049; 2004; 12; 1004 ]
+let dec_modes = [ 1; 6; 7; 25; 42; 45; 47; 1047; 1048; 1049; 2004; 12; 1004 ]
 
 let csi_fn st cfg =
   let p () = param st cfg in
@@ -543,22 +549,30 @@ let excluded cfg t =
   List.exists (fun p -> String.starts_with ~prefix:p t.label) cfg.exclude
 
 (* [case cfg ~seed i] is the [i]th case of the run seeded with [seed]: cases
-   are independent, so a case is reproducible from its index alone. *)
-let case cfg ~seed i =
+   are independent, so a case is reproducible from its index alone. A token
+   that [allow ~prev ~last] refuses ([prev] are the tokens before it, the
+   last first; [last] whether it ends the case) is drawn again. *)
+let case ?(allow = fun ~prev:_ ~last:_ _ -> true) cfg ~seed i =
   let st = Random.State.make [| seed; i |] in
   let len =
     weighted st
-      [
-        (4, 1 + Random.State.int st 4);
-        (4, 4 + Random.State.int st 12);
-        (2, 15 + Random.State.int st 26);
-      ]
+      ([
+         (4, 1 + Random.State.int st 4);
+         (4, 4 + Random.State.int st 12);
+         (2, 15 + Random.State.int st 26);
+       ]
+      @
+      if cfg.max_tokens > 40 then
+        [ (2, 41 + Random.State.int st (cfg.max_tokens - 40)) ]
+      else [])
   in
+  let len = min len cfg.max_tokens in
   let rec draw acc n =
     if n = 0 then List.rev acc
     else
       let t = token st cfg in
-      if excluded cfg t then draw acc n else draw (t :: acc) (n - 1)
+      if excluded cfg t || not (allow ~prev:acc ~last:(n = 1) t) then draw acc n
+      else draw (t :: acc) (n - 1)
   in
   draw [] len
 

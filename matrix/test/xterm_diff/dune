@@ -3,4 +3,4 @@
 
 (executable
  (name xterm_diff)
- (libraries unix matrix.vte matrix.grid matrix.ansi))
+ (libraries unix matrix.vte matrix.grid matrix.ansi matrix.text))

@@ -198,8 +198,27 @@ let decode ~width ~rows ~cols dump =
   let lines = ref [] and line_attrs = ref [] in
   let row = ref [] and line_attr = ref '5' and pending = ref None in
   let prefix = ref false in
+  (* xterm attaches a combining character to the cell it last wrote, the
+     second half of a wide character just written, and after a cursor motion
+     to the cell at the cursor, the first half: those of the second half came
+     first, and go right after the base. *)
+  let merge cells =
+    let rec go = function
+      | base :: cont :: rest when cont.cont && cont.text <> "" ->
+          let d = String.get_utf_8_uchar base.text 0 in
+          let n = Uchar.utf_decode_length d in
+          let text =
+            String.sub base.text 0 n ^ cont.text
+            ^ String.sub base.text n (String.length base.text - n)
+          in
+          { base with text } :: { cont with text = "" } :: go rest
+      | c :: rest -> c :: go rest
+      | [] -> []
+    in
+    go cells
+  in
   let end_row () =
-    lines := Array.of_list (List.rev !row) :: !lines;
+    lines := Array.of_list (merge (List.rev !row)) :: !lines;
     line_attrs := !line_attr :: !line_attrs;
     row := [];
     line_attr := '5';
@@ -250,11 +269,12 @@ let decode ~width ~rows ~cols dump =
                    :: !row
              | _ -> row := { blank with known = false } :: !row
            else
-             let rec attach = function
-               | c :: rest when c.cont -> (
-                   match attach rest with
-                   | Some rest -> Some (c :: rest)
-                   | None -> None)
+             (* A combining character after the second half of a wide
+                character was attached to that half: it is kept there until
+                the row ends (see [end_row]). *)
+             let attach = function
+               | c :: rest when c.cont ->
+                   Some ({ c with text = c.text ^ text } :: rest)
                | c :: rest -> Some ({ c with text = c.text ^ text } :: rest)
                | [] -> None
              in

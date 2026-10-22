@@ -41,6 +41,10 @@ let resources ~fifo ~decid =
     ("colorAttrMode", "false");
     ("colorMode", "true");
     ("directColor", "true");
+    (* Scroll at once: with jump scroll, xterm defers the redraw of the rows
+       a scroll brings in, and while that is pending EL 1 and DECSEL 1 skip
+       the Last Column Flag and protection (util.c, ClearLeft: AddToVisible). *)
+    ("jumpScroll", "false");
     (* No scroll bar, no logging, no login shell, no utmp entry. *)
     ("scrollBar", "false");
     ("logging", "false");
@@ -87,6 +91,8 @@ let xterm =
 
 let budget = ref 400
 let no_min = ref false
+let strict = ref []
+let max_tokens = ref 40
 let mode = ref ""
 let input = ref ""
 
@@ -110,10 +116,18 @@ let spec =
         "PATH xterm binary (default $XTERM_DIFF_XTERM or xterm)" );
       ("--budget", Arg.Set_int budget, "N runs per minimization (default 400)");
       ("--no-minimize", Arg.Set no_min, " do not minimize failing cases");
+      ( "--strict",
+        Arg.String (fun s -> strict := !strict @ String.split_on_char ',' s),
+        "N1,N2 turn these normalisations off ('all' for every one; see \
+         'xterm_diff list')" );
+      ( "--max-tokens",
+        Arg.Set_int max_tokens,
+        "N the longest case, in tokens (default 40)" );
     ]
 
 let usage =
-  "xterm_diff (fuzz | case BYTES | case @FILE | matrix BYTES | gen) [options]\n\
+  "xterm_diff (fuzz | case BYTES | case @FILE | matrix BYTES | gen | list) \
+   [options]\n\
    BYTES is escaped: \\e, \\xHH, \\u{HHHH}, \\n, \\r, \\t, \\\\."
 
 let anon a =
@@ -121,11 +135,44 @@ let anon a =
   else if !input = "" then input := a
   else raise (Arg.Bad ("unexpected " ^ a))
 
-let config () = { Gen.rows = !rows; cols = !cols; exclude = !exclude }
+let config () =
+  {
+    Gen.rows = !rows;
+    cols = !cols;
+    exclude = !exclude;
+    max_tokens = !max_tokens;
+  }
+
+let enabled name = not (List.mem "all" !strict || List.mem name !strict)
+
+let context ~width =
+  {
+    Norm.decid = !decid;
+    rows = !rows;
+    cols = !cols;
+    width;
+    enabled;
+    fired = [];
+  }
+
+(* Characters outside the measured alphabet reach the screen only through the
+   character sets (narrow) or as U+FFFD (narrow). *)
+let default_width cp =
+  if cp < 0x20 then 0
+  else Matrix_text.uchar_width ~tab_width:1 (Uchar.of_int cp)
+
+let case_tokens ~width i =
+  let ctx = context ~width in
+  let tokens = Gen.case ~allow:(Norm.allow ctx) (config ()) ~seed:!seed i in
+  (tokens, ctx.fired)
 
 (* {1 One comparison} *)
 
-type outcome = { diffs : Screen.diff list; report : string }
+type outcome = {
+  diffs : Screen.diff list;
+  report : string;
+  fired : string list;  (** The normalisations that fired. *)
+}
 
 let with_alarm secs f =
   let old =
@@ -139,19 +186,23 @@ let with_alarm secs f =
       Sys.set_signal Sys.sigalrm old)
     f
 
-let matrix_side bytes =
+let matrix_side ?width_method bytes =
   with_alarm 5 (fun () ->
-      let m = Vte_adapter.create ~rows:!rows ~cols:!cols in
+      let m = Vte_adapter.create ?width_method ~rows:!rows ~cols:!cols () in
       let r1 = Vte_adapter.feed m (bytes ^ Xterm.trailer ^ "\027[6n") in
       let screen = Vte_adapter.screen m in
       let r2 = Vte_adapter.feed m "#\027[6n" in
       let replies, cpr1 = Xterm.split_last_cpr r1 in
       (replies, cpr1, r2, screen))
 
-let compare_case session ~width bytes =
-  let x = Xterm.run session bytes in
+let compare_case session ~width ?(fired = []) bytes =
+  let ctx = context ~width in
+  ctx.fired <- fired;
+  let rw = Norm.rewrite ctx bytes in
+  let x = Xterm.run session ~decid:!decid rw.xterm in
   let xs = Screen.decode ~width ~rows:!rows ~cols:!cols x.dump in
   let x_replies, x_cpr1 = Xterm.split_last_cpr x.replies in
+  let x_replies = Norm.replies ctx x_replies in
   let mismatch kind where a b =
     if a = b then []
     else
@@ -164,27 +215,67 @@ let compare_case session ~width bytes =
         };
       ]
   in
+  let differences ~xterm:xs (m_replies, m_cpr1, m_cpr2, ms) =
+    let xs, ms =
+      Norm.screens ctx ~orphans:rw.orphans ~erased:rw.erased ~cut:rw.cut
+        ~lost:rw.lost ~xterm:xs ~matrix:ms
+    in
+    let diffs =
+      Screen.compare_screens ~xterm:xs ~matrix:ms
+      @ mismatch Cursor "cursor after the case" x_cpr1 m_cpr1
+      @ mismatch Cursor "cursor after one more character" x.cpr2 m_cpr2
+      @ mismatch Reply "replies" x_replies m_replies
+    in
+    (diffs, xs, ms)
+  in
   match matrix_side bytes with
   | exception e ->
       let msg = Printexc.to_string e in
       {
         diffs = [ { kind = Crash; where = "matrix"; xterm = ""; matrix = msg } ];
         report = "matrix raised " ^ msg ^ "\n\nxterm:\n" ^ Screen.render xs;
+        fired = ctx.fired;
       }
-  | m_replies, m_cpr1, m_cpr2, ms ->
-      let diffs =
-        Screen.compare_screens ~xterm:xs ~matrix:ms
-        @ mismatch Cursor "cursor after the case" x_cpr1 m_cpr1
-        @ mismatch Cursor "cursor after one more character" x.cpr2 m_cpr2
-        @ mismatch Reply "replies" x_replies m_replies
+  | unicode ->
+      let saved = ctx.fired in
+      let diffs, xs', ms = differences ~xterm:xs unicode in
+      (* graphemes: when matrix's two width methods disagree, the one whose
+         units are xterm's. *)
+      let (_, m_cpr1, m_cpr2, _), diffs, xs', ms =
+        if diffs = [] || not (enabled "graphemes") then (unicode, diffs, xs', ms)
+        else
+          match matrix_side ~width_method:`Wcwidth bytes with
+          | exception _ -> (unicode, diffs, xs', ms)
+          | wcwidth ->
+              if unicode = wcwidth then (unicode, diffs, xs', ms)
+              else (
+                ctx.fired <- saved;
+                Norm.fire ctx "graphemes";
+                let diffs, xs', ms = differences ~xterm:xs wcwidth in
+                (wcwidth, diffs, xs', ms))
       in
       let report =
         Printf.sprintf
           "xterm (cursor %s, then %s):\n%smatrix (cursor %s, then %s):\n%s"
-          (Screen.escape x_cpr1) (Screen.escape x.cpr2) (Screen.render xs)
+          (Screen.escape x_cpr1) (Screen.escape x.cpr2) (Screen.render xs')
           (Screen.escape m_cpr1) (Screen.escape m_cpr2) (Screen.render ms)
       in
-      { diffs; report }
+      let report =
+        if rw.xterm = bytes then report
+        else Printf.sprintf "xterm got: %s\n%s" (Screen.escape rw.xterm) report
+      in
+      let cells name l =
+        if l = [] then ""
+        else
+          Printf.sprintf "%s cells: %s\n" name
+            (String.concat " "
+               (List.map (fun (r, c) -> Printf.sprintf "%d,%d" r c) l))
+      in
+      let report =
+        cells "lost" rw.lost ^ cells "cut" rw.cut ^ cells "erased" rw.erased
+        ^ report
+      in
+      { diffs; report; fired = List.sort_uniq compare ctx.fired }
 
 let primary diffs =
   List.find_opt
@@ -249,7 +340,20 @@ let rec agent () =
 and agent_body ~fifo ~log =
   let logf fmt = Printf.kfprintf (fun oc -> flush oc) log fmt in
   let session = Xterm.open_ ~fifo in
-  let widths = Xterm.calibrate session Gen.alphabet in
+  (* xterm's widths, measured once per output directory on a screen wide
+     enough to measure them (see [launch]). *)
+  let file = Filename.concat !out "widths.txt" in
+  let widths =
+    if Sys.file_exists file then
+      In_channel.with_open_bin file In_channel.input_lines
+      |> List.map (fun l -> Scanf.sscanf l "%x %d" (fun cp w -> (cp, w)))
+    else
+      let widths = Xterm.calibrate session Gen.alphabet in
+      Out_channel.with_open_bin file (fun oc ->
+          List.iter (fun (cp, w) -> Printf.fprintf oc "%x %d\n" cp w) widths);
+      widths
+  in
+  if !mode = "calibrate" then exit 0;
   let table = Hashtbl.create 64 in
   List.iter (fun (cp, w) -> Hashtbl.replace table cp w) widths;
   logf "calibration: %s\n"
@@ -257,15 +361,19 @@ and agent_body ~fifo ~log =
        (List.map (fun (cp, w) -> Printf.sprintf "U+%04X:%d" cp w) widths));
   (* Characters outside the alphabet reach the print only through the
      character sets (narrow) or as U+FFFD (narrow). *)
-  let width cp = Option.value (Hashtbl.find_opt table cp) ~default:1 in
+  let width cp =
+    match Hashtbl.find_opt table cp with
+    | Some w -> w
+    | None -> default_width cp
+  in
   (* The case being run, which the parent skips if xterm cannot recover. *)
   let next = Filename.concat !out "next" in
   let set_next i =
     Out_channel.with_open_bin next (fun oc ->
         output_string oc (string_of_int i))
   in
-  let compare bytes =
-    try Some (compare_case session ~width bytes)
+  let compare ?fired bytes =
+    try Some (compare_case session ~width ?fired bytes)
     with Xterm.Timeout what ->
       logf "timeout (%s) on %s\n" what (Screen.escape bytes);
       (try Xterm.recover session
@@ -291,7 +399,9 @@ and agent_body ~fifo ~log =
           let bytes = Screen.unescape input in
           match compare bytes with
           | Some o ->
-              Printf.fprintf oc "case: %s\n%s%s\n" (Screen.escape bytes)
+              Printf.fprintf oc "case: %s\n%s%s%s\n" (Screen.escape bytes)
+                (if o.fired = [] then ""
+                 else "normalised: " ^ String.concat " " o.fired ^ "\n")
                 (describe_diffs o.diffs) o.report
           | None ->
               Printf.fprintf oc "case: %s\nxterm timed out\n\n"
@@ -299,7 +409,6 @@ and agent_body ~fifo ~log =
         inputs;
       close_out oc
   | _ ->
-      let cfg = config () in
       let results =
         open_out_gen
           [ Open_wronly; Open_append; Open_creat ]
@@ -312,20 +421,36 @@ and agent_body ~fifo ~log =
       let runs = ref 0 and failing = ref 0 in
       for i = !start to !start + !count - 1 do
         set_next i;
-        let tokens = Gen.case cfg ~seed:!seed i in
+        let tokens, restricted = case_tokens ~width i in
         let bytes = Gen.bytes tokens in
         incr runs;
-        (match compare bytes with
+        (match compare ~fired:restricted bytes with
         | None -> Printf.fprintf results "%d\ttimeout\n%!" i
-        | Some o when o.diffs = [] -> Printf.fprintf results "%d\tsame\n%!" i
+        | Some o when o.diffs = [] ->
+            Printf.fprintf results "%d\tsame\t%s\n%!" i
+              (String.concat "," o.fired)
         | Some o -> begin
             incr failing;
             let p = primary o.diffs in
+            (* A smaller case must still be one the generator could make. *)
+            let valid l =
+              let ctx = context ~width in
+              let rec go prev = function
+                | [] -> true
+                | t :: rest ->
+                    Norm.allow ctx ~prev ~last:(rest = []) t
+                    && go (t :: prev) rest
+              in
+              go [] l
+            in
             let fails l =
-              incr runs;
-              match compare (Gen.bytes l) with
-              | Some o -> o.diffs <> [] && primary o.diffs = p
-              | None -> false
+              valid l
+              && begin
+                incr runs;
+                match compare (Gen.bytes l) with
+                | Some o -> o.diffs <> [] && primary o.diffs = p
+                | None -> false
+              end
             in
             let min, calls =
               if !no_min then (tokens, 0)
@@ -335,9 +460,10 @@ and agent_body ~fifo ~log =
             let signature =
               String.concat " " (List.map (fun t -> t.Gen.label) min)
             in
-            Printf.fprintf results "%d\tdiff\t%s\t%s\t%s\n%!" i (kinds mo.diffs)
-              signature
-              (Screen.escape (Gen.bytes min));
+            Printf.fprintf results "%d\tdiff\t%s\t%s\t%s\t%s\n%!" i
+              (kinds mo.diffs) signature
+              (Screen.escape (Gen.bytes min))
+              (String.concat "," o.fired);
             let oc =
               open_out (Filename.concat dir (Printf.sprintf "%06d.txt" i))
             in
@@ -347,13 +473,16 @@ and agent_body ~fifo ~log =
                tokens:   %s\n\
                original differences:\n\
                %s\n\
+               normalised: %s\n\
                minimized (%d runs): %s\n\
                tokens:   %s\n\
                differences:\n\
                %s\n\
                %s"
               i !seed !cols !rows !decid (Screen.escape bytes)
-              (describe_tokens tokens) (describe_diffs o.diffs) calls
+              (describe_tokens tokens) (describe_diffs o.diffs)
+              (String.concat " " mo.fired)
+              calls
               (Screen.escape (Gen.bytes min))
               (describe_tokens min) (describe_diffs mo.diffs) mo.report;
             close_out oc
@@ -386,14 +515,25 @@ let summarize () =
     List.length (List.filter (fun r -> List.nth_opt r 1 = Some v) rows)
   in
   let groups = Hashtbl.create 64 in
+  let fired = Hashtbl.create 32 in
+  let note names =
+    List.iter
+      (fun n ->
+        if n <> "" then
+          Hashtbl.replace fired n
+            (1 + Option.value (Hashtbl.find_opt fired n) ~default:0))
+      (String.split_on_char ',' names)
+  in
   List.iter
     (function
-      | [ i; "diff"; kinds; signature; bytes ] ->
+      | i :: "diff" :: kinds :: signature :: bytes :: rest ->
+          note (String.concat "" rest);
           let key = (kinds, signature) in
           let n, first =
             Option.value (Hashtbl.find_opt groups key) ~default:(0, (i, bytes))
           in
           Hashtbl.replace groups key (n + 1, first)
+      | _ :: "same" :: names -> note (String.concat "" names)
       | _ -> ())
     rows;
   let groups =
@@ -401,14 +541,32 @@ let summarize () =
     |> List.sort (fun (_, (a, _)) (_, (b, _)) -> compare b a)
   in
   Out_channel.with_open_bin (Filename.concat !out "summary.txt") (fun oc ->
-      Printf.fprintf oc "%d cases: %d same, %d differ, %d timed out\n\n"
-        (List.length rows) (count "same") (count "diff") (count "timeout");
-      Printf.fprintf oc
-        "count\tkinds\tminimized tokens\tfirst case\tits minimized bytes\n";
+      Printf.fprintf oc "%d cases: %d same, %d timed out\n" (List.length rows)
+        (count "same") (count "timeout");
+      Printf.fprintf oc "%d unexplained differences\n\n" (count "diff");
+      Printf.fprintf oc "normalisations (cases in which each fired):\n";
       List.iter
-        (fun ((kinds, signature), (n, (i, bytes))) ->
-          Printf.fprintf oc "%d\t%s\t%s\t%s\t%s\n" n kinds signature i bytes)
-        groups)
+        (fun (i : Norm.info) ->
+          let off = not (enabled i.name) in
+          match Hashtbl.find_opt fired i.name with
+          | Some n -> Printf.fprintf oc "  %-20s %7d\n" i.name n
+          | None when off -> Printf.fprintf oc "  %-20s     off\n" i.name
+          | None -> Printf.fprintf oc "  %-20s       0\n" i.name)
+        Norm.all;
+      if groups <> [] then (
+        Printf.fprintf oc
+          "\ncount\tkinds\tminimized tokens\tfirst case\tits minimized bytes\n";
+        List.iter
+          (fun ((kinds, signature), (n, (i, bytes))) ->
+            Printf.fprintf oc "%d\t%s\t%s\t%s\t%s\n" n kinds signature i bytes)
+          groups))
+
+let list () =
+  List.iter
+    (fun (i : Norm.info) ->
+      Printf.printf "%s (%s, %s)\n  %s\n" i.name (Norm.kind_name i.kind) i.how
+        i.why)
+    Norm.all
 
 let launch () =
   (try Unix.mkdir !out 0o755 with Unix.Unix_error (EEXIST, _, _) -> ());
@@ -421,7 +579,7 @@ let launch () =
   let stop = !start + !count in
   (* One xterm runs every case; if it wedges beyond recovery, the agent exits
      and a new xterm resumes after the case that wedged it. *)
-  let rec go first =
+  let rec go ?(mode = !mode) ?(rows = !rows) ?(cols = !cols) first =
     (try Unix.unlink fifo with Unix.Unix_error _ -> ());
     Unix.mkfifo fifo 0o600;
     let xrm =
@@ -431,12 +589,12 @@ let launch () =
     in
     let own =
       [
-        "agent:" ^ !mode;
+        "agent:" ^ mode;
         !input;
         "--rows";
-        string_of_int !rows;
+        string_of_int rows;
         "--cols";
-        string_of_int !cols;
+        string_of_int cols;
         "--seed";
         string_of_int !seed;
         "--start";
@@ -452,7 +610,9 @@ let launch () =
       ]
       @ (if !exclude = [] then []
          else [ "--exclude"; String.concat "," !exclude ])
-      @ if !no_min then [ "--no-minimize" ] else []
+      @ (if !no_min then [ "--no-minimize" ] else [])
+      @ (if !strict = [] then [] else [ "--strict"; String.concat "," !strict ])
+      @ [ "--max-tokens"; string_of_int !max_tokens ]
     in
     let args =
       [
@@ -461,7 +621,7 @@ let launch () =
         "+sb";
         "-ut";
         "-geometry";
-        Printf.sprintf "%dx%d" !cols !rows;
+        Printf.sprintf "%dx%d" cols rows;
       ]
       @ xrm
       @ ("-e" :: Sys.executable_name :: own)
@@ -482,11 +642,15 @@ let launch () =
           (String.trim (In_channel.with_open_bin next In_channel.input_all))
       with _ -> first
     in
-    if !mode = "fuzz" && reached < stop then (
+    if mode = "fuzz" && reached < stop then (
       Printf.eprintf "xterm_diff: case %d wedged xterm (%s), skipping it\n%!"
         reached status;
       go (reached + 1))
   in
+  (* The calibration writes a character after an A and reads where the
+     cursor went: below 4 columns it runs on a screen of its own. *)
+  if !cols < 4 && not (Sys.file_exists (Filename.concat !out "widths.txt")) then
+    go ~mode:"calibrate" ~rows:6 ~cols:12 !start;
   go !start;
   if !mode = "fuzz" then summarize ();
   let show f =
@@ -497,9 +661,15 @@ let launch () =
   if !mode = "case" then show "case.txt" else show "summary.txt"
 
 let matrix_only () =
-  let replies, cpr1, cpr2, screen = matrix_side (Screen.unescape !input) in
-  Printf.printf "replies %s, cursor %s, then %s\n%s" (Screen.escape replies)
-    (Screen.escape cpr1) (Screen.escape cpr2) (Screen.render screen)
+  let bytes = Screen.unescape !input in
+  let replies, cpr1, cpr2, screen = matrix_side bytes in
+  let ctx = context ~width:default_width in
+  let rw = Norm.rewrite ctx bytes in
+  Printf.printf "xterm would get %s (%s)\nreplies %s, cursor %s, then %s\n%s"
+    (Screen.escape rw.xterm)
+    (String.concat " " ctx.fired)
+    (Screen.escape replies) (Screen.escape cpr1) (Screen.escape cpr2)
+    (Screen.render screen)
 
 let () =
   Arg.parse spec anon usage;
@@ -511,10 +681,14 @@ let () =
   | "agent:case" ->
       mode := "case";
       agent ()
+  | "agent:calibrate" ->
+      mode := "calibrate";
+      agent ()
   | "matrix" -> matrix_only ()
+  | "list" -> list ()
   | "gen" ->
       for i = !start to !start + !count - 1 do
-        let tokens = Gen.case (config ()) ~seed:!seed i in
+        let tokens, _ = case_tokens ~width:default_width i in
         Printf.printf "%d\t%s\t%s\n" i
           (Screen.escape (Gen.bytes tokens))
           (describe_tokens tokens)

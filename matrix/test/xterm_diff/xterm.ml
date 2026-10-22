@@ -30,8 +30,17 @@ type t = {
    with its saved cursor (DECSC) at home: xterm's RIS resets the normal
    screen's slot but not the alternate one's, and has been seen to leave the
    alternate screen's text, both of which would leak from one case to the
-   next. *)
-let reset = "\027c\027[?47h\027[2J\0277\027[?47l"
+   next. Then ASCII in G0 to G3: from decTerminalID 200 up, xterm 398's RIS
+   leaves G2 as a case designated it, and with G2 not ASCII it reads every
+   byte 0x80..0xFF as a GR character (ptydata.c, decodeUtf8; changelog,
+   patch #407: "resetting the G0-G3 array"), so all later UTF-8 would break.
+   National mode (DECNRCM) also survives RIS there, and does the same. *)
+let reset =
+  "\027[?42l\027c\027[?47h\027[2J\0277\027[?47l\027(B\027)B\027*B\027+B"
+
+(* From level 3, ANSI conformance level 3 too: RIS keeps the level ESC SP L
+   or ESC SP M set, and level 1 turns LS2 and LS3 off. *)
+let reset ~decid = if decid >= 300 then reset ^ "\027 N" else reset
 let trailer = "\027\\"
 let probe = "\027[6n\027[i#\027[6n\027[>0q"
 let terminator_prefix = "\027P>|"
@@ -181,8 +190,8 @@ let split_last_cpr s =
 
 type result = { replies : string; cpr2 : string; dump : string }
 
-let run t bytes =
-  write_all t.tty_out (reset ^ bytes ^ trailer ^ probe);
+let run t ~decid bytes =
+  write_all t.tty_out (reset ~decid ^ bytes ^ trailer ^ probe);
   let replies = read_replies t in
   let dump = read_dump t in
   let replies, cpr2 = split_last_cpr replies in

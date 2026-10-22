@@ -2,7 +2,10 @@
 
 A differential fuzzer. It writes the same random bytes to matrix's VTE and to a
 real xterm, and compares the screens (text, attributes, colours), the cursor
-and the replies.
+and the replies. Where matrix follows a rule RFC 0004 decides, or xterm
+departs from the reference matrix follows, a named normalisation removes the
+expected difference (see [Normalisations](#normalisations)); every difference
+left is a finding.
 
 It is not a test: it needs xterm and an X server, which CI lacks, so nothing
 runs it under `dune build @runtest`.
@@ -22,6 +25,7 @@ $X case 'a\e[2@b' --out /tmp/xd                   # one case, both screens
 $X case @cases.txt --out /tmp/xd                  # one case per line
 $X matrix 'a\e[2@b'                               # matrix only, no X needed
 $X gen --seed 1 --start 1129 --count 1            # print a campaign's case
+$X list                                           # the normalisations
 ```
 
 If xterm is not on `PATH`, pass `--xterm PATH` or set `XTERM_DIFF_XTERM`. For
@@ -31,19 +35,27 @@ Bytes on the command line are escaped: `\e`, `\xHH`, `\u{HHHH}`, `\n`, `\r`,
 `\t`, `\\`.
 
 Options: `--rows`/`--cols` (default 6x12: small screens make wrapping,
-scrolling and margins frequent), `--seed`, `--count`, `--start`, `--decid`
-(xterm's `decTerminalID`, default 100), `--exclude L1,L2` (never generate
-tokens whose label starts with one of these, to silence a known class),
-`--budget` (runs per minimization), `--no-minimize`.
+scrolling and margins frequent; 1x1 and 2x2 work too), `--seed`, `--count`,
+`--start`, `--decid` (xterm's `decTerminalID`, default 100; 420 makes xterm a
+VT420, with DECIC/DECDC, single shifts and national mode), `--max-tokens`
+(the longest case, default 40; up to 200 makes long cases),
+`--strict N1,N2` (turn these normalisations off, `all` for every one),
+`--exclude L1,L2` (never generate tokens whose label starts with one of
+these), `--budget` (runs per minimization), `--no-minimize`.
 
 ## Output
 
 In the `--out` directory:
 
-- `summary.txt`: the differing cases grouped by kinds of difference and the
-  labels of their minimized tokens, largest group first.
-- `results.tsv`: one line per case: index, `same`/`diff`/`timeout`, and for a
-  difference its kinds, minimized labels and minimized bytes.
+- `summary.txt`: the count of unexplained differences, the number of cases in
+  which each normalisation fired, and the differing cases grouped by kinds of
+  difference and the labels of their minimized tokens, largest group first.
+  A clean campaign says `0 unexplained differences`.
+- `results.tsv`: one line per case: index, `same`/`diff`/`timeout`, the
+  normalisations that fired, and for a difference its kinds, minimized labels
+  and minimized bytes.
+- `widths.txt`: xterm's width of each non-ASCII character of the alphabet, as
+  measured (see below).
 - `diffs/NNNNNN.txt`: for each differing case, the original and the minimized
   case, the differences and both screens.
 - `log.txt`: progress, xterm's measured widths, timeouts.
@@ -60,10 +72,18 @@ agent mode, so that the agent's standard input and output are xterm's pty. The
 agent puts the tty in raw mode and, for each case, writes in one go:
 
 1. `ESC c` (RIS): xterm's power-up state; the matrix side is a fresh VTE.
-   xterm's RIS leaves the alternate screen's saved cursor (DECSC) as it was,
-   and once in 24,000 cases left its text, so the agent also clears the
-   alternate screen and saves the home cursor there (`CSI ? 47 h`,
-   `CSI 2 J`, `ESC 7`, `CSI ? 47 l`), on the xterm side only.
+   xterm's RIS keeps some state, which would leak from one case into the
+   next, so the agent also, on the xterm side only:
+   - turns national mode off first (`CSI ? 42 l`): RIS clears the mode
+     without turning UTF-8 back on;
+   - clears the alternate screen and saves the home cursor there
+     (`CSI ? 47 h`, `CSI 2 J`, `ESC 7`, `CSI ? 47 l`): RIS leaves the
+     alternate screen's saved cursor, and once in 24,000 cases its text;
+   - designates ASCII into G0 to G3: from level 2, RIS leaves G2 as a case
+     designated it, and with G2 not ASCII xterm reads every byte 0x80..0xFF
+     raw, so all later UTF-8 would break;
+   - from level 3, sets ANSI conformance level 3 (`ESC SP N`): RIS keeps the
+     level a case set, and level 1 turns LS2 and LS3 off.
 2. The case, then `ESC \` (ST), which ends any sequence or string the case left
    open. Both sides receive it.
 3. `CSI 6 n`: the cursor.
@@ -74,11 +94,14 @@ agent puts the tty in raw mode and, for each case, writes in one go:
 6. `CSI > 0 q` (XTVERSION), whose reply marks the end of the case's replies.
    The generator never produces it.
 
-The agent decodes xterm's print (see `screen.ml` for the format and its
-traps), runs matrix on the same bytes at the same size through
-`vte_adapter.ml` (the only module that uses matrix's API), and compares.
-Differing cases are minimized by delta debugging over their tokens, then by
-replacing each token with a simpler variant.
+Before writing, the agent rewrites the case for xterm where a normalisation
+asks (`norm.ml`). The agent decodes xterm's print (see `screen.ml` for the
+format and its traps), runs matrix on the original bytes at the same size
+through `vte_adapter.ml` (the only module that uses matrix's API), applies
+the screen and reply normalisations, and compares. Differing cases are
+minimized by delta debugging over their tokens, then by replacing each token
+with a simpler variant; a smaller case must still be one the generator could
+make.
 
 The generator (`gen.ml`) is weighted and seeded. Case `i` of seed `s` depends
 on `(s, i)` only. Cases are 1 to 40 tokens drawn from printable ASCII,
@@ -91,8 +114,8 @@ terminator; C1 controls in UTF-8 and raw; ill-formed UTF-8; and malformed
 syntax (C0, ESC, CAN or non-ASCII inside a CSI, 300 parameters, colons,
 private markers and intermediates on other finals).
 
-Speed: about 2,500 comparisons per second (12x6, xterm 398 on Xvfb),
-minimization included.
+Speed: about 2,000 comparisons per second (12x6, xterm 398 on Xvfb),
+minimization included; several campaigns can run at once on one display.
 
 ## xterm's configuration
 
@@ -102,7 +125,7 @@ minimization included.
 |---|---|---|
 | `decTerminalID` | 100 | DA1 `CSI ? 1 ; 2 c`, matrix's identity. xterm then acts as a VT100 (see below). |
 | `utf8` | true | UTF-8 in and out. |
-| `utf8Weblike` | true | One U+FFFD per maximal subpart of ill-formed UTF-8 (Unicode §3.9) for overlong forms, surrogates and code points past U+10FFFF, as matrix. By default xterm makes one U+FFFD of each. |
+| `utf8Weblike` | true | Overlong forms, surrogates and code points past U+10FFFF end at their first byte, as Unicode §3.9's maximal subparts do in matrix; by default xterm makes one U+FFFD of the whole sequence. It does not make xterm follow §3.9: a continuation byte that begins no character, followed by a byte 0x21..0x7F, is still taken raw, as a Latin-1 character or a C1 control (ptydata.c, decodeUtf8). So `\xc0\x80a` is one U+FFFD in xterm (the 0x80 is a C1 control there) and two in matrix, and `\xed\xa0\x80a` two in xterm and three in matrix: normalisation `lone-continuation`. |
 | `precompose` | false | xterm composes combining sequences to NFC by default; matrix never does. |
 | `combiningChars` | 10 | Default 2; xterm clamps it to 5 marks per cell (matrix keeps any number; the generator writes at most 3). |
 | `mkWidth` / `cjkWidth` | true / false | xterm's built-in width table, independent of the host's C library. |
@@ -119,6 +142,7 @@ minimization included.
 | `printRawChars` | true | Cells as stored: U+FFFF marks the second half of a wide character, U+FFFD prints as itself (otherwise as `#`). |
 | `printerFormFeed` / `printerNewLine` | true / true | A form feed ends each print (and flushes the pipe); every row ends with a newline. |
 | `printerAutoClose` / `printModeImmediate` / `printOptsImmediate` | false / 0 / 0 | One printer process for the session. |
+| `jumpScroll` | false | Scroll at once. With jump scroll xterm defers redrawing the rows a scroll brings in, and while that is pending EL 1 and DECSEL 1 skip the Last Column Flag and protection (util.c, `ClearLeft`): a difference that depends on timing. |
 
 Tab stops are xterm's default, every 8 columns, as in matrix.
 
@@ -126,8 +150,8 @@ Tab stops are xterm's default, every 8 columns, as in matrix.
 
 - **xterm as a VT100.** With `decTerminalID: 100`, xterm ignores what a VT100
   lacks: DECIC/DECDC (VT420), SS2/SS3, LS2/LS3, the national character sets,
-  and it shows CAN and SUB as a checkerboard. Use `--decid 420` (and
-  `--exclude DA` since the identity then differs) to compare those functions.
+  and it shows CAN and SUB as a checkerboard. Use `--decid 420` to compare
+  those functions; normalisation `identity` then rewrites xterm's DA.
 - **Erased cells.** xterm's print omits trailing cells no character was drawn
   in, whatever their colour, and matrix cannot tell a drawn space from an
   erased one; so trailing spaces are dropped on both sides, and a space's
@@ -149,8 +173,8 @@ Tab stops are xterm's default, every 8 columns, as in matrix.
   agent's I/O trace is `XDIFF_TRACE=FILE`.
 - **xterm crashes.** xterm 398 dies of SIGSEGV on a few inputs (6 cases in
   24,000; whether it does depends on its memory layout, so a case that crashes
-  in a campaign may not crash alone). The parent then starts a new xterm after
-  that case.
+  in a campaign may not crash alone; about 1 in 5,000). The parent then starts
+  a new xterm after that case; its log says `killed by signal -10`.
 - **Rows a scroll brings in.** xterm stores their cells with no character, and
   its print skips the SGR of such cells, so their colour (BCE) is not
   compared. In general a space with no SGR before it in the print is compared
@@ -158,3 +182,36 @@ Tab stops are xterm's default, every 8 columns, as in matrix.
 - **Orphan halves.** xterm can keep the U+FFFF of a wide character whose
   first half was overwritten (after RI or DL); it draws nothing there and the
   decoder reads it as a space.
+- **Widths.** The agent measures xterm's width of each non-ASCII character of
+  the generator's alphabet once per output directory and keeps them in
+  `widths.txt`; it writes an `A` and the character and reads where the cursor
+  went, so below 4 columns the parent first runs a measuring xterm of 12x6.
+  Other characters take matrix's wcwidth.
+
+## Normalisations
+
+`xterm_diff list` prints them all, with their reasons and citations; the
+summary of a campaign counts the cases in which each fired. There are four
+ways, each chosen to hide as little as possible:
+
+- a **generator restriction** never produces the input (`vt-level`,
+  `national-designation`...);
+- an **xterm rewrite** gives xterm an input it treats as matrix treats the
+  original, while matrix gets the original (`wrap-erase` puts EL 0 before a
+  wide character that will wrap, where matrix erases); the rewrites follow
+  matrix's state with a VTE of their own, fed the same bytes, as many depend
+  on where the cursor is;
+- a **matrix rerun**: `graphemes` compares xterm with matrix under the
+  `` `Wcwidth `` method when the two methods give matrix different results,
+  since xterm places characters as wcwidth does;
+- a **screen or reply normalisation** (`identity` rewrites xterm's DA2).
+
+Some screen normalisations follow cells as they move: a second VTE gets the
+same bytes and a private-use tag in the cells concerned (a blank a selective
+erase made, the half a cut left, a cell xterm loses), and the tags still
+there at the end are the cells normalised.
+
+Each one is a deviation that RFC 0004 decides, an xterm quirk cited to its
+source or changelog, or a configuration difference (xterm's level, its
+print-screen). `--strict NAME` turns one off; `--strict all` shows the raw
+differences.
