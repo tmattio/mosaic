@@ -454,6 +454,10 @@ module Private : sig
             its [x]/[width] are the container's horizontal footprint. The
             renderer may turn a lone vertical shift into a hardware scroll hint
             for presentation (see {!Renderer.take_scroll_hint}). *)
+    admit_size_report : t -> bool;
+        (** Decides whether a node may deliver its changed size to its size
+            observer now. A refused report stays pending and is offered again at
+            the node's next traversal. *)
   }
   (** The type for renderer callbacks inherited by all nodes in a tree. *)
 
@@ -598,7 +602,9 @@ module Private : sig
 
   val set_size_observer : t -> (t -> unit) option -> unit
   (** [set_size_observer t callback] observes size changes without replacing the
-      widget's internal resize hook. *)
+      widget's internal resize hook. During a traversal, [callback] runs when
+      the node's size differs from the size it last reported and the context's
+      [admit_size_report] admits the report. *)
 
   val set_on_live_count_change : t -> (t -> unit) option -> unit
   (** [set_on_live_count_change t cb] registers an observer called when

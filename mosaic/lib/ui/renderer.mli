@@ -85,7 +85,16 @@ val prepare_layout : t -> width:int -> height:int -> unit
     input dispatch without painting or running animation callbacks. Synchronous
     layout invalidations, including scrollbar visibility changes, settle before
     it returns. Raises [Invalid_argument] if layout callbacks do not converge.
-*)
+
+    Size observers (see {!Renderable.Private.set_size_observer}) report during
+    each call. Between two {!render_frame}s, once a call has delivered reports,
+    later calls deliver only reports of nodes deeper than the shallowest node it
+    reported; the others stay pending until {!render_frame}, which delivers
+    every pending report and requests the render that does so. Depth grows with
+    each call that delivers, so repeated calls cannot report forever. This is
+    the depth rule of CSS Resize Observer
+    ({{:https://www.w3.org/TR/resize-observer/#gather-active-observations-h}
+      §3.4.1}). *)
 
 val render_frame :
   ?layout_height:int -> t -> width:int -> height:int -> delta:float -> unit

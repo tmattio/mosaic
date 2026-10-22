@@ -83,6 +83,22 @@ type t = {
   scroll_hint : scroll_hint_state ref;
   (* Frame callbacks *)
   mutable frame_callbacks : (float -> unit) list;
+  (* Size reports of the current frame — shared with the context closure. *)
+  size_round : size_round;
+}
+
+(* Size reports settle by the depth rule of CSS Resize Observer (W3C, §3.4.1
+   and §3.6.1): once a layout pass delivers reports, later passes of the same
+   frame deliver only reports of nodes deeper than the shallowest node already
+   reported. Depth grows with each pass that delivers, so a frame's passes
+   terminate even when an observer's response keeps resizing its own node.
+   Refused reports stay pending; the frame's paint starts a new round and
+   delivers them. *)
+and size_round = {
+  mutable limit : int;
+      (* Reports are admitted from nodes deeper than [limit]; [-1] admits all. *)
+  mutable shallowest : int;
+      (* Depth of the shallowest node reported in the current pass. *)
 }
 
 module Pending = struct
@@ -695,6 +711,24 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
           one.delta <- one.delta + dy
       | Hint_one _ | Hint_disqualified -> scroll_hint := Hint_disqualified
   in
+  let size_round = { limit = -1; shallowest = max_int } in
+  let admit_size_report node =
+    let rec depth node acc =
+      match Renderable.parent node with
+      | Some parent -> depth parent (acc + 1)
+      | None -> acc
+    in
+    let depth = depth node 0 in
+    if depth > size_round.limit then begin
+      size_round.shallowest <- min size_round.shallowest depth;
+      true
+    end
+    else begin
+      (* The paint that delivers the refused report must happen. *)
+      if not (Atomic.exchange dirty true) then request_render ();
+      false
+    end
+  in
   let ctx : Renderable.Private.context =
     {
       tree;
@@ -749,6 +783,7 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
           Hashtbl.remove toffee_map toffee_idx);
       width_method = (fun () -> Grid.width_method (Screen.next_grid screen));
       report_scroll;
+      admit_size_report;
     }
   in
   let root_style =
@@ -790,6 +825,7 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
     selection_state;
     scroll_hint;
     frame_callbacks = [];
+    size_round;
   }
 
 (* ───── Accessors ───── *)
@@ -985,13 +1021,19 @@ let prepare_commands t ~width ~height ~layout_height ~frame ~delta =
   settle 16 frame delta
 
 let prepare_layout t ~width ~height =
+  t.size_round.shallowest <- max_int;
   prepare_commands t ~width ~height ~layout_height:height ~frame:false ~delta:0.;
+  if t.size_round.shallowest < max_int then
+    t.size_round.limit <- t.size_round.shallowest;
   t.input_geometry <- Some (width, height);
   t.input_hits_dirty <- true
 
 let render_frame ?layout_height (t : t) ~width ~height ~delta =
   t.input_geometry <- None;
   let layout_height = Option.value layout_height ~default:height in
+  (* A paint starts a new round of size reports and admits every pending one,
+     including those its frame's layout passes refused. *)
+  t.size_round.limit <- -1;
   (* Consume the request that led to this pass before running any code that can
      schedule its successor. In particular, widgets may discover geometry in
      their render function and change a sibling's visibility after the command

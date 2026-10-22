@@ -1300,3 +1300,111 @@ let%expect_test "memo and message mapping defer focus requests until input" =
           equal int 1 !delivered);
     ];
   [%expect {| |}]
+
+(* Size reports settle by the depth rule: a response that resizes a node at
+   the depth already reported waits for the frame's paint, so a layout that
+   oscillates with its own size still presents every frame. *)
+let%expect_test "an on_size response that resizes its own node presents frames"
+    =
+  let views = ref 0 and reports = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> (true, Mosaic.Cmd.none));
+      update =
+        (fun (`Size w) _wide ->
+          reports := w :: !reports;
+          ( w < 30,
+            if List.length !reports = 6 then Mosaic.Cmd.quit
+            else Mosaic.Cmd.none ));
+      view =
+        (fun wide ->
+          incr views;
+          if !views > 1_000 then failwith "the size loop never presents";
+          Mosaic.box
+            [
+              Mosaic.box
+                ~size:(Mosaic.size ~width:(if wide then 40 else 20) ~height:1)
+                ~on_size:(fun ~w ~h:_ -> Some (`Size w))
+                [ Mosaic.text (if wide then "wide" else "narrow") ];
+            ]);
+      subscriptions = (fun _ -> Mosaic.Sub.none);
+    }
+  in
+  let screens = ref [] in
+  let t =
+    Matrix_test.create ~width:60 ~height:2
+      ~on_idle:(fun t ~timeout:_ -> Matrix_test.stop t)
+      ()
+  in
+  Mosaic.run ~matrix:(Matrix_test.app t)
+    {
+      application with
+      update =
+        (fun message model ->
+          screens := String.trim (Matrix_test.screen t) :: !screens;
+          application.update message model);
+    };
+  Printf.printf "reports: %s\n"
+    (String.concat " " (List.rev_map string_of_int !reports));
+  Printf.printf "views per report: %d/%d\n" !views (List.length !reports);
+  Printf.printf "presented before each report: %s\n"
+    (String.concat " | " (List.rev !screens));
+  [%expect
+    {|
+    reports: 40 20 40 20 40 20 40 20
+    views per report: 9/8
+    presented before each report:  |  | wide | wide | wide | narrow | narrow | narrow
+    |}]
+
+let%expect_test "on_size reports settle within the frame or the next one" =
+  let application =
+    {
+      Mosaic.init = (fun () -> ((None, None, None), Mosaic.Cmd.none));
+      update =
+        (fun message (outer, inner, sibling) ->
+          ( (match message with
+            | `Outer w -> (Some w, inner, sibling)
+            | `Inner w -> (outer, Some w, sibling)
+            | `Sibling w -> (outer, inner, Some w)),
+            Mosaic.Cmd.none ));
+      view =
+        (fun (outer, inner, sibling) ->
+          let show = function None -> "-" | Some w -> string_of_int w in
+          (* The inner width follows the outer report, one level deeper; the
+             sibling's width follows the inner report at the outer's depth. *)
+          let inner_width = Option.fold ~none:4 ~some:(fun w -> w / 2) outer in
+          let sibling_width =
+            Option.fold ~none:4 ~some:(fun w -> w + 1) inner
+          in
+          Mosaic.box ~flex_direction:Mosaic.Flex_direction.Column
+            ~size:(Mosaic.size_wh (Mosaic.pct 100) (Mosaic.pct 100))
+            [
+              Mosaic.box
+                ~on_size:(fun ~w ~h:_ -> Some (`Outer w))
+                [
+                  Mosaic.box
+                    ~size:(Mosaic.size ~width:inner_width ~height:1)
+                    ~on_size:(fun ~w ~h:_ -> Some (`Inner w))
+                    [];
+                ];
+              Mosaic.box
+                ~size:(Mosaic.size ~width:sibling_width ~height:1)
+                ~on_size:(fun ~w ~h:_ -> Some (`Sibling w))
+                [
+                  Mosaic.text
+                    (Printf.sprintf "%s %s %s" (show outer) (show inner)
+                       (show sibling));
+                ];
+            ]);
+      subscriptions = (fun _ -> Mosaic.Sub.none);
+    }
+  in
+  drive ~width:30 ~height:3 application [ `Snap; `Resize (40, 3); `Snap ];
+  [%expect {|
+    |
+    |30 15 16
+    |
+    |
+    |40 20 21
+    |
+    |}]

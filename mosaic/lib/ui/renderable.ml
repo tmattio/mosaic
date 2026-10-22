@@ -66,6 +66,7 @@ type context = {
   unregister : node -> unit;
   width_method : unit -> Matrix.Text.width_method;
   report_scroll : node -> region:Grid.region -> dx:int -> dy:int -> unit;
+  admit_size_report : node -> bool;
 }
 
 and node = {
@@ -146,6 +147,8 @@ and node = {
   mutable on_lifecycle_pass : (node -> unit) option;
   mutable last_width : int;
   mutable last_height : int;
+  mutable reported_width : int;
+  mutable reported_height : int;
   mutable lifecycle_registered : bool;
   mutable is_root : bool;
   mutable live_count_change : (node -> unit) option;
@@ -363,6 +366,8 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     on_lifecycle_pass = None;
     last_width = 0;
     last_height = 0;
+    reported_width = 0;
+    reported_height = 0;
     lifecycle_registered = false;
     is_root = false;
     live_count_change = None;
@@ -1095,8 +1100,17 @@ let pre_render_update ?(frame = true) t ~delta =
   if lw <> t.last_width || lh <> t.last_height then (
     t.last_width <- lw;
     t.last_height <- lh;
-    Option.iter (fun f -> f t) t.on_resize;
-    Option.iter (fun f -> f t) t.size_observer)
+    Option.iter (fun f -> f t) t.on_resize);
+  (* A refused size report stays pending: it is offered again at the next
+     traversal until the renderer admits it. *)
+  match t.size_observer with
+  | Some f
+    when (lw <> t.reported_width || lh <> t.reported_height)
+         && t.ctx.admit_size_report t ->
+      t.reported_width <- lw;
+      t.reported_height <- lh;
+      f t
+  | Some _ | None -> ()
 
 let render_node t grid ~delta = t.render t grid ~delta
 
@@ -1183,6 +1197,7 @@ module Private = struct
     unregister : t -> unit;
     width_method : unit -> Matrix.Text.width_method;
     report_scroll : t -> region:Grid.region -> dx:int -> dy:int -> unit;
+    admit_size_report : t -> bool;
   }
 
   let create_root ctx ?id ?style () =

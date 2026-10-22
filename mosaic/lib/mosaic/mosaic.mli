@@ -1172,13 +1172,28 @@ val inset_lrtb : int -> int -> int -> int -> length_percentage_auto rect
 
     Generic event callbacks return a message or [None]. [on_click] runs after a
     primary-button press and release on the element, without dragging.
-    Preventing the mouse event default cancels activation; [on_size] reports
-    changed allocated dimensions in cells. Neither callback changes application
-    state by itself. Interactive [state] values belong to the model. Semantic
-    callbacks such as [on_change], [on_scroll], [on_submit] and [on_activate]
-    return messages directly; acceptance or rejection belongs in [update].
-    Storing an [on_change] proposal accepts it. Subsequent events derive from
-    the accepted model. *)
+    Preventing the mouse event default cancels activation. Neither callback
+    changes application state by itself. Interactive [state] values belong to
+    the model. Semantic callbacks such as [on_change], [on_scroll], [on_submit]
+    and [on_activate] return messages directly; acceptance or rejection belongs
+    in [update]. Storing an [on_change] proposal accepts it. Subsequent events
+    derive from the accepted model.
+
+    [on_size] reports an element's allocated dimensions in cells when they
+    differ from the last report. Reports are delivered during layout, and their
+    messages are applied before the frame is painted, so a view that depends on
+    a size settles within the frame. Within one frame, once a layout pass has
+    delivered reports, later passes deliver only the reports of elements nested
+    deeper than the shallowest element already reported: a response that resizes
+    descendants settles in the same frame. A response that resizes the reported
+    element itself, a sibling or an ancestor waits: the frame is painted from
+    the model as it stands, and the paint delivers the waiting report, whose
+    message is applied before the next frame. This is the depth rule of CSS
+    Resize Observer
+    ({{:https://www.w3.org/TR/resize-observer/#gather-active-observations-h}
+      §3.4.1}). A response that keeps resizing its own element therefore
+    alternates on every frame, presenting each one, instead of blocking the
+    loop. *)
 
 val empty : 'msg t
 (** [empty] occupies no space. *)
