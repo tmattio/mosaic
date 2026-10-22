@@ -22,10 +22,12 @@ let strip s =
   if is_plain s 0 then s
   else
     let b = Buffer.create (String.length s) in
-    List.iter
-      (function
-        | Parser.Text text -> Buffer.add_string b text
-        | Parser.Control c when c < ' ' -> Buffer.add_char b c
-        | _ -> ())
-      (Parser.parse s);
+    let keep = function
+      | Parser.Text text -> Buffer.add_string b text
+      | Parser.Control c when c < ' ' -> Buffer.add_char b c
+      | _ -> ()
+    in
+    let p = Parser.create () in
+    Parser.feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s) keep;
+    Parser.finish p keep;
     Buffer.contents b

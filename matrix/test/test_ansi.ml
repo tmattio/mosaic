@@ -742,6 +742,32 @@ let parser_utf8_split_invariance () =
   equal ~msg:"truncated at the end of the input" string "X\xEF\xBF\xBD"
     (text (Parser.parse "X\xF0\x9F\x9A"))
 
+(* The end of the input finishes a character and a string, drops a sequence,
+   and leaves the parser at the start of a stream. *)
+let parser_finish () =
+  let finished feeds =
+    let p = Parser.create () in
+    let acc = ref [] in
+    let emit tok = acc := tok :: !acc in
+    List.iter
+      (fun s ->
+        Parser.feed p (Bytes.of_string s) ~off:0 ~len:(String.length s) emit;
+        Parser.finish p emit)
+      feeds;
+    show (List.rev !acc)
+  in
+  equal ~msg:"an unfinished character" string "\"X\xEF\xBF\xBD\""
+    (finished [ "X\xF0\x9F\x9A" ]);
+  equal ~msg:"an open string" string "OSC, \"0;t\", Aborted"
+    (finished [ "\x1b]0;t" ]);
+  equal ~msg:"an ESC that may begin ST" string "OSC, \"0;t\", Aborted"
+    (finished [ "\x1b]0;t\x1b" ]);
+  equal ~msg:"an unfinished sequence, then a new stream" string "\"m\""
+    (finished [ "\x1b[3"; "m" ]);
+  equal ~msg:"parse is feed then finish" string
+    (show (Parser.parse "a\x1bPq#0\xC3"))
+    (finished [ "a\x1bPq#0\xC3" ])
+
 let parser_c1_controls () =
   (* In UTF-8, U+0080..U+009F are not C1 controls: they are dropped, whatever
      the state, and the text around them stays. *)
@@ -1402,6 +1428,7 @@ let tests =
         test "csi empty parameter defaults" parser_csi_empty_parameter_defaults;
         test "utf8 split invariance" parser_utf8_split_invariance;
         test "c1 controls" parser_c1_controls;
+        test "finish" parser_finish;
         test "charset selection split" parser_charset_selection_split;
         test "unknown escape sequences" parser_unknown_escape_sequences;
         test "sgr colon subparameters" parser_sgr_colon_subparameters;

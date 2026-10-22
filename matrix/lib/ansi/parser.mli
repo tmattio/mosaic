@@ -190,7 +190,12 @@ val feed : t -> bytes -> off:int -> len:int -> (token -> unit) -> unit
     Raises [Invalid_argument] if [off] and [len] do not designate a valid range
     of [b]. *)
 
+val finish : t -> (token -> unit) -> unit
+(** [finish p f] ends the stream: it calls [f] on what the end of the input
+    makes of the unfinished parts, in order. An unfinished character is U+FFFD,
+    an open string is closed [`Aborted], and an unfinished sequence has no
+    effect. [p] is then at the start of a stream, as after {!reset}. *)
+
 val parse : string -> token list
-(** [parse s] are the tokens of the complete stream [s]. At the end of [s] an
-    unfinished character is U+FFFD, an open string is closed [`Aborted], and an
-    unfinished sequence has no effect. *)
+(** [parse s] are the tokens of the complete stream [s]: those {!feed} and
+    {!finish} give. *)

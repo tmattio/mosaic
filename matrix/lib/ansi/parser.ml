@@ -607,14 +607,15 @@ let feed p b ~off ~len emit =
       p.held_len <- p.held_len + len)
   else flush stop
 
+let finish p emit =
+  if p.need > 0 then non_ascii p ~replace:true emit;
+  (match p.state with String | String_esc -> close p `Aborted emit | _ -> ());
+  reset p
+
 let parse s =
   let p = create () in
   let tokens = ref [] in
   let emit t = tokens := t :: !tokens in
   feed p (Bytes.unsafe_of_string s) ~off:0 ~len:(String.length s) emit;
-  if p.need > 0 then (
-    p.need <- 0;
-    p.held_len <- 0;
-    non_ascii p ~replace:true emit);
-  (match p.state with String | String_esc -> close p `Aborted emit | _ -> ());
+  finish p emit;
   List.rev !tokens
