@@ -1,8 +1,10 @@
 # RFC 0003: Text layout — one source-backed geometry for every text consumer
 
 - Status: Decided 2026-09-24 (maintainer's approval). Implemented the same day, `766eb0e3`
-  (`Matrix_text.Layout`) through `07d38086`; diff moved onto the pane's source index afterwards.
-  §3 records the decisions taken during implementation and the gaps.
+  (`Matrix_text.Layout`) through `07d38086`. Finished on 2026-10-22 and 23, `f6f86367` through
+  `7e964e4c`: diff on the pane's source index, rows read from the layout, the hit and locate
+  properties and the fixes they found, the recorded gates, and text following the screen's width
+  method. §3 records the decisions taken during implementation and what stays open.
 - Baseline: mosaic @ `8e31eee7`, the parent of `766eb0e3` (the audit's working-tree hashes
   `7a6454d5`–`168d4772` are not in the history); OpenTUI @
   `4b1474e009bf78365a7a4866e83a9e522533ef42`, a datapoint.
@@ -84,7 +86,7 @@ reason.
 | Width | `Unicode` and `Unicode_wide` measure the whole cluster. `Wcwidth` sums its display units (a scalar of positive width plus the zero-width scalars after it), i.e. its scalars' widths. Boundaries are the same under every method | `matrix_text.mli`; RFC 0004 | high |
 | Tabs | A TAB is `tab_width` cells, at least 1; no column-relative stops | Layout must match `Matrix_grid.draw_text`, which paints `tab_width` cells. Constant widths keep columns a prefix sum, so one column array serves every wrap width; a positional stop depends on its row's start | medium |
 | Policy change | A new width method or tab width invalidates metrics, never positions | — | high |
-| Emission | The grid is given the buffer's width method and tab width, never its own default. Paint and hit use the same whole-cluster column interval | one width fact | high |
+| Emission | The grid is given the screen's width method (D10) and the buffer's tab width, never its own default. Paint and hit use the same whole-cluster column interval | one width fact | high |
 | Indexing | Every cluster is indexed, zero-width ones included | §1 row 2 | high |
 | Lines | CR, LF and CRLF each end a line; CRLF is two bytes, one grapheme. Empty text has one line; a trailing terminator adds an empty one | UAX #29 GB3: "Do not break between a CR and LF." | high |
 | Bytes | Invalid UTF-8 follows Matrix's replacement boundaries; copy keeps the original bytes; nothing is normalized | copy returns what was installed | high |
@@ -111,7 +113,7 @@ reason.
 | Ellipsis | Inserts at its two source edges; covers its whole interval. Blanks past content snap to line end and own nothing | It alone stands for the hidden text: owning nothing, a drag across a truncated line would silently drop the rest. A press stays empty, so a click never selects hidden text | medium |
 | Affinity | A soft-wrap boundary has two positions: `Upstream` ends the previous row, `Downstream` starts the next. `Visual_line_end` gives `Upstream`, `Visual_line_home` `Downstream`; a mouse hit keeps its row; an integer position is `Downstream`. Resize keeps affinity | otherwise End on a wrapped row lands on the next row | high |
 | Its owner | The cursor's model state (`Editor`), never the layout | RFC 0001 | high |
-| Zero-width runs | Coincident boundaries snap: `Upstream` to the earliest, `Downstream` to the latest. Invisible clusters stay reachable and copyable. A boundary in an omitted suffix locates at the ellipsis edge its affinity names | — | high |
+| Zero-width runs | Coincident boundaries snap: `Upstream` to the earliest, `Downstream` to the latest. Invisible clusters stay reachable and copyable. A boundary inside an omitted suffix locates at the ellipsis edge its affinity names; the suffix's end locates after the ellipsis | the end is the ellipsis's right source edge, which a click past it returns (G2) | high |
 | Round trip | Only visible, unambiguous boundaries round-trip through `hit` and `locate`; elsewhere snapping is canonical | zero-width runs and ellipses have no unique cell | high |
 
 ### 2.5 Revisions, edits, decoration and consumers
@@ -123,7 +125,7 @@ reason.
 | Replacement | Follows the widget's reset and clamp policy; a layout keeps its source while referenced | — | high |
 | Edits | Resolve endpoints to old-source bytes, splice, reindex. Rebase the caret from the byte after the insertion or at the deletion seam, snapping forward from inside a cluster; retained selection endpoints likewise. Never add the inserted fragment's grapheme count | U+0301 after `e` makes one cluster | high |
 | Length limit | Applies to the resegmented result; positions clamp | — | high |
-| History | Flat storage and undo stay, on this index; undo versions hold no layout caches | — | high |
+| History | Flat storage stays, on this index. Undo entries are inverse changes (RFC 0001) and hold no layout caches | — | high |
 | Cache keys | Geometry: content, width method, tab width, wrap, effective width, truncation. Styles and highlights: a paint revision. Selection and scroll rebuild nothing. Over-invalidation is allowed, stale rows are not. A materializing conceal change is a content change | — | high |
 | Paint runs | Highlight order and overlaps resolved once per paint revision with the existing precedence; paint seeks the runs | §1 | high |
 | RFC 0002 | Its byte-range producer and async boundary are unchanged | — | high |
@@ -132,11 +134,11 @@ reason.
 
 ### 2.6 Cost
 
-With N bytes, G graphemes, E style endpoints, R rows and H undo versions:
+With N bytes, G graphemes, E style endpoints and R rows:
 
 | decision | rule | reference / reason | confidence |
 |---|---|---|---|
-| Complexity | Indexing O(N); a new width O(G + R) by ordered sweeps, never rows × spans; flat edits O(N); memory O(N + G + E + R), plus O(H·N) for history (H ≤ 200). Packed arrays change constants, not order | §6 | high |
+| Complexity | Indexing O(N); a new width O(G + R) by ordered sweeps, never rows × spans; flat edits O(N); memory O(N + G + E + R), plus the bytes the undo history's edits replaced. Packed arrays change constants, not order | §6 | high |
 | Paint | Intersect the node with the grid's scissor before asking for rows; per row, seek columns and style runs and stop at the right edge; skip indexed zero-width runs. Repeated paint scales with visible rows, visible clusters and their bytes, and style transitions, plus logarithmic seeks; never with height, hidden prefix or total overlays. Batches may be copied: no zero-allocation promise | §6 | high |
 | Highlights | Sorting is O(E log E); resolving A simultaneous overlays is O(E·A), stated where it is implemented (`text_buffer.ml`). Unchanged paint never repeats it | no algorithm here reaches O(E log E) total | high |
 | Caches | At most four widths share one source index (D7 adds a byte bound). Probes use the count-only builder unless the layout exists, and their results go first. Replacement and unmount release obsolete references. An optional cache without repeatable benefit, or over its budget, is removed; the coordinate correction stays | — | medium |
@@ -148,7 +150,7 @@ unconcealed source, word or line click selection, positional tab stops, incremen
 and the rest of RFC 0001's migration. In scope: Text, materialized Code, the editor buffer and edit
 surface, crop helpers, gutters, diff. No shipped consumer keeps another coordinate algorithm.
 
-## 3. Decisions taken during implementation, and gaps
+## 3. Decisions taken during implementation, and what stays open
 
 - **D1. CJK line opportunities** (`b46d699a`): `iter_wrap_breaks` gained OpenTUI's breaks between
   CJK graphemes (none before Kana combining marks, U+30A0 or U+30FB, or after a zero-width
@@ -157,14 +159,17 @@ surface, crop helpers, gutters, diff. No shipped consumer keeps another coordina
 - **D2. `Unicode_wide`** (`ad0006dc`): a third width method, for Ghostty, carried like the others.
 - **D3. Thai and Lao spacing marks** (`25c4e2c6`): SARA AM and Lao AM widen their cluster;
   `น้ำ` is one two-cell cluster under `Unicode` and `Wcwidth`.
-- **D4. `Renderable.line_info` survives** as a record of closures over one layout, beside
-  `iter_lines`. No array is exposed, so access stays bounded; but nothing calls `iter_lines`: the
-  gutter and diff read the closures, and the gutter visits only clipped rows.
+- **D4. A text node reports its rows as its layout** (`5de1f70e`). `Renderable.text_rows` is the
+  node's current `Layout.t`, one geometry revision, and the absolute row shown at its top; readers
+  use the layout's counts and its bounded `iter_rows`, and convert their own viewport coordinates.
+  `line_info`, a record of closures beside an `iter_lines` only diff called, is gone with it. The
+  gutter visits the clipped rows, a diff hit reads one row, and split alignment alone traverses
+  all of them.
 - **D5. The acceptance guard is a function.** Editor values carry a revision and their base;
   `Editor.accept ~current proposal` returns `current` unless it is the proposal's base (tests
-  "stale same-source proposals", "stale affinity proposal"). The edit surface proposes only from
-  its current state, synchronously. An application deferring a proposal must call `accept`;
-  dispatch does not enforce it.
+  "stale same-source proposals", "stale affinity proposal", "stale text proposal"). The edit
+  surface proposes only from its current state, synchronously. An application deferring a
+  proposal must call `accept`; dispatch does not enforce it.
 - **D6. Source-bound annotations** (`07d38086`): `Text_buffer.Annotations` binds styles to byte
   ranges of the installed source, without copies; an interior boundary resolves downstream (the
   first-byte rule). Code installs highlights this way, so a theme change rebuilds no geometry.
@@ -177,19 +182,35 @@ surface, crop helpers, gutters, diff. No shipped consumer keeps another coordina
   space before `ab`, a span on `b` colored `a` (fixed by `3f460f57`); a CRLF row shifted later
   spans by one; a final CR numbered a line the patch lacks; a lone CR inside a row shifted every
   later number, sign and color. Diff now maps rows, logical lines and graphemes through the pane
-  buffer's own source index, and aligns split panes with `iter_lines`.
-- **G1. The approved performance gates were never recorded**: no reference workloads; no
-  provisional or final retained and peak memory budgets; no separate measurement of committed
-  rows, probe rows, old and new sources, input spans, capacities and undo strings; no latency
-  distributions (promoted words only sampled); no count of visited rows, clusters and runs; no
-  predeclared tolerance for label regressions; no GC timing apart from reachability. §6 lists what
-  exists.
-- **G2. Untested**: a proposal made stale by a text change (cursor-, selection- and affinity-only
-  changes are tested, through the same comparison); property tests of `hit` and `locate` with their
-  preconditions.
-- **G3. Diff limits left as they were**: span bytes refer to the unconcealed patch line while a
-  concealing Code buffer holds other text, so emphasis can be misplaced; split panes align only
-  when wrapping, so a lone-CR row misaligns them without wrap; a final CR leaves an empty,
+  buffer's own source index, and aligns split panes from the panes' rows (D4).
+- **D10. The screen owns the width method** (`818cd9d1`), departing from §2.2's "the buffer's
+  width method": a late DECRPM 2027 answer changes the terminal's method, and existing widgets
+  kept the old one. No `Text_buffer` holds a method; a widget reads the screen's at every
+  measurement and paint and keys its geometry by it, and the renderer re-measures on a change.
+- **D11. Layout's tests live with `matrix.text`** (`29cf1839`): `matrix/test/test_text_layout.ml`,
+  beside `test_text.ml`. None of them involves Mosaic.
+- **G1. Closed: the gates are recorded** (`f8becdea`, `7e964e4c`). `text_layout.thumper` adds the
+  reference workloads: a painted label, the middle of 100,000 tall lines and of a wrapped 100 KB
+  line of 10,000 styled spans, 200 nested highlights, 10,000 highlights offscreen, five widths
+  through the four-entry cache. In `dune runtest`, `paint` fails if an unchanged 80×20 repaint
+  allocates differently as the text hides 1,000 or 100,000 rows, 100 KB or 1 MB of prefix, 0 or
+  10,000 overlays, 10 or 100 KB of wrapped rows: paint work does not grow with hidden content.
+  `memory-widths` lays out 1 MB of prose at four widths: 20.4 MiB retained and a 42.0 MiB peak on
+  replacement, against budgets of 24 and 48 MiB that one more array per grapheme (7.6 MiB)
+  exceeds. It was 28.1 and 57.3 MiB until the zero-width skip table, 8 bytes per grapheme, was
+  built only for zero-width clusters other than line terminators, which end their rows anyway.
+  Latency distributions stay unrecorded.
+- **G2. Closed: tested** (`23cb206a`, `23daa2a9`). A proposal made stale by a text change (another
+  edit, equal text from another edit, an undo back to the base, a replacement) leaves the newer
+  state. Properties of `hit` and `locate` state their preconditions: a visible, unambiguous
+  boundary round-trips; elsewhere `hit` snaps canonically, a fixed point of `locate` then `hit` on
+  the clicked row; `locate` is monotonic. They found four bugs, now fixed: a click past a row's
+  end, the nearest boundary inside a wide cluster and the ellipsis cell each returned an unsnapped
+  boundary (and a click left of an ellipsis at column 0 skipped it), and `locate` put an omitted
+  suffix's end before the ellipsis when upstream (§2.4).
+- **G3. Diff limits, still open.** Span bytes refer to the unconcealed patch line while a
+  concealing Code buffer holds other text, so emphasis can be misplaced. Split panes align only
+  when wrapping, so a lone-CR row misaligns them without wrap. A final CR leaves an empty,
   unnumbered row at the pane's end.
 
 ## 4. What was weighed and rejected
@@ -216,7 +237,7 @@ The accepted cost is eager rows: layout and reflow stay linear and retain O(rows
 |---|---|
 | `Text_surface.compute_display_info` used displayed-grapheme counts as source offsets; `local_coords_to_offset` read them back | `Layout.row_start`, `hit`, `coverage` |
 | `slice_spans`, `wrap_char_line`, `wrap_word_line`, `truncate_line` copied spans, segmenting each alone | one row builder over the concatenated source |
-| Public `Text_surface.display_info` (copied lines, parallel arrays); `Renderable.line_info` arrays | `Text_surface.layout`; closures and `iter_lines` (D4) |
+| Public `Text_surface.display_info` (copied lines, parallel arrays); `Renderable.line_info` arrays | `Text_surface.layout`; `Renderable.text_rows` (D4) |
 | `Text_buffer.ensure_grapheme_offsets`, per-line metric arrays, `line_spans` | `Text_buffer.source`, `styled_text` |
 | The editor's own offsets, widths and line starts; `Edit_surface.offset_at_col` and prefix-copy cursor mapping | the editor's `Layout.Source.t`, shared with its buffer; `locate`, `hit` |
 | Highlights sorted per paint, folded per grapheme | runs per paint revision, found by `style_at` |
@@ -251,22 +272,26 @@ row compares the builders. Main only, one run at load 10.7 on 14 cores:
 `styles/nested-revision-200` 187 µs, 291,023 words; `styles/same-text-layout-100k` 139 µs, 28
 words.
 
-The recorded budgets, run by `dune runtest`:
+The recorded budgets, run by `dune runtest` (re-measured on 2026-10-23, same host):
 - a 1 MB source at width 1 (a million rows) retains 80.0 MB, 80 bytes per grapheme; the heap
-  peaks at 186.9 MB while a second layout is built. The check fails above 128 MiB or 256 MiB;
-- 200 undo versions of 1 MB retain 208.0 MB, the O(H·N) of a flat history capped at 200; a weak
-  array checks that no obsolete source index survives;
+  peaks at 187.4 MB while a second layout is built. The check fails above 128 MiB or 256 MiB;
+- 1 MB of prose at four widths, 20.4 MiB retained and 42.0 MiB at peak (G1);
+- an unchanged 80×20 repaint allocates the same whatever the text hides, 99 words per visible row
+  and 36 per style run (G1);
+- 200 middle inserts into 1 MB retain 9.0 MB with undo as inverse changes (RFC 0001), where 200
+  whole-text versions retained 208.0 MB; a weak array checks that no obsolete index survives;
 - `text_layout.thumper` holds each case's allocation within 5% of its recorded baseline;
 - the 32 MiB row cache (D7).
 
-Tests (`matrix/test/test_text.ml`, `mosaic/test/unit/`, `mosaic/test/expect/test_diff.ml`) pin the
-§1 regressions ("truncation keeps later source offsets", "invisible clusters stay in source
-ranges", "style boundaries and grid defaults cannot split geometry"), invalid UTF-8, CRLF,
-zero-width snapping, every width method, widths 0, 1, 2 and 7, overwide clusters, the ellipsis,
-affinity, clipping, combining-mark insertion, flag rejoining after deletion, and stale proposals
-(G2). The
-baseline's cache, probe and intrinsic-measurement tests pass unchanged; `dune build
-@mosaic/test/unit/runtest @matrix/test/runtest` passes (one recorded expected failure).
+Tests (`matrix/test/test_text.ml`, `matrix/test/test_text_layout.ml`, `mosaic/test/unit/`,
+`mosaic/test/expect/test_diff.ml`) pin the §1 regressions ("truncation keeps later source
+offsets", "invisible clusters stay in source ranges", "style boundaries and grid defaults cannot
+split geometry"), invalid UTF-8, CRLF, zero-width snapping, every width method and a change of
+method, widths 0, 1, 2 and 7, overwide clusters, the ellipsis, affinity, clipping,
+combining-mark insertion, flag rejoining after deletion, stale proposals, and the `hit` and
+`locate` properties (G2). The baseline's cache, probe and intrinsic-measurement tests pass
+unchanged; `dune build @mosaic/test/runtest @matrix/test/runtest` passes, with no expected
+failure left.
 
 ## Appendix: OpenTUI datapoints
 
