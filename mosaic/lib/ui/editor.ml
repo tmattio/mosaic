@@ -11,8 +11,14 @@ module Engine = struct
 
   (* ───── Types ───── *)
 
-  type snapshot = {
-    content : string;
+  (* An undo or redo entry is the inverse of one text change: replacing the
+     [inserted] bytes at byte [at] with [removed] restores the text, and the
+     caret and selection are restored as recorded. An entry costs the size of
+     its change, not of the document. *)
+  type change = {
+    at : int;
+    removed : string;
+    inserted : int;
     cursor_pos : int;
     affinity : Layout.affinity;
     selection_anchor : int option;
@@ -28,8 +34,8 @@ module Engine = struct
     mutable affinity : Layout.affinity;
     mutable selection_anchor : int option;
     max_length : int;
-    mutable undo_stack : snapshot list;
-    mutable redo_stack : snapshot list;
+    mutable undo_stack : change list;
+    mutable redo_stack : change list;
     mutable cache : Source.t option;
     mutable revision : unit ref;
     mutable base : unit ref option;
@@ -138,78 +144,68 @@ module Engine = struct
 
   (* ───── Undo / Redo ───── *)
 
-  (* Each undo point snapshots the full content — O(document) retained per
-   entry — so the history must be bounded: keep the newest entries and drop
-   the oldest, as OpenTUI's rope trims its history (rope.zig max_undo_depth).
-   Editing a large buffer in a long-lived widget stays bounded at
-   O(max_undo_depth × document). *)
-  let max_undo_depth = 200
-
-  let take n lst =
-    let rec go acc n = function
-      | [] -> List.rev acc
-      | _ when n <= 0 -> List.rev acc
-      | x :: rest -> go (x :: acc) (n - 1) rest
-    in
-    go [] n lst
-
-  let save_undo t =
-    let stack =
-      if List.length t.undo_stack >= max_undo_depth then
-        take (max_undo_depth - 1) t.undo_stack
-      else t.undo_stack
-    in
+  (* Records the inverse of replacing bytes [first, last) with [inserted]
+     bytes, before the replacement happens. Following prosemirror-history,
+     which stores inverted steps, the history grows with the edits made, not
+     with the document; no entry is ever dropped. *)
+  let record t ~first ~last ~inserted =
     t.undo_stack <-
       {
-        content = t.content;
+        at = first;
+        removed = String.sub t.content first (last - first);
+        inserted;
         cursor_pos = t.cursor_pos;
         affinity = t.affinity;
         selection_anchor = t.selection_anchor;
       }
-      :: stack;
+      :: t.undo_stack;
     t.redo_stack <- []
+
+  (* Applies [change] and returns its inverse, which reapplies the current
+     state. *)
+  let apply t change =
+    let content = t.content in
+    let tail = change.at + change.inserted in
+    let inverse =
+      {
+        at = change.at;
+        removed = String.sub content change.at change.inserted;
+        inserted = String.length change.removed;
+        cursor_pos = t.cursor_pos;
+        affinity = t.affinity;
+        selection_anchor = t.selection_anchor;
+      }
+    in
+    t.content <-
+      String.concat ""
+        [
+          String.sub content 0 change.at;
+          change.removed;
+          String.sub content tail (String.length content - tail);
+        ];
+    t.cursor_pos <- change.cursor_pos;
+    t.affinity <- change.affinity;
+    t.selection_anchor <- change.selection_anchor;
+    invalidate_cache t;
+    inverse
 
   let undo t =
     match t.undo_stack with
     | [] -> false
-    | snap :: rest ->
-        let old_content = t.content in
-        t.redo_stack <-
-          {
-            content = t.content;
-            cursor_pos = t.cursor_pos;
-            affinity = t.affinity;
-            selection_anchor = t.selection_anchor;
-          }
-          :: t.redo_stack;
+    | change :: rest ->
         t.undo_stack <- rest;
-        t.content <- snap.content;
-        t.cursor_pos <- snap.cursor_pos;
-        t.affinity <- snap.affinity;
-        t.selection_anchor <- snap.selection_anchor;
-        invalidate_cache t;
-        not (String.equal old_content snap.content)
+        let inverse = apply t change in
+        t.redo_stack <- inverse :: t.redo_stack;
+        not (String.equal inverse.removed change.removed)
 
   let redo t =
     match t.redo_stack with
     | [] -> false
-    | snap :: rest ->
-        let old_content = t.content in
-        t.undo_stack <-
-          {
-            content = t.content;
-            cursor_pos = t.cursor_pos;
-            affinity = t.affinity;
-            selection_anchor = t.selection_anchor;
-          }
-          :: t.undo_stack;
+    | change :: rest ->
         t.redo_stack <- rest;
-        t.content <- snap.content;
-        t.cursor_pos <- snap.cursor_pos;
-        t.affinity <- snap.affinity;
-        t.selection_anchor <- snap.selection_anchor;
-        invalidate_cache t;
-        not (String.equal old_content snap.content)
+        let inverse = apply t change in
+        t.undo_stack <- inverse :: t.undo_stack;
+        not (String.equal inverse.removed change.removed)
 
   (* ───── Internal mutation ───── *)
 
@@ -217,6 +213,7 @@ module Engine = struct
     let c = ensure_cache t in
     let byte_lo = byte_offset_of_grapheme_in_content c lo in
     let byte_hi = byte_offset_of_grapheme_in_content c hi in
+    record t ~first:byte_lo ~last:byte_hi ~inserted:0;
     let total_len = String.length t.content in
     t.content <-
       String.sub t.content 0 byte_lo
@@ -231,14 +228,12 @@ module Engine = struct
     match selection t with
     | None -> false
     | Some (lo, hi) ->
-        save_undo t;
         delete_grapheme_range t lo hi;
         true
 
   let clear t =
     if is_empty t then false
     else begin
-      save_undo t;
       delete_grapheme_range t 0 (length t);
       true
     end
@@ -271,7 +266,7 @@ module Engine = struct
     let content = Source.text candidate in
     if String.equal content t.content then false
     else begin
-      save_undo t;
+      record t ~first:a ~last:b ~inserted:inserted_bytes;
       t.content <- content;
       t.cache <- Some candidate;
       t.cursor_pos <-
@@ -286,7 +281,6 @@ module Engine = struct
     if has_selection t then delete_selection t
     else if t.cursor_pos = 0 then false
     else begin
-      save_undo t;
       delete_grapheme_range t (t.cursor_pos - 1) t.cursor_pos;
       true
     end
@@ -297,7 +291,6 @@ module Engine = struct
       let c = ensure_cache t in
       if t.cursor_pos >= Source.length c then false
       else begin
-        save_undo t;
         delete_grapheme_range t t.cursor_pos (t.cursor_pos + 1);
         true
       end
@@ -360,7 +353,6 @@ module Engine = struct
     else if t.cursor_pos = 0 then false
     else begin
       let pos = prev_word_boundary t in
-      save_undo t;
       delete_grapheme_range t pos t.cursor_pos;
       true
     end
@@ -372,7 +364,6 @@ module Engine = struct
       if t.cursor_pos >= Source.length c then false
       else begin
         let pos = next_word_boundary t in
-        save_undo t;
         delete_grapheme_range t t.cursor_pos pos;
         true
       end
@@ -385,7 +376,6 @@ module Engine = struct
       let line_start = Source.line_start c line in
       if t.cursor_pos <= line_start then false
       else begin
-        save_undo t;
         delete_grapheme_range t line_start t.cursor_pos;
         true
       end
@@ -402,7 +392,6 @@ module Engine = struct
       in
       if t.cursor_pos >= line_end then false
       else begin
-        save_undo t;
         delete_grapheme_range t t.cursor_pos line_end;
         true
       end
@@ -411,7 +400,6 @@ module Engine = struct
     let c = ensure_cache t in
     if Source.length c = 0 then false
     else begin
-      save_undo t;
       let line = find_line c t.cursor_pos in
       let start, stop =
         if Source.line_count c = 1 then (0, Source.length c)

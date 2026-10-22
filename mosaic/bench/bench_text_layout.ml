@@ -158,7 +158,7 @@ let history_check () =
     if Weak.check old_sources i then
       failwith "undo retained an obsolete source index"
   done;
-  Printf.printf "200-version-history-and-current-index=%d bytes\n" live;
+  Printf.printf "200-edit-history-and-current-index=%d bytes\n" live;
   ignore (Sys.opaque_identity !editor)
 
 let () =

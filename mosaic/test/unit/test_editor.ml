@@ -479,9 +479,9 @@ let undo_no_history () =
   unchanged ~msg:"nothing to undo" e (Editor.undo e);
   unchanged ~msg:"nothing to redo" e (Editor.redo e)
 
-let undo_history_is_bounded () =
-  (* Every undo point snapshots the full content, so the history keeps only
-     the newest 200 entries and drops the oldest. *)
+let undo_history_keeps_every_edit () =
+  (* Entries hold the inverse of their change, so no edit is dropped to bound
+     memory. *)
   let e = ref (Editor.of_string "") in
   for _ = 1 to 250 do
     e := Editor.insert "a" !e
@@ -496,9 +496,8 @@ let undo_history_is_bounded () =
     end
   in
   let oldest = undo_all !e in
-  equal ~msg:"kept the newest 200 undo points" int 200 !undos;
-  equal ~msg:"oldest restorable state is the 50th edit" int 50
-    (Editor.length oldest)
+  equal ~msg:"every edit can be undone" int 250 !undos;
+  equal ~msg:"back to the initial text" string "" (Editor.text oldest)
 
 let undo_restores_text_and_cursor () =
   let e = Editor.of_string "hello" |> at 2 |> Editor.insert "X" in
@@ -820,6 +819,187 @@ let model_invariant m editor =
   cover "undo history is non-empty" (m.undo <> []);
   cover "redo history is non-empty" (m.redo <> [])
 
+(* ── History equivalence ── *)
+
+(* The undo history is the sequence of states before each text change: undo
+   restores the latest one, including caret, affinity and selection, and redo
+   reapplies. The reference keeps those states whole, as snapshots; the editor
+   must agree with it after every step of any script. *)
+type op =
+  | Insert of string
+  | Delete_backward
+  | Delete_forward
+  | Delete_word_backward
+  | Delete_word_forward
+  | Delete_to_line_start
+  | Delete_to_line_end
+  | Delete_line
+  | Clear
+  | Move_left of bool
+  | Move_right of bool
+  | Move_word_backward of bool
+  | Move_word_forward of bool
+  | Move_line_start of bool
+  | Move_line_end of bool
+  | Set_cursor of int * bool
+  | Set_caret_upstream of int
+  | Select of int * int
+  | Select_all
+  | Clear_selection
+  | Undo
+  | Redo
+
+let pp_op ppf = function
+  | Insert s -> Format.fprintf ppf "insert %S" s
+  | Delete_backward -> Format.pp_print_string ppf "delete_backward"
+  | Delete_forward -> Format.pp_print_string ppf "delete_forward"
+  | Delete_word_backward -> Format.pp_print_string ppf "delete_word_backward"
+  | Delete_word_forward -> Format.pp_print_string ppf "delete_word_forward"
+  | Delete_to_line_start -> Format.pp_print_string ppf "delete_to_line_start"
+  | Delete_to_line_end -> Format.pp_print_string ppf "delete_to_line_end"
+  | Delete_line -> Format.pp_print_string ppf "delete_line"
+  | Clear -> Format.pp_print_string ppf "clear"
+  | Move_left s -> Format.fprintf ppf "move_left %b" s
+  | Move_right s -> Format.fprintf ppf "move_right %b" s
+  | Move_word_backward s -> Format.fprintf ppf "move_word_backward %b" s
+  | Move_word_forward s -> Format.fprintf ppf "move_word_forward %b" s
+  | Move_line_start s -> Format.fprintf ppf "move_line_start %b" s
+  | Move_line_end s -> Format.fprintf ppf "move_line_end %b" s
+  | Set_cursor (p, s) -> Format.fprintf ppf "set_cursor %d %b" p s
+  | Set_caret_upstream p -> Format.fprintf ppf "set_caret_upstream %d" p
+  | Select (a, c) -> Format.fprintf ppf "select %d %d" a c
+  | Select_all -> Format.pp_print_string ppf "select_all"
+  | Clear_selection -> Format.pp_print_string ppf "clear_selection"
+  | Undo -> Format.pp_print_string ppf "undo"
+  | Redo -> Format.pp_print_string ppf "redo"
+
+(* Fragments that segment interestingly: a combining mark joins the previous
+   grapheme, regional indicators pair, CJK and spaces change word breaks. *)
+let fragment =
+  Gen.of_list
+    [ "a"; "b"; " "; "\n"; "\r\n"; "\204\129"; "🇦"; "🇧"; "日本"; "word"; "x y" ]
+
+let gen_op =
+  let flag = Gen.bool and pos = Gen.int_range (-1) 24 in
+  Gen.frequency
+    [
+      (6, Gen.map (fun s -> Insert s) fragment);
+      (2, Gen.pure Delete_backward);
+      (1, Gen.pure Delete_forward);
+      (1, Gen.pure Delete_word_backward);
+      (1, Gen.pure Delete_word_forward);
+      (1, Gen.pure Delete_to_line_start);
+      (1, Gen.pure Delete_to_line_end);
+      (1, Gen.pure Delete_line);
+      (1, Gen.pure Clear);
+      (1, Gen.map (fun s -> Move_left s) flag);
+      (1, Gen.map (fun s -> Move_right s) flag);
+      (1, Gen.map (fun s -> Move_word_backward s) flag);
+      (1, Gen.map (fun s -> Move_word_forward s) flag);
+      (1, Gen.map (fun s -> Move_line_start s) flag);
+      (1, Gen.map (fun s -> Move_line_end s) flag);
+      (2, Gen.map (fun (p, s) -> Set_cursor (p, s)) (Gen.pair pos flag));
+      (1, Gen.map (fun p -> Set_caret_upstream p) pos);
+      (1, Gen.map (fun (a, c) -> Select (a, c)) (Gen.pair pos pos));
+      (1, Gen.pure Select_all);
+      (1, Gen.pure Clear_selection);
+      (4, Gen.pure Undo);
+      (3, Gen.pure Redo);
+    ]
+
+let edit = function
+  | Insert s -> Editor.insert s
+  | Delete_backward -> Editor.delete_backward
+  | Delete_forward -> Editor.delete_forward
+  | Delete_word_backward -> Editor.delete_word_backward
+  | Delete_word_forward -> Editor.delete_word_forward
+  | Delete_to_line_start -> Editor.delete_to_line_start
+  | Delete_to_line_end -> Editor.delete_to_line_end
+  | Delete_line -> Editor.delete_line
+  | Clear -> Editor.clear
+  | Move_left select -> Editor.move_left ~select
+  | Move_right select -> Editor.move_right ~select
+  | Move_word_backward select -> Editor.move_word_backward ~select
+  | Move_word_forward select -> Editor.move_word_forward ~select
+  | Move_line_start select -> Editor.move_line_start ~select
+  | Move_line_end select -> Editor.move_line_end ~select
+  | Set_cursor (pos, select) -> Editor.set_cursor ~select pos
+  | Set_caret_upstream grapheme ->
+      Editor.set_caret Matrix.Text.Layout.{ grapheme; affinity = Upstream }
+  | Select (anchor, cursor) -> Editor.select ~anchor ~cursor
+  | Select_all -> Editor.select_all
+  | Clear_selection -> Editor.clear_selection
+  | Undo -> Editor.undo
+  | Redo -> Editor.redo
+
+type reference = {
+  state : Editor.t; (* used only for its text, caret and selection *)
+  undo_states : Editor.t list;
+  redo_states : Editor.t list;
+}
+
+let reference_step r = function
+  | Undo -> (
+      match r.undo_states with
+      | [] -> r
+      | previous :: rest ->
+          {
+            state = previous;
+            undo_states = rest;
+            redo_states = r.state :: r.redo_states;
+          })
+  | Redo -> (
+      match r.redo_states with
+      | [] -> r
+      | next :: rest ->
+          {
+            state = next;
+            redo_states = rest;
+            undo_states = r.state :: r.undo_states;
+          })
+  | op ->
+      let next = edit op r.state in
+      if String.equal (Editor.text next) (Editor.text r.state) then
+        { r with state = next }
+      else
+        {
+          state = next;
+          undo_states = r.state :: r.undo_states;
+          redo_states = [];
+        }
+
+let same_state ~step expected actual =
+  let msg what = Printf.sprintf "step %d: %s" step what in
+  equal ~msg:(msg "text") string (Editor.text expected) (Editor.text actual);
+  let caret e =
+    let c = Editor.caret e in
+    (c.grapheme, c.affinity = Matrix.Text.Layout.Upstream)
+  in
+  equal ~msg:(msg "caret") (pair int bool) (caret expected) (caret actual);
+  equal ~msg:(msg "selection") sel
+    (Editor.selection expected)
+    (Editor.selection actual)
+
+let history_matches_snapshots (initial, script) =
+  let editor = ref (Editor.of_string initial) in
+  let reference = ref { state = !editor; undo_states = []; redo_states = [] } in
+  List.iteri
+    (fun step op ->
+      editor := edit op !editor;
+      reference := reference_step !reference op;
+      same_state ~step !reference.state !editor)
+    script
+
+let gen_script =
+  Gen.with_pp
+    (fun ppf (initial, ops) ->
+      Format.fprintf ppf "%S: %a" initial
+        (Format.pp_print_list ~pp_sep:Format.pp_print_space pp_op)
+        ops)
+    (Gen.pair
+       (Gen.of_list [ ""; "hello world"; "a\nbc\n\ndef"; "日本語 text\n🇦🇧" ])
+       (Gen.list ~size:(Gen.int_range 0 80) gen_op))
+
 let () =
   run "Editor"
     [
@@ -906,7 +1086,7 @@ let () =
       group "Undo and redo"
         [
           test "no history" undo_no_history;
-          test "history is bounded" undo_history_is_bounded;
+          test "history keeps every edit" undo_history_keeps_every_edit;
           test "restores text and cursor" undo_restores_text_and_cursor;
           test "restores no selection" undo_restores_no_selection;
           test "restores selection" undo_restores_selection;
@@ -914,6 +1094,11 @@ let () =
           test "edit after undo clears redo" edit_after_undo_clears_redo;
           test "multiple steps" multiple_undo_steps;
           test "deletions" deletions_undo;
+        ];
+      group "History"
+        [
+          prop ~count:500 "matches snapshot history over edit scripts"
+            gen_script history_matches_snapshots;
         ];
       group "Shared source index"
         [

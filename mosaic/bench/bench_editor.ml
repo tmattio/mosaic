@@ -24,13 +24,10 @@ let history_check () =
   for i = 0 to count - 1 do
     if Weak.check editors i then failwith "editor retained an obsolete state";
     if Weak.check sources i then failwith "editor retained an obsolete source";
-    if Weak.check texts i <> (i >= count - 200) then
-      failwith
-        "editor history did not retain exactly its bounded text snapshots"
+    if Weak.check texts i then failwith "editor history retained an old text"
   done;
   ignore (Sys.opaque_identity final);
-  print_endline
-    "editor history retains 200 text snapshots and no old states or indexes"
+  print_endline "editor history retains no old states, texts or indexes"
 
 let () =
   if Array.length Sys.argv = 2 && Sys.argv.(1) = "history" then history_check ()

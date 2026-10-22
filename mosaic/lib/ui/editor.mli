@@ -92,10 +92,13 @@ val delete_line : t -> t
 (** [delete_line t] deletes the current logical line including its newline. *)
 
 val undo : t -> t
-(** [undo t] restores the previous undo point. *)
+(** [undo t] restores the text, caret and selection from before the latest text
+    change, or is [t] when there is none. *)
 
 val redo : t -> t
-(** [redo t] restores the most recently undone edit. *)
+(** [redo t] reapplies the most recently undone change, with the caret and
+    selection that followed it, or is [t] when there is none. A text change
+    after an undo discards the changes that could be redone. *)
 
 (** {1 Movement}
     Movement clears selection by default. [select:true] extends it. *)
