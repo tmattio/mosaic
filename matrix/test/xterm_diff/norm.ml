@@ -561,6 +561,19 @@ let registry =
          past the first column, xterm gets CUP to matrix's cursor instead.";
     };
     {
+      name = "protect-mode-off";
+      kind = Quirk;
+      how = "xterm rewrite";
+      why =
+        "a protected character stays protected until erased by a non-selective \
+         erase (VT220 Programmer Reference Manual §4.9; RFC 0004 §2 \
+         Protection); a DECSED of the whole display that finds no protected \
+         cell turns xterm's protection mode off, so the characters DECSCA \
+         protects afterwards are erased by DECSED and DECSEL (util.c, \
+         do_erase_display). xterm gets DECSCA with the pen's protection after \
+         such a DECSED, which turns the mode on again.";
+    };
+    {
       name = "margin-cut-wide";
       kind = Quirk;
       how = "screen";
@@ -587,9 +600,11 @@ let registry =
       how = "generator";
       why =
         "escape sequences xterm performs and matrix, a VT100 by its identity \
-         (RFC 0004 §2 Replies), does not: ISO protection (SPA, EPA: ESC V, ESC \
-         W), the locking shifts into GR from level 2 (ESC ~, ESC }, ESC |), \
-         DECBI and DECFI at level 4 (ESC 6, ESC 9) (ctlseqs). An ESC is not \
+         (RFC 0004 §2 Replies), does not (ctlseqs): ISO protection (SPA, EPA: \
+         ESC V, ESC W), HP memory lock (ESC l, ESC m), line attributes \
+         (DECDHL, DECSWL, DECDWL: ESC # 3 to 6), ANSI conformance levels (ESC \
+         SP L, M, N), the locking shifts into GR from level 2 (ESC ~, ESC }, \
+         ESC |), DECBI and DECFI at level 4 (ESC 6, ESC 9). An ESC is not \
          followed by them.";
     };
     {
@@ -758,16 +773,28 @@ let lex s =
      occurs and the sequence goes on, so it is the same as the control
      before the sequence; DEL there is dropped. The units of a sequence are
      made so: its controls first, then the sequence without them. *)
+  let open_string = function
+    | (Str raw | Silent raw) :: _
+      when String.length raw > 1 && String.contains "P]_^X" raw.[1] ->
+        not
+          (String.ends_with ~suffix:"\027\\" raw
+          || (raw.[1] = ']' && String.ends_with ~suffix:"\x07" raw))
+    | _ -> false
+  in
   let hoist raw =
-    let b = Buffer.create (String.length raw) in
-    Buffer.add_char b raw.[0];
-    String.iteri
-      (fun i c ->
-        if i > 0 then
-          if c < '\x20' then push (Ctl c)
-          else if c <> '\x7F' then Buffer.add_char b c)
-      raw;
-    Buffer.contents b
+    (* Not after a string this sequence's ESC ends: there the controls would
+       move into the string. *)
+    if open_string !out then raw
+    else
+      let b = Buffer.create (String.length raw) in
+      Buffer.add_char b raw.[0];
+      String.iteri
+        (fun i c ->
+          if i > 0 then
+            if c < '\x20' then push (Ctl c)
+            else if c <> '\x7F' then Buffer.add_char b c)
+        raw;
+      Buffer.contents b
   in
   let text = ref [] in
   let flush_text () =
@@ -1029,18 +1056,22 @@ let rewrite ctx bytes =
   in
   (* decrc-sgr-background: after DECRC xterm gets the pen's background again,
      read from where a character printed after the bytes so far lands. *)
+  (* The pen: the cell a character printed after the bytes so far gets. *)
+  let pen () =
+    let probe =
+      Vte_adapter.create ~width_method:`Wcwidth ~rows:ctx.rows ~cols:ctx.cols ()
+    in
+    ignore (Vte_adapter.feed probe (Buffer.contents seen) : string);
+    ignore (Vte_adapter.feed probe "\027[?7l" : string);
+    let c = Vte_adapter.cursor probe in
+    ignore (Vte_adapter.feed probe "x" : string);
+    ( (Vte_adapter.screen probe).lines.(c.row).(c.col),
+      Vte_adapter.protected probe ~row:c.row ~col:c.col )
+  in
   let restore_background () =
     if on ctx "decrc-sgr-background" then begin
       fire ctx "decrc-sgr-background";
-      let probe =
-        Vte_adapter.create ~width_method:`Wcwidth ~rows:ctx.rows ~cols:ctx.cols
-          ()
-      in
-      ignore (Vte_adapter.feed probe (Buffer.contents seen) : string);
-      ignore (Vte_adapter.feed probe "\027[?7l" : string);
-      let c = Vte_adapter.cursor probe in
-      ignore (Vte_adapter.feed probe "x" : string);
-      let bg = (Vte_adapter.screen probe).lines.(c.row).(c.col).bg in
+      let bg = (fst (pen ())).bg in
       emit
         (match bg with
         | Screen.Default -> "\027[49m"
@@ -1289,6 +1320,14 @@ let rewrite ctx bytes =
              match before with
              | Some t -> Some (t @ scalars)
              | None -> Some scalars)
+         | Silent raw
+           when String.length raw > 1
+                && (not (String.contains "P]_^X" raw.[1]))
+                && String.exists
+                     (fun c -> c < '\x20' && c <> '\027')
+                     (String.sub raw 1 (String.length raw - 1)) ->
+             (* A C0 control left inside a sequence is performed. *)
+             None
          | Silent _ | Overlong _ -> before
          | l when with_subparams l -> before
          | _ -> None);
@@ -1484,6 +1523,16 @@ let rewrite ctx bytes =
             then (
               fire ctx "lcf-protected-erase";
               emit (cha ()));
+            (* protect-mode-off: after a DECSED of the whole display. *)
+            if
+              final = 'J'
+              && (p = 2
+                 || (p = 0 && c.row = 0 && c.col = 0)
+                 || (p = 1 && c.row = c.rows - 1 && c.col = c.cols - 1))
+              && on ctx "protect-mode-off"
+            then (
+              fire ctx "protect-mode-off";
+              emit (if snd (pen ()) then "\027[1\"q" else "\027[0\"q"));
             let after = Vte_adapter.screen m in
             (* The range, and the halves of wide characters its edges cut. *)
             let blanked = ref [] in
@@ -1587,11 +1636,11 @@ let rewrite ctx bytes =
              match List.nth_opt (String.split_on_char ';' params) i with
              | None | Some "" -> None
              | Some f -> (
-                 match
-                   int_of_string_opt (List.hd (String.split_on_char ':' f))
-                 with
-                 | Some 0 | None -> None
-                 | Some v -> Some v)
+                 let f = List.hd (String.split_on_char ':' f) in
+                 match int_of_string_opt f with
+                 | Some 0 -> None
+                 | Some v -> Some v
+                 | None -> if f = "" then None else Some max_int)
            in
            let top = min ctx.rows (Option.value (p 0) ~default:1)
            and bottom = min ctx.rows (Option.value (p 1) ~default:ctx.rows) in
@@ -1727,7 +1776,10 @@ let rewrite ctx bytes =
             emit (Printf.sprintf "\027[%dS\027[S" (h - 1)))
           else emit raw;
           let touched =
-            if inter = "" && final = 'P' then touch_cut ~row:c.row ~col:c.col
+            if
+              (inter = "" && (final = 'P' || final = '@'))
+              || (inter = "'" && (final = '}' || final = '~'))
+            then touch_cut ~row:c.row ~col:c.col
             else None
           in
           feed raw;
@@ -1954,8 +2006,14 @@ let screens ctx ~orphans ~erased ~cut ~lost ~(xterm : Screen.t)
           (fun r l ->
             Array.mapi
               (fun c (cell : Screen.cell) ->
-                if List.mem (r, c) erased && cell.text = " " then
-                  { cell with known = false }
+                if
+                  List.mem (r, c) erased
+                  && String.length cell.text > 0
+                  && cell.text.[0] = ' '
+                  && List.for_all
+                       (fun cp -> ctx.width cp = 0)
+                       (List.tl (scalars cell.text))
+                then { cell with text = " "; known = false }
                 else cell)
               l)
           s.lines;
@@ -2206,7 +2264,10 @@ let allow ctx ~(prev : Gen.token list) ~last (t : Gen.token) =
     match prev with
     | p :: _ when p.bytes = "\027" && String.length t.bytes > 0 ->
         let f = t.bytes.[0] in
-        f = 'V' || f = 'W'
+        f = 'V' || f = 'W' || f = 'l' || f = 'm'
+        || String.length t.bytes > 1
+           && f = '#'
+           && String.contains "3456" t.bytes.[1]
         || String.length t.bytes > 1
            && f = ' '
            && String.contains "LMN" t.bytes.[1]
