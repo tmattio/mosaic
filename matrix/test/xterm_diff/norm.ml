@@ -2313,12 +2313,15 @@ let screens ctx ~orphans ~erased ~cut ~lost ~(xterm : Screen.t)
             Array.mapi
               (fun r l ->
                 let m = matrix.lines.(r) in
+                (* The cells after the last xterm printed, which a lost
+                   cell may no longer end the row at: xterm did not print
+                   them, so their attributes are unknown. *)
                 let l =
                   if Array.length l < Array.length m then
                     Array.append l
                       (Array.make
                          (Array.length m - Array.length l)
-                         Screen.blank)
+                         { Screen.blank with known = false })
                   else l
                 in
                 Array.mapi
