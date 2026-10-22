@@ -656,11 +656,9 @@ module Markdown : sig
     | Conceal_punctuation
         (** Style keys identifying markdown element classes. *)
 
-  type style = Mosaic_ui.Markdown.style
-  (** Style resolver: maps a {!style_key} to an {!Ansi.Style.t}. *)
-
-  val default_style : style
-  (** The built-in terminal style resolver. *)
+  module Style = Mosaic_ui.Markdown.Style
+  (** Element styles: the terminal style of every {!style_key}, compared by
+      value. *)
 end
 
 module Code : sig
@@ -2446,7 +2444,7 @@ val markdown :
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?focused:bool ->
-  ?md_style:Markdown.style ->
+  ?md_style:Markdown.Style.t ->
   ?conceal:bool ->
   ?streaming:bool ->
   ?selectable:bool ->

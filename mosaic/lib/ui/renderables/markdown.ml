@@ -17,35 +17,73 @@ type style_key =
   | Table_border
   | Conceal_punctuation
 
-type style = style_key -> Ansi.Style.t
+module Style = struct
+  module Keys = Map.Make (struct
+    type t = style_key
 
-let default_style = function
-  | Default -> Ansi.Style.default
-  | Heading 1 -> Ansi.Style.make ~fg:(Ansi.Color.of_rgb 0 215 175) ~bold:true ()
-  | Heading 2 ->
-      Ansi.Style.make ~fg:(Ansi.Color.of_rgb 95 175 255) ~bold:true ()
-  | Heading 3 ->
-      Ansi.Style.make ~fg:(Ansi.Color.of_rgb 200 140 255) ~bold:true ()
-  | Heading _ ->
-      Ansi.Style.make ~fg:(Ansi.Color.of_rgb 135 175 255) ~bold:true ()
-  | Emphasis -> Ansi.Style.make ~italic:true ()
-  | Strong -> Ansi.Style.make ~bold:true ()
-  | Code_span -> Ansi.Style.make ~fg:(Ansi.Color.of_rgb 180 200 220) ()
-  | Code_block -> Ansi.Style.make ~fg:(Ansi.Color.of_rgb 180 200 220) ()
-  | Link ->
-      Ansi.Style.make ~fg:(Ansi.Color.of_rgb 95 175 255) ~underline:true ()
-  | Image ->
-      Ansi.Style.make ~fg:(Ansi.Color.of_rgb 95 175 255) ~underline:true ()
-  | Blockquote ->
-      Ansi.Style.make ~fg:(Ansi.Color.of_rgb 140 150 165) ~italic:true ()
-  | Thematic_break -> Ansi.Style.make ~fg:(Ansi.Color.of_rgb 80 90 100) ()
-  | List_marker -> Ansi.Style.make ~fg:(Ansi.Color.of_rgb 95 135 215) ()
-  | Strikethrough ->
-      Ansi.Style.make ~fg:(Ansi.Color.of_rgb 140 150 165) ~strikethrough:true ()
-  | Task_marker ->
-      Ansi.Style.make ~fg:(Ansi.Color.of_rgb 0 215 175) ~bold:true ()
-  | Table_border -> Ansi.Style.make ~fg:(Ansi.Color.of_rgb 80 90 100) ()
-  | Conceal_punctuation -> Ansi.Style.make ~fg:(Ansi.Color.of_rgb 70 80 90) ()
+    let compare = Stdlib.compare
+  end)
+
+  type t = Ansi.Style.t Keys.t
+
+  let check = function
+    | Heading n when n < 1 || n > 6 ->
+        invalid_arg
+          (Printf.sprintf "Markdown.Style: heading level %d is not in 1..6" n)
+    | _ -> ()
+
+  let bind style bindings =
+    List.fold_left
+      (fun style (key, s) ->
+        check key;
+        Keys.add key s style)
+      style bindings
+
+  let default =
+    let heading r g b =
+      Ansi.Style.make ~fg:(Ansi.Color.of_rgb r g b) ~bold:true ()
+    in
+    bind Keys.empty
+      [
+        (Default, Ansi.Style.default);
+        (Heading 1, heading 0 215 175);
+        (Heading 2, heading 95 175 255);
+        (Heading 3, heading 200 140 255);
+        (Heading 4, heading 135 175 255);
+        (Heading 5, heading 135 175 255);
+        (Heading 6, heading 135 175 255);
+        (Emphasis, Ansi.Style.make ~italic:true ());
+        (Strong, Ansi.Style.make ~bold:true ());
+        (Code_span, Ansi.Style.make ~fg:(Ansi.Color.of_rgb 180 200 220) ());
+        (Code_block, Ansi.Style.make ~fg:(Ansi.Color.of_rgb 180 200 220) ());
+        ( Link,
+          Ansi.Style.make ~fg:(Ansi.Color.of_rgb 95 175 255) ~underline:true ()
+        );
+        ( Image,
+          Ansi.Style.make ~fg:(Ansi.Color.of_rgb 95 175 255) ~underline:true ()
+        );
+        ( Blockquote,
+          Ansi.Style.make ~fg:(Ansi.Color.of_rgb 140 150 165) ~italic:true () );
+        (Thematic_break, Ansi.Style.make ~fg:(Ansi.Color.of_rgb 80 90 100) ());
+        (List_marker, Ansi.Style.make ~fg:(Ansi.Color.of_rgb 95 135 215) ());
+        ( Strikethrough,
+          Ansi.Style.make
+            ~fg:(Ansi.Color.of_rgb 140 150 165)
+            ~strikethrough:true () );
+        (Task_marker, heading 0 215 175);
+        (Table_border, Ansi.Style.make ~fg:(Ansi.Color.of_rgb 80 90 100) ());
+        ( Conceal_punctuation,
+          Ansi.Style.make ~fg:(Ansi.Color.of_rgb 70 80 90) () );
+      ]
+
+  let make ?(base = default) bindings = bind base bindings
+
+  let get t key =
+    check key;
+    Keys.find key t
+
+  let equal = Keys.equal Ansi.Style.equal
+end
 
 (* ───── Props ───── *)
 
@@ -54,7 +92,7 @@ module Props = struct
     content : string;
     conceal : bool;
     streaming : bool;
-    style : style;
+    style : Style.t;
     selectable : bool;
     selection_bg : Ansi.Color.t option;
     selection_fg : Ansi.Color.t option;
@@ -63,7 +101,7 @@ module Props = struct
   }
 
   let make ?(content = "") ?(conceal = true) ?(streaming = false)
-      ?(style = default_style) ?(selectable = true) ?selection_bg ?selection_fg
+      ?(style = Style.default) ?(selectable = true) ?selection_bg ?selection_fg
       ?highlighter ?(syntax_style = Syntax_style.default) () =
     {
       content;
@@ -81,7 +119,8 @@ module Props = struct
 
   let equal a b =
     String.equal a.content b.content
-    && a.conceal = b.conceal && a.streaming = b.streaming && a.style == b.style
+    && a.conceal = b.conceal && a.streaming = b.streaming
+    && Style.equal a.style b.style
     && a.selectable = b.selectable
     && Option.equal Ansi.Color.equal a.selection_bg b.selection_bg
     && Option.equal Ansi.Color.equal a.selection_fg b.selection_fg
@@ -126,7 +165,7 @@ let empty_ast : Cmarkit.Block.t = Cmarkit.Block.empty
 (* ───── Render Environment ───── *)
 
 type render_env = {
-  style : style;
+  style : style_key -> Ansi.Style.t;
   conceal : bool;
   defs : Cmarkit.Label.defs;
   streaming : bool;
@@ -155,7 +194,7 @@ type render_env = {
 type t = {
   node : Renderable.t;
   mutable content : string;
-  mutable style : style;
+  mutable style : Style.t;
   mutable conceal : bool;
   mutable streaming : bool;
   mutable selectable : bool;
@@ -234,11 +273,12 @@ let link_dest (defs : Cmarkit.Label.defs) (link : Cmarkit.Inline.Link.t) =
           | None -> None)
       | _ -> None)
 
-let conceal_punct ~(style : style) text =
+let conceal_punct ~(style : style_key -> Ansi.Style.t) text =
   { Text_buffer.text; style = style Conceal_punctuation }
 
-let rec inline_to_spans ~(style : style) ~conceal ~(base : Ansi.Style.t)
-    ~(defs : Cmarkit.Label.defs) (inline : Cmarkit.Inline.t) =
+let rec inline_to_spans ~(style : style_key -> Ansi.Style.t) ~conceal
+    ~(base : Ansi.Style.t) ~(defs : Cmarkit.Label.defs)
+    (inline : Cmarkit.Inline.t) =
   match inline with
   | Cmarkit.Inline.Text (s, _meta) -> [ { Text_buffer.text = s; style = base } ]
   | Cmarkit.Inline.Emphasis (em, _meta) ->
@@ -1031,7 +1071,7 @@ let renderable_blocks (block : Cmarkit.Block.t) : Cmarkit.Block.t list =
 
 let render_env t defs =
   {
-    style = t.style;
+    style = Style.get t.style;
     conceal = t.conceal;
     defs;
     streaming = t.streaming;
@@ -1199,7 +1239,7 @@ let rerender_blocks t =
 (* ───── Construction ───── *)
 
 let create ~parent ?index ?id ?(layout_style = column_style) ?visible ?z_index
-    ?opacity ?(content = "") ?(style = default_style) ?(conceal = true)
+    ?opacity ?(content = "") ?(style = Style.default) ?(conceal = true)
     ?(streaming = false) ?(selectable = true) ?selection_bg ?selection_fg
     ?on_selection ?render_node ?render_code ?highlighter
     ?(syntax_style = Syntax_style.default) () =
@@ -1256,9 +1296,9 @@ let set_content t s =
     update_blocks ~old_content t
   end
 
-let set_style t f =
-  if t.style != f then begin
-    t.style <- f;
+let set_style t style =
+  if not (Style.equal t.style style) then begin
+    t.style <- style;
     if t.blocks <> [] then rerender_blocks t else update_blocks t
   end
 
@@ -1325,7 +1365,7 @@ let apply_props t (props : Props.t) =
      append must not pay for unconditional style re-renders, and a combined
      change must not re-render twice. *)
   let presentation_changed =
-    t.style != props.style
+    (not (Style.equal t.style props.style))
     || (not (Option.equal ( == ) t.highlighter props.highlighter))
     || (not (Syntax_style.equal t.syntax_style props.syntax_style))
     || t.conceal <> props.conceal

@@ -14,7 +14,7 @@ type t
 (** The type for style keys identifying markdown element classes. *)
 type style_key =
   | Default
-  | Heading of int  (** Level (1-3 have distinct colors; 4+ share one). *)
+  | Heading of int  (** Level, from 1 to 6. *)
   | Emphasis
   | Strong
   | Code_span
@@ -30,31 +30,49 @@ type style_key =
   | Conceal_punctuation
       (** Style for markdown syntax markers ([\*], [\`], [\[], etc.). *)
 
-type style = style_key -> Ansi.Style.t
-(** The type for style resolvers. Maps a {!style_key} to the {!Ansi.Style.t} to
-    apply when rendering that element.
+(** Element styles. *)
+module Style : sig
+  type t
+  (** The type for element styles: the terminal style of every {!style_key}.
 
-    {b Identity matters.} Style resolvers are functions, compared by
-    {e physical} equality. Define them once (at module level or memoized) and
-    reuse the same closure across renders; a resolver rebuilt inside a view
-    function makes every reconcile look like a style change and re-renders every
-    block each frame. *)
+      Styles are values. Two styles that give every key equal terminal styles
+      are equal, so a view may rebuild its style on every render, or take it
+      from the model, and only a change of some key's style re-renders the
+      content. *)
 
-val default_style : style
-(** [default_style] is the built-in terminal style resolver. The mapping is:
-    - [Default]: no decoration.
-    - [Heading n]: bold; colored by level (magenta for 1, green for 2, cyan for
-      3, blue for 4+).
-    - [Emphasis]: italic.
-    - [Strong]: bold.
-    - [Code_span] and [Code_block]: dim.
-    - [Link] and [Image]: underline and cyan.
-    - [Blockquote]: italic and yellow.
-    - [Thematic_break] and [List_marker]: dim.
-    - [Strikethrough]: strikethrough.
-    - [Task_marker]: bold.
-    - [Table_border]: dim.
-    - [Conceal_punctuation]: dim. *)
+  val make : ?base:t -> (style_key * Ansi.Style.t) list -> t
+  (** [make ?base bindings] gives each key of [bindings] its terminal style and
+      every other key the style [base] gives it. [base] defaults to {!default}.
+      When a key appears more than once, its last binding wins.
+
+      Raises [Invalid_argument] if a key is [Heading n] with [n] outside
+      \[[1];[6]\], CommonMark's heading levels. *)
+
+  val default : t
+  (** [default] is the built-in terminal style:
+      - [Default]: no decoration.
+      - [Heading n]: bold; colored by level, with levels 4 to 6 sharing one
+        color.
+      - [Emphasis]: italic.
+      - [Strong]: bold.
+      - [Code_span] and [Code_block]: a light blue-gray.
+      - [Link] and [Image]: underlined, light blue.
+      - [Blockquote]: italic gray.
+      - [Thematic_break], [Table_border] and [Conceal_punctuation]: dark gray.
+      - [List_marker]: blue.
+      - [Strikethrough]: struck-through gray.
+      - [Task_marker]: bold green. *)
+
+  val get : t -> style_key -> Ansi.Style.t
+  (** [get t key] is [key]'s terminal style in [t].
+
+      Raises [Invalid_argument] if [key] is [Heading n] with [n] outside
+      \[[1];[6]\]. *)
+
+  val equal : t -> t -> bool
+  (** [equal a b] is [true] iff [a] and [b] give every key equal terminal
+      styles. *)
+end
 
 (** {1:props Props} *)
 
@@ -66,7 +84,7 @@ module Props : sig
     ?content:string ->
     ?conceal:bool ->
     ?streaming:bool ->
-    ?style:style ->
+    ?style:Style.t ->
     ?selectable:bool ->
     ?selection_bg:Ansi.Color.t ->
     ?selection_fg:Ansi.Color.t ->
@@ -79,7 +97,7 @@ module Props : sig
       - [conceal]: whether to hide markdown syntax characters. Defaults to
         [true].
       - [streaming]: whether to enable streaming mode. Defaults to [false].
-      - [style]: the style resolver. Defaults to {!default_style}.
+      - [style]: the element style. Defaults to {!Style.default}.
       - [selectable]: whether rendered markdown text can be selected. Defaults
         to [true].
       - [selection_bg]: background color for selected text.
@@ -107,7 +125,7 @@ val create :
   ?z_index:int ->
   ?opacity:float ->
   ?content:string ->
-  ?style:style ->
+  ?style:Style.t ->
   ?conceal:bool ->
   ?streaming:bool ->
   ?selectable:bool ->
@@ -130,7 +148,7 @@ val create :
   t
 (** [create ~parent ()] is a markdown display widget attached to [parent]. With:
     - [content]: the markdown source text. Defaults to [""].
-    - [style]: the style resolver. Defaults to {!default_style}.
+    - [style]: the element style. Defaults to {!Style.default}.
     - [conceal]: whether to hide markdown syntax characters. When [true], a link
       [[[text](url)]] is displayed as [text (url)]. Defaults to [true].
     - [streaming]: when [true], incomplete trailing content is handled
@@ -187,10 +205,11 @@ val content : t -> string
 
 (** {1:config Configuration} *)
 
-val set_style : t -> style -> unit
-(** [set_style t f] changes the style resolver of [t] to [f] and re-renders.
+val set_style : t -> Style.t -> unit
+(** [set_style t style] changes the element style of [t] and re-renders.
     Re-parsing is skipped when blocks already exist; leaf blocks are updated in
-    place without destroying their renderables. *)
+    place without destroying their renderables. No-op when [style] equals the
+    current style. *)
 
 val set_highlighter : t -> Code.Highlighter.t option -> unit
 (** [set_highlighter t h] changes the fenced-code highlighter of [t] to [h] (see

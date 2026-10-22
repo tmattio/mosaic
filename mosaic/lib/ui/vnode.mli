@@ -1034,7 +1034,7 @@ val markdown :
   ?on_click:(Event.mouse -> 'msg option) ->
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
-  ?md_style:Markdown.style ->
+  ?md_style:Markdown.Style.t ->
   ?conceal:bool ->
   ?streaming:bool ->
   ?selectable:bool ->
@@ -1051,8 +1051,9 @@ val markdown :
     children.
 
     Markdown-specific attributes:
-    - [md_style] is the style resolver for markdown elements. Defaults to
-      {!Markdown.default_style}.
+    - [md_style] is the element style. Styles compare by value, so an equal
+      style rebuilt on every view re-renders nothing. Defaults to
+      {!Markdown.Style.default}.
     - [conceal] controls whether markdown syntax characters are hidden. Defaults
       to [true].
     - [streaming] enables graceful handling of incomplete trailing content,

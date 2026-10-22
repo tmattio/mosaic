@@ -197,6 +197,8 @@
   mosaic.ui
   toffee
   matrix.ansi
+  matrix.grid
+  matrix.screen
   matrix.input
   cmarkit
   test_harness))

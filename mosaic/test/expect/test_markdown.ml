@@ -481,11 +481,8 @@ let%expect_test "set_style changes appearance" =
   let app = make_markdown_app "# Heading" in
   markdown_frame app ~width:60 ~height:5;
   [%expect {|Heading|}];
-  let new_style = function
-    | Markdown.Default -> Ansi.Style.default
-    | _ -> Ansi.Style.default
-  in
-  Markdown.set_style app.md new_style;
+  Markdown.set_style app.md
+    (Markdown.Style.make [ (Markdown.Heading 1, Ansi.Style.default) ]);
   markdown_frame app ~width:60 ~height:5;
   [%expect {|Heading|}]
 

@@ -83,11 +83,8 @@ let set_streaming_same_is_noop () =
 
 let set_style_custom () =
   let _t, md = make_md ~content:"# Heading" () in
-  let custom_style = function
-    | Markdown.Default -> Ansi.Style.default
-    | _ -> Ansi.Style.default
-  in
-  Markdown.set_style md custom_style
+  Markdown.set_style md
+    (Markdown.Style.make [ (Markdown.Heading 1, Ansi.Style.default) ])
 
 (* A synchronous highlighter that records its requests and styles the first
    three bytes as a keyword. *)
@@ -243,6 +240,68 @@ let style_change_restyles_without_highlighting () =
   equal ~msg:"a style change does not highlight again" int 1
     (List.length !requests)
 
+(* An element style a view rebuilds from its model on every refresh. *)
+let element_style_rebuilt_renders_nothing () =
+  let requests, highlighter = recording_highlighter () in
+  let model_color = Ansi.Color.red in
+  let props () =
+    Markdown.Props.make ~content:(fences 20) ~highlighter
+      ~style:
+        (Markdown.Style.make
+           [ (Markdown.Strong, Ansi.Style.fg model_color Ansi.Style.default) ])
+      ()
+  in
+  let t, md = make_md () in
+  Markdown.apply_props md (props ());
+  let scheduled = !(t.schedule_count) in
+  for _ = 1 to 4 do
+    Markdown.apply_props md (props ())
+  done;
+  equal ~msg:"each fence highlighted once over five refreshes" int 20
+    (List.length !requests);
+  equal ~msg:"no render scheduled" int scheduled !(t.schedule_count)
+
+let element_style_change_rerenders () =
+  let renderer = Renderer.create () in
+  let heading color =
+    Markdown.Style.make
+      [ (Markdown.Heading 1, Ansi.Style.fg color Ansi.Style.default) ]
+  in
+  let md =
+    Markdown.create ~parent:(Renderer.root renderer) ~content:"# Title"
+      ~style:(heading Ansi.Color.red) ()
+  in
+  let fg () =
+    Renderer.render_frame renderer ~width:20 ~height:2 ~delta:0.;
+    ignore (Renderer.render ~full:true renderer : string);
+    let grid = Matrix_screen.current_grid (Renderer.screen renderer) in
+    Matrix_grid.get_fg grid (Matrix_grid.idx grid ~x:0 ~y:0)
+  in
+  is_true ~msg:"first style" (Ansi.Color.equal Ansi.Color.red (fg ()));
+  Markdown.set_style md (heading Ansi.Color.red);
+  Markdown.set_style md (heading Ansi.Color.blue);
+  is_true ~msg:"changed style" (Ansi.Color.equal Ansi.Color.blue (fg ()))
+
+let element_style_values () =
+  let link = Ansi.Style.make ~underline:true () in
+  let a = Markdown.Style.make [ (Markdown.Link, link) ] in
+  is_true ~msg:"rebuilt"
+    (Markdown.Style.equal a (Markdown.Style.make [ (Markdown.Link, link) ]));
+  is_false ~msg:"changed" (Markdown.Style.equal a Markdown.Style.default);
+  is_true ~msg:"other keys from the base"
+    (Ansi.Style.equal
+       (Markdown.Style.get Markdown.Style.default Markdown.Strong)
+       (Markdown.Style.get a Markdown.Strong));
+  is_true ~msg:"last binding wins"
+    (Ansi.Style.equal link
+       (Markdown.Style.get
+          (Markdown.Style.make
+             [ (Markdown.Link, Ansi.Style.default); (Markdown.Link, link) ])
+          Markdown.Link));
+  raises ~msg:"heading level outside 1..6"
+    (Invalid_argument "Markdown.Style: heading level 7 is not in 1..6")
+    (fun () -> Markdown.Style.make [ (Markdown.Heading 7, link) ])
+
 (* ── Incremental updates ── *)
 
 let apply_props_same_content_no_rerender () =
@@ -333,6 +392,10 @@ let () =
             view_refreshes_do_not_highlight_again;
           test "style change restyles without highlighting"
             style_change_restyles_without_highlighting;
+          test "element style rebuilt renders nothing"
+            element_style_rebuilt_renders_nothing;
+          test "element style change re-renders" element_style_change_rerenders;
+          test "element styles are values" element_style_values;
           test "pp does not crash" pp_does_not_crash;
         ];
       group "Incremental updates"

@@ -460,7 +460,7 @@ val markdown :
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?focused:bool ->
-  ?md_style:Markdown.style ->
+  ?md_style:Markdown.Style.t ->
   ?conceal:bool ->
   ?streaming:bool ->
   ?selectable:bool ->
