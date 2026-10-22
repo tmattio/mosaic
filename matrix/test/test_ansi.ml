@@ -939,6 +939,7 @@ let parser_c0_inside_sequences () =
   check_tokens "\x1b(\rB" "CR, ESC ( B";
   check_tokens "\x1b[2\nC" "LF, CSI 2 C";
   check_tokens "\x1bP1\n$q\x1b\\" "DCS 1 $ q, ST";
+  check_tokens "\x1bP1\n2q\x1b\\" "DCS 12 q, ST";
   (* In a string BS..CR are content, BEL ends an OSC only, and the other C0
      controls and DEL are dropped. *)
   check_tokens "\x1b]0;a\x01\x08\t\n\x0b\x0c\r\x7fb\x07"

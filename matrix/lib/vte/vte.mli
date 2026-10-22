@@ -158,7 +158,8 @@
     character sets to their defaults; both DECSC slots to the power-up cursor
     state. The VT510's table gives "No autowrap", its own power-up value; this
     terminal powers up with autowrap on, so DECSTR sets it on. The screen, the
-    cursor position, the active screen and bracketed paste stay. *)
+    cursor position, the active screen, bracketed paste, the tab stops and the
+    title stay. *)
 
 type t
 (** The type for terminal emulators. Mutable, not thread-safe. *)

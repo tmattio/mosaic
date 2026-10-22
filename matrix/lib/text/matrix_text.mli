@@ -78,8 +78,7 @@ module Segmenter : sig
   (** [add s u] adds the scalar [u] to the stream and is [true] iff [u] starts a
       unit. Afterwards [u] belongs to the unit in progress, so {!width} is that
       of the unit [u] started or continued, not of the unit it closed: a caller
-      that needs the closed unit's width reads {!width} before [add]. A
-      printable ASCII scalar after another is read in two comparisons.
+      that needs the closed unit's width reads {!width} before [add].
       Allocation-free. *)
 
   val ascii_run : t -> string -> pos:int -> len:int -> int

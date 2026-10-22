@@ -91,7 +91,8 @@ val idx : t -> x:int -> y:int -> int
 
 val get_codepoint : t -> int -> int
 (** [get_codepoint g idx] is the Unicode scalar at [idx], [0] for empty cells,
-    or [-1] for a multi-codepoint grapheme or continuation cell. *)
+    or [-1] for a multi-codepoint grapheme, a scalar stored more than three
+    cells wide, or a continuation cell. *)
 
 val get_attrs : t -> int -> int
 (** [get_attrs g idx] is the packed attribute integer at [idx], as
@@ -227,7 +228,7 @@ val clear_rect :
   ?color:Ansi.Color.t -> t -> x:int -> y:int -> width:int -> height:int -> unit
 (** [clear_rect g ~x ~y ~width ~height] clears a rectangle to blanks on [color],
     which defaults to transparent. A grapheme with a cell in the rectangle is
-    cleared whole, also outside it.
+    cleared whole, also where it extends outside the rectangle or the scissor.
 
     Clipped to grid bounds and scissor. *)
 

@@ -36,9 +36,10 @@
     + A C0 control inside an escape or control sequence is performed where it
       occurs, and the sequence continues: CSI 2 LF C is LF, then CSI 2 C (VT100
       User Guide ch. 3: "Embedded control characters are executed as soon as
-      they are encountered"). Inside a DCS header or a string a C0 control is
-      never performed: BS..CR are string content (ECMA-48 §5.6), BEL ends an
-      OSC, and the others are dropped.
+      they are encountered"). Inside a string a C0 control is never performed:
+      BS..CR are content (ECMA-48 §5.6), BEL ends an OSC, and the others are
+      dropped. Inside a DCS header every C0 control is dropped and the header
+      goes on: [ESC P 1 LF 2 q] is [DCS 12 q].
     + DEL is dropped inside sequences and strings. Elsewhere it is reported,
       since only the device knows whether a 96-character set makes it a graphic
       character.
@@ -148,7 +149,7 @@ type token =
       (** An escape sequence that is not ESC Fe: [ESC 7], [ESC ( B],
           [ESC ( % 5], [ESC # 8], [ESC SP F]. ECMA-35 allows any number of
           intermediates (§13.2.2); up to 4 are kept, and no device acts on more.
-          A DRCS designation, [ESC $ ( SP F], has 4 (§14.4.2). *)
+          A DRCS designation, such as [ESC $ ( SP ! @], has 4 (§14.4.2). *)
   | Csi of sequence  (** A control sequence. *)
   | Open of opening
       (** The start of a control string. Its content follows as {!Data}, then
