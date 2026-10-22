@@ -476,7 +476,13 @@ val layout : 'context tree -> Node_id.t -> Layout.t result
     [Error (Invalid_input_node node_id)] if [node_id] does not exist.
 
     The layout is valid only after calling {!compute_layout} on [node_id] or an
-    ancestor. Querying before computation yields a default zero layout. *)
+    ancestor. Querying before computation yields a default zero layout.
+
+    With rounding, a node's layout value is replaced whenever a computation
+    changes its layout, its position in the tree's coordinates, or the layout of
+    a node below it that no [Style.Display.None] node hides. A value that is
+    physically the same as an earlier one therefore shows that no such layout
+    changed since. *)
 
 val unrounded_layout : 'context tree -> Node_id.t -> Layout.t
 (** [unrounded_layout tree node_id] returns the unrounded computed layout of

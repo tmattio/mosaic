@@ -1070,8 +1070,31 @@ let random_style rng =
        (if Random.State.int rng 10 = 0 then Style.Display.None
         else Style.Display.Flex)
 
+(* The layouts of [node]'s subtree outside hidden nodes, which keep a zero
+   layout and lay out nothing below them. [layout]'s value for a node is
+   replaced whenever these change, so an unchanged value shows unchanged
+   bits. *)
+let subtree_bits tree node =
+  let buffer = Buffer.create 256 in
+  let rec walk node =
+    let layout = layout tree node |> Result.get_ok in
+    Buffer.add_string buffer (Marshal.to_string layout [ Marshal.No_sharing ]);
+    if
+      not
+        (Style.Display.is_none
+           (Style.display (style tree node |> Result.get_ok)))
+    then List.iter walk (children tree node |> Result.get_ok)
+  in
+  walk node;
+  Buffer.contents buffer
+
+let rec hidden tree node =
+  Style.Display.is_none (Style.display (style tree node |> Result.get_ok))
+  || match parent tree node with Some p -> hidden tree p | None -> false
+
 let incremental_rounding_matches_full_rounding seed =
   let rng = Random.State.make [| seed |] in
+  let previous = Hashtbl.create 64 in
   let tree : unit Toffee.tree = new_tree () in
   let root = new_leaf tree Style.default |> Result.get_ok in
   let nodes = ref [| root |] in
@@ -1102,15 +1125,34 @@ let incremental_rounding_matches_full_rounding seed =
           failf "seed %d, step %d, node %d: %s, full rounding gives %s" seed
             step index (Layout.to_string actual)
             (Layout.to_string expected))
+      finals;
+    Hashtbl.iter
+      (fun index _ ->
+        let node = Node_id.make index in
+        let value = layout tree node |> Result.get_ok in
+        let bits = subtree_bits tree node in
+        (match Hashtbl.find_opt previous index with
+        | Some (value', bits')
+          when value == value' && bits <> bits' && not (hidden tree node) ->
+            failf
+              "seed %d, step %d, node %d: same layout value, changed subtree"
+              seed step index
+        | Some _ | None -> ());
+        Hashtbl.replace previous index (value, bits))
       finals
   in
   check 0;
   for step = 1 to 20 do
-    (match Random.State.int rng 4 with
+    (match Random.State.int rng 5 with
     | 0 -> add_node ()
     | 1 | 2 ->
         let node = !nodes.(Random.State.int rng (Array.length !nodes)) in
         set_style tree node (random_style rng) |> Result.get_ok
+    | 3 -> (
+        let node = !nodes.(Random.State.int rng (Array.length !nodes)) in
+        match parent tree node with
+        | Some parent -> ignore (remove_child tree parent node |> Result.get_ok)
+        | None -> ())
     | _ -> (* A relayout under new available space only. *) ());
     check step
   done
