@@ -127,6 +127,6 @@ cluster and after a control function, the flag after scrolls and edits, BCE on s
 C1 handling, CAN and SUB, the identity and DECXCPR, the parameter budget, the DECSC slots on
 reset, 1049's reset, unknown and national sets), an xterm quirk cited to its source or changelog,
 or a difference of configuration (xterm's level and print-screen). A clean campaign reports
-"0 unexplained differences"; over 300,000 cases at 12x6, 80x24, 2x2 and 1x1, at decTerminalID 100
-and 420 and up to 200 tokens, ran clean. A second fuzzer, in CI, checks totality, the screen's
+"0 unexplained differences"; the final campaign, 216,000 cases at 12x6, 80x24, 2x2 and 1x1, at
+decTerminalID 100 and 420 and up to 200 tokens, ran clean. A second fuzzer, in CI, checks totality, the screen's
 invariants and split invariance on arbitrary bytes, and the parser's tokens under any chunking.
