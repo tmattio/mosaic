@@ -1,14 +1,21 @@
-type t = { base : Ansi.Style.t; overlays : (string, Ansi.Style.t) Hashtbl.t }
+module Scopes = Map.Make (String)
+
+type t = { base : Ansi.Style.t; overlays : Ansi.Style.t Scopes.t }
 
 let make ~base mappings =
-  let overlays = Hashtbl.create (List.length mappings) in
-  List.iter
-    (fun (group, style) -> Hashtbl.replace overlays group style)
-    mappings;
+  let overlays =
+    List.fold_left
+      (fun overlays (group, style) -> Scopes.add group style overlays)
+      Scopes.empty mappings
+  in
   { base; overlays }
 
+let equal a b =
+  Ansi.Style.equal a.base b.base
+  && Scopes.equal Ansi.Style.equal a.overlays b.overlays
+
 let rec resolve_overlay t group =
-  match Hashtbl.find_opt t.overlays group with
+  match Scopes.find_opt group t.overlays with
   | Some overlay -> overlay
   | None -> (
       match String.rindex_opt group '.' with

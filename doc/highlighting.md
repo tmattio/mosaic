@@ -79,8 +79,10 @@ concurrency, not CPU parallelism; native code that retains the OCaml runtime
 lock can still block rendering. Use `Highlighter.async` with your own
 poll/cancel jobs for a different scheduler or a worker process.
 
-`Code` compares highlighter values by physical identity; keep them at module
-scope or memoize them. Theme changes reuse the completed captures and source
+A highlighter is a resource: `Code` compares highlighters by physical
+identity, so create one at module scope or in the model, never during a render.
+Styles and syntax settings are values and may be rebuilt on every render; an
+equal style changes nothing. Theme changes reuse the completed captures and source
 index without restarting the highlighter. Pending results use the latest
 accepted theme. A result bound to different source bytes is rejected and the
 current source renders as plain text.
@@ -106,7 +108,7 @@ let style =
       ("comment", Mosaic.Ansi.Style.make ~italic:true ~fg:(Mosaic.Ansi.Color.grayscale ~level:12) ()) ]
 ```
 
-Pass the stable `style` value to `Code.syntax` or `Code.with_highlighter`.
+Pass `style` to `Code.syntax` or `Code.with_highlighter`.
 Mosaic's [self-contained examples](../mosaic/examples/common/toy_highlighter.ml)
 use a small lexical highlighter to demonstrate the same boundary without a
 parser package.

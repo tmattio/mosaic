@@ -179,11 +179,9 @@ type syntax
     layouts may synthesize source buffers from patch rows. Split layout may also
     insert blank alignment rows into the rendered side content.
 
-    {b Identity matters.} Syntax equality compares the {!Syntax_style.t} and
-    {!Code.Highlighter.t} inside by {e physical} equality. Construct them once
-    and reuse them across renders; rebuilding them inside a view function makes
-    every reconcile look like a syntax change and rebuilds the diff's children
-    each frame, restarting highlight jobs. *)
+    Diff syntax settings compare by value, except for the {!Code.Highlighter.t}
+    inside, which is a resource compared by identity. Create the highlighter
+    once and reuse it across renders. *)
 
 val syntax :
   language:string ->

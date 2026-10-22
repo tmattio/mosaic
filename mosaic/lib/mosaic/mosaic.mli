@@ -728,6 +728,10 @@ module Syntax_style : sig
   val default : t
   (** The built-in dark syntax style. *)
 
+  val equal : t -> t -> bool
+  (** [equal a b] is [true] iff [a] and [b] have equal base styles and equal
+      mappings. Styles are values; see {!Mosaic_ui.Syntax_style.equal}. *)
+
   val base : t -> Ansi.Style.t
   (** [base style] is the default style for text outside highlighted ranges. *)
 

@@ -276,6 +276,26 @@ let split_aligns_lone_cr_row () =
     (fun width -> end_is_aligned (render renderer ~width ~height:6))
     [ 40; 30 ]
 
+let syntax_compares_styles_by_value () =
+  let highlighter =
+    Code.Highlighter.sync (fun ~language:_ ~content ->
+        Syntax_highlight.make ~content [])
+  in
+  let props color =
+    let style =
+      Syntax_style.make ~base:Ansi.Style.default
+        [ ("keyword", Ansi.Style.fg color Ansi.Style.default) ]
+    in
+    let syntax = Diff.syntax ~language:"js" ~style highlighter in
+    Diff.Props.make ~patch:(parse base_diff)
+      ~highlight:{ Diff.old = syntax; new_ = syntax }
+      ()
+  in
+  is_true ~msg:"rebuilt equal styles are equal props"
+    (Diff.Props.equal (props Ansi.Color.red) (props Ansi.Color.red));
+  is_false ~msg:"a changed style is a change"
+    (Diff.Props.equal (props Ansi.Color.red) (props Ansi.Color.blue))
+
 (* ── Runner ── *)
 
 let () =
@@ -285,6 +305,7 @@ let () =
         [
           test "unified update reuses children" unified_update_reuses_children;
           test "empty patch drops children" empty_patch_drops_children;
+          test "syntax compares styles by value" syntax_compares_styles_by_value;
         ];
       group "Spans"
         [

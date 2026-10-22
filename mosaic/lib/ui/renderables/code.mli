@@ -17,12 +17,9 @@ type t
 type syntax
 (** The type for source-code syntax settings.
 
-    {b Identity matters.} Syntax equality compares the {!Syntax_style.t} and
-    {!Highlighter.t} inside by {e physical} equality: two structurally identical
-    values built by separate calls are different syntaxes. Construct the style
-    and highlighter once — at module level or memoized — and reuse them across
-    renders. Rebuilding them inside a view function makes every reconcile look
-    like a syntax change, invalidating the highlight result on every frame. *)
+    Syntax settings are values: their language, style, ranges and flags compare
+    by value, so a view may rebuild them on every render. Only the
+    {!Highlighter.t} inside compares by identity (see {!Highlighter.t}). *)
 
 module Highlighter : sig
   type request = { content : string; language : string }
@@ -35,7 +32,14 @@ module Highlighter : sig
   (** The type for an in-flight asynchronous highlight job. *)
 
   type t
-  (** The type for source-code highlighters. *)
+  (** The type for source-code highlighters.
+
+      A highlighter is a resource, not a value: it may own a worker thread and
+      its queue of requests. Two highlighters are the same highlighter only when
+      they are physically equal. Create a highlighter once, at module level or
+      in the model, and reuse it across renders and code blocks; a highlighter
+      created during a render is a new producer, and the code it configures is
+      highlighted again. *)
 
   val job : poll:(unit -> result option) -> cancel:(unit -> unit) -> job
   (** [job ~poll ~cancel] is an asynchronous job. [poll ()] returns [None] while

@@ -33,7 +33,7 @@ type t
 val make : base:Ansi.Style.t -> (string * Ansi.Style.t) list -> t
 (** [make ~base mappings] is a syntax style with [base] as the default style for
     unstyled text and [mappings] associating capture-group names to overlay
-    styles.
+    styles. When a group name appears more than once, its last mapping wins.
 
     Group names follow the tree-sitter/TextMate dot-separated convention:
     ["keyword"], ["keyword.control"], ["string.special.regex"], etc.
@@ -43,6 +43,14 @@ val make : base:Ansi.Style.t -> (string * Ansi.Style.t) list -> t
 val default : t
 (** [default] is the built-in dark syntax style with mappings for common capture
     groups. *)
+
+(** {1:predicates Predicates} *)
+
+val equal : t -> t -> bool
+(** [equal a b] is [true] iff [a] and [b] have equal base styles and map the
+    same group names to equal overlays. Styles are values: two styles built by
+    separate calls from the same mappings are equal, so a view may rebuild its
+    style on every render without restyling anything. *)
 
 (** {1:resolving Resolving} *)
 

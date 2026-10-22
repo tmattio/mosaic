@@ -327,6 +327,43 @@ let apply_props_updates_syntax_style () =
       is_true ~msg:"updated style" (Ansi.Style.equal blue (span_style first))
   | [] -> fail "expected highlighted span"
 
+let syntax_compares_styles_by_value () =
+  let calls = ref 0 in
+  let highlighter =
+    Code.Highlighter.sync (fun ~language:_ ~content ->
+        incr calls;
+        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
+  in
+  (* A view rebuilds its syntax settings, style included, on every render. *)
+  let props style =
+    Code.Props.make ~content:"let x"
+      ~syntax:(Code.with_highlighter ~language:"ocaml" ~style highlighter)
+      ()
+  in
+  is_true ~msg:"rebuilt equal styles are equal props"
+    (Code.Props.equal (props (syntax_style red)) (props (syntax_style red)));
+  is_false ~msg:"a changed style is a change"
+    (Code.Props.equal (props (syntax_style red)) (props (syntax_style blue)));
+  is_false ~msg:"a fresh highlighter is a new producer"
+    (Code.Props.equal
+       (Code.Props.make ~content:"let x"
+          ~syntax:(Code.with_highlighter ~language:"ocaml" highlighter)
+          ())
+       (Code.Props.make ~content:"let x"
+          ~syntax:
+            (Code.with_highlighter ~language:"ocaml"
+               (Code.Highlighter.sync (fun ~language:_ ~content ->
+                    Syntax_highlight.make ~content [])))
+          ()));
+  let _ctx, code = make_code () in
+  Code.apply_props code (props (syntax_style red));
+  Code.apply_props code (props (syntax_style blue));
+  equal ~msg:"a style change restyles without highlighting again" int 1 !calls;
+  match styled_text code with
+  | first :: _ ->
+      is_true ~msg:"restyled" (Ansi.Style.equal blue (span_style first))
+  | [] -> fail "expected highlighted span"
+
 let text_style_restamps_plain_content () =
   let _ctx, code = make_code ~content:"plain" () in
   Code.apply_props code (Code.Props.make ~content:"plain" ~text_style:red ());
@@ -619,6 +656,7 @@ let () =
           test "set_syntax None renders plain" set_syntax_none_renders_plain;
           test "apply_props updates syntax style"
             apply_props_updates_syntax_style;
+          test "syntax compares styles by value" syntax_compares_styles_by_value;
           test "text_style restamps plain content"
             text_style_restamps_plain_content;
           test "is_highlighting false for sync highlights"

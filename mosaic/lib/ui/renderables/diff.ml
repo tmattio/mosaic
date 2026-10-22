@@ -126,7 +126,7 @@ let syntax ~language ?(style = Syntax_style.default) ?(conceal = true)
 
 let syntax_equal a b =
   String.equal a.language b.language
-  && a.style == b.style
+  && Syntax_style.equal a.style b.style
   && a.highlighter == b.highlighter
   && Bool.equal a.conceal b.conceal
   && Bool.equal a.draw_unstyled b.draw_unstyled

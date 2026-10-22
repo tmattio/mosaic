@@ -136,6 +136,29 @@ let vocabulary_fallback_and_extensions () =
     (Ansi.Style.equal red
        (Syntax_style.resolve style "application.custom.child"))
 
+let styles_compare_by_value () =
+  let build () =
+    Syntax_style.make ~base:green [ ("keyword", red); ("string", bold) ]
+  in
+  is_true ~msg:"separately built styles are equal"
+    (Syntax_style.equal (build ()) (build ()));
+  is_true ~msg:"mapping order is irrelevant"
+    (Syntax_style.equal (build ())
+       (Syntax_style.make ~base:green [ ("string", bold); ("keyword", red) ]));
+  is_true ~msg:"the last mapping of a group wins"
+    (Syntax_style.equal (build ())
+       (Syntax_style.make ~base:green
+          [ ("keyword", green); ("string", bold); ("keyword", red) ]));
+  is_false ~msg:"overlays differ"
+    (Syntax_style.equal (build ())
+       (Syntax_style.make ~base:green [ ("keyword", bold); ("string", bold) ]));
+  is_false ~msg:"groups differ"
+    (Syntax_style.equal (build ())
+       (Syntax_style.make ~base:green [ ("keyword", red) ]));
+  is_false ~msg:"bases differ"
+    (Syntax_style.equal (build ())
+       (Syntax_style.make ~base:red [ ("keyword", red); ("string", bold) ]))
+
 let annotations_are_source_bound_and_preserve_geometry () =
   let buffer = Text_buffer.create () in
   Text_buffer.set_text buffer "abcdef";
@@ -359,6 +382,7 @@ let () =
         [
           test "scope vocabulary fallback and extensions"
             vocabulary_fallback_and_extensions;
+          test "styles compare by value" styles_compare_by_value;
           test "of_triples applies style" of_triples_applies_style;
           test "overlapping same scope keeps later range active"
             overlapping_same_scope_keeps_later_range_active;
