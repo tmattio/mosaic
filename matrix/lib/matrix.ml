@@ -422,18 +422,14 @@ let relayout t (primary, ops) =
   t.primary <- primary;
   t.layout_ops <- t.layout_ops @ ops
 
-let refresh_render_region ?(effective = false) t =
+let refresh_render_region t =
   match t.config.mode with
   | `Alt ->
       Screen.set_row_offset t.screen 0;
       Screen.resize t.screen ~width:t.width ~height:t.height
   | `Primary ->
       relayout t (Primary.resize t.primary ~terminal_height:(max 1 t.height));
-      if effective then (
-        let region = Primary.effective_region t.primary in
-        Screen.set_row_offset t.screen region.row_offset;
-        Screen.resize t.screen ~width:t.width ~height:region.height)
-      else sync_primary_layout t ~resize:true
+      sync_primary_layout t ~resize:true
 
 (* Frame timing *)
 
@@ -475,34 +471,19 @@ let apply_primary_op buf = function
   | Primary.Clear_scrollback ->
       Ansi.Writer.write_string buf clear_scrollback_seq
 
-(* Emits a transition planned inside the frame. The live grid is already
-   built at its size, so only the screen's row offset follows the region. *)
-let apply_in_frame t ~buf transition =
-  relayout t transition;
-  List.iter (apply_primary_op buf) t.layout_ops;
-  t.layout_ops <- [];
-  Screen.set_row_offset t.screen (Primary.render_offset t.primary)
-
-(* Apply queued primary static writes before the live viewport render. Static
-   rows never wrap: a row wider than a terminal narrowed since the snapshot
-   overwrites its last column. *)
-let flush_static_queue t ~buf =
-  let ((_, ops) as transition) = Primary.flush_static t.primary in
-  if ops <> [] then Ansi.Writer.write_string buf "\027[?7l";
-  apply_in_frame t ~buf transition;
-  if ops <> [] then Ansi.Writer.write_string buf "\027[?7h"
-
 let effective_size t =
   match t.config.mode with
   | `Alt -> (t.width, t.height)
   | `Primary -> (t.width, (Primary.effective_region t.primary).height)
 
+(* Static rows never wrap: a row wider than a terminal narrowed since the
+   snapshot overwrites its last column. *)
 let static_snapshot t ?rows grid =
   if Grid.width grid > t.width then
     invalid_arg "Matrix.static_write: grid is wider than the terminal";
   let rows = Option.value rows ~default:(Grid.height grid) in
   let text = Grid.to_ansi ~reset:false ~complete_rows:true ~rows grid in
-  (rows, text)
+  (rows, "\027[?7l" ^ text ^ "\027[?7h")
 
 let static_write ?(preserve_live_region = false) ?rows t grid =
   if t.config.mode <> `Alt then
@@ -580,24 +561,21 @@ let apply_config t =
    [Screen.build], ...), so both direct-draw apps reading {!grid} and
    renderer hosts building through [Screen.build] pay for exactly one clear
    per frame instead of clearing here and again downstream. *)
-let prepare t =
+let prepare ?primary_required_rows t =
   refresh_capabilities t;
   ignore (Atomic.compare_and_set t.redraw_state `Dirty `Clean);
-  refresh_render_region ~effective:true t
+  if t.config.mode = `Primary then begin
+    relayout t (Primary.flush_static t.primary);
+    Option.iter
+      (fun rows -> relayout t (Primary.require_rows t.primary ~rows))
+      primary_required_rows
+  end;
+  refresh_render_region t
 
 let grid t = Screen.next_grid t.screen
 let current_grid t = Screen.current_grid t.screen
 let hits t = Screen.next_hit_grid t.screen
 let screen t = t.screen
-
-(* Grows the live region when the frame asks for more rows than it has. *)
-let adjust_primary_layout t ~buf ~required_rows_hint =
-  let rows =
-    max
-      (Screen.active_height t.screen)
-      (Option.value required_rows_hint ~default:0)
-  in
-  apply_in_frame t ~buf (Primary.require_rows t.primary ~rows)
 
 (* Apply cursor position, style, and color into the frame buffer.
    Style and color are only emitted when they differ from the last frame. *)
@@ -662,7 +640,7 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~position =
 
 (* All frame output is accumulated into a single buffer and flushed as one
    write. Skips the write entirely when nothing changed. *)
-let submit ?primary_required_rows t =
+let submit t =
   if not (render_eligible t) then ()
   else begin
     if t.debug_overlay_enabled then t.debug_overlay_cb t.screen;
@@ -681,9 +659,8 @@ let submit ?primary_required_rows t =
        cursor_position for every run it touches, so anything written between
        the preamble capture and the skip check would defeat the
        unchanged-frame write skip. *)
-    if t.config.mode = `Primary then (
-      adjust_primary_layout t ~buf ~required_rows_hint:primary_required_rows;
-      flush_static_queue t ~buf);
+    List.iter (apply_primary_op buf) t.layout_ops;
+    t.layout_ops <- [];
     let forced_full =
       let ff = t.force_full_next_frame in
       if ff then t.force_full_next_frame <- false;
@@ -1401,17 +1378,13 @@ let run ?on_frame ?on_input ?on_resize ?primary_required_rows ~on_render t =
   let render_cycle ~now ~last_time =
     Option.iter (fun f -> f t ~dt:(now -. last_time)) on_frame;
     if render_eligible t then (
-      prepare t;
+      let primary_required_rows =
+        Option.bind primary_required_rows (fun f -> f t)
+      in
+      prepare ?primary_required_rows t;
       on_render t);
     let user_end = t.backend.now () in
-    (if render_eligible t then
-       let required_rows_hint =
-         match primary_required_rows with
-         | Some f -> (
-             match f t with Some rows when rows > 0 -> Some rows | _ -> None)
-         | None -> None
-       in
-       submit ?primary_required_rows:required_rows_hint t);
+    if render_eligible t then submit t;
     user_end
   in
 

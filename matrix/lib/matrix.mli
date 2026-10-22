@@ -223,10 +223,13 @@ val run :
     Each iteration:
     - Polls for events and invokes [on_input] / [on_resize].
     - Calls [on_frame] with the elapsed seconds since the last render.
-    - Calls {!prepare} to clear buffers.
+    - Calls {!prepare} to size and clear the frame, with the rows
+      [primary_required_rows] asks for.
     - Invokes [on_render] (draw to {!grid} here).
-    - Optionally samples [primary_required_rows] for [`Primary] mode sizing.
     - Calls {!submit} to diff and flush output.
+
+    [primary_required_rows] runs before the frame is drawn, so it states the
+    rows of the frame to come, from the application's state.
 
     [on_resize] reports the usable surface as [(cols, rows)] — {!size}, the live
     viewport in [`Primary] mode and the full terminal in [`Alt] mode. It fires
@@ -245,9 +248,15 @@ val run :
 
 (** {1:frame Frame building} *)
 
-val prepare : app -> unit
-(** [prepare app] starts a new frame. Clears the {!grid} and {!hits} buffers and
-    updates layout calculations.
+val prepare : ?primary_required_rows:int -> app -> unit
+(** [prepare app] starts a new frame: it lays the frame out and clears the
+    {!grid} and {!hits} buffers at its size, {!size}.
+
+    In [`Primary] mode the queued static writes go to the transcript, and the
+    live region grows to [primary_required_rows] rows when it has fewer, at most
+    the terminal's height, by scrolling the rows above it into the terminal's
+    scrollback. The frame drawn next is as tall as the live region, so it shows
+    the rows it asked for. [primary_required_rows] is ignored in [`Alt] mode.
 
     {b Note.} Called automatically by {!run}. *)
 
@@ -268,16 +277,11 @@ val screen : app -> Screen.t
     frame accessors above) during [on_render] so the runtime presents their
     output with a single diff. Do not call {!Screen.render} on it yourself. *)
 
-val submit : ?primary_required_rows:int -> app -> unit
-(** [submit ?primary_required_rows app] diffs the current frame against the
-    previous one and flushes ANSI output. Call after drawing into {!grid}.
-    Stopped, suspended and closed applications emit no frame output.
-
-    In [`Primary] mode, [primary_required_rows] requests a live viewport height
-    for this frame. The request is clamped to the terminal height and never
-    shrinks below [min_tui_height]. Growing the live viewport claims rows from
-    the static transcript area before rendering, scrolling them into the
-    terminal's scrollback.
+val submit : app -> unit
+(** [submit app] diffs the current frame against the previous one and flushes
+    ANSI output, after the terminal operations of the layout {!prepare} chose.
+    Call after drawing into {!grid}. Stopped, suspended and closed applications
+    emit no frame output.
 
     {b Note.} Called automatically by {!run}. *)
 
@@ -386,10 +390,9 @@ val full_size : app -> int * int
 
 val effective_size : app -> int * int
 (** [effective_size app] is the dynamic-region dimensions [(cols, rows)] that
-    will be in effect once pending static writes are flushed by the same primary
-    planner used by {!submit}. In [`Alt] mode or when the static queue is empty
-    this equals {!size}. Use this in [on_render] to lay out the dynamic UI
-    against the post-commit geometry. *)
+    will be in effect once {!prepare} flushes the pending static writes, before
+    it grows the region to the rows a frame requires. In [`Alt] mode, when the
+    static queue is empty, and so in [on_render], this equals {!size}. *)
 
 val pixel_resolution : app -> (int * int) option
 (** [pixel_resolution app] is the last known pixel resolution as
@@ -419,6 +422,8 @@ val static_write :
     replaces the complete terminal row and ends with CRLF. Rows never wrap if
     the terminal becomes narrower before the queued output is presented; excess
     cells overwrite the rightmost column, following terminal margin behavior.
+    The rows go out with the next frame {!prepare} lays out: one written while a
+    frame is drawn goes out with the frame after it.
 
     Raises [Invalid_argument] if the grid is wider than the current terminal, or
     [rows] is outside the grid height. [rows = 0] queues nothing.

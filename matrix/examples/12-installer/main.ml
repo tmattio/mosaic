@@ -212,9 +212,5 @@ let () =
         when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
           Matrix.stop app
       | _ -> ())
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let rows_needed = 6 + List.length !state.packages in
-      Grid.resize grid ~width:(Grid.width grid) ~height:rows_needed;
-      Grid.clear grid;
-      render grid !state)
+    ~primary_required_rows:(fun _ -> Some (6 + List.length !state.packages))
+    ~on_render:(fun app -> render (Matrix.grid app) !state)

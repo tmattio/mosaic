@@ -292,9 +292,9 @@ let draw_rows app rows =
     rows
 
 let present ?required app rows =
-  Matrix.prepare app;
+  Matrix.prepare ?primary_required_rows:required app;
   draw_rows app rows;
-  Matrix.submit ?primary_required_rows:required app
+  Matrix.submit app
 
 let rtrim s =
   let n = ref (String.length s) in
@@ -1579,6 +1579,7 @@ let test_partial_frame_restores_transient_modes () =
           set_sync_capable app;
           Matrix.static_write app
             (static_grid (String.concat "\n" (List.init 24 (fun _ -> "row"))));
+          Matrix.prepare app;
           Buffer.clear bytes;
           fail_output := true;
           (match Matrix.submit app with
@@ -1606,9 +1607,9 @@ let test_primary_effective_size_tracks_pending_static () =
   let effective = Matrix.effective_size app in
   equal ~msg:"pending static write reduces effective height" (pair int int)
     (80, 22) effective;
-  Matrix.submit app;
-  equal ~msg:"submit applies pending effective size" (pair int int) effective
-    (Matrix.size app)
+  Matrix.prepare app;
+  equal ~msg:"the next frame applies pending effective size" (pair int int)
+    effective (Matrix.size app)
 
 let test_prepare_uses_pending_static_effective_region () =
   let app, state =
@@ -1633,6 +1634,7 @@ let test_static_writes_are_flushed_fifo () =
   in
   Matrix.static_write app (static_grid "first\n");
   Matrix.static_write app (static_grid "second\n");
+  Matrix.prepare app;
   Matrix.submit app;
   let output = output state in
   in_order ~msg:"first static write appears before second"
@@ -1643,6 +1645,7 @@ let test_static_write_snapshots_selected_rows () =
   let grid = static_grid "first\nsecond\nignored" in
   Matrix.static_write ~rows:2 app grid;
   Matrix.Grid.clear grid;
+  Matrix.prepare app;
   Matrix.submit app;
   let output = output state in
   in_order ~msg:"snapshot preserves selected rows and CRLF separation"
@@ -1747,7 +1750,7 @@ let test_pinned_static_write_keeps_live_size () =
   equal ~msg:"pinned output keeps live size after submit" (pair int int) before
     (Matrix.size app)
 
-let test_primary_required_rows_apply_before_static_flush () =
+let test_primary_required_rows_apply_after_static_flush () =
   let app, state =
     make_app ~mode:`Primary ~startup_cursor:(11, 1) ~min_tui_height:1
       ~target_fps:None ~input_timeout:(Some 0.) ()
@@ -1755,15 +1758,17 @@ let test_primary_required_rows_apply_before_static_flush () =
   Matrix.submit app;
   Buffer.clear state.output;
   Matrix.static_write app (static_grid "prompt\n");
-  Matrix.prepare app;
-  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0 ~text:"live";
-  Matrix.submit app ~primary_required_rows:20;
+  Matrix.prepare ~primary_required_rows:20 app;
+  equal ~msg:"the frame has the rows it requires" (pair int int) (80, 20)
+    (Matrix.size app);
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:19 ~text:"live";
+  Matrix.submit app;
   let output = output state in
-  (* Growth reserves twenty rows, then the static row takes one of them. *)
-  equal ~msg:"static output settles against the expanded primary region"
-    (pair int int) (80, 19) (Matrix.size app);
-  in_order ~msg:"primary growth happens before static output is flushed"
-    ~subs:[ "\027[24;1H"; "prompt" ] output
+  equal ~msg:"the static row does not take one of them" (pair int int) (80, 20)
+    (Matrix.size app);
+  in_order ~msg:"static output, then growth, then the frame"
+    ~subs:[ "prompt"; "\027[24;1H\r\n"; "live" ]
+    output
 
 let test_full_height_static_write_scrolls_into_scrollback () =
   let app, term = vte_app ~min_tui_height:4 ~cols:12 ~rows:4 () in
@@ -1778,6 +1783,21 @@ let test_full_height_static_write_scrolls_into_scrollback () =
     (Vte.scrollback_lines term.vte);
   equal ~msg:"live region keeps the screen" (list string) [ "live"; ""; ""; "" ]
     (live_rows app term)
+
+(* The frame that asks for more rows is drawn at the height it asked for. *)
+let test_required_rows_show_in_their_frame () =
+  let app, term =
+    vte_app ~shell:"$ ls\r\n$ \r\n$ \r\n$ \r\n" ~cols:12 ~rows:6 ()
+  in
+  present app [ "one" ];
+  equal ~msg:"a live region of two rows" (pair int int) (12, 2)
+    (Matrix.size app);
+  present ~required:4 app [ "one"; "two"; "three"; "four" ];
+  equal ~msg:"grows by scrolling, and shows the rows of its frame" (list string)
+    [ "one"; "two"; "three"; "four" ]
+    (live_rows app term);
+  equal ~msg:"the shell's rows go to the transcript" (list string)
+    [ "$ ls"; "$"; "$"; "$" ] (transcript app term)
 
 let test_static_snapshots_scroll_exactly_once_per_row () =
   List.iter
@@ -1808,6 +1828,7 @@ let test_static_snapshot_clears_suffixes_and_keeps_blank_rows () =
       ~target_fps:None ()
   in
   Matrix.static_write app (static_grid "A\n\nB");
+  Matrix.prepare app;
   Matrix.submit app;
   (* A terminal widened after enqueue has stale cells beyond the old width. *)
   let terminal = Vte.create ~rows:3 ~cols:6 ~scrollback:16 () in
@@ -2012,11 +2033,9 @@ let test_primary_required_rows_to_terminal_height_does_not_erase_past_bottom ()
     make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
       ~input_timeout:(Some 0.) ()
   in
-  Matrix.prepare app;
-  let grid = Matrix.grid app in
-  Matrix.Grid.resize grid ~width:(Matrix.Grid.width grid) ~height:24;
-  Matrix.Grid.draw_text grid ~x:0 ~y:23 ~text:"bottom";
-  Matrix.submit app ~primary_required_rows:24;
+  Matrix.prepare ~primary_required_rows:24 app;
+  Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:23 ~text:"bottom";
+  Matrix.submit app;
   let output = output state in
   equal ~msg:"primary required rows can claim the whole terminal" (pair int int)
     (80, 24) (Matrix.size app);
@@ -2438,8 +2457,10 @@ let () =
             test_static_write_and_live_repaint_share_sync_frame;
           test "pinned static write keeps live size"
             test_pinned_static_write_keeps_live_size;
-          test "primary required rows apply before static flush"
-            test_primary_required_rows_apply_before_static_flush;
+          test "primary required rows apply after static flush"
+            test_primary_required_rows_apply_after_static_flush;
+          test "required rows show in their frame"
+            test_required_rows_show_in_their_frame;
           test "full-height static write scrolls into scrollback"
             test_full_height_static_write_scrolls_into_scrollback;
           test "partial frame restores transient modes"

@@ -781,9 +781,14 @@ let run ?matrix
            Matrix.drop_live matrix_app)));
 
   let frame_delta = ref 0. in
-  let primary_required_rows (_app : Matrix.app) =
-    match Matrix.mode matrix_app with
+  (* In [`Primary] mode the live region takes the rows of the frame before it
+     is drawn, so the tree is laid out first, against the terminal's height,
+     the most rows the region can have. *)
+  let primary_required_rows app =
+    match Matrix.mode app with
     | `Primary ->
+        let width, _ = Matrix.size app and _, rows = Matrix.full_size app in
+        Renderer.prepare_layout runtime.renderer ~width ~height:rows;
         Some (max 1 (Renderable.height (Renderer.root runtime.renderer)))
     | `Alt -> None
   in
@@ -798,12 +803,11 @@ let run ?matrix
   in
   let render_frame () =
     render runtime;
-    let width, height = Matrix.effective_size runtime.matrix_app in
+    let width, height = Matrix.size runtime.matrix_app in
     let layout_height =
       match Matrix.mode runtime.matrix_app with
       | `Alt -> height
-      | `Primary ->
-          max height (Renderable.height (Renderer.root runtime.renderer))
+      | `Primary -> snd (Matrix.full_size runtime.matrix_app)
     in
     Renderer.render_frame runtime.renderer ~layout_height ~width ~height
       ~delta:!frame_delta;

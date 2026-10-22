@@ -92,12 +92,8 @@ let () =
               state := { !state with items = new_item :: !state.items }
           | _ -> ())
       | _ -> ())
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      (* Counter at y=0, help at y=1, box at y=3 with height = items_len + 2
-         Bottom border at y = 3 + (items_len + 2) - 1 = items_len + 4 Grid
-         height needs to be items_len + 5 *)
-      let rows_needed = 5 + List.length !state.items in
-      Grid.resize grid ~width:(Grid.width grid) ~height:rows_needed;
-      Grid.clear grid;
-      render grid !state)
+    ~primary_required_rows:(fun _ ->
+      (* Counter at y=0, help at y=1, and from y=3 a box of items_len + 2
+         rows. *)
+      Some (5 + List.length !state.items))
+    ~on_render:(fun app -> render (Matrix.grid app) !state)

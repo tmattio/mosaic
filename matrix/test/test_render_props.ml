@@ -26,8 +26,9 @@
     the VTE's replies are the runtime's input. The contract, from [Primary] and
     {!Matrix.static_write}:
     - the live region is the bottom [snd (Matrix.size app)] rows, at least
-      [min_tui_height] of them; it shows the frame's rows from its top, and
-      blank rows past the frame's height;
+      [min_tui_height] of them and at least the rows the frame requires
+      ([primary_required_rows]), as far as the terminal has them; the frame is
+      drawn at its height, and it shows the frame;
     - the transcript is everything above it, the scrollback and then the rows
       above the live region: the shell's output, then each static row, in order,
       each exactly once, as {!Matrix.static_replace} and {!Matrix.static_clear}
@@ -608,6 +609,16 @@ let check_live r app (expected, cursor) =
   let v = Vte.grid r.vte in
   let ew = Grid.width expected and eh = Grid.height expected in
   if ew <> cols then fail_frame r "frame is %d columns on %d" ew cols;
+  if r.case.mode = `Primary then begin
+    (* The frame is drawn at the live region's height, which has the rows
+       the frame requires, as far as the terminal has them. *)
+    if eh <> live then
+      fail_frame r "frame of %d rows in a live region of %d" eh live;
+    match Option.bind r.current (fun f -> f.required) with
+    | Some n when live < min n (snd r.size) ->
+        fail_frame r "live region of %d rows, the frame requires %d" live n
+    | _ -> ()
+  end;
   for y = 0 to live - 1 do
     for x = 0 to cols - 1 do
       let vi = ((offset + y) * cols) + x in
