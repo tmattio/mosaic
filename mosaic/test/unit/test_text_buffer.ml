@@ -194,19 +194,24 @@ let line_count_trailing_newline () =
 let line_width_per_line () =
   let buf = Text_buffer.create () in
   Text_buffer.set_text buf "hi\nhello";
-  equal ~msg:"line 0" int 2 (Text_buffer.line_width buf 0);
-  equal ~msg:"line 1" int 5 (Text_buffer.line_width buf 1)
+  equal ~msg:"line 0" int 2
+    (Text_buffer.line_width buf ~width_method:`Unicode 0);
+  equal ~msg:"line 1" int 5
+    (Text_buffer.line_width buf ~width_method:`Unicode 1)
 
 let line_width_out_of_range () =
   let buf = Text_buffer.create () in
   Text_buffer.set_text buf "hello";
-  equal ~msg:"negative" int 0 (Text_buffer.line_width buf (-1));
-  equal ~msg:"too large" int 0 (Text_buffer.line_width buf 99)
+  equal ~msg:"negative" int 0
+    (Text_buffer.line_width buf ~width_method:`Unicode (-1));
+  equal ~msg:"too large" int 0
+    (Text_buffer.line_width buf ~width_method:`Unicode 99)
 
 let max_line_width_basic () =
   let buf = Text_buffer.create () in
   Text_buffer.set_text buf "hi\nhello world\nbye";
-  equal ~msg:"max" int 11 (Text_buffer.max_line_width buf)
+  equal ~msg:"max" int 11
+    (Text_buffer.max_line_width buf ~width_method:`Unicode)
 
 (* ── Styled text ── *)
 
@@ -382,12 +387,13 @@ let set_tab_width_increments_version () =
 
 (* ── Width Method ── *)
 
-let set_width_method_noop_same () =
+let max_line_width_follows_method () =
   let buf = Text_buffer.create () in
-  Text_buffer.set_text buf "hello";
-  let v_before = Text_buffer.version buf in
-  Text_buffer.set_width_method buf `Unicode;
-  equal ~msg:"version unchanged" int v_before (Text_buffer.version buf)
+  Text_buffer.set_text buf "ab\n\xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x92\xbbx";
+  let width width_method = Text_buffer.max_line_width buf ~width_method in
+  equal ~msg:"one joined cluster" int 3 (width `Unicode);
+  equal ~msg:"each scalar's width" int 5 (width `Wcwidth);
+  equal ~msg:"not the cached width of another method" int 3 (width `Unicode)
 
 (* ── Versioning ── *)
 
@@ -544,7 +550,9 @@ let () =
           test "increments version on change" set_tab_width_increments_version;
         ];
       group "Width method"
-        [ test "no-op on same value" set_width_method_noop_same ];
+        [
+          test "max_line_width follows the method" max_line_width_follows_method;
+        ];
       group "Versioning"
         [ test "increments on mutations" version_increments_on_mutations ];
       group "Default style"

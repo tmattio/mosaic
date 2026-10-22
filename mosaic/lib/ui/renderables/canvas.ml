@@ -49,6 +49,10 @@ let render t _self parent_grid ~delta =
       Matrix_grid.resize t.grid ~width:w ~height:h;
       Option.iter (fun f -> f t) t.on_resize
     end;
+    (* The grid lays cells down by the screen's method, which can change while
+       the canvas lives; cells drawn before a change keep their widths until
+       they are drawn again. *)
+    Matrix_grid.set_width_method t.grid (Renderable.Private.width_method t.node);
     (* on_draw fires after resize so the callback sees up-to-date dimensions. *)
     Option.iter (fun f -> f t ~delta) t.on_draw;
     Matrix_grid.draw_region ~src:t.grid ~dst:parent_grid ~src_x:0 ~src_y:0

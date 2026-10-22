@@ -413,14 +413,14 @@ let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
   let source = Editor.source t.props.state in
   let content_width =
     Layout.Source.columns source
-      ~width_method:(Text_buffer.width_method t.text_buf)
+      ~width_method:(Renderable.Private.width_method t.node)
       ~tab_width:(Text_buffer.tab_width t.text_buf)
       ~first:0
       ~last:(Layout.Source.length source)
   in
   let placeholder_width =
     Matrix.Text.measure
-      ~width_method:(Text_buffer.width_method t.text_buf)
+      ~width_method:(Renderable.Private.width_method t.node)
       ~tab_width:(Text_buffer.tab_width t.text_buf)
       t.props.placeholder
   in
@@ -781,8 +781,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
       ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable
       ?show_cursor ?key_bindings ()
   in
-  let width_method = Renderable.Private.width_method node in
-  let text_buf = Text_buffer.create ~width_method () in
+  let text_buf = Text_buffer.create () in
   let surface = Text_surface.create node text_buf in
   Text_surface.set_wrap surface props.wrap;
   let t =

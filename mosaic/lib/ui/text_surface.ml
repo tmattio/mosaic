@@ -14,12 +14,16 @@ type t = {
   mutable selection_bg : Ansi.Color.t option;
   mutable selection_fg : Ansi.Color.t option;
   mutable selection : (int * int) option;
-  (* Retain a bounded set of source-version/width geometries. Measurement
-     probes use count-only results unless geometry already exists. Wrap-mode
-     and truncation changes invalidate both caches. *)
-  mutable display_cache : (int * int * Layout.t) list;
-  mutable measure_cache : (int * int * (int * int)) list;
+  (* Retain a bounded set of geometries, keyed by source version, the
+     screen's width method and width. Measurement probes use count-only
+     results unless geometry already exists. Wrap-mode and truncation changes
+     invalidate both caches. *)
+  mutable display_cache : (geometry_key * Layout.t) list;
+  mutable measure_cache : (geometry_key * (int * int)) list;
 }
+
+(* Source version, width method and cache width. *)
+and geometry_key = int * Matrix.Text.width_method * int
 
 let display_cache_capacity = 4
 
@@ -34,21 +38,26 @@ let effective_wrap_width t ?override () =
   | Some w -> w
   | None -> Option.value ~default:(Renderable.width t.node) t.wrap_width
 
-let cache_key_width t width =
-  match t.wrap with `None when not t.truncate -> 0 | _ -> max 0 width
+(* The method is the screen's now: it can change while the text lives. *)
+let geometry_key t width =
+  ( Text_buffer.version t.buffer,
+    Renderable.Private.width_method t.node,
+    match t.wrap with `None when not t.truncate -> 0 | _ -> max 0 width )
+
+(* Whether a cached geometry was built from the same text by the same method,
+   whatever its width. *)
+let same_text (version, width_method, _) (version', width_method', _) =
+  version = version' && width_method = width_method'
 
 let layout_for t ~width =
-  let version = Text_buffer.version t.buffer in
-  let key = cache_key_width t width in
-  match
-    List.find_opt (fun (v, w, _) -> v = version && w = key) t.display_cache
-  with
-  | Some (_, _, layout) -> layout
+  let ((_, width_method, _) as key) = geometry_key t width in
+  match List.assoc_opt key t.display_cache with
+  | Some layout -> layout
   | None ->
       let layout =
         Layout.create
           (Text_buffer.source t.buffer)
-          ~width_method:(Text_buffer.width_method t.buffer)
+          ~width_method
           ~tab_width:(Text_buffer.tab_width t.buffer)
           ~width ~wrap:t.wrap ~truncate:t.truncate
       in
@@ -62,10 +71,12 @@ let layout_for t ~width =
       let count = ref 1 in
       let retained =
         List.filter
-          (fun (v, _, old) ->
+          (fun (old_key, old) ->
             let bytes = row_bytes old in
             if
-              v = version && !count < display_cache_capacity && bytes <= !budget
+              same_text old_key key
+              && !count < display_cache_capacity
+              && bytes <= !budget
             then (
               incr count;
               budget := !budget - bytes;
@@ -73,41 +84,35 @@ let layout_for t ~width =
             else false)
           t.display_cache
       in
-      t.display_cache <- (version, key, layout) :: retained;
+      t.display_cache <- (key, layout) :: retained;
       layout
 
 let measure_for t ~width =
-  let version = Text_buffer.version t.buffer
-  and key = cache_key_width t width in
-  match
-    List.find_opt (fun (v, w, _) -> v = version && w = key) t.display_cache
-  with
-  | Some (_, _, geometry) ->
-      (Layout.row_count geometry, Layout.max_width geometry)
+  let ((_, width_method, _) as key) = geometry_key t width in
+  match List.assoc_opt key t.display_cache with
+  | Some geometry -> (Layout.row_count geometry, Layout.max_width geometry)
   | None -> (
-      match
-        List.find_opt (fun (v, w, _) -> v = version && w = key) t.measure_cache
-      with
-      | Some (_, _, size) -> size
+      match List.assoc_opt key t.measure_cache with
+      | Some size -> size
       | None ->
           let size =
             Layout.measure
               (Text_buffer.source t.buffer)
-              ~width_method:(Text_buffer.width_method t.buffer)
+              ~width_method
               ~tab_width:(Text_buffer.tab_width t.buffer)
               ~width ~wrap:t.wrap
           in
           let count = ref 1 in
           let retained =
             List.filter
-              (fun (v, _, _) ->
-                if v = version && !count < display_cache_capacity then (
+              (fun (old_key, _) ->
+                if same_text old_key key && !count < display_cache_capacity then (
                   incr count;
                   true)
                 else false)
               t.measure_cache
           in
-          t.measure_cache <- (version, key, size) :: retained;
+          t.measure_cache <- (key, size) :: retained;
           size)
 
 let layout t = layout_for t ~width:(effective_wrap_width t ())
@@ -260,7 +265,7 @@ let render t _self grid ~delta:_ =
     let src = Layout.source geometry in
     let text = Layout.Source.text src in
     let tab_width = Text_buffer.tab_width t.buffer in
-    let width_method = Text_buffer.width_method t.buffer in
+    let width_method = Renderable.Private.width_method t.node in
     let sel_start, sel_end = Option.value ~default:(0, 0) t.selection in
     for y = y0 to y1 - 1 do
       let row = t.scroll_y + y - oy in
@@ -343,7 +348,9 @@ let measure t ~known_dimensions ~available_space ~style:_ =
            clamp the intrinsic width to a stale value that never recovers
            when the container grows. Both reads are O(1) on the buffer's
            line cache. *)
-        (Text_buffer.line_count t.buffer, Text_buffer.max_line_width t.buffer)
+        ( Text_buffer.line_count t.buffer,
+          Text_buffer.max_line_width t.buffer
+            ~width_method:(Renderable.Private.width_method t.node) )
     | (`Char | `Word), Some w ->
         (* Count-only probes share indexing and reuse an admitted layout. *)
         let width = Option.value ~default:w t.wrap_width in

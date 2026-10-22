@@ -139,23 +139,20 @@ type t = {
   mutable default_style : Ansi.Style.t;
   mutable highlights : Highlight.t list;
   mutable tab_width : int;
-  mutable width_method : Matrix.Text.width_method;
   mutable cached_plain_text : string option;
-  mutable cached_max_line_width : int option;
+  mutable cached_max_line_width : (Matrix.Text.width_method * int) option;
   mutable source : Source.t option;
   mutable paint : (int * int * Ansi.Style.t) array option;
   mutable version : int;
 }
 
-let create ?(default_style = Ansi.Style.default) ?(width_method = `Unicode)
-    ?(tab_width = 2) () =
+let create ?(default_style = Ansi.Style.default) ?(tab_width = 2) () =
   {
     spans = [];
     content_mode = Forward;
     default_style;
     highlights = [];
     tab_width = max 1 tab_width;
-    width_method;
     cached_plain_text = None;
     cached_max_line_width = None;
     source = None;
@@ -313,23 +310,23 @@ let set_default_style t s = t.default_style <- s
 
 let line_count t = Source.line_count (source t)
 
-let line_width t line =
+let line_width t ~width_method line =
   let src = source t in
   if line < 0 || line >= Source.line_count src then 0
   else
-    Source.columns ~width_method:t.width_method ~tab_width:t.tab_width src
+    Source.columns ~width_method ~tab_width:t.tab_width src
       ~first:(Source.line_start src line)
       ~last:(Source.line_end src line)
 
-let max_line_width t =
+let max_line_width t ~width_method =
   match t.cached_max_line_width with
-  | Some width -> width
-  | None ->
+  | Some (cached, width) when cached = width_method -> width
+  | Some _ | None ->
       let width = ref 0 in
       for line = 0 to line_count t - 1 do
-        width := max !width (line_width t line)
+        width := max !width (line_width t ~width_method line)
       done;
-      t.cached_max_line_width <- Some !width;
+      t.cached_max_line_width <- Some (width_method, !width);
       !width
 
 (* ───── Text In Range ───── *)
@@ -369,17 +366,6 @@ let set_tab_width t w =
   let w = max 1 w in
   if t.tab_width <> w then begin
     t.tab_width <- w;
-    t.cached_max_line_width <- None;
-    t.version <- t.version + 1
-  end
-
-(* ───── Width Method ───── *)
-
-let width_method t = t.width_method
-
-let set_width_method t m =
-  if t.width_method <> m then begin
-    t.width_method <- m;
     t.cached_max_line_width <- None;
     t.version <- t.version + 1
   end

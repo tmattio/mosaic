@@ -382,8 +382,8 @@ let push_msg runtime msg =
    primary-screen path: one pass at the terminal height measures the content's
    natural height (layout is independent of the grid), and only when the
    content is taller does a second pass paint it at that exact height. Width
-   comes from [effective_size], the same source the live view lays out
-   against. *)
+   comes from [effective_size] and the width method from the screen, the same
+   sources the live view lays out against. *)
 let render_static_view runtime (view : _ t) =
   let width, _ = Matrix.effective_size runtime.matrix_app in
   let width = max 1 width in
@@ -395,7 +395,12 @@ let render_static_view runtime (view : _ t) =
          (Toffee.Style.Dimension.length (Float.of_int width))
     |> Toffee.Style.set_height Toffee.Style.Dimension.auto
   in
-  let renderer = Renderer.create ~style () in
+  let renderer =
+    Renderer.create ~style
+      ~width_method:
+        (Matrix.Screen.width_method (Matrix.screen runtime.matrix_app))
+      ()
+  in
   let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
   let vnode = compile ~dispatch:(fun _ -> ()) view in
   Reconciler.render reconciler ~viewport_width:width vnode;

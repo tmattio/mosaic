@@ -64,6 +64,8 @@ type t = {
      the root), skipping the full sizing and rounding passes on clean
      frames. *)
   mutable last_layout : (int * int) option;
+  (* The screen's width method when the layout was last computed. *)
+  mutable layout_width_method : Matrix.Text.width_method;
   (* The frame laid out by [layout_frame] and not yet painted. *)
   mutable frame : frame option;
   (* Render command buffer — reused across frames. *)
@@ -775,7 +777,7 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
             Toffee.Node_id.index (Renderable.Private.toffee_node node)
           in
           Hashtbl.remove toffee_map toffee_idx);
-      width_method = (fun () -> Grid.width_method (Screen.next_grid screen));
+      width_method = (fun () -> Screen.width_method screen);
       report_scroll;
       admit_size_report;
     }
@@ -805,6 +807,7 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
     toffee_map;
     dirty;
     last_layout = None;
+    layout_width_method = Screen.width_method screen;
     frame = None;
     focused;
     lifecycle_set;
@@ -971,7 +974,22 @@ let execute_commands (t : t) ~(grid : Grid.t) ~(hits : Screen.Hit_grid.t)
 let layout_dirty t =
   toffee_exn (Toffee.dirty t.tree (Renderable.Private.toffee_node t.root))
 
+(* Text is measured by the screen's width method, which the screen can change
+   while the tree lives. Every measurement then counted cells by the old
+   method, so every measured node is measured again. *)
+let follow_width_method t =
+  let width_method = Screen.width_method t.screen in
+  if width_method <> t.layout_width_method then begin
+    t.layout_width_method <- width_method;
+    Hashtbl.iter
+      (fun _ node ->
+        if Option.is_some (Renderable.Private.measure node) then
+          Renderable.mark_dirty node)
+      t.node_map
+  end
+
 let compute_layout t ~width ~height =
+  follow_width_method t;
   let root_toffee = Renderable.Private.toffee_node t.root in
   let needs_layout =
     (match t.last_layout with

@@ -430,9 +430,10 @@ module Private : sig
     register : t -> unit;
     unregister : t -> unit;
     width_method : unit -> Matrix.Text.width_method;
-        (** The width computation method of the screen the tree renders into.
-            Widgets read it (see {!val-width_method}) when creating text buffers
-            so measurement matches how cells are laid down. *)
+        (** The width computation method of the screen the tree renders into,
+            read without side effects. Widgets read it (see {!val-width_method})
+            at every measurement so measurement matches how cells are laid down.
+        *)
     report_scroll : t -> region:Matrix_grid.region -> dx:int -> dy:int -> unit;
         (** Reports that a scroll container shifted its content by [(dx, dy)]
             cells. [region]'s rows are the viewport rows that visually shift;
@@ -476,9 +477,12 @@ module Private : sig
 
   val width_method : t -> Matrix.Text.width_method
   (** [width_method t] is the width computation method of the screen [t]'s tree
-      renders into. Widgets pass it to the text buffers they create so wrap
-      points, intrinsic widths, and cursor columns agree with how the screen
-      lays down cells. *)
+      renders into, now. The screen owns it and can change it while the tree
+      lives, as when the terminal reports its method late, so a widget reads it
+      at every measurement and paint and keys what it caches by it: wrap points,
+      intrinsic widths, and cursor columns then agree with how the screen lays
+      down cells. When it changes, the renderer marks every measured node dirty
+      before the next layout. *)
 
   val set_is_root : t -> bool -> unit
   (** [set_is_root t v] marks or unmarks [t] as a root node. *)

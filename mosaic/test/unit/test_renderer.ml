@@ -1839,6 +1839,30 @@ let fresh_hits_respect_stacking_and_scissors () =
   equal ~msg:"below the clipped child" int 1 !clipper_presses;
   equal ~msg:"clipped away, and nothing outside the frame" int 1 !back_presses
 
+(* The screen owns the width method and can change it while the tree lives;
+   every measurement made by the old method is made again. *)
+let width_method_change_remeasures () =
+  let renderer = Renderer.create ~width_method:`Unicode () in
+  let root = Renderer.root renderer in
+  Renderable.set_style root
+    (Toffee.Style.default
+    |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column);
+  let emoji = "\xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x92\xbb" in
+  let text = Text.create ~parent:root ~content:emoji () in
+  let spinner =
+    Spinner.create ~parent:root
+      ~frame_set:{ Spinner.frames = [| emoji |]; interval = 0. }
+      ()
+  in
+  let widths () =
+    (Renderable.width (Text.node text), Renderable.width (Spinner.node spinner))
+  in
+  do_frame ~width:10 ~height:3 renderer;
+  equal ~msg:"one cluster" (pair int int) (2, 2) (widths ());
+  Matrix_screen.set_width_method (Renderer.screen renderer) `Wcwidth;
+  do_frame ~width:10 ~height:3 renderer;
+  equal ~msg:"each scalar's width" (pair int int) (4, 4) (widths ())
+
 let layout_updates_settle_before_first_paint () =
   let renderer = make_renderer () in
   let child =
@@ -2069,6 +2093,7 @@ let () =
         geometry_changes_route_mouse_before_paint;
       test "fresh hits respect stacking and scissors"
         fresh_hits_respect_stacking_and_scissors;
+      test "a width method change re-measures" width_method_change_remeasures;
       test "layout updates settle before first paint"
         layout_updates_settle_before_first_paint;
       test "layout preparation never advances live widgets"

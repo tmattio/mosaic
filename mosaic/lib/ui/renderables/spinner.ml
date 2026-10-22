@@ -49,7 +49,8 @@ type t = {
   mutable props : Props.t;
   mutable frame_index : int;
   mutable elapsed : float;
-  mutable max_width : int;
+  mutable max_width : (Matrix.Text.width_method * int) option;
+      (* The widest frame, by the screen's width method when it was measured. *)
 }
 
 let node t = t.node
@@ -62,6 +63,15 @@ let compute_max_width ~width_method frames =
       Int.max acc (Matrix.Text.measure ~width_method ~tab_width:2 frame))
     0 frames
 
+let max_width t =
+  let width_method = Renderable.Private.width_method t.node in
+  match t.max_width with
+  | Some (cached, width) when cached = width_method -> width
+  | Some _ | None ->
+      let width = compute_max_width ~width_method t.props.frame_set.frames in
+      t.max_width <- Some (width_method, width);
+      width
+
 (* ───── Measure ───── *)
 
 let measure t ~known_dimensions ~available_space:_ ~style:_ =
@@ -70,7 +80,7 @@ let measure t ~known_dimensions ~available_space:_ ~style:_ =
       width =
         (match known_dimensions.width with
         | Some w -> w
-        | None -> Float.of_int (Int.max 1 t.max_width));
+        | None -> Float.of_int (Int.max 1 (max_width t)));
       height = (match known_dimensions.height with Some h -> h | None -> 1.);
     }
 
@@ -117,9 +127,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let props = Props.make ~frame_set ~color () in
-  let width_method = Renderable.Private.width_method node in
-  let max_width = compute_max_width ~width_method frame_set.frames in
-  let t = { node; props; frame_index = 0; elapsed = 0.; max_width } in
+  let t = { node; props; frame_index = 0; elapsed = 0.; max_width = None } in
   Renderable.set_render node (render t);
   Renderable.set_measure node (Some (measure t));
   Renderable.set_on_frame node (Some (on_frame t));
@@ -138,10 +146,7 @@ let set_frame_set t fs =
   let n = Array.length fs.frames in
   t.frame_index <- (if n > 0 then t.frame_index mod n else 0);
   t.elapsed <- 0.;
-  t.max_width <-
-    compute_max_width
-      ~width_method:(Renderable.Private.width_method t.node)
-      fs.frames;
+  t.max_width <- None;
   Renderable.set_measure t.node (Some (measure t));
   update_live t;
   Renderable.request_render t.node
@@ -163,10 +168,7 @@ let apply_props t (props : Props.t) =
     let n = Array.length props.frame_set.frames in
     t.frame_index <- (if n > 0 then t.frame_index mod n else 0);
     t.elapsed <- 0.);
-  t.max_width <-
-    compute_max_width
-      ~width_method:(Renderable.Private.width_method t.node)
-      props.frame_set.frames;
+  t.max_width <- None;
   Renderable.set_measure t.node (Some (measure t));
   update_live t;
   Renderable.request_render t.node

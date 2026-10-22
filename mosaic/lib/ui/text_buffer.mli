@@ -84,17 +84,14 @@ end
 
 (** {1:construction Construction} *)
 
-val create :
-  ?default_style:Ansi.Style.t ->
-  ?width_method:Matrix.Text.width_method ->
-  ?tab_width:int ->
-  unit ->
-  t
+val create : ?default_style:Ansi.Style.t -> ?tab_width:int -> unit -> t
 (** [create ()] is an empty buffer with:
     - [default_style]: style applied to plain text set via {!set_text} and
       {!append}. Defaults to {!Ansi.Style.default}.
-    - [width_method]: grapheme width computation method. Defaults to [`Unicode].
-    - [tab_width]: constant tab width, clamped to [>= 1]. Defaults to [2]. *)
+    - [tab_width]: constant tab width, clamped to [>= 1]. Defaults to [2].
+
+    A buffer holds no width method: cells are counted by the method each
+    measurement is given, the screen's for a widget's buffer. *)
 
 (** {1:content Content} *)
 
@@ -154,13 +151,15 @@ val line_count : t -> int
 (** [line_count t] is the number of logical lines (delimited by line breaks).
     Cached; recomputed on content change. *)
 
-val line_width : t -> int -> int
-(** [line_width t n] is the display width of logical line [n]. Returns [0] if
-    [n] is out of range. Derived from the shared source index. *)
+val line_width : t -> width_method:Matrix.Text.width_method -> int -> int
+(** [line_width t ~width_method n] is the display width of logical line [n]
+    under [width_method]. Returns [0] if [n] is out of range. Derived from the
+    shared source index. *)
 
-val max_line_width : t -> int
-(** [max_line_width t] is the display width of the widest logical line. Cached;
-    recomputed on content change. *)
+val max_line_width : t -> width_method:Matrix.Text.width_method -> int
+(** [max_line_width t ~width_method] is the display width of the widest logical
+    line under [width_method]. Cached for the last method; recomputed on content
+    change. *)
 
 val text_in_range : t -> start:int -> len:int -> string
 (** [text_in_range t ~start ~len] is the plain text for grapheme offsets from
@@ -194,21 +193,12 @@ val set_tab_width : t -> int -> unit
 (** [set_tab_width t w] changes the constant tab width. [w] is clamped to
     [>= 1]. Invalidates cached line info if the value changes. *)
 
-(** {1:width_method Width method} *)
-
-val width_method : t -> Matrix.Text.width_method
-(** [width_method t] is the grapheme width computation method. *)
-
-val set_width_method : t -> Matrix.Text.width_method -> unit
-(** [set_width_method t m] changes the width method. Invalidates cached line
-    info if [m] differs from the current value. *)
-
 (** {1:versioning Versioning} *)
 
 val version : t -> int
-(** [version t] is a monotonically increasing geometry revision. Text, source,
-    tab width, or width method changes increment it; style changes do not. Used
-    for cache invalidation by consumers such as {!Text_surface}. *)
+(** [version t] is a monotonically increasing geometry revision. Text, source or
+    tab width changes increment it; style changes do not. Used for cache
+    invalidation by consumers such as {!Text_surface}. *)
 
 val source : t -> Matrix.Text.Layout.Source.t
 (** [source t] is the indexed installed text, shared across width layouts. *)

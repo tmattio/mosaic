@@ -770,6 +770,112 @@ let%expect_test "a late unfocused editor never steals focus" =
     ];
   [%expect {| |}]
 
+let%expect_test "a late width method re-measures existing text" =
+  (* The terminal reports wcwidth (DECRPM 2027) after the first frame. A
+     joined emoji is one 2-cell cluster under Unicode and 4 cells under
+     wcwidth, so every widget that measured it must measure it again: the
+     bars after Text, Code and an input move, and wrapped text takes more
+     rows. *)
+  let emoji = "\xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x92\xbb" in
+  let row child =
+    Mosaic.box ~flex_direction:Mosaic.Flex_direction.Row
+      [ child; Mosaic.text "|" ]
+  in
+  let base = app () in
+  let application =
+    {
+      base with
+      Mosaic.view =
+        (fun _ ->
+          Mosaic.box ~flex_direction:Mosaic.Flex_direction.Column
+            [
+              row (Mosaic.text (emoji ^ "t"));
+              row (Mosaic.code (emoji ^ "c"));
+              row
+                (Mosaic.input ~flex_shrink:0.
+                   ~state:(Mosaic.Editor.of_string (emoji ^ "e"))
+                   ~on_change:(fun _ -> Ignored)
+                   ());
+              row
+                (Mosaic.box
+                   ~size:(Mosaic.size_wh (Mosaic.px 4) Mosaic.auto)
+                   [ Mosaic.text ~wrap:`Char (emoji ^ emoji) ]);
+              Mosaic.text "end";
+            ]);
+    }
+  in
+  (* Each cell a grapheme starts, and [-] for the cells it spans after its
+     first. *)
+  let cells t =
+    let grid = Matrix.current_grid (Matrix_test.app t) in
+    let width = Matrix.Grid.width grid in
+    for y = 0 to Matrix.Grid.height grid - 1 do
+      let row = Buffer.create width in
+      for x = 0 to width - 1 do
+        let i = (y * width) + x in
+        Buffer.add_string row
+          (if Matrix.Grid.is_continuation grid i then "-"
+           else
+             match Matrix.Grid.get_text grid i with "" -> " " | text -> text)
+      done;
+      print_endline ("|" ^ String.trim (Buffer.contents row))
+    done
+  in
+  drive ~width:12 ~height:7 application
+    [ `Run cells; `Feed "\027[?2027;2$y"; `Run cells ];
+  [%expect
+    {|
+    |👩‍💻-t|
+    |👩‍💻-c|
+    |👩‍💻-e |
+    |👩‍💻-👩‍💻-|
+    |end
+    |
+    |
+    |👩‍-💻-t|
+    |👩‍-💻-c|
+    |👩‍-💻-e |
+    |👩‍-💻-|
+    |👩‍-💻-
+    |end
+    |
+    |}]
+
+let%expect_test "static output follows the terminal's width method" =
+  (* Once the terminal reports wcwidth, a static commit lays its text out by
+     it too: two joined emoji take 8 cells, which wrap in 6 columns. *)
+  let emoji = "\xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x92\xbb" in
+  let base = app ~subs:on_keys () in
+  let application =
+    {
+      base with
+      Mosaic.update =
+        (fun msg model ->
+          match msg with
+          | Pressed "s" ->
+              ( model,
+                Mosaic.Cmd.static_commit
+                  (Mosaic.text ~wrap:`Char (emoji ^ emoji)) )
+          | _ -> (model, Mosaic.Cmd.none));
+      view = (fun _ -> Mosaic.text "live");
+    }
+  in
+  drive ~mode:`Primary ~width:6 ~height:4 application
+    [
+      `Feed "\027[?2027;2$y";
+      `Feed "s";
+      `Run
+        (fun t ->
+          let vte = Vte.create ~rows:4 ~cols:6 () in
+          ignore (Vte.feed_string vte (Matrix_test.output t) : string);
+          print_string (rstrip_rows (Vte.to_string vte)));
+    ];
+  [%expect {|
+    👩‍💻
+    👩‍💻
+    live
+    |}]
+
 let%expect_test "static commit emits content taller than the viewport" =
   (* Cmd.static_commit renders offscreen at the content's natural height:
      every line of a static view taller than the terminal must reach the
