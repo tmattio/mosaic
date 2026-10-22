@@ -116,7 +116,8 @@ type scroll_hint = {
 (** A scroll optimisation hint from a scrollable container. When provided, the
     renderer shifts the previous buffer and emits DECSTBM + hardware scroll
     sequences so only the newly-revealed edge rows need cell-level diffing.
-    Without the hint, scrolling rewrites every row in the viewport. *)
+    Without the hint, scrolling rewrites every row in the viewport. A shift by
+    the region's height or more keeps no row and is ignored. *)
 
 type viewport = {
   y : int;  (** Zero-based terminal row offset of the rendered surface. *)

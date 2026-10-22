@@ -865,6 +865,25 @@ let test_scroll_hint_applies_row_offset () =
   contains ~msg:"scroll region includes row offset" ~sub:"\027[4;6r" output;
   not_contains ~msg:"scroll region is not absolute top" ~sub:"\027[1;3r" output
 
+(* A shift by the whole region keeps none of its rows. xterm 398 also blanks
+   the rows outside the region when SU scrolls by its whole height, which the
+   diff would not repaint. *)
+let test_scroll_hint_by_whole_region_is_ignored () =
+  let r = Screen.create () in
+  let rows texts =
+    build_screen r ~width:1 ~height:4 (fun grid _hits ->
+        List.iteri (fun y text -> Grid.draw_text grid ~x:0 ~y ~text) texts)
+  in
+  let _ = Screen.render (rows [ "A"; "B"; "C"; "D" ]) in
+  let output =
+    Screen.render
+      ~scroll_hint:{ Screen.top = 1; bottom = 2; delta = 2 }
+      (rows [ "A"; "E"; "F"; "D" ])
+  in
+  not_contains ~msg:"no scroll region" ~sub:"\027[2;3r" output;
+  not_contains ~msg:"no scroll" ~sub:"\027[2S" output;
+  in_order ~msg:"the region's rows are repainted" ~subs:[ "E"; "F" ] output
+
 let test_cursor_style_and_color () =
   (* Test cursor style and color state *)
   let r = create_renderer () in
@@ -1102,6 +1121,8 @@ let () =
             test_scroll_hint_clips_to_viewport;
           test "Scroll hint applies row offset"
             test_scroll_hint_applies_row_offset;
+          test "Scroll hint by the whole region is ignored"
+            test_scroll_hint_by_whole_region_is_ignored;
           test "Cursor style and color" test_cursor_style_and_color;
         ];
       group "Performance Characteristics"

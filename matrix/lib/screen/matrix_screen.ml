@@ -388,13 +388,11 @@ let normalize_scroll_hint ~row_offset ~height ~current hint =
   let render_height = max 0 (min current_height height) in
   let top = max 0 top in
   let bottom = min (render_height - 1) bottom in
-  if delta = 0 || top >= bottom then None
-  else
-    let region_h = bottom - top + 1 in
-    let delta =
-      if delta > 0 then min delta region_h else max delta (-region_h)
-    in
-    Some (top, bottom, delta, max 0 row_offset)
+  (* A shift by the region's height or more keeps none of its rows, so the
+     diff repaints them all anyway; xterm 398 also blanks the rows outside
+     the region on such an SU. *)
+  if delta = 0 || top >= bottom || abs delta >= bottom - top + 1 then None
+  else Some (top, bottom, delta, max 0 row_offset)
 
 let apply_scroll_hint ~(writer : Ansi.writer) ~row_offset ~height ~current hint
     =

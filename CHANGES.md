@@ -98,6 +98,7 @@
 - `matrix.text` measures 897 East_Asian_Width N pictographs as one cell, as UAX #11 and terminals do, instead of two: emoji without Emoji_Presentation such as ❤ U+2764 and ⚠ U+26A0, and symbols such as mahjong tiles, dominoes, alchemical symbols and chess pieces. VS16 still widens an emoji to two cells
 - Charts: sub-cell circle rasterization, zoomed y-axis labels, candlestick hit-testing, charset-faithful glyphs
 - Grapheme storage no longer leaks ids for clipped draws
+- A scroll hint that shifts its whole region is ignored: it keeps no row, and xterm 398 also blanks the rows outside the region on such an SU, which the diff never repainted
 - Primary mode follows the terminal through a resize: the runtime finds the live region again from a cursor position report, where it overwrote transcript rows or left a stale copy of the UI. A minimum height that does not fit below the prompt scrolls the shell's rows up instead of covering them, `min_tui_height` survives a terminal shorter than it, and a static area of one row no longer raises
 - `Screen` keeps apart two cells the terminal would read as one grapheme, such as a letter and a lone emoji modifier or a Prepend character and a letter, which shifted the rest of the row
 - After a resize, `Screen` paints every cell of its next frame; its blank baseline skipped the cells blank in the new frame and left the old frame's there, as on the frame after a primary live region grows
