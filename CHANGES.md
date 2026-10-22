@@ -77,6 +77,7 @@
 - Vendored uuseg stripped to its boundary core; one shared grapheme-width state machine
 - **Primary layout by scrolling** – the live region claims rows only by scrolling the rows above it into the terminal's scrollback, and static rows go at its top, so a transcript row is never overwritten. No scrolling margins (DECSTBM) are set, no blank row separates static output from the live region, and `static_write ~preserve_live_region` keeps the live height whatever is above it
 - `Grid.active_height` counts every row that shows something a terminal's erase does not: a space with a background, an attribute or a hyperlink counts, not only a character. A primary-mode full redraw no longer erases a trailing row of background, and a static commit keeps it
+- `Grid` reads and writes its cell planes with direct loads and stores, where every access called into the runtime: a full repaint takes a third of the time it took, and drawing a screen of text less than half
 
 #### Fixed
 

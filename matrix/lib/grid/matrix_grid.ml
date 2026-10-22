@@ -5,27 +5,34 @@ module Color_packed = Ansi.Color.Packed
 
 (* {1 Internal modules} *)
 
+(* The cell planes. Each accessor names its plane's element type, so it
+   compiles to a load or a store; an accessor polymorphic in the element type
+   calls into the runtime instead. *)
 module Buf = struct
-  type ('a, 'b) t = ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t
+  type ints = (int, Bigarray.int_elt, Bigarray.c_layout) Bigarray.Array1.t
 
-  let create kind len = Bigarray.Array1.create kind Bigarray.c_layout len
-  let make_int16 len = create Bigarray.int16_unsigned len
-  let make_int len = create Bigarray.int len
-  let[@inline] get arr i = Bigarray.Array1.unsafe_get arr i
-  let[@inline] set arr i v = Bigarray.Array1.unsafe_set arr i v
+  type shorts =
+    (int, Bigarray.int16_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+  let ints len : ints =
+    Bigarray.Array1.create Bigarray.int Bigarray.c_layout len
+
+  let shorts len : shorts =
+    Bigarray.Array1.create Bigarray.int16_unsigned Bigarray.c_layout len
+
+  let[@inline] get (a : ints) i = Bigarray.Array1.unsafe_get a i
+  let[@inline] set (a : ints) i v = Bigarray.Array1.unsafe_set a i v
+  let[@inline] get_short (a : shorts) i = Bigarray.Array1.unsafe_get a i
+  let[@inline] set_short (a : shorts) i v = Bigarray.Array1.unsafe_set a i v
+  let[@inline] get_cell a i = Packed_cell.unsafe_of_int (get a i)
+  let[@inline] set_cell a i (v : Packed_cell.t) = set a i (Packed_cell.to_int v)
   let fill = Bigarray.Array1.fill
   let blit = Bigarray.Array1.blit
   let dim = Bigarray.Array1.dim
+  let fill_cell a (v : Packed_cell.t) = fill a (Packed_cell.to_int v)
 
-  let[@inline] get_cell arr i =
-    Packed_cell.unsafe_of_int (Bigarray.Array1.unsafe_get arr i)
-
-  let[@inline] set_cell arr i (v : Packed_cell.t) =
-    Bigarray.Array1.unsafe_set arr i (Packed_cell.to_int v)
-
-  let fill_cell arr (v : Packed_cell.t) =
-    Bigarray.Array1.fill arr (Packed_cell.to_int v)
-
+  (* Copies run backwards when the ranges overlap with the destination after
+     the source. *)
   let[@inline] blit_range src ~src_pos dst ~dst_pos ~len =
     if src == dst && src_pos < dst_pos then
       for i = len - 1 downto 0 do
@@ -36,25 +43,24 @@ module Buf = struct
         set dst (dst_pos + i) (get src (src_pos + i))
       done
 
-  let[@inline] fill_range arr ~pos ~len v =
-    for i = pos to pos + len - 1 do
-      set arr i v
-    done
-
-  let[@inline] blit_cell_range src ~src_pos dst ~dst_pos ~len =
+  let[@inline] blit_short_range src ~src_pos dst ~dst_pos ~len =
     if src == dst && src_pos < dst_pos then
       for i = len - 1 downto 0 do
-        set_cell dst (dst_pos + i) (get_cell src (src_pos + i))
+        set_short dst (dst_pos + i) (get_short src (src_pos + i))
       done
     else
       for i = 0 to len - 1 do
-        set_cell dst (dst_pos + i) (get_cell src (src_pos + i))
+        set_short dst (dst_pos + i) (get_short src (src_pos + i))
       done
 
-  let[@inline] fill_cell_range arr ~pos ~len v =
-    let v = Packed_cell.to_int v in
+  let[@inline] fill_range a ~pos ~len v =
     for i = pos to pos + len - 1 do
-      set arr i v
+      set a i v
+    done
+
+  let[@inline] fill_short_range a ~pos ~len v =
+    for i = pos to pos + len - 1 do
+      set_short a i v
     done
 end
 
@@ -114,10 +120,10 @@ type t = {
   mutable height : int;
   grapheme_store : Grapheme_store.t;
   mutable width_method : Text.width_method;
-  mutable chars : (int, Bigarray.int_elt) Buf.t;
-  mutable fg_color : (int, Bigarray.int_elt) Buf.t;
-  mutable bg_color : (int, Bigarray.int_elt) Buf.t;
-  mutable attrs : (int, Bigarray.int16_unsigned_elt) Buf.t;
+  mutable chars : Buf.ints;
+  mutable fg_color : Buf.ints;
+  mutable bg_color : Buf.ints;
+  mutable attrs : Buf.shorts;
   mutable links : string array;
   mutable grapheme_tracker : Grapheme_tracker.t;
   scissor_stack : Scissor_stack.t;
@@ -184,7 +190,7 @@ let clip_rect_to_grid t r =
 (** Write a blank on [bg] into a cell, leaving the grapheme tracker alone. *)
 let[@inline] write_blank t idx bg =
   Buf.set_cell t.chars idx space_cell;
-  Buf.set t.attrs idx 0;
+  Buf.set_short t.attrs idx 0;
   set_link t idx no_link;
   Buf.set t.fg_color idx default_fg_packed;
   Buf.set t.bg_color idx bg
@@ -289,10 +295,10 @@ let create_with_store ~width ~height ~grapheme_store ~width_method =
       height;
       grapheme_store;
       width_method;
-      chars = Buf.make_int size;
-      fg_color = Buf.make_int size;
-      bg_color = Buf.make_int size;
-      attrs = Buf.make_int16 size;
+      chars = Buf.ints size;
+      fg_color = Buf.ints size;
+      bg_color = Buf.ints size;
+      attrs = Buf.shorts size;
       links = [||];
       grapheme_tracker = Grapheme_tracker.create grapheme_store;
       scissor_stack = Scissor_stack.create ();
@@ -333,8 +339,10 @@ let[@inline] get_codepoint t idx =
 let protected_bit = 1 lsl Ansi.Attr.bits
 let attrs_mask = protected_bit - 1
 let () = assert (protected_bit <= 0x8000)
-let[@inline] get_attrs t idx = Buf.get t.attrs idx land attrs_mask
-let[@inline] is_protected t idx = Buf.get t.attrs idx land protected_bit <> 0
+let[@inline] get_attrs t idx = Buf.get_short t.attrs idx land attrs_mask
+
+let[@inline] is_protected t idx =
+  Buf.get_short t.attrs idx land protected_bit <> 0
 
 let get_style t idx =
   let attrs = Ansi.Attr.unpack (get_attrs t idx) in
@@ -446,13 +454,13 @@ let resize t ~width ~height =
 
     (* Allocate new storage *)
     let new_size = width * height in
-    let new_chars = Buf.make_int new_size in
-    let new_attrs = Buf.make_int16 new_size in
+    let new_chars = Buf.ints new_size in
+    let new_attrs = Buf.shorts new_size in
     let new_links =
       if Array.length old_links = 0 then [||] else Array.make new_size no_link
     in
-    let new_fg_color = Buf.make_int new_size in
-    let new_bg_color = Buf.make_int new_size in
+    let new_fg_color = Buf.ints new_size in
+    let new_bg_color = Buf.ints new_size in
 
     Buf.fill_cell new_chars space_cell;
     Buf.fill new_attrs 0;
@@ -464,9 +472,9 @@ let resize t ~width ~height =
     let copy_h = min old_h height in
     for y = 0 to copy_h - 1 do
       let src_off = y * old_w and dst_off = y * width in
-      Buf.blit_cell_range old_chars ~src_pos:src_off new_chars ~dst_pos:dst_off
+      Buf.blit_range old_chars ~src_pos:src_off new_chars ~dst_pos:dst_off
         ~len:copy_w;
-      Buf.blit_range old_attrs ~src_pos:src_off new_attrs ~dst_pos:dst_off
+      Buf.blit_short_range old_attrs ~src_pos:src_off new_attrs ~dst_pos:dst_off
         ~len:copy_w;
       if Array.length old_links <> 0 then
         Array.blit old_links src_off new_links dst_off copy_w;
@@ -585,7 +593,7 @@ let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~blending =
         (Color_packed.blend ~src:bg_color ~dst:(Buf.get t.fg_color idx))
     else begin
       write_cell t idx code blended_bg;
-      Buf.set t.attrs idx attrs;
+      Buf.set_short t.attrs idx attrs;
       Buf.set t.fg_color idx (Color_packed.blend ~src:fg_color ~dst:blended_bg)
     end;
     set_link t idx link;
@@ -593,7 +601,7 @@ let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~blending =
   end
   else begin
     write_cell t idx code bg_color;
-    Buf.set t.attrs idx attrs;
+    Buf.set_short t.attrs idx attrs;
     set_link t idx link;
     Buf.set t.fg_color idx fg_color;
     Buf.set t.bg_color idx bg_color
@@ -706,8 +714,9 @@ let fill_opaque_rect t ~x0 ~y0 ~width ~height ~bg_color =
       for i = start_idx to end_idx do
         cleanup_overwritten_cell t i bg_color
       done;
-      Buf.fill_cell_range t.chars ~pos:start_idx ~len:width space_cell;
-      Buf.fill_range t.attrs ~pos:start_idx ~len:width 0;
+      Buf.fill_range t.chars ~pos:start_idx ~len:width
+        (Packed_cell.to_int space_cell);
+      Buf.fill_short_range t.attrs ~pos:start_idx ~len:width 0;
       clear_links t start_idx width;
       Buf.fill_range t.fg_color ~pos:start_idx ~len:width default_fg_packed;
       Buf.fill_range t.bg_color ~pos:start_idx ~len:width bg_color
@@ -842,8 +851,8 @@ let move_within t ~src_x ~src_y ~width ~height ~dst_x ~dst_y ~repair =
       let old_start = di - span_left (Buf.get_cell t.chars di) in
       let old_end = last + span_right (Buf.get_cell t.chars last) in
       bulk_update_graphemes t ~src_idx:si ~dst_idx:di ~len:width;
-      Buf.blit_cell_range t.chars ~src_pos:si t.chars ~dst_pos:di ~len:width;
-      Buf.blit_range t.attrs ~src_pos:si t.attrs ~dst_pos:di ~len:width;
+      Buf.blit_range t.chars ~src_pos:si t.chars ~dst_pos:di ~len:width;
+      Buf.blit_short_range t.attrs ~src_pos:si t.attrs ~dst_pos:di ~len:width;
       blit_links ~src:t ~dst:t si di width;
       Buf.blit_range t.fg_color ~src_pos:si t.fg_color ~dst_pos:di ~len:width;
       Buf.blit_range t.bg_color ~src_pos:si t.bg_color ~dst_pos:di ~len:width;
@@ -955,7 +964,7 @@ let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
                 || Color_packed.alpha fg_color <> 0
                 || Color_packed.alpha bg_color <> 0
               then begin
-                let attrs = Buf.get src.attrs sidx in
+                let attrs = Buf.get_short src.attrs sidx in
                 let link = get_link src sidx in
 
                 (* Detect orphan continuations whose start cell is outside the
@@ -1433,16 +1442,15 @@ let draw_line t ~x1 ~y1 ~x2 ~y2 ?(style = Ansi.Style.default)
 (* {1 Inspection & utilities} *)
 
 (* A cell a terminal erase reproduces: a space or nothing, with no attribute
-   and no link, on the terminal's default background. The planes are read
-   where their element types are known, so each read is a load. *)
+   and no link, on the terminal's default background. *)
 let space_code = Packed_cell.to_int space_cell
 let null_code = Packed_cell.to_int null_cell
 
 let[@inline] blank_cell t idx =
-  let code = Bigarray.Array1.unsafe_get t.chars idx in
+  let code = Buf.get t.chars idx in
   (code = space_code || code = null_code)
-  && Bigarray.Array1.unsafe_get t.attrs idx land attrs_mask = 0
-  && (let bg = Bigarray.Array1.unsafe_get t.bg_color idx in
+  && Buf.get_short t.attrs idx land attrs_mask = 0
+  && (let bg = Buf.get t.bg_color idx in
       bg = default_bg_packed || bg = terminal_bg_packed
       || Color_packed.alpha bg = 0
       ||
