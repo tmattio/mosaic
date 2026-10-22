@@ -180,24 +180,19 @@ let clip_rect_to_grid t r =
 (* Blanks. A blank is a space with the default foreground, no attributes and
    no link, on a background chosen by the operation that makes it. *)
 
-(** Turn a cell into a blank on [bg], releasing its grapheme tracker entry. *)
-let[@inline] blank_cell t idx bg =
-  let code = Buf.get_cell t.chars idx in
-  if code <> space_cell then begin
-    Grapheme_tracker.remove t.grapheme_tracker code;
-    Buf.set_cell t.chars idx space_cell
-  end;
+(** Write a blank on [bg] into a cell, leaving the grapheme tracker alone. *)
+let[@inline] write_blank t idx bg =
+  Buf.set_cell t.chars idx space_cell;
   Buf.set t.attrs idx 0;
   set_link t idx no_link;
   Buf.set t.fg_color idx default_fg_packed;
   Buf.set t.bg_color idx bg
 
-let[@inline] reset_cell_no_tracker t idx =
-  Buf.set_cell t.chars idx space_cell;
-  Buf.set t.attrs idx 0;
-  set_link t idx no_link;
-  Buf.set t.fg_color idx default_fg_packed;
-  Buf.set t.bg_color idx default_bg_packed
+(** Turn a cell into a blank on [bg], releasing its grapheme tracker entry. *)
+let[@inline] blank_cell t idx bg =
+  let code = Buf.get_cell t.chars idx in
+  if code <> space_cell then Grapheme_tracker.remove t.grapheme_tracker code;
+  write_blank t idx bg
 
 (* The distances from [idx] to the first and last cells of its grapheme. *)
 let[@inline] span_left code =
@@ -231,8 +226,7 @@ let cleanup_overwritten_cell t idx bg =
   end
 
 (** Write a cell code into a cell, blanking the rest of the grapheme it
-    overwrites on [bg] and maintaining grapheme tracker state. This is the
-    factored-out core of set_cell_internal's cell update logic. *)
+    overwrites on [bg] and maintaining grapheme tracker state. *)
 let[@inline] write_cell t idx code bg =
   let old = Buf.get_cell t.chars idx in
   if old <> code then begin
@@ -389,6 +383,8 @@ let rebuild_grapheme_tracker t =
   Grapheme_tracker.clear t.grapheme_tracker;
   t.grapheme_tracker <- tracker
 
+(* Blank, on the default background, the cells of spans the resize cut. The
+   tracker is rebuilt from the cells afterwards. *)
 let sanitize_spans t =
   for y = 0 to t.height - 1 do
     let row_start = y * t.width in
@@ -397,12 +393,12 @@ let sanitize_spans t =
       let idx = row_start + x in
       let code = Buf.get_cell t.chars idx in
       if Packed_cell.is_continuation code then
-        begin if x > !covered_until then reset_cell_no_tracker t idx
+        begin if x > !covered_until then write_blank t idx default_bg_packed
         end
       else
         let w = Packed_cell.cell_width code in
         if w > 1 then
-          if x + w > t.width then reset_cell_no_tracker t idx
+          if x + w > t.width then write_blank t idx default_bg_packed
           else begin
             let valid = ref true in
             for dx = 1 to w - 1 do
@@ -414,9 +410,9 @@ let sanitize_spans t =
             done;
             if !valid then covered_until := max !covered_until (x + w - 1)
             else begin
-              reset_cell_no_tracker t idx;
+              write_blank t idx default_bg_packed;
               for dx = 1 to w - 1 do
-                reset_cell_no_tracker t (idx + dx)
+                write_blank t (idx + dx) default_bg_packed
               done
             end
           end

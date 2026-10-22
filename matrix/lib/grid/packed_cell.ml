@@ -2,7 +2,6 @@ module Text = Matrix_text
 open StdLabels
 
 type t = int
-type width_method = Text.width_method
 
 let[@inline] to_int (x : t) = x
 let[@inline] unsafe_of_int (x : int) = x
@@ -38,9 +37,6 @@ let check_sub name str ~pos ~len =
   if len < 0 then invalid_arg (name ^ ": negative length");
   if pos > str_len || len > str_len - pos then
     invalid_arg (name ^ ": substring out of bounds")
-
-let[@inline] ascii_width ~tab_width b =
-  if b = 0x09 then tab_width else if b >= 0x20 && b <= 0x7E then 1 else 0
 
 let string_of_uchar uchar =
   let len = Uchar.utf_8_byte_length uchar in

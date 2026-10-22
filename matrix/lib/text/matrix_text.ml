@@ -77,15 +77,16 @@ let uchar_width ~tab_width uchar =
 
 (* Unicode-width state machine.
 
-   The [`Unicode] width method folds a cluster's codepoints through a small
-   state machine handling VS16 emoji promotion, regional-indicator pairs,
-   spacing marks, and Indic virama conjuncts. The whole state is one immediate
-   int: the accumulated cluster width in the bits above bit 3 and four flags below.
-   Invariant: the width bits are [0] while [ws_has_width] is unset.
+   The [`Unicode] and [`Unicode_wide] methods fold the scalars of a unit
+   through a small state machine handling VS16 emoji promotion,
+   regional-indicator pairs, spacing marks, and Indic virama conjuncts. The
+   whole state is one immediate int: the unit's width in the bits above bit 3
+   and four flags below. The width bits are [0] while [ws_has_width] is unset,
+   except in a TAB's unit, which [unit_step] makes [tab] wide without it.
 
-   The initial state is [0]; [ws_step] handles the first codepoint of a
-   cluster like any other (from state [0] every branch reduces to the
-   cluster-start behaviour). *)
+   The initial state is [0]; [ws_step] handles the first codepoint of a unit
+   like any other (from state [0] every branch reduces to the unit-start
+   behaviour). *)
 
 let ws_has_width = 1 (* cluster has a base width *)
 let ws_ri_pair = 2 (* last codepoint was the first RI of a pair *)

@@ -167,8 +167,7 @@ let fg t = resolve ~default:t.default_fg t.pen.style.fg
 
 (* The background of what is printed, and of every blank. *)
 let bg t = resolve ~default:t.default_bg t.pen.style.bg
-let protected_yes = Some true
-let protection t = if t.pen.protected then protected_yes else None
+let protection t = if t.pen.protected then Some true else None
 
 (* {1:dirty Changes} *)
 
@@ -564,11 +563,10 @@ let join t =
     while !x > 0 && Grid.is_continuation g (base + !x) do
       decr x
     done;
-    let prev = Grid.get_text g (base + !x) in
     cl.at <- Joined;
     cl.row <- c.row;
     cl.col <- !x;
-    cl.prev <- (if prev = "" then " " else prev)
+    cl.prev <- Grid.get_text g (base + !x)
   end;
   if cl.at = Joined then
     rewrite_joined t (cl.prev ^ Bytes.sub_string cl.text 0 cl.len)
@@ -904,9 +902,10 @@ let decaln t =
 (* {1:modes Modes and resets} *)
 
 let decsc t =
+  let { row; col; last_column } = t.cursor in
   (screen t).saved <-
     {
-      cursor = { t.cursor with row = t.cursor.row };
+      cursor = { row; col; last_column };
       pen = t.pen;
       charsets = t.charsets;
       origin = t.modes.origin;
@@ -1103,8 +1102,6 @@ let scs t intermediates final =
 (* SI, SO, LS2 and LS3 invoke G0, G1, G2 and G3 into GL; SS2 and SS3 invoke
    G2 or G3 for the next character. *)
 let ls t g = t.charsets <- { t.charsets with gl = g }
-let ss2 = Some 2
-let ss3 = Some 3
 let ss t single = t.charsets <- { t.charsets with single }
 
 (* {1:replies Replies} *)
@@ -1143,12 +1140,8 @@ let decsca t = function
   | 1 -> t.pen <- { t.pen with protected = true }
   | _ -> ()
 
-(* CAN and SUB end the sequence or string in progress (the parser does it).
-   CAN shows nothing; SUB, here or in a sequence, shows the error character,
-   a reversed question mark (VT510 Programmer Information ch. 4; VT220
-   Programmer Reference Manual ch. 4: CAN displays "No error character").
-   xterm, a datapoint, shows a checkerboard for both at VT100 level and a
-   SUB symbol for SUB above it. *)
+(* SUB shows the error character (vte.mli). xterm, a datapoint, shows a
+   checkerboard for CAN and SUB at VT100 level, and a SUB symbol above it. *)
 let sub t =
   print t "\u{2E2E}";
   break_text t
@@ -1167,8 +1160,8 @@ let control t = function
       goto t ~row:t.cursor.row ~col:0
   | '\x88' -> hts t
   | '\x8d' -> reverse_index t
-  | '\x8e' -> ss t ss2
-  | '\x8f' -> ss t ss3
+  | '\x8e' -> ss t (Some 2)
+  | '\x8f' -> ss t (Some 3)
   | '\x9a' -> da t (* ESC Z, DECID: an obsolete form of DA (ctlseqs) *)
   | _ -> ()
 
