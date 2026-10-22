@@ -105,6 +105,7 @@
 - After a resize, `Screen` paints every cell of its next frame; its blank baseline skipped the cells blank in the new frame and left the old frame's there, as on the frame after a primary live region grows
 - A visible cursor without a position shows in alt mode, at the bottom-left; in primary mode a cursor below the painted rows of a full redraw keeps its row instead of rising to the last one
 - `Grid` keeps one rendition per grapheme, its start cell's: a translucent background drawn over a wide character blends over the start cell's background for both halves, which a terminal could not show apart, and a translucent fill over a wide character tints it instead of erasing it and blending its second cell twice
+- The runtime sets the terminal's width method and the screen's together whenever the capabilities change, as when a DECRPM 2027 report arrives after the first frame, and repaints: the screen kept the method of its creation and laid out cells the terminal measured otherwise. With `explicit_width` the screen measures with wcwidth, as the terminal does
 
 #### Removed
 

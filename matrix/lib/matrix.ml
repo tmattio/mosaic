@@ -361,12 +361,29 @@ let request_immediate_redraw t =
     else t.last_render_time <- Float.neg_infinity;
     t.backend.wake ())
 
+(* The terminal cuts what it receives into cells by the width method the
+   runtime sets, and the screen lays out its cells by the same, so a cell is
+   as wide on the screen as in the terminal. A change of method voids the
+   cells the terminal shows, laid out by the old one. *)
+let width_method t =
+  if t.config.explicit_width then `Wcwidth
+  else (Terminal.capabilities t.terminal).unicode_width
+
+let set_width_method t m =
+  Terminal.set_unicode_width t.terminal m;
+  if Grid.width_method (Screen.current_grid t.screen) <> m then (
+    Screen.set_width_method t.screen m;
+    force_full_redraw t)
+
 let refresh_capabilities t =
   let caps = Terminal.capabilities t.terminal in
   let color_depth = if caps.rgb then `Truecolor else `Ansi256 in
   Screen.apply_capabilities t.screen ~explicit_width:caps.explicit_width
     ~explicit_cursor_positioning:caps.explicit_cursor_positioning
-    ~hyperlinks:caps.hyperlinks ~color_depth
+    ~hyperlinks:caps.hyperlinks ~color_depth;
+  let m = width_method t in
+  if m <> Grid.width_method (Screen.current_grid t.screen) then
+    set_width_method t m
 
 let startup_capability_window_s = 5.
 
@@ -553,10 +570,7 @@ let apply_config t =
   | `Enabled flags -> Terminal.enable_kitty_keyboard ~flags terminal true);
   Terminal.enable_modify_other_keys terminal
     (not (Terminal.kitty_keyboard_enabled terminal));
-  Terminal.set_unicode_width terminal
-    (if caps.unicode_width <> `Wcwidth && not t.config.explicit_width then
-       caps.unicode_width
-     else `Wcwidth);
+  set_width_method t (width_method t);
   refresh_render_region t
 
 (* Lifecycle: Prepare / Grid / Submit *)
@@ -1112,10 +1126,9 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
       in
       let primary, layout_ops = Option.value anchored ~default:(primary, []) in
       let app =
-        let caps = Terminal.capabilities terminal in
         let screen =
-          Screen.create ~width_method:caps.unicode_width ~cursor_visible
-            ~explicit_width:config.explicit_width ~clock:backend.now ()
+          Screen.create ~cursor_visible ~explicit_width:config.explicit_width
+            ~clock:backend.now ()
         in
         let capability_window_until =
           if config.raw_mode && Terminal.tty terminal then

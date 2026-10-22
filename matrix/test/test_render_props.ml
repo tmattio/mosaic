@@ -94,6 +94,9 @@ type case = {
   prompt : bool;  (** The cursor ends a prompt rather than starting a row. *)
   min_live : int;
   sync : bool;  (** The terminal has synchronized output. *)
+  report : int option;
+      (** Before this frame the terminal reports its width method (DECRPM 2027),
+          which the runtime's capabilities had wrong until then. *)
   reposition : bool;  (** The terminal has [explicit_cursor_positioning]. *)
   frames : frame list;
 }
@@ -350,6 +353,15 @@ let case_gen =
     match mode with `Alt -> pure 1 | `Primary -> int_range 1 rows
   in
   let* n = int_range 1 6 in
+  (* A frame laid out by another method than the terminal's can scroll the
+     screen, which in primary mode moves the transcript for good. DECRPM
+     2027 tells Unicode from wcwidth only. *)
+  let* report =
+    match (mode, width_method) with
+    | `Alt, (`Unicode | `Wcwidth) ->
+        frequency [ (3, pure None); (1, map Option.some (int_range 0 (n - 1))) ]
+    | _ -> pure None
+  in
   let+ frames =
     frames_gen ~mode ~max_cols ~max_rows ~min_cols ~min_rows (cols, rows) n
   in
@@ -362,6 +374,7 @@ let case_gen =
     prompt;
     min_live;
     sync;
+    report;
     reposition;
     frames;
   }
@@ -424,6 +437,7 @@ let pp_case fmt c =
     | `Wcwidth -> "wcwidth")
     c.cols c.rows;
   if c.sync then Format.fprintf fmt " sync";
+  Option.iter (Format.fprintf fmt " report before frame %d") c.report;
   if c.reposition then Format.fprintf fmt " reposition";
   if c.mode = `Primary then
     Format.fprintf fmt " shell %d%s min_live %d" c.shell
@@ -523,7 +537,11 @@ let capabilities case : Matrix.Terminal.capabilities =
     kitty_graphics = false;
     bracketed_paste = false;
     focus_tracking = false;
-    unicode_width = case.width_method;
+    unicode_width =
+      (match (case.report, case.width_method) with
+      | None, m -> m
+      | Some _, `Wcwidth -> `Unicode
+      | Some _, (`Unicode | `Unicode_wide) -> `Wcwidth);
     sgr_pixels = false;
     color_scheme_updates = false;
     explicit_width = false;
@@ -550,6 +568,8 @@ type run = {
   mutable transcript : string list;  (** Expected, newest first. *)
   mutable pushed : int;  (** Rows the terminal pushed while resizing. *)
   mutable tag : int;
+  mutable reported : bool;
+      (** The runtime knows the terminal's width method: frames are checked. *)
 }
 
 let fail_frame r fmt =
@@ -655,8 +675,10 @@ let check r app =
   match r.drawn with
   | None -> ()
   | Some drawn ->
-      check_live r app drawn;
-      if r.case.mode = `Primary then check_transcript r app;
+      if r.reported then begin
+        check_live r app drawn;
+        if r.case.mode = `Primary then check_transcript r app
+      end;
       r.drawn <- None;
       Buffer.clear r.frame_bytes
 
@@ -698,6 +720,13 @@ let start_frame r app ~on_event (frame : frame) =
   Option.iter (Matrix.set_scroll_hint app) frame.scroll;
   r.current <- Some frame;
   r.index <- r.index + 1;
+  if r.case.report = Some r.index then begin
+    Buffer.add_string r.replies
+      (match r.case.width_method with
+      | `Wcwidth -> "\027[?2027;2$y"
+      | `Unicode | `Unicode_wide -> "\027[?2027;1$y");
+    r.reported <- true
+  end;
   Matrix.request_redraw app
 
 let render r app =
@@ -741,6 +770,7 @@ let run_case case =
       transcript = [];
       pushed = 0;
       tag = 0;
+      reported = case.report = None;
     }
   in
   let primary = case.mode = `Primary in
