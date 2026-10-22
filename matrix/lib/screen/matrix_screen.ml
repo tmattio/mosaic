@@ -78,6 +78,12 @@ type diff_ctx = {
   mutable explicit_width : bool;
   mutable explicit_cursor_positioning : bool;
   mutable hyperlinks : bool;
+  mutable units : Matrix_text.Segmenter.t;
+      (* Display units of [curr]'s width method, to tell where the terminal
+         would join two cells. *)
+  mutable units_method : Matrix_text.width_method;
+  mutable units_live : bool;
+      (* [units] took the scalars of the cell written last. *)
 }
 
 (* screen state - mutable internal state for maximum performance *)
@@ -147,9 +153,8 @@ let[@inline] cell_link (c : diff_ctx) idx =
    explicit_width (OSC 66) when available, otherwise falls back to cursor
    repositioning to prevent column drift in terminals that miscalculate
    grapheme widths. Emitters are called saturated so no closures are built. *)
-let write_cell (c : diff_ctx) ~y ~x ~cell_width idx =
+let write_cell (c : diff_ctx) ~y ~x ~cell_width ~cp idx =
   let w = c.out in
-  let cp = Grid.get_codepoint c.curr idx in
   if cp >= 0 && cp < 128 then
     Ansi.Writer.write_char w (if cp = 0 then ' ' else Char.chr cp)
   else if Grid.is_continuation c.curr idx then Ansi.Writer.write_char w ' '
@@ -175,9 +180,51 @@ let write_cell (c : diff_ctx) ~y ~x ~cell_width idx =
       end
     end
 
+(* Adds the scalars the terminal receives for cell [idx], whose code point is
+   [cp], to [c.units], and is [true] iff the first one starts a display
+   unit. *)
+let add_cell_units (c : diff_ctx) idx ~cp =
+  if cp >= 0 then
+    Matrix_text.Segmenter.add c.units (Uchar.unsafe_of_int (max cp 0x20))
+  else
+    let len = Grid.cell_text_length c.curr idx in
+    if len > Bytes.length c.scratch then
+      c.scratch <- Bytes.create (max (Bytes.length c.scratch * 2) len);
+    let n = Grid.blit_cell_text c.curr idx c.scratch ~pos:0 in
+    let rec add pos starts =
+      if pos >= n then starts
+      else
+        let d = Bytes.get_utf_8_uchar c.scratch pos in
+        let s = Matrix_text.Segmenter.add c.units (Uchar.utf_decode_uchar d) in
+        add (pos + Uchar.utf_decode_length d) (if pos = 0 then s else starts)
+    in
+    if n <= 0 then Matrix_text.Segmenter.add c.units (Uchar.of_char ' ')
+    else add 0 true
+
+(* Whether cell [idx] would join cell [prev], written just before it: whether
+   the terminal, cutting the scalars it receives into display units as the
+   grid's width method does, would make one unit of their graphemes, as of a
+   letter and an emoji modifier, or of a Prepend character and a letter.
+   [c.units] follows the terminal's cut, catching up from [prev] when it fell
+   behind; a control function, which ends the unit in progress, keeps two
+   joining cells apart. *)
+let joins (c : diff_ctx) ~prev ~prev_cp idx ~cp =
+  if not c.units_live then (
+    Matrix_text.Segmenter.reset c.units;
+    ignore (add_cell_units c prev ~cp:prev_cp : bool));
+  c.units_live <- true;
+  if add_cell_units c idx ~cp then false
+  else (
+    Matrix_text.Segmenter.reset c.units;
+    ignore (add_cell_units c idx ~cp : bool);
+    true)
+
+let[@inline] ascii cp = cp land lnot 0x7f = 0
+
 (* Write consecutive changed cells, return the new x position. Cells written =
-   new_x - start_x. *)
-let rec write_run (c : diff_ctx) y x =
+   new_x - start_x. [prev] is the cell written just before, of code point
+   [prev_cp] and width [prev_width], or [-1] after a cursor motion. *)
+let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width =
   if x >= c.width then x
   else
     let idx = (y * c.width) + x in
@@ -186,13 +233,26 @@ let rec write_run (c : diff_ctx) y x =
     if cell_width <= 0 then x
     else if not (cell_changed c y x idx cell_width) then x
     else begin
+      let cp = Grid.get_codepoint c.curr idx in
+      if
+        prev < 0
+        (* Two ASCII cells never join. *)
+        || (ascii cp && ascii prev_cp)
+        (* A control stands between a wide cell and its neighbors when it
+           is written in OSC 66, or followed by a cursor motion. *)
+        || prev_width >= 2
+           && (c.explicit_width || c.explicit_cursor_positioning)
+        || (c.explicit_width && cell_width >= 2)
+      then c.units_live <- false
+      else if joins c ~prev ~prev_cp idx ~cp then
+        Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
       (* Emit style/color through zero-alloc accessors. *)
       Ansi.Sgr_state.update c.sgr c.out ~fg:(Grid.get_fg c.curr idx)
         ~bg:(Grid.get_bg c.curr idx)
         ~attrs:(Grid.get_attrs c.curr idx)
         ~link:(cell_link c idx);
-      write_cell c ~y ~x ~cell_width idx;
-      write_run c y (x + step)
+      write_cell c ~y ~x ~cell_width ~cp idx;
+      write_run c y (x + step) ~prev:idx ~prev_cp:cp ~prev_width:cell_width
     end
 
 (* Zero-width cell: the run writer never visits it, so defensively clear it in
@@ -226,7 +286,7 @@ let rec process_cols (c : diff_ctx) y x row_cells =
       (* Move cursor to start of changed run, then write it. *)
       Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
       let start_x = x in
-      let new_x = write_run c y x in
+      let new_x = write_run c y x ~prev:(-1) ~prev_cp:0 ~prev_width:0 in
       (* Close active hyperlink. SGR state is preserved across the gap so the
          next run on this row skips re-emission when unchanged. *)
       Ansi.Sgr_state.close_link c.sgr c.out;
@@ -399,6 +459,10 @@ let emit_frame (r : t) ~(mode : render_mode) ~scroll_hint ~viewport
   c.explicit_width <- r.use_explicit_width;
   c.explicit_cursor_positioning <- r.use_explicit_cursor_positioning;
   c.hyperlinks <- r.hyperlinks_capable;
+  let width_method = Grid.width_method r.next in
+  if width_method <> c.units_method then (
+    c.units <- Matrix_text.Segmenter.create width_method;
+    c.units_method <- width_method);
   let prev =
     prepare_diff_baseline r ~mode ~scroll_hint ~row_offset ~height ~writer
   in
@@ -502,6 +566,9 @@ let create ?width_method ?(cursor_visible = true) ?(explicit_width = false)
         explicit_width = false;
         explicit_cursor_positioning = false;
         hyperlinks = true;
+        units = Matrix_text.Segmenter.create w_method;
+        units_method = w_method;
+        units_live = false;
       };
     render_writer;
     last_render_time = Float.nan;

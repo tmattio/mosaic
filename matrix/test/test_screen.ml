@@ -330,6 +330,32 @@ let test_resize_repaints_every_cell () =
   equal ~msg:"the old cells are gone" string "      \n      "
     (Vte.to_string vte)
 
+(* The terminal cuts the bytes it receives into display units as the grid's
+   width method does. Two cells written one after the other must not make one
+   unit there. *)
+let test_adjacent_cells_stay_apart () =
+  List.iter
+    (fun (first, second) ->
+      let r = Screen.create () in
+      let output =
+        Screen.render
+          (build_screen r ~width:4 ~height:1 (fun grid _hits ->
+               Grid.draw_text grid ~x:0 ~y:0 ~text:first;
+               Grid.draw_text grid ~x:1 ~y:0 ~text:second))
+      in
+      let vte = Vte.create ~rows:1 ~cols:4 () in
+      ignore (Vte.feed_string vte output : string);
+      let g = Vte.grid vte in
+      equal ~msg:(first ^ " stays in its cell") string first (Grid.get_text g 0);
+      equal
+        ~msg:(second ^ " stays in its cell")
+        string second (Grid.get_text g 1))
+    [
+      ("a", "\u{1F3FB}") (* an emoji modifier extends any character *);
+      ("\u{0D4E}", "a") (* a Prepend character extends the next one *);
+      ("a", "\u{0903}") (* a spacing mark *);
+    ]
+
 let test_resize_smaller () =
   (* Edge case: shrinking grid *)
   let r = create_renderer ~width:10 ~height:10 () in
@@ -1031,6 +1057,7 @@ let () =
           test "Partial row update" test_partial_row_update;
           test "Color only change" test_color_only_change;
           test "Attribute only change" test_attribute_only_change;
+          test "Adjacent cells stay apart" test_adjacent_cells_stay_apart;
         ];
       group "Frame Building"
         [

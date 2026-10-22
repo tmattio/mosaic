@@ -96,6 +96,7 @@
 - `matrix.text` measures 897 East_Asian_Width N pictographs as one cell, as UAX #11 and terminals do, instead of two: emoji without Emoji_Presentation such as ❤ U+2764 and ⚠ U+26A0, and symbols such as mahjong tiles, dominoes, alchemical symbols and chess pieces. VS16 still widens an emoji to two cells
 - Charts: sub-cell circle rasterization, zoomed y-axis labels, candlestick hit-testing, charset-faithful glyphs
 - Grapheme storage no longer leaks ids for clipped draws
+- `Screen` keeps apart two cells the terminal would read as one grapheme, such as a letter and a lone emoji modifier or a Prepend character and a letter, which shifted the rest of the row
 - After a resize, `Screen` paints every cell of its next frame; its blank baseline skipped the cells blank in the new frame and left the old frame's there, as on the frame after a primary live region grows
 - A visible cursor without a position shows in alt mode, at the bottom-left; in primary mode a cursor below the painted rows of a full redraw keeps its row instead of rising to the last one
 
