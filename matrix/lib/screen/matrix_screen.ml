@@ -100,6 +100,9 @@ type t = {
      scroll-adjusted previous state used while emitting a scroll-hinted diff. *)
   mutable current : Grid.t;
   mutable next : Grid.t;
+  (* [false] after a resize: [current] no longer says what the terminal
+     shows, so the next render paints every cell. *)
+  mutable current_valid : bool;
   mutable next_state : next_state;
   scroll_baseline : Grid.t;
   mutable hit_current : Hit_grid.t;
@@ -414,7 +417,7 @@ let commit_frame r =
   finalize_frame r
 
 let render_into ?(full = false) ?scroll_hint ?viewport frame writer =
-  let mode = if full then `Full else `Diff in
+  let mode = if full || not frame.current_valid then `Full else `Diff in
   prepare_frame frame;
   (try emit_frame frame ~mode ~scroll_hint ~viewport ~writer
    with exn ->
@@ -423,6 +426,7 @@ let render_into ?(full = false) ?scroll_hint ?viewport frame writer =
      Ansi.Sgr_state.reset frame.sgr_state;
      Printexc.raise_with_backtrace exn bt);
   frame.diff.out <- frame.render_writer;
+  frame.current_valid <- true;
   commit_frame frame
 
 let render ?full ?scroll_hint ?viewport frame =
@@ -469,6 +473,7 @@ let create ?width_method ?(cursor_visible = true) ?(explicit_width = false)
       };
     current;
     next = Grid.create_like current ~width:1 ~height:1;
+    current_valid = true;
     next_state = Pristine;
     scroll_baseline = Grid.create_like current ~width:1 ~height:1;
     hit_current = Hit_grid.create ~width:0 ~height:0;
@@ -525,6 +530,7 @@ let resize t ~width ~height =
     Hit_grid.resize t.hit_current ~width ~height;
     Hit_grid.resize t.hit_next ~width ~height;
     t.next_state <- Pristine;
+    t.current_valid <- false;
     t.cursor <-
       {
         t.cursor with

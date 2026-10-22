@@ -217,9 +217,8 @@ val set_width_method : t -> Matrix_text.width_method -> unit
 val resize : t -> width:int -> height:int -> unit
 (** [resize t ~width ~height] resizes all internal buffers to [width] x
     [height]. If the dimensions are unchanged, this is a no-op so the presented
-    diff baseline remains intact. Otherwise the presented diff baseline is
-    cleared so the next render redraws the resized screen; hit grids are
-    cleared.
+    diff baseline remains intact. Otherwise the baseline no longer says what the
+    terminal shows, so the next render paints every cell; hit grids are cleared.
 
     Raises [Invalid_argument] if [width <= 0] or [height <= 0].
 
@@ -279,8 +278,8 @@ val row_offset : t -> int
 (** [row_offset t] is [t]'s current vertical origin offset. *)
 
 val invalidate_presented : t -> unit
-(** [invalidate_presented t] clears the current buffer so the diff renderer
-    treats all cells as changed on the next render.
+(** [invalidate_presented t] sets the presented baseline to blank cells, so the
+    next render paints every cell of the frame that is not blank.
 
     Call this after physically erasing the terminal region to keep the
     renderer's baseline in sync with the actual terminal state.

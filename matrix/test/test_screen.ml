@@ -316,28 +316,19 @@ let test_build_visual () =
     (fun s -> String.length s > 0)
     output
 
-let test_resize_preserves_content () =
-  let r = create_renderer ~width:5 ~height:5 () in
-
-  (* Draw something *)
-  let f1 =
-    build_screen r ~width:5 ~height:5 (fun grid _hits ->
-        Grid.draw_text grid ~x:0 ~y:0 ~text:"ABC")
-  in
-  let _output1 = Screen.render f1 in
-
-  (* Resize larger *)
-  let f2 =
-    build_screen r ~width:10 ~height:10 (fun grid _hits ->
-        Grid.draw_text grid ~x:0 ~y:0 ~text:"ABC")
-  in
-  let output2 = Screen.render f2 in
-
-  (* Should not re-render unchanged cells *)
-  satisfies ~claim:"fewer than 100 bytes (unchanged cells not re-rendered)"
-    string
-    (fun s -> String.length s < 100)
-    output2
+(* A resize leaves the terminal's cells where they were, whatever the new
+   frame has there, so the render after it paints every cell. *)
+let test_resize_repaints_every_cell () =
+  let r = create_renderer ~width:5 ~height:2 () in
+  let vte = Vte.create ~rows:2 ~cols:6 () in
+  let show output = ignore (Vte.feed_string vte output : string) in
+  show
+    (Screen.render
+       (build_screen r ~width:5 ~height:2 (fun grid _hits ->
+            Grid.draw_text grid ~x:0 ~y:0 ~text:"OLD")));
+  show (Screen.render (build_screen r ~width:6 ~height:2 (fun _ _ -> ())));
+  equal ~msg:"the old cells are gone" string "      \n      "
+    (Vte.to_string vte)
 
 let test_resize_smaller () =
   (* Edge case: shrinking grid *)
@@ -1044,7 +1035,7 @@ let () =
       group "Frame Building"
         [
           test "Build visual (no hits)" test_build_visual;
-          test "Resize preserves content" test_resize_preserves_content;
+          test "Resize repaints every cell" test_resize_repaints_every_cell;
           test "Resize smaller" test_resize_smaller;
           test "Resize clears both buffers" test_resize_clears_both_buffers;
           test "Resize clears pending next buffer"

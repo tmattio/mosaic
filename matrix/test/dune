@@ -67,6 +67,7 @@
  (libraries
   windtrap
   str
+  matrix.vte
   matrix.screen
   matrix.grid
   matrix.ansi
