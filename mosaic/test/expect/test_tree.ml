@@ -21,24 +21,21 @@ let items =
       item ~id:"README.md" "README.md";
     ]
 
-let tree ?(items = items) ?(expanded = []) ?(selected = "src") ?show_guides ?ref
-    () =
+let tree ?(items = items) ?(expanded = []) ?(selected = "src") ?show_guides () =
   Vnode.tree ~items
     ~state:(Tree.State.make ~selected ~expanded ())
-    ~on_change:ignore ?show_guides ?ref ()
+    ~on_change:ignore ?show_guides ()
 
 let mount_tree app ?(expanded = []) () =
-  let node = ref None
-  and state = ref (Tree.State.make ~selected:"src" ~expanded ()) in
+  let state = ref (Tree.State.make ~selected:"src" ~expanded ()) in
   let refresh () =
     reconcile app
       (Vnode.tree ~items ~state:!state
          ~on_change:(fun next -> state := next)
-         ~ref:(fun n -> node := Some n)
          ())
   in
   refresh ();
-  focus app (Option.get !node);
+  focus app (mounted app);
   refresh
 
 (* ── Static rendering ── *)

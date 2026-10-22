@@ -25,6 +25,25 @@ let do_frame ?(width = 40) ?(height = 20) renderer =
 let children_of renderer = Renderable.children (Renderer.root renderer)
 let child_count renderer = List.length (children_of renderer)
 
+let screen_row renderer row =
+  do_frame renderer;
+  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
+  String.trim
+    (String.concat ""
+       (List.init (Matrix_grid.width grid) (fun x ->
+            match
+              Matrix_grid.get_text grid ((row * Matrix_grid.width grid) + x)
+            with
+            | "" -> " "
+            | text -> text)))
+
+let column children =
+  Vnode.box
+    ~style:
+      (Toffee.Style.default
+      |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column)
+    children
+
 (* ── Construction ── *)
 
 let create_returns_container () =
@@ -74,26 +93,21 @@ let render_nested_fragments () =
 
 let viewport_switch_selects_only_matching_branch () =
   let renderer, reconciler = make () in
-  let narrow_node = ref None in
-  let wide_node = ref None in
   let view =
-    Vnode.viewport_switch ~at_least_width:80
-      ~wide:(Vnode.spinner ~ref:(fun node -> wide_node := Some node) ())
+    Vnode.viewport_switch ~at_least_width:80 ~wide:(Vnode.spinner ())
       ~narrow:
-        (Vnode.input ~state:Editor.empty ~on_change:ignore ~focused:true
-           ~ref:(fun node -> narrow_node := Some node)
-           ())
+        (Vnode.input ~state:Editor.empty ~on_change:ignore ~focused:true ())
   in
   render_focused_view ~viewport_width:79 renderer reconciler view;
   do_frame ~width:79 renderer;
-  is_some ~msg:"narrow branch mounted" !narrow_node;
-  is_none ~msg:"wide branch not mounted" !wide_node;
+  equal ~msg:"only the narrow branch is mounted" int 1 (child_count renderer);
   equal ~msg:"hidden live branch inactive" int 0
     (Renderable.Private.live_count (Renderer.root renderer));
-  match (!narrow_node, Renderer.focused renderer) with
-  | Some narrow, Some focused ->
-      is_true ~msg:"selected branch receives declared focus" (narrow == focused)
-  | _ -> fail "expected the narrow input to be focused"
+  match Renderer.focused renderer with
+  | Some focused ->
+      is_true ~msg:"selected branch receives declared focus"
+        (List.hd (children_of renderer) == focused)
+  | None -> fail "expected the narrow input to be focused"
 
 let viewport_switch_reconciles_selected_branch_on_resize () =
   let renderer, reconciler = make () in
@@ -340,24 +354,6 @@ let rerender_updates_opacity () =
   render_view reconciler (Vnode.box ~opacity:0.5 []);
   do_frame renderer;
   is_true ~msg:"opacity" (Float.equal (Renderable.opacity node) 0.5)
-
-let rerender_updates_id () =
-  (* Ids are how Cmd.focus addresses nodes: a reused fiber must track a
-     changed id attr rather than keep the one it was created with. *)
-  let renderer, reconciler = make () in
-  render_view reconciler (Vnode.box ~id:"first" []);
-  do_frame renderer;
-  let node = List.hd (children_of renderer) in
-  equal ~msg:"initial id" string "first" (Renderable.id node);
-  render_view reconciler (Vnode.box ~id:"second" []);
-  do_frame renderer;
-  is_true ~msg:"node reused" (List.hd (children_of renderer) == node);
-  equal ~msg:"updated id" string "second" (Renderable.id node);
-  render_view reconciler (Vnode.box []);
-  do_frame renderer;
-  equal ~msg:"dropped id reverts to the default" string
-    (Printf.sprintf "node-%d" (Renderable.Private.num node))
-    (Renderable.id node)
 
 let rejected_input_preserves_accepted_state () =
   let renderer, reconciler = make () in
@@ -670,21 +666,6 @@ let embed_removed_detaches () =
 
 (* ── Callbacks ── *)
 
-let ref_fires_on_creation () =
-  let _renderer, reconciler = make () in
-  let received = ref None in
-  render_view reconciler (Vnode.box ~ref:(fun n -> received := Some n) []);
-  is_some ~msg:"ref called" !received
-
-let ref_receives_correct_node () =
-  let renderer, reconciler = make () in
-  let received = ref None in
-  render_view reconciler (Vnode.box ~ref:(fun n -> received := Some n) []);
-  do_frame renderer;
-  match !received with
-  | Some n -> is_true ~msg:"same node" (n == List.hd (children_of renderer))
-  | None -> fail "ref not called"
-
 let on_key_handler_fires () =
   let renderer, reconciler = make () in
   let received = ref false in
@@ -858,45 +839,21 @@ let memo_belongs_to_keyed_parent () =
   let builds_a = ref 0 and builds_b = ref 0 in
   let build_a _ =
     incr builds_a;
-    Vnode.text ~id:"A" "A"
+    Vnode.text "A"
   in
   let build_b _ =
     incr builds_b;
-    Vnode.text ~id:"B" "B"
+    Vnode.text "B"
   in
   let a key = Vnode.box ~key [ Vnode.memo ~key:0 build_a ] in
   let b () = Vnode.box ~key:"b" [ Vnode.memo ~key:0 build_b ] in
   render_view reconciler (Vnode.fragment [ a "a"; b () ]);
   render_view reconciler (Vnode.fragment [ b (); a "a" ]);
-  let ids =
-    List.map
-      (fun node -> Renderable.id (List.hd (Renderable.children node)))
-      (children_of renderer)
-  in
-  equal ~msg:"memo follows its keyed parent" (list string) [ "B"; "A" ] ids;
+  equal ~msg:"memo follows its keyed parent" string "BA" (screen_row renderer 0);
   equal ~msg:"reorder retains A memo" int 1 !builds_a;
   equal ~msg:"reorder retains B memo" int 1 !builds_b;
   render_view reconciler (Vnode.fragment [ b (); a "new-a" ]);
   equal ~msg:"new parent owns fresh memo" int 2 !builds_a
-
-let screen_row renderer row =
-  do_frame renderer;
-  let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
-  String.trim
-    (String.concat ""
-       (List.init (Matrix_grid.width grid) (fun x ->
-            match
-              Matrix_grid.get_text grid ((row * Matrix_grid.width grid) + x)
-            with
-            | "" -> " "
-            | text -> text)))
-
-let column children =
-  Vnode.box
-    ~style:
-      (Toffee.Style.default
-      |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Column)
-    children
 
 let a_view () = Vnode.text "AAA"
 let b_view () = Vnode.text "BBB"
@@ -1140,7 +1097,6 @@ let () =
           test "updates visibility" rerender_updates_visibility;
           test "updates z_index" rerender_updates_z_index;
           test "updates opacity" rerender_updates_opacity;
-          test "updates id" rerender_updates_id;
           test "rejected input preserves accepted state"
             rejected_input_preserves_accepted_state;
           test "rejected textarea preserves accepted state"
@@ -1177,8 +1133,6 @@ let () =
         ];
       group "Callbacks"
         [
-          test "ref fires on creation" ref_fires_on_creation;
-          test "ref receives correct node" ref_receives_correct_node;
           test "on_key handler fires" on_key_handler_fires;
           test "on_key handler updates on rerender"
             on_key_handler_updates_on_rerender;

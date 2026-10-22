@@ -2,8 +2,8 @@ open Mosaic_ui
 open Expect_harness
 
 let scroll_box ?(scroll = Scroll.at 0) ?(on_scroll = ignore) ?style
-    ?show_scrollbars ?key ?ref children =
-  Vnode.scroll_box ~scroll ~on_scroll ?style ?show_scrollbars ?key ?ref children
+    ?show_scrollbars ?key children =
+  Vnode.scroll_box ~scroll ~on_scroll ?style ?show_scrollbars ?key children
 
 (* ── Scroll box with vertical scrolling ── *)
 
@@ -139,14 +139,11 @@ line 7|}]
 let%expect_test "accepted scrolling leaves follow until the model follows again"
     =
   let app = make_app () in
-  let node = ref None in
   let scroll = ref (Scroll.follow `Bottom (Scroll.at 0)) in
   let view count =
     scroll_box ~key:"transcript" ~scroll:!scroll
       ~on_scroll:(fun next -> scroll := next)
-      ~show_scrollbars:false
-      ~ref:(fun renderable -> node := Some renderable)
-      (numbered_lines count)
+      ~show_scrollbars:false (numbered_lines count)
   in
   let show label vnode =
     print_endline label;
@@ -156,7 +153,7 @@ let%expect_test "accepted scrolling leaves follow until the model follows again"
     print_newline ()
   in
   show "initial tail" (view 12);
-  focus app (Option.get !node);
+  focus app (mounted app);
   send_key app Matrix_input.Key.Page_up;
   show "page up" (view 12);
   show "append stays parked" (view 16);

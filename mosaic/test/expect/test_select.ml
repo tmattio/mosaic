@@ -58,17 +58,14 @@ let%expect_test "no descriptions" =
 
 let%expect_test "navigation changes selection" =
   let app = make_app () in
-  let node = ref None in
   let selected = ref 0 in
   let view () =
-    Vnode.select
-      ~ref:(fun n -> node := Some n)
-      ~options:items ~selected_index:!selected
+    Vnode.select ~options:items ~selected_index:!selected
       ~on_change:(fun index -> selected := index)
       ()
   in
   reconcile app (view ());
-  focus app (Option.get !node);
+  focus app (mounted app);
   frame app ~width:30 ~height:10;
   send_key app Matrix_input.Key.Down;
   reconcile app (view ());
@@ -98,10 +95,9 @@ let%expect_test "navigation changes selection" =
 
 let%expect_test "focused vs unfocused" =
   let app = make_app () in
-  let node = ref None in
-  reconcile app (Vnode.select ~ref:(fun n -> node := Some n) ~options:items ());
+  reconcile app (Vnode.select ~options:items ());
   frame app ~width:30 ~height:10;
-  focus app (Option.get !node);
+  focus app (mounted app);
   frame app ~width:30 ~height:10;
   [%expect_exact
     {|

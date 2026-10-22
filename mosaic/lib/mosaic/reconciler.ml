@@ -48,126 +48,113 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
     match kind with
     | Vnode.Box spec ->
         let box =
-          Box.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Box.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Box.apply_props box spec;
         Box_instance box
     | Vnode.Text spec ->
         let text =
-          Text.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Text.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Text.apply_props text spec;
         Text_instance text
     | Vnode.Slider spec ->
         let slider =
-          Slider.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Slider.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Slider.apply_props slider spec;
         Slider_instance slider
     | Vnode.Text_input spec ->
         let input =
           Text_input.create ~state:Editor.empty ~on_change:(Fun.const ())
-            ~parent ?id:attrs.id ~style:attrs.style ~visible:attrs.visible
+            ~parent ~style:attrs.style ~visible:attrs.visible
             ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Text_input.apply_props input spec;
         Text_input_instance input
     | Vnode.Canvas ->
         let canvas =
-          Canvas.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Canvas.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Canvas_instance canvas
     | Vnode.Select spec ->
         let select =
-          Select.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Select.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Select.apply_props select spec;
         Select_instance select
     | Vnode.Tab_select spec ->
         let tab_select =
-          Tab_select.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ~options:[] ()
+          Tab_select.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ~options:[] ()
         in
         Tab_select.apply_props tab_select spec;
         Tab_select_instance tab_select
     | Vnode.Spinner spec ->
         let spinner =
-          Spinner.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Spinner.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Spinner.apply_props spinner spec;
         Spinner_instance spinner
     | Vnode.Progress_bar spec ->
         let progress_bar =
-          Progress_bar.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Progress_bar.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Progress_bar.apply_props progress_bar spec;
         Progress_bar_instance progress_bar
     | Vnode.Scroll_bar spec ->
         let scroll_bar =
-          Scroll_bar.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Scroll_bar.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Scroll_bar.apply_props scroll_bar spec;
         Scroll_bar_instance scroll_bar
     | Vnode.Scroll_box spec ->
         let scroll_box =
-          Scroll_box.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Scroll_box.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Scroll_box.apply_props scroll_box spec;
         Scroll_box_instance scroll_box
     | Vnode.Textarea spec ->
         let textarea =
           Textarea.create ~state:Editor.empty ~on_change:(Fun.const ()) ~parent
-            ?id:attrs.id ~style:attrs.style ~visible:attrs.visible
-            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
+            ~style:attrs.style ~visible:attrs.visible ~z_index:attrs.z_index
+            ~opacity:attrs.opacity ()
         in
         Textarea.apply_props textarea spec;
         Textarea_instance textarea
     | Vnode.Table spec ->
         let table =
-          Table.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Table.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Table.apply_props table spec;
         Table_instance table
     | Vnode.Code spec ->
         let code =
-          Code.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Code.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Code.apply_props code spec;
         Code_instance code
     | Vnode.Line_number spec ->
         let ln =
-          Line_number.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Line_number.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Line_number.apply_props ln spec;
         Line_number_instance ln
     | Vnode.Markdown spec ->
         let md =
-          Markdown.create ~parent ?id:attrs.id ~layout_style:attrs.style
+          Markdown.create ~parent ~layout_style:attrs.style
             ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
             ()
         in
@@ -175,17 +162,15 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
         Markdown_instance md
     | Vnode.Diff spec ->
         let d =
-          Diff.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            (Diff.Patch.make [])
+          Diff.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity (Diff.Patch.make [])
         in
         Diff.apply_props d spec;
         Diff_instance d
     | Vnode.Tree spec ->
         let tree =
-          Tree.create ~parent ?id:attrs.id ~style:attrs.style
-            ~visible:attrs.visible ~z_index:attrs.z_index ~opacity:attrs.opacity
-            ()
+          Tree.create ~parent ~style:attrs.style ~visible:attrs.visible
+            ~z_index:attrs.z_index ~opacity:attrs.opacity ()
         in
         Tree.apply_props tree spec;
         Tree_instance tree
@@ -199,13 +184,6 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
 let update_common (node : Renderable.t) ~(old_attrs : Vnode.attrs)
     ~(new_attrs : Vnode.attrs) : bool =
   let changed = ref false in
-  (* Reused nodes track their declared ids. Dropping the id restores the
-     creation default; ids do not affect rendering. *)
-  if old_attrs.id <> new_attrs.id then
-    Renderable.set_id node
-      (match new_attrs.id with
-      | Some id -> id
-      | None -> Printf.sprintf "node-%d" (Renderable.Private.num node));
   if old_attrs.visible <> new_attrs.visible then (
     Renderable.set_visible node new_attrs.visible;
     changed := true);
@@ -918,7 +896,6 @@ let rec reconcile_element ~(parent_node : Renderable.t) (maps : fiber_maps)
       f
   | None ->
       let f = create_fiber ~parent:parent_node elem in
-      Option.iter (fun callback -> callback (fiber_node f)) elem.attrs.ref;
       reconcile_children f ~viewport_width elem.children;
       f.declared_children <- elem.children;
       f.viewport_width <- viewport_width;

@@ -56,16 +56,14 @@ let%expect_test "custom tab_width changes column size" =
 
 let%expect_test "left arrow at start stays" =
   let app = make_app () in
-  let node = ref None in
   let selected = ref 0 in
   let view () =
     Vnode.tab_select ~options:sample_options ~selected:!selected
       ~on_change:(fun index -> selected := index)
-      ~ref:(fun n -> node := Some n)
       ()
   in
   reconcile app (view ());
-  focus app (Option.get !node);
+  focus app (mounted app);
   send_key app Matrix_input.Key.Left;
   reconcile app (view ());
   frame app ~width:60 ~height:3;
@@ -74,17 +72,14 @@ let%expect_test "left arrow at start stays" =
 
 let%expect_test "wrap_selection wraps right to first" =
   let app = make_app () in
-  let node = ref None in
   let selected = ref 3 in
   let view () =
     Vnode.tab_select ~options:sample_options ~selected:!selected
       ~on_change:(fun index -> selected := index)
-      ~wrap_selection:true
-      ~ref:(fun n -> node := Some n)
-      ()
+      ~wrap_selection:true ()
   in
   reconcile app (view ());
-  focus app (Option.get !node);
+  focus app (mounted app);
   send_key app Matrix_input.Key.Right;
   reconcile app (view ());
   frame app ~width:60 ~height:3;
@@ -93,17 +88,14 @@ let%expect_test "wrap_selection wraps right to first" =
 
 let%expect_test "wrap_selection wraps left to last" =
   let app = make_app () in
-  let node = ref None in
   let selected = ref 0 in
   let view () =
     Vnode.tab_select ~options:sample_options ~selected:!selected
       ~on_change:(fun index -> selected := index)
-      ~wrap_selection:true
-      ~ref:(fun n -> node := Some n)
-      ()
+      ~wrap_selection:true ()
   in
   reconcile app (view ());
-  focus app (Option.get !node);
+  focus app (mounted app);
   send_key app Matrix_input.Key.Left;
   reconcile app (view ());
   frame app ~width:60 ~height:3;
@@ -129,10 +121,8 @@ let%expect_test "narrow width shows scroll arrow" =
 
 let%expect_test "focused tab_select has styled output" =
   let app = make_app () in
-  let node = ref None in
-  reconcile app
-    (Vnode.tab_select ~options:sample_options ~ref:(fun n -> node := Some n) ());
-  focus app (Option.get !node);
+  reconcile app (Vnode.tab_select ~options:sample_options ());
+  focus app (mounted app);
   frame_ansi app ~width:60 ~height:3;
   [%expect
     {|

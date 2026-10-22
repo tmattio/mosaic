@@ -175,6 +175,9 @@ let frame_ansi app ~width ~height =
   print_string (grid_to_ansi grid)
 
 let focus app node = ignore (Renderer.focus app.renderer node : bool)
+
+(* The node of the reconciled element: the root's only child. *)
+let mounted app = List.hd (Renderable.children (Renderer.root app.renderer))
 let no_mod = Matrix_input.Modifier.none
 
 let send_char app c =

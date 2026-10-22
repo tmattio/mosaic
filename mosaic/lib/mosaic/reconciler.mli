@@ -2,11 +2,17 @@
 
     The reconciler bridges the declarative {!Vnode.t} tree produced by a [view]
     function and the imperative {!Renderable.t} tree. On each {!val-render} call
-    it first resolves {!Vnode.Viewport_switch} nodes from the explicit current
-    viewport width, then flattens the selected tree, matches fibers by key
-    (preferred) then by position, reuses or creates renderable nodes, destroys
-    unmatched fibers, and commits child placement. {!Vnode.Embed} nodes are
-    attached but bypass the reconciler lifecycle.
+    it flattens each parent's children, resolving {!Vnode.Viewport_switch} nodes
+    from the explicit current viewport width, then matches elements to the
+    previous children's fibers by key (preferred) then by position, reuses or
+    creates renderable nodes, destroys unmatched fibers, and commits child
+    placement. {!Vnode.Embed} nodes are attached but bypass the reconciler
+    lifecycle.
+
+    A memo ({!Vnode.val-memo}) owns the children its view produced. When the
+    memo at the same position among its parent's memos is equal and the viewport
+    width is unchanged, its children are kept without being visited, so an
+    unchanged memo costs one comparison.
 
     Fiber tracking and instance management are internal; this module exposes the
     container, reconciliation, and declared focus. *)
@@ -41,8 +47,7 @@ val render : t -> viewport_width:int -> unit Vnode.t -> unit
     reconciled or laid out.
 
     Fibers unmatched in the new tree are destroyed and their renderable nodes
-    removed. Ref callbacks ({!Vnode.attrs.ref}) fire for newly created elements.
-    Requests a render on [container r] after reconciliation completes.
+    removed. Requests a render on [container r] after reconciliation completes.
 
     Raises [Invalid_argument] if [viewport_width] is not positive. *)
 

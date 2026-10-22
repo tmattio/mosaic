@@ -212,10 +212,8 @@ let%expect_test "minimum size box 3x3" =
 
 let%expect_test "focused box uses focused border color" =
   let app = make_app () in
-  let node = ref None in
-  reconcile app
-    (Vnode.box ~border:true ~focusable:true ~ref:(fun n -> node := Some n) []);
-  focus app (Option.get !node);
+  reconcile app (Vnode.box ~border:true ~focusable:true []);
+  focus app (mounted app);
   frame_ansi app ~width:10 ~height:3;
   [%expect_exact
     {|
@@ -235,13 +233,10 @@ let%expect_test "unfocused box uses normal border color" =
 
 let%expect_test "focused box with explicit border color" =
   let app = make_app () in
-  let node = ref None in
   reconcile app
-    (Vnode.box ~border:true ~focusable:true ~border_color:Ansi.Color.red
-       ~ref:(fun n -> node := Some n)
-       []);
+    (Vnode.box ~border:true ~focusable:true ~border_color:Ansi.Color.red []);
   frame_ansi app ~width:10 ~height:3;
-  focus app (Option.get !node);
+  focus app (mounted app);
   frame_ansi app ~width:10 ~height:3;
   [%expect_exact
     {|

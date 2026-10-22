@@ -85,7 +85,6 @@ type 'msg widget_callbacks =
 (* ───── Attributes ───── *)
 
 type attrs = {
-  id : string option;
   style : Toffee.Style.t;
   visible : bool;
   z_index : int;
@@ -94,7 +93,6 @@ type attrs = {
   focused : bool;
   buffered : bool;
   live : bool;
-  ref : (Renderable.t -> unit) option;
 }
 
 (* ───── Virtual Nodes ───── *)
@@ -208,12 +206,11 @@ let viewport_switch ~at_least_width ~wide ~narrow =
     invalid_arg "Vnode.viewport_switch: at_least_width must be positive";
   Viewport_switch { at_least_width; wide; narrow }
 
-let box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?border ?border_style ?border_sides
-    ?border_color ?focused_border_color ?background ?fill ?title
-    ?title_alignment children =
+let box ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = false) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?border ?border_style ?border_sides ?border_color
+    ?focused_border_color ?background ?fill ?title ?title_alignment children =
   let kind =
     Box
       (Box.Props.make ?border ?border_style ?border_sides ?border_color
@@ -221,7 +218,6 @@ let box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -230,7 +226,6 @@ let box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -245,11 +240,11 @@ let box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   Element { kind; key; attrs; handlers; callbacks = No_callbacks; children }
 
-let text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?text_style ?wrap ?selectable
-    ?selection_bg ?selection_fg ?tab_width ?truncate content =
+let text ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = false) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?text_style ?wrap ?selectable ?selection_bg ?selection_fg
+    ?tab_width ?truncate content =
   let kind =
     Text
       (Text.Props.make ~content ?text_style ?wrap ?selectable ?selection_bg
@@ -257,7 +252,6 @@ let text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -266,7 +260,6 @@ let text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -282,11 +275,11 @@ let text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   Element
     { kind; key; attrs; handlers; callbacks = No_callbacks; children = [] }
 
-let rich_text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let rich_text ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?text_style ?wrap ?selectable
-    ?selection_bg ?selection_fg ?tab_width ?truncate content =
+    ?(buffered = false) ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?text_style ?wrap ?selectable ?selection_bg
+    ?selection_fg ?tab_width ?truncate content =
   let kind =
     Text
       (Text.Props.make_rich ?text_style ?wrap ?selectable ?selection_bg
@@ -294,7 +287,6 @@ let rich_text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -303,7 +295,6 @@ let rich_text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -319,11 +310,11 @@ let rich_text ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   Element
     { kind; key; attrs; handlers; callbacks = No_callbacks; children = [] }
 
-let slider ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?orientation ?value ?min ?max
-    ?viewport_size ?track_color ?thumb_color ?on_value_change () =
+let slider ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = false) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?orientation ?value ?min ?max ?viewport_size ?track_color
+    ?thumb_color ?on_value_change () =
   let kind =
     Slider
       (Slider.Props.make ?orientation ?value ?min ?max ?viewport_size
@@ -331,7 +322,6 @@ let slider ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -340,7 +330,6 @@ let slider ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -356,14 +345,13 @@ let slider ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Slider_callbacks { on_value_change } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let input ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?placeholder ?text_color
-    ?background_color ?focused_text_color ?focused_background_color
-    ?placeholder_color ?selection_color ?selection_fg ?cursor_style
-    ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
-    ~on_change ?on_submit ~state () =
+let input ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = true) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?placeholder ?text_color ?background_color ?focused_text_color
+    ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
+    ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
+    ?key_bindings ~on_change ?on_submit ~state () =
   let kind =
     Text_input
       (Text_input.Props.make ~state ?placeholder ?text_color ?background_color
@@ -373,7 +361,6 @@ let input ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -382,7 +369,6 @@ let input ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -398,11 +384,11 @@ let input ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Input_callbacks { on_change = Some on_change; on_submit } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?options ?selected_index ?background
-    ?text_color ?focused_background ?focused_text_color ?selected_background
+let select ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = true) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?options ?selected_index ?background ?text_color
+    ?focused_background ?focused_text_color ?selected_background
     ?selected_text_color ?description_color ?selected_description_color
     ?show_description ?show_scroll_indicator ?wrap_selection ?key_bindings
     ?item_spacing ?fast_scroll_step ?on_change ?on_activate () =
@@ -416,7 +402,6 @@ let select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -425,7 +410,6 @@ let select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -441,15 +425,14 @@ let select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Select_callbacks { on_change; on_activate } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let tab_select ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ~options ?selected ?tab_width
-    ?background ?text_color ?focused_background ?focused_text_color
-    ?selected_background ?selected_text_color ?description_color
-    ?selected_description_color ?show_underline ?show_description
-    ?show_scroll_arrows ?wrap_selection ?key_bindings ?on_change ?on_activate ()
-    =
+    ?(buffered = false) ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ~options ?selected ?tab_width ?background
+    ?text_color ?focused_background ?focused_text_color ?selected_background
+    ?selected_text_color ?description_color ?selected_description_color
+    ?show_underline ?show_description ?show_scroll_arrows ?wrap_selection
+    ?key_bindings ?on_change ?on_activate () =
   let kind =
     Tab_select
       (Tab_select.Props.make ~options ?selected ?tab_width ?background
@@ -460,7 +443,6 @@ let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -469,7 +451,6 @@ let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -485,14 +466,13 @@ let tab_select ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Tab_select_callbacks { on_change; on_activate } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let canvas ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?on_draw () =
+let canvas ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = false) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?on_draw () =
   let kind = Canvas in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -501,7 +481,6 @@ let canvas ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -517,14 +496,13 @@ let canvas ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Canvas_callbacks { on_draw } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let spinner ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let spinner ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = true) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?frame_set ?color () =
+    ?(buffered = false) ?(live = true) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?frame_set ?color () =
   let kind = Spinner (Spinner.Props.make ?frame_set ?color ()) in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -533,7 +511,6 @@ let spinner ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -549,11 +526,11 @@ let spinner ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   Element
     { kind; key; attrs; handlers; callbacks = No_callbacks; children = [] }
 
-let progress_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let progress_bar ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?value ?min ?max ?orientation
-    ?filled_color ?empty_color () =
+    ?(buffered = false) ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?value ?min ?max ?orientation ?filled_color
+    ?empty_color () =
   let kind =
     Progress_bar
       (Progress_bar.Props.make ?value ?min ?max ?orientation ?filled_color
@@ -561,7 +538,6 @@ let progress_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -570,7 +546,6 @@ let progress_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -586,10 +561,10 @@ let progress_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   Element
     { kind; key; attrs; handlers; callbacks = No_callbacks; children = [] }
 
-let scroll_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let scroll_bar ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?position ?scroll_size ?viewport_size
+    ?(buffered = false) ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?position ?scroll_size ?viewport_size
     ?orientation ?show_arrows ?track_color ?thumb_color ?arrow_fg ?arrow_bg
     ?on_change () =
   let kind =
@@ -599,7 +574,6 @@ let scroll_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -608,7 +582,6 @@ let scroll_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -624,12 +597,12 @@ let scroll_bar ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Scroll_bar_callbacks { on_change } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let scroll_box ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?scroll_x ?scroll_y ?background
-    ?show_scrollbars ?scrollbar_style ?vertical_bar_style ?horizontal_bar_style
-    ~on_scroll ~scroll children =
+    ?(buffered = false) ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?scroll_x ?scroll_y ?background ?show_scrollbars
+    ?scrollbar_style ?vertical_bar_style ?horizontal_bar_style ~on_scroll
+    ~scroll children =
   let kind =
     Scroll_box
       (Scroll_box.Props.make ~scroll ?scroll_x ?scroll_y ?background
@@ -638,7 +611,6 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -647,7 +619,6 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -663,14 +634,14 @@ let scroll_box ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Scroll_box_callbacks { on_scroll = Some on_scroll } in
   Element { kind; key; attrs; handlers; callbacks; children }
 
-let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let textarea ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?annotations ?ghost_text
-    ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
-    ?focused_text_color ?focused_background_color ?placeholder_color
-    ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ~on_change ?on_submit ~state () =
+    ?(buffered = false) ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?annotations ?ghost_text ?ghost_text_color
+    ?placeholder ?wrap ?text_color ?background_color ?focused_text_color
+    ?focused_background_color ?placeholder_color ?selection_color ?selection_fg
+    ?cursor_style ?cursor_color ?cursor_blinking ?selectable ?show_cursor
+    ?key_bindings ~on_change ?on_submit ~state () =
   let kind =
     Textarea
       (Textarea.Props.make ~state ?annotations ?ghost_text ?ghost_text_color
@@ -681,7 +652,6 @@ let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -690,7 +660,6 @@ let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -708,13 +677,13 @@ let textarea ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?columns ?rows ?selected_row ?border
-    ?border_style ?show_header ?show_column_separator ?show_row_separator
-    ?cell_padding ?header_color ?header_background ?text_color ?background
-    ?selected_text_color ?selected_background ?focused_selected_text_color
+let table ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = true) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?columns ?rows ?selected_row ?border ?border_style ?show_header
+    ?show_column_separator ?show_row_separator ?cell_padding ?header_color
+    ?header_background ?text_color ?background ?selected_text_color
+    ?selected_background ?focused_selected_text_color
     ?focused_selected_background ?selection_visible ?show_scroll_indicator
     ?activate_on_click ?wheel_navigation ?row_styles ?wrap_selection
     ?key_bindings ?fast_scroll_step ?on_change ?on_activate ?on_hover () =
@@ -730,7 +699,6 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -739,7 +707,6 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -755,11 +722,11 @@ let table ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Table_callbacks { on_change; on_activate; on_hover } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let code ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?syntax ?text_style ?wrap ?tab_width
-    ?truncate ?selectable ?selection_bg ?selection_fg ?on_selection content =
+let code ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = false) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?syntax ?text_style ?wrap ?tab_width ?truncate ?selectable
+    ?selection_bg ?selection_fg ?on_selection content =
   let kind =
     Code
       (Code.Props.make ~content ?syntax ?text_style ?wrap ?tab_width ?truncate
@@ -767,7 +734,6 @@ let code ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -776,7 +742,6 @@ let code ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -792,10 +757,10 @@ let code ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Code_callbacks { on_selection } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let line_number ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let line_number ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?fg ?bg ?min_width ?padding_right
+    ?(buffered = false) ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?fg ?bg ?min_width ?padding_right
     ?show_line_numbers ?line_number_offset ?line_colors ?line_signs
     ?line_numbers ?hidden_line_numbers child =
   let kind =
@@ -806,7 +771,6 @@ let line_number ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -815,7 +779,6 @@ let line_number ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -838,12 +801,12 @@ let line_number ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       children = [ child ];
     }
 
-let markdown ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
+let markdown ?key ?(style = Toffee.Style.default) ?(visible = true)
     ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?md_style ?conceal ?streaming
-    ?selectable ?selection_bg ?selection_fg ?highlighter ?syntax_style
-    ?on_selection content =
+    ?(buffered = false) ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click
+    ?on_focus_request ?on_size ?md_style ?conceal ?streaming ?selectable
+    ?selection_bg ?selection_fg ?highlighter ?syntax_style ?on_selection content
+    =
   let kind =
     Markdown
       (Markdown.Props.make ~content ?style:md_style ?conceal ?streaming
@@ -851,7 +814,6 @@ let markdown ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -860,7 +822,6 @@ let markdown ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -876,12 +837,11 @@ let markdown ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Markdown_callbacks { on_selection } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let diff ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = false) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?layout ?theme ?highlight
-    ?line_highlights ?line_spans ?line_signs ?show_line_numbers ?wrap
-    ?selectable ?text_style ?on_line_click patch =
+let diff ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = false) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?layout ?theme ?highlight ?line_highlights ?line_spans ?line_signs
+    ?show_line_numbers ?wrap ?selectable ?text_style ?on_line_click patch =
   let kind =
     Diff
       (Diff.Props.make ~patch ?layout ?theme ?highlight ?line_highlights
@@ -890,7 +850,6 @@ let diff ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -899,7 +858,6 @@ let diff ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =
@@ -915,12 +873,12 @@ let diff ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   let callbacks = Diff_callbacks { on_line_click } in
   Element { kind; key; attrs; handlers; callbacks; children = [] }
 
-let tree ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
-    ?(z_index = 0) ?(opacity = 1.0) ?(focusable = true) ?(focused = false)
-    ?(buffered = false) ?(live = false) ?ref ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?items ?indent_size ?show_guides
-    ?guide_style ?expand_icon ?collapse_icon ?leaf_icon ?background ?text_color
-    ?selected_background ?selected_text_color ?focused_selected_background
+let tree ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
+    ?(opacity = 1.0) ?(focusable = true) ?(focused = false) ?(buffered = false)
+    ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
+    ?on_size ?items ?indent_size ?show_guides ?guide_style ?expand_icon
+    ?collapse_icon ?leaf_icon ?background ?text_color ?selected_background
+    ?selected_text_color ?focused_selected_background
     ?focused_selected_text_color ?guide_color ?icon_color ?wrap_selection
     ?key_bindings ?fast_scroll_step ~on_change ?on_activate ~state () =
   let kind =
@@ -933,7 +891,6 @@ let tree ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
   in
   let attrs =
     {
-      id;
       style;
       visible;
       z_index;
@@ -942,7 +899,6 @@ let tree ?key ?id ?(style = Toffee.Style.default) ?(visible = true)
       focused;
       buffered;
       live;
-      ref;
     }
   in
   let handlers =

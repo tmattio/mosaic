@@ -100,7 +100,6 @@ type 'msg widget_callbacks =
 (** {1:attrs Attributes} *)
 
 type attrs = {
-  id : string option;
   style : Toffee.Style.t;
   visible : bool;
   z_index : int;
@@ -109,20 +108,13 @@ type attrs = {
   focused : bool;
   buffered : bool;
   live : bool;
-  ref : (Renderable.t -> unit) option;
 }
 (** The type for non-handler element attributes. Grouped for zero-copy sharing
     across {!val-map} and physical-equality fast paths in the reconciler.
 
     [focused] declares application-owned focus and implies [focusable]. At most
     one visible element may declare focus. The application runtime synchronizes
-    this declaration with the renderer after reconciliation.
-
-    [ref] fires exactly once, when the element's renderable is created; it does
-    not re-fire when the element is reused with a different closure, and there
-    is no unmount notification. A stored renderable can therefore outlive its
-    element — check {!Renderable.destroyed} before operating on a handle kept
-    across renders. *)
+    this declaration with the renderer after reconciliation. *)
 
 (** {1:vnodes Virtual nodes} *)
 
@@ -228,7 +220,6 @@ val viewport_switch :
 
 val box :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -237,7 +228,6 @@ val box :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -289,7 +279,6 @@ val box :
 
 val text :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -298,7 +287,6 @@ val text :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -331,7 +319,6 @@ val text :
 
 val rich_text :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -340,7 +327,6 @@ val rich_text :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -364,7 +350,6 @@ val rich_text :
 
 val slider :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -373,7 +358,6 @@ val slider :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -405,7 +389,6 @@ val slider :
 
 val input :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -414,7 +397,6 @@ val input :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -481,7 +463,6 @@ val input :
 
 val select :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -490,7 +471,6 @@ val select :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -549,7 +529,6 @@ val select :
 
 val tab_select :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -558,7 +537,6 @@ val tab_select :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -617,7 +595,6 @@ val tab_select :
 
 val canvas :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -626,7 +603,6 @@ val canvas :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -651,7 +627,6 @@ val canvas :
 
 val spinner :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -660,7 +635,6 @@ val spinner :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -687,7 +661,6 @@ val spinner :
 
 val progress_bar :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -696,7 +669,6 @@ val progress_bar :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -727,7 +699,6 @@ val progress_bar :
 
 val scroll_bar :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -736,7 +707,6 @@ val scroll_bar :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -770,7 +740,6 @@ val scroll_bar :
 
 val scroll_box :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -779,7 +748,6 @@ val scroll_box :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -809,7 +777,6 @@ val scroll_box :
 
 val textarea :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -818,7 +785,6 @@ val textarea :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -860,7 +826,6 @@ val textarea :
 
 val table :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -869,7 +834,6 @@ val table :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -960,7 +924,6 @@ val table :
 
 val code :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -969,7 +932,6 @@ val code :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -1006,7 +968,6 @@ val code :
 
 val line_number :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -1015,7 +976,6 @@ val line_number :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -1060,7 +1020,6 @@ val line_number :
 
 val markdown :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -1069,7 +1028,6 @@ val markdown :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -1112,7 +1070,6 @@ val markdown :
 
 val diff :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -1121,7 +1078,6 @@ val diff :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
@@ -1168,7 +1124,6 @@ val diff :
 
 val tree :
   ?key:string ->
-  ?id:string ->
   ?style:Toffee.Style.t ->
   ?visible:bool ->
   ?z_index:int ->
@@ -1177,7 +1132,6 @@ val tree :
   ?focused:bool ->
   ?buffered:bool ->
   ?live:bool ->
-  ?ref:(Renderable.t -> unit) ->
   ?on_mouse:(Event.mouse -> 'msg option) ->
   ?on_key:(Event.key -> 'msg option) ->
   ?on_paste:(Event.paste -> 'msg option) ->
