@@ -416,7 +416,7 @@ let find_wrap_pos_wcwidth ~tab_width str ~max_columns =
       else
         let cp, cp_len = decode_codepoint str pos in
         let width = codepoint_width_wcwidth ~tab_width cp in
-        if columns >= max_columns || columns + width > max_columns then
+        if columns + width > max_columns then
           { byte_offset = pos; grapheme_count = count; columns_used = columns }
         else loop (pos + cp_len) (count + 1) (columns + width)
     in

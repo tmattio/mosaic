@@ -1161,6 +1161,24 @@ let unicode_combining_mark_across_writes () =
   equal ~msg:"cluster merged into the start cell" string "\xE4\xBD\xA0\xCC\x81"
     (Grid.get_text (Vte.grid split) 0)
 
+let unicode_mark_at_margin_across_writes () =
+  (* A mark after the last column joins the cell before it, whether the
+     character after it comes in the same write or a later one. *)
+  let cells width_method chunks =
+    let vte = Vte.create ~width_method ~rows:2 ~cols:2 () in
+    List.iter (Vte.feed_string vte) chunks;
+    List.init 4 (fun i -> Grid.get_text (Vte.grid vte) i)
+  in
+  let bytes s = List.init (String.length s) (fun i -> String.make 1 s.[i]) in
+  let s = "ab\u{0301}c" in
+  let expected = [ "a"; "b\u{0301}"; "c"; " " ] in
+  List.iter
+    (fun (width_method, name) ->
+      equal ~msg:name (list string) expected (cells width_method [ s ]);
+      equal ~msg:(name ^ " split") (list string) expected
+        (cells width_method (bytes s)))
+    [ (`Unicode, "unicode"); (`Wcwidth, "wcwidth") ]
+
 let unicode_prepend_across_writes () =
   (* A Prepend character draws apart from the character after it, as in
      xterm, so a read split between them draws the same screen. *)
@@ -1369,6 +1387,8 @@ let tests =
     test "unicode combining mark across writes"
       unicode_combining_mark_across_writes;
     test "unicode zero-width joins cell" unicode_zero_width_joins_cell;
+    test "unicode mark at margin across writes"
+      unicode_mark_at_margin_across_writes;
     test "unicode prepend across writes" unicode_prepend_across_writes;
     test "unicode mark after dropped wide" unicode_mark_after_dropped_wide;
     test "unicode malformed utf8" unicode_malformed_utf8;

@@ -487,6 +487,10 @@ let wcwidth_position_semantics () =
   equal ~msg:"wcwidth wrap through emoji" position_testable
     { byte_offset = 6; grapheme_count = 3; columns_used = 4 }
     (find_wrap_pos ~width_method:`Wcwidth ~tab_width:4 "Hi👋🏿Bye" ~max_columns:4);
+  equal ~msg:"wcwidth wrap keeps a mark at the limit" position_testable
+    { byte_offset = 4; grapheme_count = 3; columns_used = 2 }
+    (find_wrap_pos ~width_method:`Wcwidth ~tab_width:4 "ab\u{0301}c"
+       ~max_columns:2);
   equal ~msg:"wcwidth previous skips zero-width ZWJ" (option grapheme_testable)
     (Some { byte_offset = 7; byte_length = 4; width = 2 })
     (prev_grapheme ~width_method:`Wcwidth ~tab_width:4 zwj ~byte_offset:11)
