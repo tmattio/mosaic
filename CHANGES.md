@@ -80,6 +80,7 @@
 - `Grid.active_height` counts every row that shows something a terminal's erase does not: a space with a background, an attribute or a hyperlink counts, not only a character. A primary-mode full redraw no longer erases a trailing row of background, and a static commit keeps it
 - **Primary frames have their rows before they are drawn** – `Matrix.prepare ?primary_required_rows` grows the live region and sizes the frame to it, and `run` asks `primary_required_rows` before `on_render`, so a frame that needs more rows shows them, where the first grown frame showed only the old height. `Matrix.submit` no longer takes the rows; static writes go to the transcript in `prepare`, after which the live region still has the rows the frame requires. Mosaic lays its tree out before the frame to know them
 - `Grid` reads and writes its cell planes with direct loads and stores, where every access called into the runtime: a full repaint takes a third of the time it took, and drawing a screen of text less than half
+- `Screen.Hit_grid` fills its cells with direct stores, where every cell called into the runtime: a wheel event in a 250x70 Mosaic application costs a fifth of what it did, and a frame a quarter less
 
 #### Fixed
 

@@ -1,12 +1,13 @@
 module Grid = Matrix_grid
 
 type id = int
+type ints = (int, Bigarray.int_elt, Bigarray.c_layout) Bigarray.Array1.t
 
 type t = {
   mutable width : int;
   mutable height : int;
   mutable capacity : int;
-  mutable data : (int, Bigarray.int_elt, Bigarray.c_layout) Bigarray.Array1.t;
+  mutable data : ints;
   clip_stack : Grid.region Dynarray.t;
 }
 
@@ -19,7 +20,9 @@ let ensure_capacity t cells =
     t.data <- Bigarray.Array1.create Bigarray.int Bigarray.c_layout new_capacity;
     t.capacity <- new_capacity)
 
-let linear_fill arr start len value =
+(* The element type is stated so the stores compile to plain stores; a
+   polymorphic bigarray store calls into the runtime for every cell. *)
+let linear_fill (arr : ints) start len value =
   let limit = start + len in
   let rec loop i =
     if i < limit then (
