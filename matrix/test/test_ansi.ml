@@ -702,7 +702,10 @@ let parser_c1_controls () =
   check "a\xc2\x9b2Cb" "a<CUF 2>b";
   check "a\xc2\x9d0;t\xc3\xa9\xc2\x9cb" "a<OSC 0 t\xc3\xa9>b";
   check "a\xc2\x8db" "a<RI>b";
-  check "\xc2\xa0\xc2\x9b1C" "\xc2\xa0<CUF 1>"
+  check "\xc2\xa0\xc2\x9b1C" "\xc2\xa0<CUF 1>";
+  (* A C1 control ends a truncated sequence before it as ESC does. *)
+  check "\xf2\xa4\xc2\x8db" "\xef\xbf\xbd<RI>b";
+  check "x\xe2\x80\xc2\x9b1Cy" "x\xef\xbf\xbd<CUF 1>y"
 
 let parser_charset_selection_split () =
   (* ESC %()*+ charset designations are consumed silently under any chunking.

@@ -637,13 +637,6 @@ let feed p src ~off ~len emit =
     if pos >= input_len then pos
     else
       match p.state with
-      | Normal
-        when p.utf8_len = 1
-             && Bytes.get p.utf8_buf 0 = '\xc2'
-             && is_c1 (Bytes.get input (input_off + pos)) ->
-          (* A C1 control split across feeds. *)
-          p.utf8_len <- 0;
-          c1 pos
       | Normal ->
           (* Scan for ESC, accumulating text *)
           let rec scan_text start i =
@@ -672,6 +665,12 @@ let feed p src ~off ~len emit =
                 flush_utf8 p;
                 emit_text_cb p emit;
                 c1 (i + 1))
+              else if c = '\xc2' && i + 1 = input_len && not eof then (
+                (* It may start a C1 control: keep it for the next feed, which
+                   then ends the text before it as a whole one would. *)
+                if i > start then
+                  decode_utf8 p input (input_off + start) (i - start);
+                i)
               else scan_text start (i + 1)
           in
           scan_text pos pos
