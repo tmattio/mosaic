@@ -8,16 +8,16 @@ let selected_bg = Ansi.Color.of_rgb 17 83 149
 let changed value = Changed value
 let activated value = Activated value
 
-let select ~equal ~selected values =
-  Mosaic.select
+let select ?key ~equal ~selected values =
+  Mosaic.select ?key
     ~size:{ width = Mosaic.px 24; height = Mosaic.px 6 }
     ~equal ~selected ~focused:true ~on_change:changed ~on_activate:activated
     ~show_description:false ~background:Ansi.Color.black
     ~focused_background:Ansi.Color.black ~selected_background:selected_bg
     (List.map (fun value -> Mosaic.Select.item value value) values)
 
-let tabs ~equal ~selected values =
-  Mosaic.tab_select
+let tabs ?key ~equal ~selected values =
+  Mosaic.tab_select ?key
     ~size:{ width = Mosaic.px 24; height = Mosaic.px 6 }
     ~equal ~selected ~focused:true ~on_change:changed ~on_activate:activated
     ~show_description:false ~show_underline:false ~tab_width:8
@@ -25,8 +25,8 @@ let tabs ~equal ~selected values =
     ~selected_background:selected_bg
     (List.map (fun value -> Mosaic.Tab_select.item value value) values)
 
-let table ~equal ~selected values =
-  Mosaic.table
+let table ?key ~equal ~selected values =
+  Mosaic.table ?key
     ~size:{ width = Mosaic.px 24; height = Mosaic.px 6 }
     ~equal ~selected ~focused:true ~on_change:changed ~on_activate:activated
     ~show_header:false ~border:false ~cell_padding:0
@@ -39,11 +39,22 @@ let table ~equal ~selected values =
          values)
     ()
 
+let tree ?key ~equal:_ ~selected values =
+  Mosaic.tree ?key
+    ~size:{ width = Mosaic.px 24; height = Mosaic.px 6 }
+    ~focused:true ~background:Ansi.Color.black ~selected_background:selected_bg
+    ~focused_selected_background:selected_bg
+    ~items:(List.map (fun value -> Mosaic.Tree.item ~id:value value) values)
+    ~state:(Mosaic.Tree.State.make ?selected ())
+    ~on_change:(fun state ->
+      changed (Option.value ~default:"" (Mosaic.Tree.State.selected state)))
+    ()
+
 let widgets =
   [
-    ("select", select, Matrix_input.Key.Down, Matrix_input.Key.Up);
-    ("tabs", tabs, Matrix_input.Key.Right, Matrix_input.Key.Left);
-    ("table", table, Matrix_input.Key.Down, Matrix_input.Key.Up);
+    ("select", select ?key:None, Matrix_input.Key.Down, Matrix_input.Key.Up);
+    ("tabs", tabs ?key:None, Matrix_input.Key.Right, Matrix_input.Key.Left);
+    ("table", table ?key:None, Matrix_input.Key.Down, Matrix_input.Key.Up);
   ]
 
 let fixture build =
@@ -84,6 +95,63 @@ let fixture build =
     !found
   in
   (render, key, take, highlighted)
+
+(* A list longer than its viewport, rendered under [key], with the screen it
+   shows. A wheel over it proposes a value the caller may reject. *)
+let viewport_fixture build =
+  let renderer = Renderer.create () in
+  let reconciler =
+    Mosaic.Reconciler.create ~container:(Renderer.root renderer)
+  in
+  let messages = ref [] in
+  let receive = function
+    | Changed value -> messages := value :: !messages
+    | Activated _ -> ()
+  in
+  let values = List.init 20 (Printf.sprintf "v%02d") in
+  let render ~key selected =
+    Mosaic.Reconciler.render reconciler ~viewport_width:24
+      (Vnode.map receive
+         (build ?key:(Some key) ~equal:String.equal ~selected:(Some selected)
+            values));
+    Renderer.render_frame renderer ~width:24 ~height:6 ~delta:0.;
+    ignore (Renderer.render ~full:true renderer : string);
+    let grid = Matrix_screen.current_grid (Renderer.screen renderer) in
+    String.concat ""
+      (List.init
+         (Matrix_grid.width grid * Matrix_grid.height grid)
+         (Matrix_grid.get_text grid))
+  in
+  let wheel direction =
+    ignore
+      (Renderer.dispatch_mouse renderer
+         (Matrix_input.Mouse.make ~x:2 ~y:2
+            ~modifiers:Matrix_input.Modifier.none
+            (Scroll { direction; delta = 1 }))
+        : Event.mouse);
+    let proposed = !messages in
+    messages := [];
+    proposed
+  in
+  (render, wheel)
+
+(* The viewport follows the accepted value and the geometry alone: a remounted
+   widget shows the same rows, and a rejected wheel proposal scrolls nothing. *)
+let viewport_follows_value ~wheel_proposes build =
+  let render, wheel = viewport_fixture build in
+  let shown = render ~key:"a" "v15" in
+  equal ~msg:"remounted widget keeps its viewport" string shown
+    (render ~key:"b" "v15");
+  let proposed = wheel Matrix_input.Mouse.Scroll_down in
+  equal ~msg:"rejected wheel proposal does not scroll" string shown
+    (render ~key:"b" "v15");
+  if wheel_proposes then begin
+    equal ~msg:"the wheel proposes the next value" (list string) [ "v16" ]
+      proposed;
+    is_false ~msg:"accepted wheel proposal scrolls"
+      (String.equal shown (render ~key:"b" "v16"))
+  end
+  else equal ~msg:"no wheel proposal" (list string) [] proposed
 
 let reorder_and_filter build forward =
   let render, key, take, highlighted = fixture build in
@@ -246,4 +314,14 @@ let () =
                      absent_and_empty build forward backward);
                  test "custom equality" (fun () -> custom_equality build);
                ])
-           widgets)
+           widgets
+    @ List.map
+        (fun (name, wheel_proposes, build) ->
+          test (name ^ " viewport follows the accepted value") (fun () ->
+              viewport_follows_value ~wheel_proposes build))
+        [
+          ("select", true, select);
+          ("tabs", false, tabs);
+          ("table", true, table);
+          ("tree", true, tree);
+        ])

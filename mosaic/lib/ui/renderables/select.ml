@@ -127,9 +127,6 @@ type t = {
   mutable props : Props.t;
   mutable items : item array;
   mutable selected_index : int;
-  mutable scroll_offset : int;
-  mutable lines_per_item : int;
-  mutable max_visible_items : int;
   mutable content_widths : (Matrix.Text.width_method * int * int) option;
   mutable keymap : action Keymap.t;
   mutable on_change : (int -> unit) option;
@@ -162,25 +159,23 @@ let effective_fg t focused =
 (* Each item occupies 1 line (label) or 2 lines (label + description), plus any
    inter-item spacing. This drives both viewport capacity and mouse click ->
    item index mapping. *)
-let recalc_lines_per_item t =
-  let base = if t.props.show_description then 2 else 1 in
-  t.lines_per_item <- base + t.props.item_spacing
+let lines_per_item t =
+  (if t.props.show_description then 2 else 1) + t.props.item_spacing
 
-let recalc_max_visible t height =
-  let h = max 0 height in
-  let lpi = max 1 t.lines_per_item in
-  t.max_visible_items <- max 1 ((h + t.props.item_spacing) / lpi)
+let max_visible_items t =
+  let h = max 0 (Renderable.height t.node) in
+  max 1 ((h + t.props.item_spacing) / lines_per_item t)
 
-(* Center the selected item within the visible viewport when possible, clamped
-   so the scroll offset never goes negative or past the last page. *)
-let update_scroll_offset t =
+(* The first visible item. It centers the selected item when possible, clamped
+   so that it never goes negative or past the last page. It is a function of
+   the accepted selection, the options and the height, never stored, so a
+   remounted select shows the same items and only an accepted selection
+   scrolls. *)
+let scroll_offset t =
   let len = option_count t in
-  if len = 0 then t.scroll_offset <- 0
-  else
-    let half = max 0 (t.max_visible_items / 2) in
-    let max_off = max 0 (len - t.max_visible_items) in
-    let desired = t.selected_index - half in
-    t.scroll_offset <- max 0 (min desired max_off)
+  let max_visible = max_visible_items t in
+  let max_off = max 0 (len - max_visible) in
+  max 0 (min (t.selected_index - (max_visible / 2)) max_off)
 
 let propose_selected_index t idx =
   let len = option_count t in
@@ -208,7 +203,6 @@ let set_options t opts =
   t.content_widths <- None;
   Renderable.mark_dirty t.node;
   t.selected_index <- clamp_index t t.selected_index;
-  update_scroll_offset t;
   request t
 
 (* ───── Navigation ───── *)
@@ -239,8 +233,6 @@ let set_show_description t flag =
   if t.props.show_description <> flag then (
     t.props <- { t.props with show_description = flag };
     Renderable.mark_dirty t.node;
-    recalc_lines_per_item t;
-    update_scroll_offset t;
     request t)
 
 let set_show_scroll_indicator t flag =
@@ -254,8 +246,6 @@ let set_item_spacing t n =
   if t.props.item_spacing <> n then (
     t.props <- { t.props with item_spacing = n };
     Renderable.mark_dirty t.node;
-    recalc_lines_per_item t;
-    update_scroll_offset t;
     request t)
 
 (* ───── Behavior Setters ───── *)
@@ -346,7 +336,7 @@ let handle_mouse t (event : Event.mouse) =
   | Down { button = Left } ->
       if x >= 0 && x < width && y >= 0 && y < height then
         (* Map pixel row to item index via lines_per_item stride *)
-        let index = t.scroll_offset + (y / max 1 t.lines_per_item) in
+        let index = scroll_offset t + (y / lines_per_item t) in
         if index < option_count t then (
           propose_selected_index t index;
           Event.Mouse.stop_propagation event)
@@ -375,15 +365,8 @@ let render t _self grid ~delta:_ =
        last item don't show stale content. *)
     Matrix_grid.clear_rect ~color:base_bg grid ~x:0 ~y:0 ~width ~height;
 
-    (* Recompute layout metrics from current props and viewport size. Done each
-       frame because the viewport may have resized between renders without
-       triggering on_resize (e.g. flex reflow). *)
-    recalc_lines_per_item t;
-    recalc_max_visible t height;
-    update_scroll_offset t;
-
-    let max_visible = t.max_visible_items in
-    let start_index = t.scroll_offset in
+    let max_visible = max_visible_items t in
+    let start_index = scroll_offset t in
     let end_index = min (option_count t) (start_index + max_visible) in
     let base_text = effective_fg t focused in
 
@@ -392,7 +375,7 @@ let render t _self grid ~delta:_ =
       let actual_index = start_index + i in
       if actual_index < end_index then
         let it = t.items.(actual_index) in
-        let item_y = i * t.lines_per_item in
+        let item_y = i * lines_per_item t in
         if item_y < height then (
           let is_selected = actual_index = t.selected_index in
           (* Highlight covers only the content rows (label + description), not
@@ -444,11 +427,7 @@ let render t _self grid ~delta:_ =
 
 (* ───── Resize ───── *)
 
-let on_resize t _node =
-  let h = Renderable.height t.node in
-  recalc_max_visible t h;
-  update_scroll_offset t;
-  request t
+let on_resize t _node = request t
 
 (* ───── Measure ───── *)
 
@@ -505,7 +484,7 @@ let measure t ~known_dimensions ~available_space ~style:_ =
   let height =
     let intrinsic =
       if count = 0 then 0.
-      else float_of_int ((count * t.lines_per_item) - t.props.item_spacing)
+      else float_of_int ((count * lines_per_item t) - t.props.item_spacing)
     in
     measured_dimension known_dimensions.height available_space.height intrinsic
   in
@@ -536,9 +515,6 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
       props;
       items;
       selected_index = 0;
-      scroll_offset = 0;
-      lines_per_item = 1;
-      max_visible_items = 1;
       content_widths = None;
       keymap = keymap props.key_bindings;
       on_change = None;
@@ -546,9 +522,6 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?options
     }
   in
   t.selected_index <- clamp_index t props.selected_index;
-  recalc_lines_per_item t;
-  recalc_max_visible t (Renderable.height node);
-  update_scroll_offset t;
   (* Wire up rendering and event handlers. Buffered rendering avoids redundant
      redraws when multiple properties change in a single frame. *)
   Renderable.set_render node (render t);
@@ -573,7 +546,6 @@ let set_selected_index t idx =
   let idx = clamp_index t idx in
   if idx <> t.selected_index then begin
     t.selected_index <- idx;
-    update_scroll_offset t;
     request t
   end
 

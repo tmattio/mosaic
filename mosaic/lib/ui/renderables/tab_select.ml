@@ -121,7 +121,6 @@ type t = {
   mutable props : Props.t;
   mutable keymap : action Keymap.t;
   mutable selected_index : int;
-  mutable scroll_offset : int;
   mutable on_change : (int -> unit) option;
   mutable on_activate : (int -> unit) option;
 }
@@ -141,7 +140,10 @@ let intrinsic_height props =
   + (if props.Props.show_underline then 1 else 0)
   + if props.Props.show_description then 1 else 0
 
-let compute_scroll_offset t =
+(* The first visible tab. It centers the selected tab when possible. It is a
+   function of the accepted selection, the options and the width, never
+   stored, so a remounted tab strip shows the same tabs. *)
+let scroll_offset t =
   let w = Renderable.width t.node in
   let tw = t.props.tab_width in
   let n = List.length t.props.options in
@@ -150,12 +152,6 @@ let compute_scroll_offset t =
     let max_visible = max 1 (w / tw) in
     let half = max_visible / 2 in
     max 0 (min (t.selected_index - half) (max 0 (n - max_visible)))
-
-let update_scroll t =
-  let s = compute_scroll_offset t in
-  if s <> t.scroll_offset then (
-    t.scroll_offset <- s;
-    request_render t)
 
 let list_drop n l =
   let rec loop n l =
@@ -212,7 +208,7 @@ let rec render t _self grid ~delta:_ =
     let tw = props.tab_width in
     let n = List.length props.options in
     let max_visible = max 1 (w / tw) in
-    let scroll = t.scroll_offset in
+    let scroll = scroll_offset t in
     let base_text_color =
       if focused then props.focused_text_color else props.text_color
     in
@@ -356,7 +352,6 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~options
       props;
       keymap = keymap props.key_bindings;
       selected_index;
-      scroll_offset = 0;
       on_change;
       on_activate;
     }
@@ -366,12 +361,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~options
   Renderable.set_focusable node true;
   Renderable.set_buffered node true;
   Renderable.set_default_key_handler node (Some (handle_key t));
-  Renderable.set_on_resize node
-    (Some
-       (fun _node ->
-         update_scroll t;
-         request_render t));
-  update_scroll t;
+  Renderable.set_on_resize node (Some (fun _node -> request_render t));
   t
 
 (* ───── Setters ───── *)
@@ -380,7 +370,6 @@ let set_options t items =
   if not (List.equal Props.equal_item t.props.options items) then (
     t.props <- { t.props with options = items };
     t.selected_index <- clamp_selected t.props t.selected_index;
-    update_scroll t;
     Renderable.mark_dirty t.node;
     request_render t)
 
@@ -388,13 +377,11 @@ let set_selected t i =
   let idx = clamp_selected t.props i in
   if idx <> t.selected_index then (
     t.selected_index <- idx;
-    update_scroll t;
     request_render t)
 
 let set_tab_width t w =
   if w >= 1 && w <> t.props.tab_width then (
     t.props <- { t.props with tab_width = w };
-    update_scroll t;
     request_render t)
 
 let set_background t color =

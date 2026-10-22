@@ -237,9 +237,8 @@ type t = {
   mutable col_specs : column array;
   mutable data_rows : cell array array;
   mutable selected_row : int;
-  mutable scroll_offset : int;
-  mutable max_visible_rows : int;
-  mutable hovered_row : int option;
+  mutable hovered : (int * int) option;
+      (* The hovered data row, and the first visible row it was found under. *)
   mutable auto_widths : (Matrix.Text.width_method * int array) option;
       (* Cached per-column content widths for [`Auto] columns, excluding
          padding, tagged with the width method used to measure them. Reset to
@@ -256,8 +255,18 @@ let node t = t.node
 let request t = Renderable.request_render t.node
 let row_count t = Array.length t.data_rows
 
+(* The data rows the table's height shows below its border and header. *)
+let max_visible_rows t =
+  let border_v = if t.props.border then 2 else 0 in
+  let header_total =
+    if t.props.show_header then 1 + if t.props.border then 1 else 0 else 0
+  in
+  let content_height = Renderable.height t.node - header_total - border_v in
+  let row_height = if t.props.show_row_separator then 2 else 1 in
+  max 1 ((content_height + row_height - 1) / row_height)
+
 let scroll_indicator_visible t =
-  t.props.show_scroll_indicator && row_count t > t.max_visible_rows
+  t.props.show_scroll_indicator && row_count t > max_visible_rows t
 
 let clamp_index t idx =
   let len = row_count t in
@@ -365,26 +374,27 @@ let compute_column_widths t ~width_method ~available_width =
 
 (* ───── Scrolling ───── *)
 
-let recalc_max_visible t ~content_height =
-  let row_height = if t.props.show_row_separator then 2 else 1 in
-  t.max_visible_rows <- max 1 ((content_height + row_height - 1) / row_height)
+(* The first visible row. It centers the selected row when possible, clamped so
+   that it never goes negative or past the last page. It is a function of the
+   accepted selection, the rows and the geometry, never stored, so a remounted
+   table shows the same rows and only an accepted selection scrolls. *)
+let scroll_offset t =
+  let max_visible = max_visible_rows t in
+  let max_off = max 0 (row_count t - max_visible) in
+  max 0 (min (t.selected_row - (max_visible / 2)) max_off)
 
 let set_hovered_row_internal t row =
-  if not (Option.equal Int.equal row t.hovered_row) then (
-    t.hovered_row <- row;
+  if not (Option.equal Int.equal row (Option.map fst t.hovered)) then (
+    t.hovered <- Option.map (fun row -> (row, scroll_offset t)) row;
     (match t.on_hover with None -> () | Some f -> f row);
     request t)
 
-let update_scroll_offset t =
-  let previous = t.scroll_offset in
-  let len = row_count t in
-  (if len = 0 then t.scroll_offset <- 0
-   else
-     let half = max 0 (t.max_visible_rows / 2) in
-     let max_off = max 0 (len - t.max_visible_rows) in
-     let desired = t.selected_row - half in
-     t.scroll_offset <- max 0 (min desired max_off));
-  if t.scroll_offset <> previous then set_hovered_row_internal t None
+(* A row stays hovered only while the view under the pointer has not moved. *)
+let forget_scrolled_hover t =
+  match t.hovered with
+  | Some (_, offset) when offset <> scroll_offset t ->
+      set_hovered_row_internal t None
+  | None | Some _ -> ()
 
 let set_selected_row_internal t idx =
   let len = row_count t in
@@ -412,7 +422,7 @@ let data_row_at t ~x ~y =
       let row_height = if t.props.show_row_separator then 2 else 1 in
       if row_y mod row_height <> 0 then None
       else
-        let index = t.scroll_offset + (row_y / row_height) in
+        let index = scroll_offset t + (row_y / row_height) in
         if index < row_count t then Some index else None
 
 (* ───── Public Accessors ───── *)
@@ -433,10 +443,10 @@ let set_rows t data =
   t.data_rows <- Array.of_list data;
   t.auto_widths <- None;
   t.selected_row <- clamp_index t t.selected_row;
-  (match t.hovered_row with
-  | Some index when index >= row_count t -> set_hovered_row_internal t None
+  (match t.hovered with
+  | Some (index, _) when index >= row_count t -> set_hovered_row_internal t None
   | None | Some _ -> ());
-  update_scroll_offset t;
+  forget_scrolled_hover t;
   Renderable.mark_dirty t.node;
   request t
 
@@ -444,7 +454,7 @@ let set_selected_row t idx =
   let idx = clamp_index t idx in
   if idx <> t.selected_row then (
     t.selected_row <- idx;
-    update_scroll_offset t;
+    forget_scrolled_hover t;
     request t)
 
 (* ───── Navigation ───── *)
@@ -472,13 +482,13 @@ let move_down ?(steps = 1) t =
 let page_up t =
   set_selected_row_internal t
     (if t.selected_row < 0 then row_count t - 1
-     else max 0 (t.selected_row - t.max_visible_rows))
+     else max 0 (t.selected_row - max_visible_rows t))
 
 let page_down t =
   let last_row = row_count t - 1 in
   set_selected_row_internal t
     (if t.selected_row < 0 then 0
-     else min last_row (t.selected_row + t.max_visible_rows))
+     else min last_row (t.selected_row + max_visible_rows t))
 
 (* ───── Display Setters ───── *)
 
@@ -794,12 +804,7 @@ let render t _self grid ~delta:_ =
     let border_left = if border then 1 else 0 in
     let cur_y = ref 0 in
 
-    (* Recompute scroll metrics *)
-    let header_total = if show_header then 1 + if border then 1 else 0 else 0 in
-    let border_v = if border then 2 else 0 in
-    let content_height = height - header_total - border_v in
-    recalc_max_visible t ~content_height;
-    update_scroll_offset t;
+    forget_scrolled_hover t;
     let show_scroll_indicator = scroll_indicator_visible t in
     let table_width = width - if show_scroll_indicator then 1 else 0 in
     let col_widths =
@@ -855,8 +860,8 @@ let render t _self grid ~delta:_ =
 
     (* Data rows *)
     let data_y = !cur_y in
-    let start_index = t.scroll_offset in
-    let end_index = min (row_count t) (start_index + t.max_visible_rows) in
+    let start_index = scroll_offset t in
+    let end_index = min (row_count t) (start_index + max_visible_rows t) in
     let default_text_style = Ansi.Style.make ~fg:t.props.text_color () in
     let row_styles = t.props.row_styles in
     let n_row_styles = List.length row_styles in
@@ -976,14 +981,7 @@ let render t _self grid ~delta:_ =
 (* ───── Resize ───── *)
 
 let on_resize t _node =
-  let h = Renderable.height t.node in
-  let border_v = if t.props.border then 2 else 0 in
-  let header_total =
-    if t.props.show_header then 1 + if t.props.border then 1 else 0 else 0
-  in
-  let content_height = h - header_total - border_v in
-  recalc_max_visible t ~content_height;
-  update_scroll_offset t;
+  forget_scrolled_hover t;
   request t
 
 (* ───── Measure ───── *)
@@ -1083,9 +1081,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
       col_specs;
       data_rows;
       selected_row = initial_selected;
-      scroll_offset = 0;
-      max_visible_rows = 1;
-      hovered_row = None;
+      hovered = None;
       auto_widths = None;
       on_change = None;
       on_activate = None;

@@ -195,8 +195,6 @@ type t = {
   mutable keymap : action Keymap.t;
   mutable visible : visible_entry array;
   mutable selected_index : int;
-  mutable scroll_offset : int;
-  mutable max_visible : int;
   mutable on_change : (State.t -> unit) option;
   mutable on_activate : (item -> unit) option;
 }
@@ -266,16 +264,16 @@ let recompute_visible t =
 
 (* ───── Scrolling ───── *)
 
-let recalc_max_visible t height = t.max_visible <- max 1 (max 0 height)
+let max_visible t = max 1 (Renderable.height t.node)
 
-let update_scroll_offset t =
-  let len = visible_count t in
-  if len = 0 then t.scroll_offset <- 0
-  else
-    let half = max 0 (t.max_visible / 2) in
-    let max_off = max 0 (len - t.max_visible) in
-    let desired = t.selected_index - half in
-    t.scroll_offset <- max 0 (min desired max_off)
+(* The first visible row. It centers the selected row when possible, clamped so
+   that it never goes negative or past the last page. It is a function of the
+   accepted state, the items and the height, never stored, so a remounted tree
+   shows the same rows and only an accepted selection scrolls. *)
+let scroll_offset t =
+  let max_visible = max_visible t in
+  let max_off = max 0 (visible_count t - max_visible) in
+  max 0 (min (t.selected_index - (max_visible / 2)) max_off)
 
 let install_state t items state =
   let previous = t.props.state in
@@ -291,7 +289,6 @@ let install_state t items state =
   then begin
     t.props <- { t.props with items; state };
     if structure_changed then recompute_visible t else update_selected_index t;
-    update_scroll_offset t;
     request t
   end
 
@@ -561,7 +558,7 @@ let handle_mouse t (event : Event.mouse) =
   match Event.Mouse.kind event with
   | Down { button = Left } ->
       if x >= 0 && x < width && y >= 0 && y < height then
-        let index = t.scroll_offset + y in
+        let index = scroll_offset t + y in
         if index >= 0 && index < visible_count t then (
           let entry = t.visible.(index) in
           let indent = entry.depth * t.props.indent_size in
@@ -590,10 +587,6 @@ let render t _self grid ~delta:_ =
   else
     let focused = Renderable.focused t.node in
 
-    (* Recompute scroll metrics *)
-    recalc_max_visible t height;
-    update_scroll_offset t;
-
     (* Clear to opaque base so compositing fully replaces the screen grid, then
        apply the user's background on top. *)
     Matrix_grid.fill_rect grid ~x:0 ~y:0 ~width ~height
@@ -601,8 +594,8 @@ let render t _self grid ~delta:_ =
     Matrix_grid.fill_rect grid ~x:0 ~y:0 ~width ~height
       ~color:t.props.background;
 
-    let start_index = t.scroll_offset in
-    let end_index = min (visible_count t) (start_index + t.max_visible) in
+    let start_index = scroll_offset t in
+    let end_index = min (visible_count t) (start_index + max_visible t) in
 
     let sel_bg =
       if focused then t.props.focused_selected_background
@@ -685,11 +678,7 @@ let render t _self grid ~delta:_ =
 
 (* ───── Resize ───── *)
 
-let on_resize t _node =
-  let h = Renderable.height t.node in
-  recalc_max_visible t h;
-  update_scroll_offset t;
-  request t
+let on_resize t _node = request t
 
 (* ───── Construction ───── *)
 
@@ -715,15 +704,11 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items ?state
       keymap = keymap props.key_bindings;
       visible = [||];
       selected_index = 0;
-      scroll_offset = 0;
-      max_visible = 1;
       on_change = None;
       on_activate = None;
     }
   in
   recompute_visible t;
-  recalc_max_visible t (Renderable.height rnode);
-  update_scroll_offset t;
   Renderable.set_render rnode (render t);
   Renderable.set_buffered rnode true;
   Renderable.set_focusable rnode true;
