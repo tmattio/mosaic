@@ -326,7 +326,9 @@ let clear_history t =
    the cursor position or changes cells clears it". Printing sets the flag
    after its changes. Every blank is on the pen's background. *)
 
-let changed t ~top ~bottom =
+(* Rows [top] to [bottom] changed: they are dirty, and the Last Column Flag
+   goes. *)
+let cells_changed t ~top ~bottom =
   touch_rows t top bottom;
   t.cursor.last_column <- false
 
@@ -339,7 +341,7 @@ let erase_with f t ~x ~y ~width ~height =
   if width > 0 && height > 0 then (
     f (grid t) { Grid.x; y; width; height };
     if x + width = t.cols then unwrap t ~top:y ~bottom:(y + height - 1);
-    changed t ~top:y ~bottom:(y + height - 1))
+    cells_changed t ~top:y ~bottom:(y + height - 1))
 
 let erase t =
   erase_with
@@ -364,7 +366,7 @@ let shift_rows t ~top ~bottom n =
   else (
     Bytes.blit marks top marks (top + k) (height - k);
     Bytes.fill marks top k '\000');
-  changed t ~top ~bottom
+  cells_changed t ~top ~bottom
 
 (* Move the cells of rows [top] to [bottom] from column [x] by [dx] columns.
    The rows' last cells change, so their marks go. *)
@@ -374,7 +376,7 @@ let shift_cols t ~x ~top ~bottom dx =
       { Grid.x; y = top; width = t.cols - x; height = bottom - top + 1 }
       ~dx ~dy:0 ~color:(bg t);
     unwrap t ~top ~bottom;
-    changed t ~top ~bottom)
+    cells_changed t ~top ~bottom)
 
 let mark_wrapped t row = Bytes.set (screen t).wrapped row '\001'
 
@@ -468,12 +470,12 @@ let charset_94 = function
    mode" (VT220 Programmer Reference Manual §2.4.3, DECNRCM §4.6.19). Out of
    it, a slot designated with one leaves characters unchanged, as ASCII, and
    it translates again once national mode is selected. *)
-let available t = function
+let in_effect t = function
   | Mapped { national = true; _ } when not t.modes.national -> Ascii
   | set -> set
 
 let map t set u =
-  match available t set with
+  match in_effect t set with
   | Ascii -> u
   | Mapped { table; _ } ->
       let c = Uchar.to_int u in
@@ -488,10 +490,10 @@ let translate t u =
       t.charsets <- { cs with single = None };
       map t cs.g.(g) u
 
-let untranslated t =
+let gl_is_ascii t =
   t.charsets.single = None
   &&
-  match available t t.charsets.g.(t.charsets.gl) with
+  match in_effect t t.charsets.g.(t.charsets.gl) with
   | Ascii -> true
   | Mapped _ -> false
 
@@ -574,7 +576,7 @@ let join t =
 (* Place the cluster if it grew since it was last placed. Its first
    placement starts where the cursor is, after the wrap the Last Column Flag
    asks for. *)
-let settle t =
+let place_if_grown t =
   let cl = t.cluster in
   if cl.grown then begin
     cl.grown <- false;
@@ -595,16 +597,17 @@ let settle t =
   end
 
 (* The unit in progress is complete. *)
-let finish t =
-  settle t;
+let end_unit t =
+  place_if_grown t;
   let cl = t.cluster in
   cl.len <- 0;
   cl.width <- 0;
   cl.at <- Nowhere
 
-(* A control function ends the unit, and the next character starts one. *)
-let close t =
-  finish t;
+(* A control function ends the unit and the segmentation context: the next
+   character starts a unit. *)
+let break_text t =
+  end_unit t;
   Text.Segmenter.reset t.cluster.seg
 
 let append cl u =
@@ -621,7 +624,7 @@ let append cl u =
    character, so a run of marks is written once. *)
 let print_scalar t u =
   let cl = t.cluster in
-  if Text.Segmenter.add cl.seg u then finish t;
+  if Text.Segmenter.add cl.seg u then end_unit t;
   append cl u;
   cl.width <- Text.Segmenter.width cl.seg;
   cl.grown <- true
@@ -632,7 +635,7 @@ let print_scalar t u =
 let print_run t s pos k =
   let cl = t.cluster in
   for i = pos to pos + k - 1 do
-    finish t;
+    end_unit t;
     Bytes.unsafe_set cl.text 0 (String.unsafe_get s i);
     cl.len <- 1;
     cl.width <- 1;
@@ -644,7 +647,7 @@ let print t s =
   let i = ref 0 in
   while !i < len do
     let k =
-      if untranslated t then
+      if gl_is_ascii t then
         Text.Segmenter.ascii_run t.cluster.seg s ~pos:!i ~len:(len - !i)
       else 0
     in
@@ -657,7 +660,7 @@ let print t s =
       i := !i + Uchar.utf_decode_length d
     end
   done;
-  settle t
+  place_if_grown t
 
 (* REP prints the unit before it [n] more times. Without autowrap the cursor
    reaches the margin within [cols] prints and each print after it is the
@@ -673,13 +676,13 @@ let repetitions t n width =
     if n <= saturated then n else saturated + ((n - saturated) mod per_row)
 
 let rep t n =
-  settle t;
+  place_if_grown t;
   let cl = t.cluster in
   if cl.at = Cells then
     for _ = 1 to repetitions t n (min cl.width t.cols) do
       cl.at <- Nowhere;
       cl.grown <- true;
-      settle t
+      place_if_grown t
     done
 
 (* {1:motion Cursor motion} *)
@@ -895,7 +898,7 @@ let decaln t =
     done
   done;
   unwrap t ~top:0 ~bottom:(t.rows - 1);
-  changed t ~top:0 ~bottom:(t.rows - 1);
+  cells_changed t ~top:0 ~bottom:(t.rows - 1);
   goto t ~row:0 ~col:0
 
 (* {1:modes Modes and resets} *)
@@ -1148,7 +1151,7 @@ let decsca t = function
    SUB symbol for SUB above it. *)
 let sub t =
   print t "\u{2E2E}";
-  close t
+  break_text t
 
 let control t = function
   | '\x08' -> cub t 1
@@ -1183,6 +1186,8 @@ let esc t intermediates final =
 let csi t (s : Ansi.Parser.sequence) =
   let p = s.params in
   let pn i = Params.pn p i ~default:1 and ps i = Params.ps p i ~default:0 in
+  (* REP, [CSI b], is not here: it reads the unit in progress before the
+     sequence ends it ({!handle_token}). *)
   match (s.marker, s.intermediates, s.final) with
   | None, "", 'A' -> cuu t (pn 0)
   | None, "", 'B' -> cud t (pn 0)
@@ -1301,18 +1306,18 @@ let handle_token t = function
   | Csi s when malformed s -> ()
   | Csi { marker = None; intermediates = ""; final = 'b'; params } ->
       rep t (Params.pn params 0 ~default:1);
-      close t
+      break_text t
   | Csi s ->
-      close t;
+      break_text t;
       csi t s
   | Control c ->
-      close t;
+      break_text t;
       control t c
   | Esc { intermediates; final } ->
-      close t;
+      break_text t;
       esc t intermediates final
   | Open o ->
-      close t;
+      break_text t;
       open_string t o
   | Data s -> string_data t s
   | Close ending -> close_string t ending
@@ -1330,7 +1335,7 @@ let feed_string t s = feed t (Bytes.unsafe_of_string s) 0 (String.length s)
 let reset t =
   Ansi.Parser.reset t.parser;
   osc_drop t;
-  close t;
+  break_text t;
   ris t
 
 (* {1:resize Resizing} *)
@@ -1387,7 +1392,7 @@ let resize t ~rows ~cols =
   check_cols "resize" cols;
   let rows = max 1 rows and cols = max 1 cols in
   if rows <> t.rows || cols <> t.cols then begin
-    close t;
+    break_text t;
     let move (c : cursor) down =
       {
         row = max 0 (min (rows - 1) (c.row + down));
