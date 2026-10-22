@@ -775,6 +775,49 @@ let row_down t n =
   in
   min bottom (t.cursor.row + n)
 
+(* C1 controls, encoded in UTF-8, which no cell holds. *)
+let has_c1 s =
+  let rec go i =
+    i + 1 < String.length s
+    && (s.[i] = '\xC2'
+        && Char.code s.[i + 1] < 0xA0
+        && Char.code s.[i + 1] >= 0x80
+       || go (i + 1))
+  in
+  go 0
+
+(* Join the zero-width [marks] to the grapheme whose cells end at column
+   [col] - 1 of [row], as xterm adds a character of no width to the cell
+   before the cursor. The grapheme keeps its rendition; marks holding a C1
+   control are dropped. *)
+let join_before t ~row ~col marks =
+  if col > 0 && not (has_c1 marks) then begin
+    let grid = t.active_grid in
+    let x = ref (min (t.cols - 1) (col - 1)) in
+    while !x > 0 && Grid.is_continuation grid ((row * t.cols) + !x) do
+      decr x
+    done;
+    let idx = (row * t.cols) + !x in
+    let prev = Grid.get_text grid idx in
+    if prev <> "" && not (Grid.is_continuation grid idx) then begin
+      let text = prev ^ marks in
+      let width_method = Grid.width_method grid in
+      let width =
+        min (t.cols - !x)
+          (max (Grid.cell_width grid idx)
+             (Text.measure ~width_method ~tab_width:2 text))
+      in
+      Grid.set_grapheme grid ~x:!x ~y:row ~width ~fg:(Grid.get_fg grid idx)
+        ~bg:(Grid.get_bg grid idx)
+        ~attrs:(Ansi.Attr.unpack (Grid.get_attrs grid idx))
+        ~link:(Grid.get_link grid idx) text ~pos:0 ~len:(String.length text);
+      mark_row_dirty t row;
+      true
+    end
+    else false
+  end
+  else false
+
 (* Write printable text using Grid and Text APIs. We manually segment the input
    string into pieces that fit in the current line, using an ASCII fast path and
    falling back to grapheme segmentation for complex text. *)
@@ -818,35 +861,28 @@ let put_text t text =
       if stop = 0 then text
       else if t.repeatable && t.dropped then
         String.sub text stop (String.length text - stop)
-      else begin
-        let row = t.cursor.row in
-        let x = ref (t.cursor.col - 1) in
-        let idx = ref ((row * t.cols) + !x) in
-        while !x > 0 && Grid.is_continuation t.active_grid !idx do
-          decr x;
-          decr idx
-        done;
-        let prev = Grid.get_text t.active_grid !idx in
-        if prev = "" || Grid.is_continuation t.active_grid !idx then text
-        else begin
-          Grid.draw_text t.active_grid ~x:!x ~y:row
-            ~text:(prev ^ String.sub text 0 stop)
-            ~style:(Grid.get_style t.active_grid !idx);
-          mark_row_dirty t row;
-          String.sub text stop (String.length text - stop)
+      else
+        begin if
+          join_before t ~row:t.cursor.row ~col:t.cursor.col
+            (String.sub text 0 stop)
+        then String.sub text stop (String.length text - stop)
+        else text
         end
-      end
     end
   in
   if text <> "" then t.dropped <- false;
   if text = "" then ()
-  else if (not t.insert_mode) && String.length text <= t.cols - t.cursor.col
+  else if
+    (not t.insert_mode)
+    && String.length text <= t.cols - t.cursor.col
+    && String.for_all (fun c -> c < '\x80') text
   then begin
     (* Printable UTF-8 never occupies more columns than bytes. This bounded
        fit check keeps short writes allocation-light without rescanning suffixes. *)
     Grid.draw_text t.active_grid ~x:t.cursor.col ~y:t.cursor.row ~text ~style;
     mark_row_dirty t t.cursor.row;
-    let width = Text.measure ~width_method ~tab_width:2 text in
+    (* Printable ASCII: a column a byte. *)
+    let width = String.length text in
     set_protected t ~x:t.cursor.col ~y:t.cursor.row ~width t.protect;
     set_cursor_pos t ~row:t.cursor.row ~col:(t.cursor.col + width)
   end
@@ -872,24 +908,14 @@ let put_text t text =
       end
     in
     let emit_unit ~offset ~len ~width =
-      if width = 0 then
-        begin if !columns > 0 then stop := offset + len
-        else if t.dropped then ()
-        else if t.cursor.col > 0 then begin
-          let x = ref (min (t.cols - 1) (t.cursor.col - 1)) in
-          while
-            !x > 0
-            && Grid.is_continuation t.active_grid ((t.cursor.row * t.cols) + !x)
-          do
-            decr x
-          done;
-          let idx = (t.cursor.row * t.cols) + !x in
-          Grid.draw_text t.active_grid ~x:!x ~y:t.cursor.row
-            ~text:(Grid.get_text t.active_grid idx ^ String.sub text offset len)
-            ~style:(Grid.get_style t.active_grid idx);
-          mark_row_dirty t t.cursor.row
-        end
-        end
+      if width = 0 then begin
+        flush ();
+        if not t.dropped then
+          ignore
+            (join_before t ~row:t.cursor.row ~col:t.cursor.col
+               (String.sub text offset len)
+              : bool)
+      end
       else begin
         if t.insert_mode || t.cursor.col + !columns + width > t.cols then
           flush ();

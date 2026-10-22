@@ -245,8 +245,10 @@ val draw_text :
 (** [draw_text ~style ~tab_width ~width_method g ~x ~y ~text] draws single-line
     text. Text is segmented using [width_method], defaulting to the grid's
     {!width_method}. This override does not change the grid configuration. Wide
-    characters occupy multiple cells with continuation markers. Newlines are
-    skipped; tabs expand to [tab_width] spaces (default [2]).
+    characters occupy multiple cells with continuation markers. Tabs expand to
+    [tab_width] spaces (default [2]). Display units of no width are skipped:
+    zero-width characters standing alone, such as U+200B, and the other control
+    characters, newlines included, which no cell holds.
 
     When the resolved background has alpha < 1.0, colors are blended with
     existing cells. A space on a translucent background preserves the existing

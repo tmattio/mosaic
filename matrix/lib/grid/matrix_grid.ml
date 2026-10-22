@@ -1161,37 +1161,17 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
           end
         in
 
-        (* Text.iter_grapheme_info skips graphemes of no width. Those other than
-           C0 controls, such as U+200B, join the cell before them, as in xterm. *)
-        let rec non_ascii i j =
-          i >= j
-          || (Char.code (String.unsafe_get text i) >= 128 && non_ascii (i + 1) j)
-        in
-        let pending = ref (-1) and pending_len = ref 0 and pending_w = ref 0 in
-        let flush next =
-          if !pending >= 0 then begin
-            let offset = !pending and w = !pending_w in
-            let len =
-              if non_ascii (offset + !pending_len) next then next - offset
-              else !pending_len
-            in
-            pending := -1;
-            let start_x = !cur_x in
-            let end_x = start_x + w in
-            if end_x <= 0 then cur_x := end_x
-            else if start_x >= t.width then raise Exit
-            else writer ~offset ~len ~w
-          end
-        in
+        (* Text.iter_grapheme_info skips units of no width, controls among
+           them: no cell holds a control. *)
         try
           Text.iter_grapheme_info ~width_method ~tab_width:tabw
             (fun ~offset ~len ~width:w ->
-              flush offset;
-              pending := offset;
-              pending_len := len;
-              pending_w := w)
-            text;
-          flush (String.length text)
+              let start_x = !cur_x in
+              let end_x = start_x + w in
+              if end_x <= 0 then cur_x := end_x
+              else if start_x >= t.width then raise Exit
+              else writer ~offset ~len ~w)
+            text
         with Exit -> ()
 
 (* {1 Box drawing} *)

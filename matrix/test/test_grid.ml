@@ -1575,11 +1575,16 @@ let clear_preserves_scissor_state () =
   equal ~msg:"write outside preserved scissor ignored" int 32
     (read_char grid 0 0)
 
-let draw_text_keeps_zero_width () =
+let draw_text_skips_zero_width () =
+  (* Zero-width units standing alone, and controls, take no cell and join
+     none: a terminal that wants them in the line joins them itself. *)
   let grid = Grid.create ~width:3 ~height:1 () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"a\u{200B}\u{FEFF}b\nc";
-  equal ~msg:"joined" string "a\u{200B}\u{FEFF}" (Grid.get_text grid 0);
-  equal ~msg:"newline skipped" string "c" (Grid.get_text grid 2)
+  equal ~msg:"cells" (list string) [ "a"; "b"; "c" ]
+    (List.init 3 (Grid.get_text grid));
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"x\u{9B}2J";
+  equal ~msg:"C1 control stored nowhere" (list string) [ "x"; "2"; "J" ]
+    (List.init 3 (Grid.get_text grid))
 
 let draw_text_overflow_clears_row_tail () =
   let grid = Grid.create ~width:3 ~height:1 () in
@@ -1901,7 +1906,7 @@ let tests =
       scroll_keeps_multi_codepoint_graphemes;
     test "draw text overwrites grapheme span" draw_text_overwrite_clears_span;
     test "draw text overflow clears row tail" draw_text_overflow_clears_row_tail;
-    test "draw text keeps zero-width graphemes" draw_text_keeps_zero_width;
+    test "draw text skips zero-width graphemes" draw_text_skips_zero_width;
     test "blit region skips partial spans" blit_region_skips_partial_span;
     test "fill_rect clears inline wide start" fill_rect_clears_inline_wide_start;
     test "fill_rect clears inline wide continuation"
