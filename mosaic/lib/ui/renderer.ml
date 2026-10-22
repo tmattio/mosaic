@@ -58,12 +58,14 @@ type t = {
   lifecycle_set : (int, Renderable.t) Hashtbl.t;
   (* Worker notifications only mutate this scheduling flag. *)
   dirty : bool Atomic.t;
-  (* Available space of the last layout compute, as (width, layout_height).
+  (* Available space of the last layout compute, as (width, height).
      Layout is recomputed only when this changes or the Toffee root is dirty
      (any set_style/measure/mark_dirty/attach/detach marks ancestors up to
      the root), skipping the full sizing and rounding passes on clean
      frames. *)
   mutable last_layout : (int * int) option;
+  (* The frame laid out by [layout_frame] and not yet painted. *)
+  mutable frame : frame option;
   (* Render command buffer — reused across frames. *)
   mutable commands : render_command array;
   mutable cmd_len : int;
@@ -92,8 +94,10 @@ type t = {
    frame deliver only reports of nodes deeper than the shallowest node already
    reported. Depth grows with each pass that delivers, so a frame's passes
    terminate even when an observer's response keeps resizing its own node.
-   Refused reports stay pending; the frame's paint starts a new round and
-   delivers them. *)
+   Refused reports stay pending; the next frame's layout starts a new round
+   and delivers them. *)
+and frame = { width : int; height : int; delta : float }
+
 and size_round = {
   mutable limit : int;
       (* Reports are admitted from nodes deeper than [limit]; [-1] admits all. *)
@@ -785,6 +789,7 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
     toffee_map;
     dirty;
     last_layout = None;
+    frame = None;
     focused;
     lifecycle_set;
     commands = Array.make 64 Pop_scissor;
@@ -952,11 +957,11 @@ let execute_commands (t : t) ~(grid : Grid.t) ~(hits : Screen.Hit_grid.t)
 let layout_dirty t =
   toffee_exn (Toffee.dirty t.tree (Renderable.Private.toffee_node t.root))
 
-let compute_layout t ~width ~layout_height =
+let compute_layout t ~width ~height =
   let root_toffee = Renderable.Private.toffee_node t.root in
   let needs_layout =
     (match t.last_layout with
-      | Some (w, h) -> w <> width || h <> layout_height
+      | Some (w, h) -> w <> width || h <> height
       | None -> true)
     ||
     match Toffee.dirty t.tree root_toffee with
@@ -968,22 +973,22 @@ let compute_layout t ~width ~layout_height =
       Toffee.Geometry.Size.
         {
           width = Toffee.Available_space.Definite (Float.of_int width);
-          height = Toffee.Available_space.Definite (Float.of_int layout_height);
+          height = Toffee.Available_space.Definite (Float.of_int height);
         }
     in
     toffee_exn
       (Toffee.compute_layout_with_measure t.tree root_toffee available_space
          (measure_fn t));
-    t.last_layout <- Some (width, layout_height)
+    t.last_layout <- Some (width, height)
   end
 
 (* A layout callback may resize a sibling (for example, reveal a scrollbar).
    Resolve those dependencies before hit testing or painting. Animations run
    only on the first pass of a frame, never while preparing input geometry. *)
-let prepare_commands t ~width ~height ~layout_height ~frame ~delta =
+let prepare_commands t ~width ~height ~frame ~delta =
   let clip : Grid.region = { x = 0; y = 0; width; height } in
   let rec settle remaining frame delta =
-    compute_layout t ~width ~layout_height;
+    compute_layout t ~width ~height;
     t.cmd_len <- 0;
     build_commands t t.root ~parent_x:0. ~parent_y:0. ~clip ~frame ~delta;
     if layout_dirty t then begin
@@ -995,47 +1000,58 @@ let prepare_commands t ~width ~height ~layout_height ~frame ~delta =
   settle 16 frame delta
 
 let prepare_layout t ~width ~height =
+  t.frame <- None;
   t.size_round.shallowest <- max_int;
-  prepare_commands t ~width ~height ~layout_height:height ~frame:false ~delta:0.;
+  prepare_commands t ~width ~height ~frame:false ~delta:0.;
   if t.size_round.shallowest < max_int then
     t.size_round.limit <- t.size_round.shallowest;
   t.input_geometry <- Some (width, height);
   t.input_hits_dirty <- true
 
-let render_frame ?layout_height (t : t) ~width ~height ~delta =
+let layout_frame t ~width ~height ~delta =
   t.input_geometry <- None;
-  let layout_height = Option.value layout_height ~default:height in
-  (* A paint starts a new round of size reports and admits every pending one,
-     including those its frame's layout passes refused. *)
+  (* A frame starts a new round of size reports and admits every pending one,
+     including those its layout passes refused. *)
   t.size_round.limit <- -1;
   (* Consume the request that led to this pass before running any code that can
      schedule its successor. In particular, widgets may discover geometry in
      their render function and change a sibling's visibility after the command
      list has already been built. That change must survive for another pass. *)
   Atomic.set t.dirty false;
-  (* A render pass owns the complete next frame, including blank cells:
-     Screen.build guarantees cleared buffers before drawing, so when
-     settlement performs another pass before presenting the first one,
-     transparent text blanks do not preserve glyphs drawn by that superseded
-     pass. *)
   (* Pass 0: Lifecycle passes *)
   Hashtbl.iter
     (fun _num node -> Renderable.Private.run_lifecycle_pass node)
     t.lifecycle_set;
   (* Frame callbacks *)
   List.iter (fun f -> f delta) t.frame_callbacks;
-  let rec paint remaining frame delta =
+  prepare_commands t ~width ~height ~frame:true ~delta;
+  t.frame <- Some { width; height; delta }
+
+let paint_frame t ~height =
+  let frame =
+    match t.frame with
+    | Some frame -> frame
+    | None -> invalid_arg "Renderer.paint_frame: no frame is laid out"
+  in
+  t.frame <- None;
+  let width = frame.width in
+  (* A paint owns the complete next frame, including blank cells:
+     Screen.build guarantees cleared buffers before drawing, so when
+     settlement performs another pass before presenting the first one,
+     transparent text blanks do not preserve glyphs drawn by that superseded
+     pass. *)
+  let rec paint remaining delta =
     Screen.build t.screen ~width ~height (fun grid hits ->
-        prepare_commands t ~width ~height ~layout_height ~frame ~delta;
         Screen.Hit_grid.clear_clip hits;
         execute_commands t ~grid ~hits ~delta);
     if layout_dirty t then begin
       if remaining = 0 then
         invalid_arg "Mosaic.Renderer: rendering repeatedly invalidated layout";
-      paint (remaining - 1) false 0.
+      prepare_commands t ~width ~height:frame.height ~frame:false ~delta:0.;
+      paint (remaining - 1) 0.
     end
   in
-  paint 16 true delta;
+  paint 16 frame.delta;
   (* Update cursor from focused node. Visibility is derived from renderable
      intent — a cursor is visible iff a focused renderable exposes one — so
      the state is authoritative regardless of the screen's previous policy
@@ -1062,6 +1078,10 @@ let render_frame ?layout_height (t : t) ~width ~height ~delta =
       Screen.set_cursor t.screen
         { cursor with position = None; visible = false });
   recheck_hover t
+
+let render_frame t ~width ~height ~delta =
+  layout_frame t ~width ~height ~delta;
+  paint_frame t ~height
 
 (* A hint is only forwarded when the scrolled region owns the full grid
    width: DECSTBM shifts entire terminal rows, so a narrower container would

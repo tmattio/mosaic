@@ -29,6 +29,7 @@
 - `Cmd.focus` expires after one deferred attempt instead of retrying forever; every-timers carry absolute deadlines and no longer phase-merge
 - Incremental markdown reconciliation: streaming appends re-render only the tail; `table` caches auto column widths; `line_number` indexes its props
 - Edit-buffer undo history is bounded (200 snapshots)
+- **Primary frames are laid out once** – `Renderer.render_frame` is `Renderer.layout_frame` followed by `Renderer.paint_frame`, and loses `?layout_height`. In primary mode the runtime lays the frame out when it reports the rows it requires and paints that layout into the live region, where it laid the tree out once to learn the rows and again to draw; input geometry is laid out against the terminal's height too, so the tree is no longer laid out at two heights in turn
 
 #### Fixed
 

@@ -555,6 +555,14 @@ let process_pending_msgs runtime =
   in
   drain ()
 
+(* The space the tree is laid out in, for input and for frames alike. In
+   [`Primary] mode it is the terminal's height, the most rows the live region
+   can take; the region is as tall as the frame's content. *)
+let layout_size runtime =
+  match Matrix.mode runtime.matrix_app with
+  | `Alt -> Matrix.effective_size runtime.matrix_app
+  | `Primary -> Matrix.full_size runtime.matrix_app
+
 (* Only the loop thread runs the application and reconciler. Widget callbacks
    complete their updates before default processing continues. During a view or
    geometry refresh, callbacks enqueue instead of re-entering reconciliation. *)
@@ -568,7 +576,7 @@ let synchronize runtime =
           process_pending_msgs runtime;
           if runtime.view_dirty then begin
             runtime.view_dirty <- false;
-            let width, height = Matrix.effective_size runtime.matrix_app in
+            let width, height = layout_size runtime in
             let vnode =
               Vnode.map runtime.map_message (runtime.app.view runtime.model)
             in
@@ -782,35 +790,46 @@ let run ?matrix
 
   let frame_delta = ref 0. in
   (* In [`Primary] mode the live region takes the rows of the frame before it
-     is drawn, so the tree is laid out first, against the terminal's height,
-     the most rows the region can have. *)
+     is drawn, so the frame is laid out first, against the terminal's height,
+     the most rows the region can have, and drawn once the region has its
+     rows. Messages the layout delivers wait for the next frame, as those of a
+     paint do. *)
   let primary_required_rows app =
     match Matrix.mode app with
     | `Primary ->
-        let width, _ = Matrix.size app and _, rows = Matrix.full_size app in
-        Renderer.prepare_layout runtime.renderer ~width ~height:rows;
+        render runtime;
+        let width, height = layout_size runtime in
+        runtime.delivering <- true;
+        Fun.protect
+          ~finally:(fun () -> runtime.delivering <- false)
+          (fun () ->
+            Renderer.layout_frame runtime.renderer ~width ~height
+              ~delta:!frame_delta);
         Some (max 1 (Renderable.height (Renderer.root runtime.renderer)))
     | `Alt -> None
   in
 
   let finish_render () =
     (* Reconciliation invalidations are consumed by this frame. A worker or
-       widget may still request a follow-up while it renders. Clear the gate
-       before checking dirty so a concurrent notification cannot be lost. *)
+       widget may still request a follow-up while it renders, and a message
+       delivered during the frame waits for the next one. Clear the gate
+       before checking so a concurrent notification cannot be lost. *)
     Atomic.set rendering false;
-    if Renderer.needs_render runtime.renderer then
-      Matrix.request_redraw runtime.matrix_app
+    if
+      Renderer.needs_render runtime.renderer
+      || Atomic.get runtime.pending_msgs <> []
+    then Matrix.request_redraw runtime.matrix_app
   in
   let render_frame () =
-    render runtime;
-    let width, height = Matrix.size runtime.matrix_app in
-    let layout_height =
-      match Matrix.mode runtime.matrix_app with
-      | `Alt -> height
-      | `Primary -> snd (Matrix.full_size runtime.matrix_app)
-    in
-    Renderer.render_frame runtime.renderer ~layout_height ~width ~height
-      ~delta:!frame_delta;
+    (match Matrix.mode runtime.matrix_app with
+    | `Alt ->
+        render runtime;
+        let width, height = Matrix.size runtime.matrix_app in
+        Renderer.render_frame runtime.renderer ~width ~height
+          ~delta:!frame_delta
+    | `Primary ->
+        Renderer.paint_frame runtime.renderer
+          ~height:(snd (Matrix.size runtime.matrix_app)));
     (* The renderer built directly into the runtime's screen; Matrix.submit
        presents it with a single diff. Forward the frame's hardware scroll
        hint so a scrolled viewport diffs only its revealed rows. *)

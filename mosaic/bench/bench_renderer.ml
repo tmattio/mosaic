@@ -212,11 +212,10 @@ let primary_frame st =
   st.typed <- not st.typed;
   Text.set_content st.prompt (if st.typed then "> ab" else "> a");
   let renderer = st.primary_renderer in
-  Renderer.prepare_layout renderer ~width:viewport_width
-    ~height:primary_terminal_rows;
+  Renderer.layout_frame renderer ~width:viewport_width
+    ~height:primary_terminal_rows ~delta:16.;
   let rows = Renderable.height (Renderer.root renderer) in
-  Renderer.render_frame renderer ~layout_height:primary_terminal_rows
-    ~width:viewport_width ~height:rows ~delta:16.;
+  Renderer.paint_frame renderer ~height:rows;
   ignore (Renderer.render renderer : string)
 
 let make_primary () =

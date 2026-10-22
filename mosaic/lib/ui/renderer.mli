@@ -87,48 +87,61 @@ val prepare_layout : t -> width:int -> height:int -> unit
     it returns. Raises [Invalid_argument] if layout callbacks do not converge.
 
     Size observers (see {!Renderable.Private.set_size_observer}) report during
-    each call. Between two {!render_frame}s, once a call has delivered reports,
-    later calls deliver only reports of nodes deeper than the shallowest node it
-    reported; the others stay pending until {!render_frame}, which delivers
-    every pending report and requests the render that does so. Depth grows with
-    each call that delivers, so repeated calls cannot report forever. This is
-    the depth rule of CSS Resize Observer
+    each call. Between two frames, once a call has delivered reports, later
+    calls deliver only reports of nodes deeper than the shallowest node it
+    reported; the others stay pending until the next {!layout_frame}, which
+    delivers every pending report and requests the render that does so. Depth
+    grows with each call that delivers, so repeated calls cannot report forever.
+    This is the depth rule of CSS Resize Observer
     ({{:https://www.w3.org/TR/resize-observer/#gather-active-observations-h}
       §3.4.1}). *)
 
-val render_frame :
-  ?layout_height:int -> t -> width:int -> height:int -> delta:float -> unit
-(** [render_frame t ~width ~height ~delta] builds the next frame.
+val render_frame : t -> width:int -> height:int -> delta:float -> unit
+(** [render_frame t ~width ~height ~delta] builds the next frame: it is
+    {!layout_frame} followed by {!paint_frame} at the same [height].
 
     Each call replaces the complete unpresented frame. Blank cells therefore
     belong to the new pass rather than compositing over glyphs from an earlier
     pass, including when {!render_frame_until_settled} renders multiple passes
     before presentation.
 
-    The pipeline runs in order:
+    [width] and [height] are the frame dimensions in terminal cells. [delta] is
+    elapsed milliseconds since the last frame. *)
+
+val layout_frame : t -> width:int -> height:int -> delta:float -> unit
+(** [layout_frame t ~width ~height ~delta] lays out the next frame against
+    [width] by [height] cells, for {!paint_frame} to draw. In order, it:
     - Runs lifecycle passes ([on_frame] and resize hooks).
     - Runs frame callbacks (see {!add_frame_callback}).
     - Computes layout via Toffee — skipped when no layout-affecting mutation
-      occurred since the last pass and the frame dimensions are unchanged.
+      occurred since the last pass and the dimensions are unchanged.
     - Walks the tree: extracts layout and builds the render command list,
-      omitting subtrees whose ancestor clip does not intersect the frame.
-    - Settles layout changes made by update/resize hooks before drawing.
-    - Executes render commands: draws to the grid and populates the hit grid. If
-      drawing invalidates layout, rebuilds the unpresented frame. Animation
-      callbacks run once per call, not once per settlement pass.
-    - Rechecks hover state against the frame's hit grid.
+      omitting subtrees whose ancestor clip does not intersect the [width] by
+      [height] frame. Every pending size report is delivered.
+    - Settles layout changes made by update/resize hooks.
 
-    Raises [Invalid_argument] if callbacks repeatedly invalidate layout without
-    converging. External asynchronous work remains pending for a later frame.
+    Animation callbacks run once per frame, here. Afterwards the root's
+    {!Renderable.height} is the height of the frame's content, which a host can
+    read before it sizes the grid the frame is drawn into: a primary-mode host
+    lays the frame out against the terminal's height and draws it into a live
+    region as tall as the content.
 
-    [width] and [height] are the frame dimensions in terminal cells. [delta] is
-    elapsed milliseconds since the last frame.
+    Raises [Invalid_argument] if layout callbacks do not converge. *)
 
-    [layout_height] (default [height]) is the height given to layout. Pass a
-    larger value when content exceeds the presented viewport — for example a
-    primary-mode host growing its live region — so layout computes against the
-    content height while the screen keeps the viewport size; rows below [height]
-    are clipped. *)
+val paint_frame : t -> height:int -> unit
+(** [paint_frame t ~height] draws the frame laid out by the last {!layout_frame}
+    into the screen's next grid, as wide as the layout and [height] rows tall;
+    rows of the layout below [height] are clipped. It executes the render
+    commands, which draw to the grid and populate the hit grid; if drawing
+    invalidates layout, it lays the frame out again at the same size, without
+    animation callbacks, and rebuilds the unpresented frame. It then updates the
+    cursor from the focused node and rechecks hover state against the frame's
+    hit grid.
+
+    Raises [Invalid_argument] if no frame is laid out, that is when no
+    {!layout_frame} came since the last [paint_frame] or {!prepare_layout}, or
+    if drawing repeatedly invalidates layout without converging. External
+    asynchronous work remains pending for a later frame. *)
 
 val render : ?full:bool -> t -> string
 (** [render t] diffs the current frame against the previous one and returns the
