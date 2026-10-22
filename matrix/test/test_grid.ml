@@ -143,7 +143,16 @@ let thai_spacing_mark_cell_placement () =
         (Grid.cell_width grid 3);
       equal ~msg:"next character follows the tone-mark cluster" string "Y"
         (Grid.get_text grid 4))
-    [ `Unicode; `Wcwidth ]
+    [ `Unicode; `Unicode_wide ]
+
+(* A wcwidth terminal gives SARA AM, a spacing mark of width 1, a cell of its
+   own, after its base and the tone mark. *)
+let thai_spacing_mark_wcwidth_units () =
+  let grid = Grid.create ~width:5 ~height:1 ~width_method:`Wcwidth () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"น้ำXว่Y";
+  equal ~msg:"cells" (list string)
+    [ "น้"; "ำ"; "X"; "ว่"; "Y" ]
+    (List.init 5 (Grid.get_text grid))
 
 let inherit_bg_on_unwritten_ascii () =
   let grid = Grid.create ~width:2 ~height:1 () in
@@ -482,8 +491,9 @@ let scalar_writes_preserve_spans () =
   assert_valid_spans grid
 
 let clipped_multi_column_grapheme () =
-  let src = Grid.create ~width:6 ~height:1 ~width_method:`Wcwidth () in
-  Grid.draw_text src ~x:0 ~y:0 ~text:"👨‍💻";
+  let src = Grid.create ~width:6 ~height:1 () in
+  (* A conjunct of four consonants, four columns wide. *)
+  Grid.draw_text src ~x:0 ~y:0 ~text:"क्क्क्क";
   equal ~msg:"fixture spans four columns" int 4 (Grid.cell_width src 0);
   List.iter
     (fun transfer ->
@@ -1571,6 +1581,7 @@ let tests =
     test "combining mark stays with ascii base"
       combining_mark_stays_with_ascii_base;
     test "Thai spacing mark cell placement" thai_spacing_mark_cell_placement;
+    test "Thai spacing mark wcwidth units" thai_spacing_mark_wcwidth_units;
     test "create defaults" create_defaults;
     test "create with configuration" create_with_configuration;
     test "set width method" set_width_method_updates;

@@ -602,7 +602,9 @@ let wcwidth_decoder_matches_stdlib () =
     while !offset < String.length text do
       let decoded = String.get_utf_8_uchar text !offset in
       offset := !offset + Uchar.utf_decode_length decoded;
-      incr count
+      (* Each scalar of positive width starts a unit. *)
+      if uchar_width ~tab_width:2 (Uchar.utf_decode_uchar decoded) > 0 then
+        incr count
     done;
     let actual =
       find_pos ~width_method:`Wcwidth ~tab_width:2 text ~columns:max_int
@@ -931,6 +933,288 @@ let layout_edge_cases () =
         [ 0; 1; 2; 7 ])
     [ ""; "\n"; "\r\n"; "hello world"; "界x"; "\255a\226\128\139" ]
 
+(* Segmenter *)
+
+let methods = [ `Unicode; `Unicode_wide; `Wcwidth ]
+
+let method_name = function
+  | `Unicode -> "Unicode"
+  | `Unicode_wide -> "Unicode_wide"
+  | `Wcwidth -> "Wcwidth"
+
+(* The units of [chunks], fed one scalar at a time with [Segmenter.add], or
+   with [Segmenter.ascii_run] wherever it applies when [runs]. Each unit is
+   its bytes and its width when it closed. *)
+let units ?(runs = false) m chunks =
+  let s = Segmenter.create m in
+  let out = ref [] and cur = Buffer.create 8 in
+  let close w =
+    if Buffer.length cur > 0 then out := (Buffer.contents cur, w) :: !out;
+    Buffer.clear cur
+  in
+  List.iter
+    (fun chunk ->
+      let len = String.length chunk in
+      let i = ref 0 in
+      while !i < len do
+        let w = Segmenter.width s in
+        let k =
+          if runs then Segmenter.ascii_run s chunk ~pos:!i ~len:(len - !i)
+          else 0
+        in
+        if k > 0 then begin
+          close w;
+          for j = !i to !i + k - 2 do
+            out := (String.make 1 chunk.[j], 1) :: !out
+          done;
+          Buffer.add_char cur chunk.[!i + k - 1];
+          i := !i + k
+        end
+        else begin
+          let d = String.get_utf_8_uchar chunk !i in
+          let n = Uchar.utf_decode_length d in
+          if Segmenter.add s (Uchar.utf_decode_uchar d) then close w;
+          Buffer.add_string cur (String.sub chunk !i n);
+          i := !i + n
+        end
+      done)
+    chunks;
+  close (Segmenter.width s);
+  List.rev !out
+
+let unit_list = list (pair string int)
+
+let segmenter_units () =
+  let check m text expected =
+    equal
+      ~msg:(method_name m ^ " " ^ String.escaped text)
+      unit_list expected (units m [ text ])
+  in
+  List.iter
+    (fun m ->
+      check m "e\u{0301}x" [ ("e\u{0301}", 1); ("x", 1) ];
+      check m "a\r\nb" [ ("a", 1); ("\r", 0); ("\n", 0); ("b", 1) ];
+      check m "a\tb" [ ("a", 1); ("\t", 0); ("b", 1) ];
+      check m "a\u{9B}b" [ ("a", 1); ("\u{9B}", 0); ("b", 1) ];
+      check m "\t\u{0301}" [ ("\t", 0); ("\u{0301}", 0) ];
+      check m "中" [ ("中", 2) ])
+    methods;
+  check `Unicode "\u{0600}1b" [ ("\u{0600}1", 1); ("b", 1) ];
+  check `Unicode "👨\u{200D}💻" [ ("👨\u{200D}💻", 2) ];
+  check `Wcwidth "👨\u{200D}💻" [ ("👨\u{200D}", 2); ("💻", 2) ];
+  check `Wcwidth "\u{0301}e\u{0301}" [ ("\u{0301}", 0); ("e\u{0301}", 1) ];
+  check `Unicode "1\u{FE0F}\u{20E3}" [ ("1\u{FE0F}\u{20E3}", 2) ];
+  check `Unicode "a1\u{FE0F}" [ ("a", 1); ("1\u{FE0F}", 2) ];
+  check `Unicode "ab\u{FE0F}" [ ("a", 1); ("b\u{FE0F}", 1) ]
+
+(* Feeding with runs of ASCII, and cut anywhere, gives the units of the whole
+   text fed a scalar at a time. *)
+let segmenter_split_invariance () =
+  let texts =
+    [
+      "\u{0D4E}ab";
+      "x\u{111C2}ab";
+      "\u{0600}1bcd";
+      "11\u{FE0F}2";
+      "ab#\u{FE0F}\u{20E3}cd";
+      "abc\u{0301}de";
+      "ab\u{1F1EB}\u{1F1F7}cd";
+      "a中e\u{0301}👨\u{200D}💻xyz";
+      "\u{0915}\u{094D}\u{0937}ab";
+      "ab\r\ncd\tef";
+      "a\u{200B}bc";
+    ]
+  in
+  let rec utf8_cuts text i acc =
+    if i >= String.length text then List.rev acc
+    else
+      let n = Uchar.utf_decode_length (String.get_utf_8_uchar text i) in
+      utf8_cuts text (i + n) ((i + n) :: acc)
+  in
+  List.iter
+    (fun m ->
+      List.iter
+        (fun text ->
+          let whole = units m [ text ] in
+          let msg cut =
+            Printf.sprintf "%s %S cut at %d" (method_name m) text cut
+          in
+          equal ~msg:(msg 0) unit_list whole (units ~runs:true m [ text ]);
+          List.iter
+            (fun cut ->
+              let len = String.length text in
+              let chunks =
+                [ String.sub text 0 cut; String.sub text cut (len - cut) ]
+              in
+              equal ~msg:(msg cut) unit_list whole (units m chunks);
+              equal ~msg:(msg cut) unit_list whole (units ~runs:true m chunks))
+            (utf8_cuts text 0 []))
+        texts)
+    methods
+
+let segmenter_ascii_run () =
+  let s = Segmenter.create `Unicode in
+  equal ~msg:"leaves the last byte" int 3
+    (Segmenter.ascii_run s "abcd" ~pos:0 ~len:4);
+  equal ~msg:"a lone byte is no run" int 0
+    (Segmenter.ascii_run s "d" ~pos:0 ~len:1);
+  is_true ~msg:"the last byte starts the next unit"
+    (Segmenter.add s (Uchar.of_char 'd'));
+  ignore (Segmenter.add s (Uchar.of_int 0x0600) : bool);
+  equal ~msg:"a Prepend character absorbs the next byte" int 0
+    (Segmenter.ascii_run s "ab" ~pos:0 ~len:2);
+  is_false ~msg:"which then joins it" (Segmenter.add s (Uchar.of_char 'a'));
+  equal ~msg:"after it, a run" int 1 (Segmenter.ascii_run s "bc" ~pos:0 ~len:2);
+  equal ~msg:"stops at a non-ASCII byte" int 1
+    (Segmenter.ascii_run s "xy\u{0301}" ~pos:0 ~len:4);
+  expect_invalid_arg "out of bounds" (fun () ->
+      ignore (Segmenter.ascii_run s "ab" ~pos:1 ~len:2 : int))
+
+let segmenter_reset () =
+  let s = Segmenter.create `Unicode in
+  ignore (Segmenter.add s (Uchar.of_char 'e') : bool);
+  is_false ~msg:"a mark continues" (Segmenter.add s (Uchar.of_int 0x0301));
+  Segmenter.reset s;
+  is_true ~msg:"after reset, a mark starts a unit"
+    (Segmenter.add s (Uchar.of_int 0x0301));
+  equal ~msg:"of no width" int 0 (Segmenter.width s)
+
+(* Width never decreases within a unit: from units in progress of every kind,
+   add each scalar of the planes in use. *)
+let segmenter_width_monotone () =
+  let prefixes =
+    [
+      "";
+      "a";
+      "1";
+      "❤";
+      "中";
+      "\u{0915}\u{094D}";
+      "\u{1F1EB}";
+      "👨\u{200D}";
+      "e\u{0301}";
+      "\u{0E19}";
+      "\u{0600}";
+      "\u{1100}";
+    ]
+  in
+  let scalars =
+    Seq.append (Seq.init 0x30000 Fun.id)
+      (Seq.init 0x1000 (fun i -> 0xE0000 + i))
+    |> Seq.filter (fun cp -> cp < 0xD800 || cp > 0xDFFF)
+    |> Array.of_seq
+  in
+  List.iter
+    (fun m ->
+      List.iter
+        (fun prefix ->
+          let s = Segmenter.create m in
+          Array.iter
+            (fun cp ->
+              Segmenter.reset s;
+              let i = ref 0 in
+              while !i < String.length prefix do
+                let d = String.get_utf_8_uchar prefix !i in
+                ignore (Segmenter.add s (Uchar.utf_decode_uchar d) : bool);
+                i := !i + Uchar.utf_decode_length d
+              done;
+              let before = Segmenter.width s in
+              if
+                (not (Segmenter.add s (Uchar.of_int cp)))
+                && Segmenter.width s < before
+              then
+                failf "%s: U+%04X narrows %S from %d to %d" (method_name m) cp
+                  prefix before (Segmenter.width s))
+            scalars)
+        prefixes)
+    methods
+
+(* Every function that measures text agrees with the segmenter, also the
+   loop that measure keeps apart for `Wcwidth. *)
+let folds_agree_with_segmenter () =
+  let texts =
+    [
+      "Hello 世界 👩\u{200D}🚀 cafe\u{0301} 🇫🇷 ";
+      "\u{0D4E}ab\t\u{0600}1b";
+      "น้ำXว่Y";
+      "a\r\n\u{9B}b\u{200B}c";
+      "\xF0\x9F(\xC3";
+      "a1\u{FE0F}\u{20E3}#\u{FE0F}";
+      "abc\u{0D4E}defg\u{0301}hi\u{0600}jk";
+      "plain ascii text only";
+      "中abcdefgh中";
+      "中abcdefgh";
+      "\u{0600}abc";
+    ]
+  in
+  List.iter
+    (fun m ->
+      List.iter
+        (fun text ->
+          let msg = method_name m ^ " " ^ String.escaped text in
+          let expected =
+            (* Units of positive width, a TAB two cells wide. *)
+            let s = Segmenter.create m in
+            let out = ref [] and start = ref 0 and w = ref 0 in
+            let i = ref 0 in
+            let close stop =
+              let w = if text.[!start] = '\t' then 2 else !w in
+              if stop > !start && w > 0 then
+                out := (!start, stop - !start, w) :: !out
+            in
+            while !i < String.length text do
+              let d = String.get_utf_8_uchar text !i in
+              let before = Segmenter.width s in
+              if Segmenter.add s (Uchar.utf_decode_uchar d) then (
+                w := before;
+                close !i;
+                start := !i);
+              i := !i + Uchar.utf_decode_length d
+            done;
+            w := Segmenter.width s;
+            close (String.length text);
+            List.rev !out
+          in
+          let visited = ref [] in
+          iter_grapheme_info ~width_method:m ~tab_width:2
+            (fun ~offset ~len ~width ->
+              visited := (offset, len, width) :: !visited)
+            text;
+          equal
+            ~msg:(msg ^ " iter_grapheme_info")
+            (list (triple int int int))
+            expected (List.rev !visited);
+          let total =
+            List.fold_left (fun acc (_, _, w) -> acc + w) 0 expected
+          in
+          equal ~msg:(msg ^ " measure") int total
+            (measure ~width_method:m ~tab_width:2 text);
+          (* Every budget: the longest prefix of whole units that fits. *)
+          for columns = 1 to total + 1 do
+            let rec fit count used = function
+              | (off, _, w) :: rest ->
+                  if used + w > columns then (off, count, used)
+                  else fit (count + 1) (used + w) rest
+              | [] -> (String.length text, count, used)
+            in
+            let p =
+              find_wrap_pos ~width_method:m ~tab_width:2 text
+                ~max_columns:columns
+            in
+            equal
+              ~msg:(Printf.sprintf "%s find_wrap_pos %d" msg columns)
+              (triple int int int) (fit 0 0 expected)
+              (p.byte_offset, p.grapheme_count, p.columns_used)
+          done;
+          let p =
+            find_wrap_pos ~width_method:m ~tab_width:2 text ~max_columns:max_int
+          in
+          equal ~msg:(msg ^ " find_wrap_pos") (pair int int)
+            (List.length expected, total)
+            (p.grapheme_count, p.columns_used))
+        texts)
+    methods
+
 let () =
   run "matrix.text"
     [
@@ -968,6 +1252,15 @@ let () =
             measure_sub_matches_slice;
           test "malformed wcwidth positions" malformed_wcwidth_positions;
           test "wcwidth decoder matches Stdlib" wcwidth_decoder_matches_stdlib;
+        ];
+      group "Segmenter"
+        [
+          test "units" segmenter_units;
+          test "split invariance" segmenter_split_invariance;
+          test "ASCII runs" segmenter_ascii_run;
+          test "reset" segmenter_reset;
+          test "width never decreases" segmenter_width_monotone;
+          test "folds agree" folds_agree_with_segmenter;
         ];
       group "Graphemes"
         [

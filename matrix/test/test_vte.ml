@@ -1387,8 +1387,11 @@ let wcwidth_insert_measures_complete_cluster () =
   Vte.feed_string vte "ABCDEFGH\r\027[4h👨‍💻";
   equal ~msg:"insert shifts by the entire four-column cluster" string "A"
     (Grid.get_text (Vte.grid vte) 4);
-  equal ~msg:"insert keeps the ZWJ sequence" string "👨‍💻"
-    (Grid.get_text (Vte.grid vte) 0);
+  (* A wcwidth terminal places each emoji in its own cells, with the ZWJ after
+     the first. *)
+  equal ~msg:"insert places wcwidth units" (pair string string)
+    ("👨\u{200D}", "💻")
+    (Grid.get_text (Vte.grid vte) 0, Grid.get_text (Vte.grid vte) 2);
   equal ~msg:"cursor uses the complete width" (pair int int) (0, 4)
     (Vte.cursor_pos vte)
 

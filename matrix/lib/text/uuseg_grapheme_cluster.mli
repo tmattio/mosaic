@@ -7,8 +7,8 @@
 
     Vendored from uuseg v17.0.0, stripped to its boundary-check core:
     the streaming [add] API is removed, and {!reset},
-    {!check_boundary}, and {!check_boundary_with_width} are added for
-    zero-allocation segmentation. *)
+    {!check_boundary}, {!check_boundary_with_width} and {!is_boundary} are
+    added for zero-allocation segmentation. *)
 
 (** {1:segmenter Segmenter} *)
 
@@ -28,6 +28,9 @@ val check_boundary : t -> Uchar.t -> bool
 (** [check_boundary s u] is [true] if there is a grapheme cluster
     boundary before [u], and updates [s]. The first character
     always returns [true] (rule GB1). Zero allocation. *)
+
+val is_boundary : t -> Uchar.t -> bool
+(** [is_boundary s u] is {!check_boundary}[ s u] without updating [s]. *)
 
 val check_boundary_with_width : t -> Uchar.t -> int
 (** [check_boundary_with_width s u] is like {!check_boundary} but

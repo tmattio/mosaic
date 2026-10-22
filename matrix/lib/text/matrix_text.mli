@@ -6,10 +6,10 @@
     storage.
 
     {!iter_graphemes} and {!grapheme_count} always follow Unicode grapheme
-    boundaries, independently of terminal width policy. Width-dependent position
-    operations instead follow the terminal's display units: clusters in the
-    Unicode modes and codepoints in [`Wcwidth] mode. Use Unicode boundaries for
-    editing text; use display positions for fitting and placing it. *)
+    boundaries, independently of terminal width policy. Width-dependent
+    operations instead follow the terminal's display units, which a {!Segmenter}
+    defines. Use Unicode boundaries for editing text; use display units for
+    fitting and placing it. *)
 
 type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
 (** The type for width calculation methods.
@@ -18,7 +18,8 @@ type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
     - [`Unicode_wide] uses grapheme segmentation and promotes clusters with
       additional visible components to at least two cells, matching modern
       Ghostty's width policy.
-    - [`Wcwidth] sums per-codepoint wcwidth-style widths inside each string. *)
+    - [`Wcwidth] gives each scalar its wcwidth-style width, and places the
+      zero-width scalars after a scalar of positive width with it. *)
 
 type line_break_kind = [ `LF | `CR | `CRLF ]
 (** The type for line terminators. *)
@@ -26,22 +27,93 @@ type line_break_kind = [ `LF | `CR | `CRLF ]
 type position = { byte_offset : int; grapheme_count : int; columns_used : int }
 (** The type for a byte position found by display width.
 
-    [grapheme_count] is a cluster count for the Unicode modes and a codepoint
-    count for [`Wcwidth]. *)
+    [grapheme_count] counts the display units of positive width before
+    [byte_offset]. *)
 
 type grapheme = { byte_offset : int; byte_length : int; width : int }
-(** The type for a grapheme or codepoint span.
-
-    Values returned in [`Wcwidth] mode describe one codepoint. *)
+(** The type for the span of a display unit. *)
 
 val uchar_width : tab_width:int -> Uchar.t -> int
 (** [uchar_width ~tab_width u] is the display width of [u] in isolation.
     Controls and combining characters contribute [0]. Width policies agree on
     individual scalars; measuring a sequence requires {!measure}. *)
 
+(** {1:segmenter Display units}
+
+    A terminal receives its output in pieces of any size and must cut it into
+    the same display units as if it had arrived whole. A segmenter carries what
+    that takes from one scalar to the next: the state of the grapheme cluster
+    boundary rules of {{:https://www.unicode.org/reports/tr29/}UAX #29}, which
+    look only backwards, so that a boundary is known when the scalar after it
+    arrives; and the width of the unit in progress.
+
+    The units are extended grapheme clusters for [`Unicode] and [`Unicode_wide].
+    For [`Wcwidth] they are what a terminal that measures each character with
+    [wcwidth] places: a scalar of positive width and the zero-width scalars that
+    follow it. In every method a control character (General_Category Cc: C0, DEL
+    and C1, TAB included) is a unit of its own, of width [0]: it is a function
+    to perform, not a character to display. CR LF is therefore two units, where
+    UAX #29 makes one cluster of it (GB3).
+
+    Within a unit, {!Segmenter.width} never decreases as scalars are added. A
+    terminal places a unit before it knows that the unit is complete, and widens
+    it in place as it grows; it could not take back a character that already
+    wrapped the line. So a later scalar never narrows a unit: VS15 (U+FE0E),
+    which asks for the text presentation of an emoji
+    ({{:https://www.unicode.org/reports/tr51/}UTS #51} §4), does not narrow an
+    emoji already two cells wide.
+
+    {!measure}, {!iter_grapheme_info}, {!find_wrap_pos}, {!find_pos},
+    {!width_at} and {!prev_grapheme} measure these units, with a TAB [tab_width]
+    cells wide. *)
+
+module Segmenter : sig
+  type t
+  (** The type for the segmentation of one stream. *)
+
+  val create : width_method -> t
+  (** [create m] is a segmenter for units of method [m], before the first
+      scalar. *)
+
+  val reset : t -> unit
+  (** [reset s] ends the unit in progress: the next scalar starts a unit, as at
+      the start of a text (UAX #29 GB1). *)
+
+  val add : t -> Uchar.t -> bool
+  (** [add s u] adds the scalar [u] to the stream and is [true] iff [u] starts a
+      unit. Afterwards [u] belongs to the unit in progress, so {!width} is that
+      of the unit [u] started or continued, not of the unit it closed: a caller
+      that needs the closed unit's width reads {!width} before [add]. A
+      printable ASCII scalar after another is read in two comparisons.
+      Allocation-free. *)
+
+  val ascii_run : t -> string -> pos:int -> len:int -> int
+  (** [ascii_run s str ~pos ~len] is the number [k] of bytes from [pos] that are
+      complete units of one printable ASCII character (U+0020 to U+007E) each:
+      each starts a unit, and is followed within the slice by another printable
+      ASCII byte, which therefore starts the next unit. It is [0] when no such
+      run starts at [pos], in particular when the unit in progress absorbs the
+      byte at [pos], as a Prepend character does (UAX #29 GB9b). Afterwards [s]
+      is as if the [k] scalars had been added with {!add}; the byte at [pos + k]
+      is not added. So a writer places [k] cells at once and goes on with
+      {!add}, and the units do not depend on how the stream was cut.
+      Allocation-free.
+
+      Raises [Invalid_argument] if [pos] and [len] do not designate a valid
+      substring of [str]. *)
+
+  val width : t -> int
+  (** [width s] is the display width of the unit in progress: [0] for a control,
+      before the first scalar, and while the unit has nothing to display. It
+      never decreases until the next unit starts. *)
+end
+
+(** {1:measuring Measuring} *)
+
 val measure : width_method:width_method -> tab_width:int -> string -> int
-(** [measure ~width_method ~tab_width s] is the display width of [s]. Control
-    characters contribute [0].
+(** [measure ~width_method ~tab_width s] is the sum of the widths of the display
+    units of [s]. Control characters contribute [0], except TAB, which
+    contributes [tab_width].
 
     Invalid UTF-8 byte sequences are treated as U+FFFD, each contributing width
     [1]. *)
@@ -82,8 +154,9 @@ val iter_grapheme_info :
   string ->
   unit
 (** [iter_grapheme_info ~width_method ~tab_width f s] calls
-    [f ~offset ~len ~width] for each non-zero-width Unicode grapheme cluster in
-    [s]. The width policy changes the reported width, not the boundaries. *)
+    [f ~offset ~len ~width] for each display unit of [s] of positive width, in
+    order. A TAB is [tab_width] wide. Invalid UTF-8 byte sequences are treated
+    as U+FFFD. *)
 
 val iter_wrap_breaks :
   (break_byte_offset:int -> next_byte_offset:int -> grapheme_offset:int -> unit) ->
@@ -122,10 +195,8 @@ val find_wrap_pos :
 (** [find_wrap_pos ~width_method ~tab_width s ~max_columns] is the longest
     prefix of [s] whose display width is at most [max_columns].
 
-    If the next grapheme would exceed [max_columns], the result points to the
-    start of that grapheme. In [`Wcwidth] mode, movement is by codepoint rather
-    than by grapheme cluster, and stops as soon as the column budget is reached,
-    before any following zero-width codepoints. *)
+    If the next display unit would exceed [max_columns], the result points to
+    the start of that unit. Units of no width that fit are included. *)
 
 val find_pos :
   width_method:width_method ->
@@ -144,11 +215,8 @@ val find_pos :
 val width_at :
   width_method:width_method -> tab_width:int -> string -> byte_offset:int -> int
 (** [width_at ~width_method ~tab_width s ~byte_offset] is the display width of
-    the grapheme starting at [byte_offset]. Returns [0] if [byte_offset] is out
-    of bounds.
-
-    In [`Wcwidth] mode, the result is the width of the codepoint starting at
-    [byte_offset]. *)
+    the display unit starting at [byte_offset]. Returns [0] if [byte_offset] is
+    out of bounds. *)
 
 val prev_grapheme :
   width_method:width_method ->
@@ -156,12 +224,10 @@ val prev_grapheme :
   string ->
   byte_offset:int ->
   grapheme option
-(** [prev_grapheme ~width_method ~tab_width s ~byte_offset] is the grapheme
+(** [prev_grapheme ~width_method ~tab_width s ~byte_offset] is the display unit
     immediately before [byte_offset], if any.
 
-    If [byte_offset] falls inside a grapheme, that containing grapheme is
-    returned. In [`Wcwidth] mode, the result is the previous non-zero-width
-    codepoint. *)
+    If [byte_offset] falls inside a unit, that containing unit is returned. *)
 
 module Layout : sig
   (** Source-backed terminal rows. Styles do not affect segmentation. *)

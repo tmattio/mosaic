@@ -9,6 +9,7 @@
    - Changed [break] and [update_left] to take pre-computed [is_extpic] flag
    - Removed the uuseg streaming API ([add]/[copy]/[equal] and the
      [state]/[buf] fields): Matrix only uses the direct boundary checks
+   - Added [is_boundary], a boundary check that does not update the state
 *)
 
 (* These are the rules as found in [1], with property values aliases [2]
@@ -138,6 +139,12 @@ let[@inline] check_boundary s u =
   let is_break = break s right right_incb ~is_extpic in
   update_left s right right_incb ~is_extpic;
   is_break
+
+let is_boundary s u =
+  let props = Unicode.grapheme_props u in
+  let right = byte_to_gcb.(props land 0x1F) in
+  let right_incb = byte_to_incb.((props lsr 5) land 0x03) in
+  break s right right_incb ~is_extpic:(props land 0x80 <> 0)
 
 (* Combined boundary check + width extraction in one property lookup.
    Returns packed int: bit 2 = is_boundary, bits 0-1 = width_enc.

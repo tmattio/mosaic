@@ -165,6 +165,252 @@ let cluster_width ~method_ ~tab_width str off len =
       grapheme_width_unicode_loop ~wide:(method_ = `Unicode_wide) str limit
         tab_width off 0
 
+(* UTF-8 decoding
+
+   The folds below are slower with direct standard decoding (bench_text's
+   position cases by 10 to 60%): even a cold decoder call spills loop state on
+   valid input. Keep this inline decoder and test its malformed prefix
+   consumption against the standard decoder. It returns the scalar and its byte length packed in one immediate
+   int, [(cp lsl 3) lor len], so decoding allocates nothing. Bytes from
+   [limit] on are not read: a scalar cut by [limit] is malformed. *)
+
+let[@inline] is_cont_byte b = b land 0xC0 = 0x80
+let[@inline] decoded_cp d = d lsr 3
+let[@inline] decoded_len d = d land 7
+let replacement_1 = (0xFFFD lsl 3) lor 1
+let replacement_2 = (0xFFFD lsl 3) lor 2
+let replacement_3 = (0xFFFD lsl 3) lor 3
+
+let[@inline] decode_malformed str pos limit b0 =
+  if b0 < 0xE0 || b0 > 0xF4 || pos + 1 >= limit then replacement_1
+  else
+    let b1 = Char.code (String.unsafe_get str (pos + 1)) in
+    if
+      (not (is_cont_byte b1))
+      || (b0 = 0xE0 && b1 < 0xA0)
+      || (b0 = 0xED && b1 >= 0xA0)
+      || (b0 = 0xF0 && b1 < 0x90)
+      || (b0 = 0xF4 && b1 >= 0x90)
+    then replacement_1
+    else if b0 < 0xF0 || pos + 2 >= limit then replacement_2
+    else if is_cont_byte (Char.code (String.unsafe_get str (pos + 2))) then
+      replacement_3
+    else replacement_2
+
+let[@inline] decode str pos limit =
+  let b0 = Char.code (String.unsafe_get str pos) in
+  if b0 < 0x80 then (b0 lsl 3) lor 1
+  else if b0 land 0xE0 = 0xC0 then
+    if pos + 1 < limit then
+      let b1 = Char.code (String.unsafe_get str (pos + 1)) in
+      if is_cont_byte b1 then
+        let cp = ((b0 land 0x1F) lsl 6) lor (b1 land 0x3F) in
+        if cp >= 0x80 then (cp lsl 3) lor 2
+        else decode_malformed str pos limit b0
+      else decode_malformed str pos limit b0
+    else decode_malformed str pos limit b0
+  else if b0 land 0xF0 = 0xE0 then
+    if pos + 2 < limit then
+      let b1 = Char.code (String.unsafe_get str (pos + 1)) in
+      let b2 = Char.code (String.unsafe_get str (pos + 2)) in
+      if is_cont_byte b1 && is_cont_byte b2 then
+        let cp =
+          ((b0 land 0x0F) lsl 12) lor ((b1 land 0x3F) lsl 6) lor (b2 land 0x3F)
+        in
+        if cp >= 0x800 && (cp < 0xD800 || cp > 0xDFFF) then (cp lsl 3) lor 3
+        else decode_malformed str pos limit b0
+      else decode_malformed str pos limit b0
+    else decode_malformed str pos limit b0
+  else if b0 land 0xF8 = 0xF0 then
+    if pos + 3 < limit then
+      let b1 = Char.code (String.unsafe_get str (pos + 1)) in
+      let b2 = Char.code (String.unsafe_get str (pos + 2)) in
+      let b3 = Char.code (String.unsafe_get str (pos + 3)) in
+      if is_cont_byte b1 && is_cont_byte b2 && is_cont_byte b3 then
+        let cp =
+          ((b0 land 0x07) lsl 18)
+          lor ((b1 land 0x3F) lsl 12)
+          lor ((b2 land 0x3F) lsl 6)
+          lor (b3 land 0x3F)
+        in
+        if cp >= 0x10000 && cp <= 0x10FFFF then (cp lsl 3) lor 4
+        else decode_malformed str pos limit b0
+      else decode_malformed str pos limit b0
+    else decode_malformed str pos limit b0
+  else decode_malformed str pos limit b0
+
+(* Display units
+
+   A unit's state is one immediate int: the [ws_step] state of the unit in
+   progress above bit 2, its kind in bits 1 and 2, and in bit 0 whether the
+   last scalar started it. One transition, [unit_step], serves the streaming
+   {!Segmenter} and the folds below, which keep the state in a loop variable
+   so that measuring allocates nothing beyond the boundary state. *)
+
+(* General_Category Cc: C0, DEL and C1. *)
+let[@inline] is_control cp = cp < 0x20 || (cp >= 0x7F && cp < 0xA0)
+let[@inline] is_printable_ascii b = b >= 0x20 && b < 0x7F
+let kind_control = 1
+let kind_text = 2
+let[@inline] unit_ws u = u lsr 3
+let[@inline] unit_kind u = (u lsr 1) land 3
+let[@inline] unit_starts u = u land 1 <> 0
+let[@inline] unit_width u = ws_width (unit_ws u)
+let[@inline] unit_make ws kind = (ws lsl 3) lor (kind lsl 1) lor 1
+let[@inline] unit_extend u ws = (ws lsl 3) lor (u land 6)
+
+(* [unit_step seg ~wide ~wcwidth ~tab cp u] adds the scalar [cp] to the unit
+   state [u]. A control is a unit of its own, of width [tab] for TAB and [0]
+   otherwise. [`Wcwidth] starts a unit at each scalar of positive width;
+   [seg] is unused then. *)
+let[@inline] unit_step seg ~wide ~wcwidth ~tab cp u =
+  if is_control cp then begin
+    if not wcwidth then
+      ignore
+        (Uuseg_grapheme_cluster.check_boundary seg (Uchar.unsafe_of_int cp)
+          : bool);
+    unit_make (if cp = 0x09 then ws_make tab 0 else 0) kind_control
+  end
+  else if wcwidth then
+    let w = codepoint_width_wcwidth ~tab_width:0 cp in
+    if w > 0 then unit_make (ws_make w ws_has_width) kind_text
+    else if unit_kind u <> kind_text then unit_make 0 kind_text
+    else u land lnot 1
+  else
+    let bw =
+      Uuseg_grapheme_cluster.check_boundary_with_width seg
+        (Uchar.unsafe_of_int cp)
+    in
+    let cp_w = (bw land 3) - 1 in
+    if bw land 4 <> 0 || unit_kind u <> kind_text then
+      unit_make (ws_step ~wide cp cp_w 0) kind_text
+    else unit_extend u (ws_step ~wide cp cp_w (unit_ws u))
+
+(* The unit of one printable ASCII character: [ws_step] from [0], without its
+   table lookup. The emoji among them are # * and the digits, which VS16 makes
+   keycap bases. *)
+let[@inline] ascii_unit b =
+  if b = 0x23 || b = 0x2A || (b >= 0x30 && b <= 0x39) then
+    unit_make (ws_make 1 (ws_has_width lor ws_emoji)) kind_text
+  else unit_make (ws_make 1 ws_has_width) kind_text
+
+(* [ascii_run seg ~wcwidth ~ascii_left u str pos limit] is the number of
+   bytes from [pos] that are complete units of one printable ASCII character
+   given the state [u] and [seg]: each starts a unit, and is followed before
+   [limit] by another printable ASCII byte, which therefore starts the next.
+   [ascii_left] tells that the last scalar was printable ASCII. A printable
+   ASCII character after another always starts a unit (GB999); the unit in
+   progress can absorb the first one only if it ends with a Prepend
+   character (GB9b), which [seg] knows. With [final], [limit] ends the text,
+   which completes a run that reaches it: the result is then [limit - pos].
+   Reads but does not update the state. *)
+let[@inline] printable_at str i =
+  is_printable_ascii (Char.code (String.unsafe_get str i))
+
+let[@inline] ascii_run ?(final = false) seg ~wcwidth ~ascii_left u str pos limit
+    =
+  if
+    pos + 1 >= limit
+    || (not (printable_at str pos))
+    || (not (printable_at str (pos + 1)))
+    || not
+         (ascii_left || wcwidth
+         || unit_kind u <> kind_text
+         || Uuseg_grapheme_cluster.is_boundary seg
+              (Uchar.unsafe_of_int (Char.code (String.unsafe_get str pos))))
+  then 0
+  else begin
+    let j = ref (pos + 1) in
+    while !j + 1 < limit && printable_at str (!j + 1) do
+      incr j
+    done;
+    if final && !j + 1 = limit then limit - pos else !j - pos
+  end
+
+(* The state after a run of [k] bytes from [pos] found by [ascii_run], for a
+   fold, which keeps [seg] up to date. *)
+let[@inline] after_ascii_run seg ~wcwidth str pos k =
+  let last = Char.code (String.unsafe_get str (pos + k - 1)) in
+  if not wcwidth then
+    ignore
+      (Uuseg_grapheme_cluster.check_boundary seg (Uchar.unsafe_of_int last)
+        : bool);
+  ascii_unit last
+
+(* Never mutated: [`Wcwidth] does not segment by UAX #29. *)
+let no_seg = Uuseg_grapheme_cluster.create ()
+
+let[@inline] unit_seg width_method =
+  match width_method with
+  | `Wcwidth -> no_seg
+  | `Unicode | `Unicode_wide -> Uuseg_grapheme_cluster.create ()
+
+module Segmenter = struct
+  type t = {
+    seg : Uuseg_grapheme_cluster.t;
+    wide : bool;
+    wcwidth : bool;
+    (* The unit in progress; [0] before the first scalar. *)
+    mutable unit : int;
+    (* The last scalar was printable ASCII, which [seg] may not have seen:
+       every printable ASCII character leaves [seg] in the same state. *)
+    mutable ascii_left : bool;
+  }
+
+  let create m =
+    {
+      seg = unit_seg m;
+      wide = m = `Unicode_wide;
+      wcwidth = m = `Wcwidth;
+      unit = 0;
+      ascii_left = false;
+    }
+
+  let reset s =
+    if not s.wcwidth then Uuseg_grapheme_cluster.reset s.seg;
+    s.unit <- 0;
+    s.ascii_left <- false
+
+  let ascii_x = Uchar.of_int 0x78
+
+  let[@inline] sync s =
+    if s.ascii_left then begin
+      Uuseg_grapheme_cluster.reset s.seg;
+      ignore (Uuseg_grapheme_cluster.check_boundary s.seg ascii_x : bool);
+      s.ascii_left <- false
+    end
+
+  let width s = unit_width s.unit
+
+  let add s u =
+    let cp = Uchar.to_int u in
+    if s.ascii_left && is_printable_ascii cp then begin
+      s.unit <- ascii_unit cp;
+      true
+    end
+    else begin
+      sync s;
+      let u =
+        unit_step s.seg ~wide:s.wide ~wcwidth:s.wcwidth ~tab:0 cp s.unit
+      in
+      s.unit <- u;
+      if is_printable_ascii cp && not s.wcwidth then s.ascii_left <- true;
+      unit_starts u
+    end
+
+  let ascii_run s str ~pos ~len =
+    check_sub "Matrix_text.Segmenter.ascii_run" str ~pos ~len;
+    let k =
+      ascii_run s.seg ~wcwidth:s.wcwidth ~ascii_left:s.ascii_left s.unit str pos
+        (pos + len)
+    in
+    if k > 0 then begin
+      s.unit <- ascii_unit (Char.code (String.unsafe_get str (pos + k - 1)));
+      if not s.wcwidth then s.ascii_left <- true
+    end;
+    k
+end
+
 (* Grapheme Segmentation *)
 
 let rec find_boundary_loop seg str limit pos =
@@ -228,123 +474,49 @@ let iter_graphemes f str =
     in
     iter_graphemes_unicode seg str len f (Uchar.utf_decode_length d) 0
 
+(* The fold of {!Segmenter} that visits units of positive width. *)
+let rec iter_units f seg ~wide ~wcwidth str len tab i start u =
+  if i >= len then begin
+    let w = unit_width u in
+    if w > 0 then f ~offset:start ~len:(len - start) ~width:w
+  end
+  else
+    let k = ascii_run ~final:true seg ~wcwidth ~ascii_left:false u str i len in
+    if k > 0 then begin
+      let w = unit_width u in
+      if i > start && w > 0 then f ~offset:start ~len:(i - start) ~width:w;
+      let ends = i + k = len in
+      for j = i to if ends then len - 1 else i + k - 2 do
+        f ~offset:j ~len:1 ~width:1
+      done;
+      if not ends then
+        iter_units f seg ~wide ~wcwidth str len tab (i + k)
+          (i + k - 1)
+          (after_ascii_run seg ~wcwidth str i k)
+    end
+    else
+      let d = decode str i len in
+      let cp = decoded_cp d in
+      let next = i + decoded_len d in
+      let u' = unit_step seg ~wide ~wcwidth ~tab cp u in
+      if unit_starts u' && i > start then begin
+        let w = unit_width u in
+        if w > 0 then f ~offset:start ~len:(i - start) ~width:w;
+        iter_units f seg ~wide ~wcwidth str len tab next i u'
+      end
+      else iter_units f seg ~wide ~wcwidth str len tab next start u'
+
 let iter_grapheme_info ~width_method ~tab_width f str =
   let tab_width = normalize_tab_width tab_width in
   let len = Stdlib.String.length str in
-  if len = 0 then ()
-  else
-    let seg = Uuseg_grapheme_cluster.create () in
-
-    let emit_ascii i =
-      let b = Char.code (Stdlib.String.unsafe_get str i) in
-      let w = ascii_width ~tab_width b in
-      if w > 0 then f ~offset:i ~len:1 ~width:w
-    in
-
-    (* An ASCII byte is a complete cluster only when the next codepoint is
-       also ASCII (or the string ends): a following non-ASCII codepoint can
-       extend the cluster (combining marks, ZWJ, variation selectors). *)
-    let ascii_cluster_at i =
-      i + 1 >= len || Char.code (Stdlib.String.unsafe_get str (i + 1)) < 128
-    in
-
-    let rec loop i =
-      if i >= len then ()
-      else if i + 4 <= len && is_ascii_4 str i && ascii_cluster_at (i + 3) then (
-        emit_ascii i;
-        emit_ascii (i + 1);
-        emit_ascii (i + 2);
-        emit_ascii (i + 3);
-        loop (i + 4))
-      else
-        let c = Stdlib.String.unsafe_get str i in
-        if Char.code c < 128 && ascii_cluster_at i then (
-          emit_ascii i;
-          loop (i + 1))
-        else
-          let end_pos = next_boundary seg str i len in
-          let clus_len = end_pos - i in
-          let w =
-            cluster_width ~method_:width_method ~tab_width str i clus_len
-          in
-          if w > 0 then (
-            f ~offset:i ~len:clus_len ~width:w;
-            loop end_pos)
-          else loop end_pos
-    in
-    loop 0
+  if len > 0 then
+    iter_units f (unit_seg width_method)
+      ~wide:(width_method = `Unicode_wide)
+      ~wcwidth:(width_method = `Wcwidth) str len tab_width 0 0 0
 
 (* Width-position helpers *)
 
 let zero_position = { byte_offset = 0; grapheme_count = 0; columns_used = 0 }
-
-(* The position/*-wcwidth benchmarks in matrix/bench/bench_text.ml are about
-   60% slower with direct standard decoding. Even a cold decoder call spills
-   loop state on valid input. Keep this inline decoder and test its malformed
-   prefix consumption against the standard decoder. *)
-let[@inline] is_cont_byte b = b land 0xC0 = 0x80
-let replacement_1 = (0xFFFD, 1)
-let replacement_2 = (0xFFFD, 2)
-let replacement_3 = (0xFFFD, 3)
-
-let[@inline] decode_malformed str pos b0 =
-  let len = Stdlib.String.length str in
-  if b0 < 0xE0 || b0 > 0xF4 || pos + 1 >= len then replacement_1
-  else
-    let b1 = Char.code (String.unsafe_get str (pos + 1)) in
-    if
-      (not (is_cont_byte b1))
-      || (b0 = 0xE0 && b1 < 0xA0)
-      || (b0 = 0xED && b1 >= 0xA0)
-      || (b0 = 0xF0 && b1 < 0x90)
-      || (b0 = 0xF4 && b1 >= 0x90)
-    then replacement_1
-    else if b0 < 0xF0 || pos + 2 >= len then replacement_2
-    else if is_cont_byte (Char.code (String.unsafe_get str (pos + 2))) then
-      replacement_3
-    else replacement_2
-
-let[@inline] decode_codepoint str pos =
-  let len = Stdlib.String.length str in
-  let b0 = Char.code (String.unsafe_get str pos) in
-  if b0 < 0x80 then (b0, 1)
-  else if b0 land 0xE0 = 0xC0 then
-    if pos + 1 < len then
-      let b1 = Char.code (String.unsafe_get str (pos + 1)) in
-      if is_cont_byte b1 then
-        let cp = ((b0 land 0x1F) lsl 6) lor (b1 land 0x3F) in
-        if cp >= 0x80 then (cp, 2) else decode_malformed str pos b0
-      else decode_malformed str pos b0
-    else decode_malformed str pos b0
-  else if b0 land 0xF0 = 0xE0 then
-    if pos + 2 < len then
-      let b1 = Char.code (String.unsafe_get str (pos + 1)) in
-      let b2 = Char.code (String.unsafe_get str (pos + 2)) in
-      if is_cont_byte b1 && is_cont_byte b2 then
-        let cp =
-          ((b0 land 0x0F) lsl 12) lor ((b1 land 0x3F) lsl 6) lor (b2 land 0x3F)
-        in
-        if cp >= 0x800 && (cp < 0xD800 || cp > 0xDFFF) then (cp, 3)
-        else decode_malformed str pos b0
-      else decode_malformed str pos b0
-    else decode_malformed str pos b0
-  else if b0 land 0xF8 = 0xF0 then
-    if pos + 3 < len then
-      let b1 = Char.code (String.unsafe_get str (pos + 1)) in
-      let b2 = Char.code (String.unsafe_get str (pos + 2)) in
-      let b3 = Char.code (String.unsafe_get str (pos + 3)) in
-      if is_cont_byte b1 && is_cont_byte b2 && is_cont_byte b3 then
-        let cp =
-          ((b0 land 0x07) lsl 18)
-          lor ((b1 land 0x3F) lsl 12)
-          lor ((b2 land 0x3F) lsl 6)
-          lor (b3 land 0x3F)
-        in
-        if cp >= 0x10000 && cp <= 0x10FFFF then (cp, 4)
-        else decode_malformed str pos b0
-      else decode_malformed str pos b0
-    else decode_malformed str pos b0
-  else decode_malformed str pos b0
 
 (* Top-level loops share fitting and positioning without allocating a closure
    for each query. *)
@@ -367,91 +539,103 @@ let rec find_pos_ascii str len tab_width include_start_before columns i count
         find_pos_ascii str len tab_width include_start_before columns (i + 1)
           (count + 1) next_used
 
-let rec find_pos_clusters seg str len width_method tab_width
-    include_start_before columns offset count used =
-  if offset >= len then
-    { byte_offset = len; grapheme_count = count; columns_used = used }
-  else
-    let end_pos = next_boundary seg str offset len in
-    let width =
-      cluster_width ~method_:width_method ~tab_width str offset
-        (end_pos - offset)
-    in
-    if width <= 0 then
-      find_pos_clusters seg str len width_method tab_width include_start_before
-        columns end_pos count used
-    else
-      let next_used = used + width in
-      if
-        (include_start_before && used >= columns)
-        || ((not include_start_before) && next_used > columns)
-      then { byte_offset = offset; grapheme_count = count; columns_used = used }
-      else
-        find_pos_clusters seg str len width_method tab_width
-          include_start_before columns end_pos (count + 1) next_used
+(* The fold of {!Segmenter} that fits units of positive width into
+   [columns]. [start] begins the unit in progress, [u]. *)
+(* A unit of width [w] after [used] columns fits [columns]: it ends within
+   them, or with [isb], it starts within them. *)
+let[@inline] fits ~isb ~columns used w =
+  not ((isb && used >= columns) || ((not isb) && used + w > columns))
 
-let find_pos_grapheme ~width_method ~tab_width ~include_start_before str
-    ~columns =
+let rec find_units seg ~wide ~wcwidth str len tab isb columns i start count used
+    u =
+  if i >= len then
+    let w = unit_width u in
+    if w > 0 && start < len then
+      if not (fits ~isb ~columns used w) then
+        { byte_offset = start; grapheme_count = count; columns_used = used }
+      else
+        {
+          byte_offset = len;
+          grapheme_count = count + 1;
+          columns_used = used + w;
+        }
+    else { byte_offset = len; grapheme_count = count; columns_used = used }
+  else
+    let k = ascii_run ~final:true seg ~wcwidth ~ascii_left:false u str i len in
+    if k > 0 then
+      let w = unit_width u in
+      let closes = i > start && w > 0 in
+      if closes && not (fits ~isb ~columns used w) then
+        { byte_offset = start; grapheme_count = count; columns_used = used }
+      else
+        let count, used =
+          if closes then (count + 1, used + w) else (count, used)
+        in
+        (* Complete units of width 1: all [k] at the end of the text. *)
+        let ends = i + k = len in
+        let complete = if ends then k else k - 1 in
+        let n = min complete (max 0 (columns - used)) in
+        if n < complete || ends then
+          {
+            byte_offset = i + n;
+            grapheme_count = count + n;
+            columns_used = used + n;
+          }
+        else
+          find_units seg ~wide ~wcwidth str len tab isb columns (i + k)
+            (i + k - 1)
+            (count + n) (used + n)
+            (after_ascii_run seg ~wcwidth str i k)
+    else
+      let d = decode str i len in
+      let cp = decoded_cp d in
+      let next = i + decoded_len d in
+      let u' = unit_step seg ~wide ~wcwidth ~tab cp u in
+      if unit_starts u' && i > start then
+        let w = unit_width u in
+        if w <= 0 then
+          find_units seg ~wide ~wcwidth str len tab isb columns next i count
+            used u'
+        else if not (fits ~isb ~columns used w) then
+          { byte_offset = start; grapheme_count = count; columns_used = used }
+        else
+          find_units seg ~wide ~wcwidth str len tab isb columns next i
+            (count + 1) (used + w) u'
+      else
+        find_units seg ~wide ~wcwidth str len tab isb columns next start count
+          used u'
+
+let find_pos_units ~width_method ~tab_width ~include_start_before str ~columns =
   let len = Stdlib.String.length str in
   if len = 0 || columns <= 0 then zero_position
   else if is_ascii_only str len 0 then
     find_pos_ascii str len tab_width include_start_before columns 0 0 0
   else
-    let seg = Uuseg_grapheme_cluster.create () in
-    find_pos_clusters seg str len width_method tab_width include_start_before
-      columns 0 0 0
-
-let find_wrap_pos_wcwidth ~tab_width str ~max_columns =
-  let len = Stdlib.String.length str in
-  if len = 0 || max_columns <= 0 then zero_position
-  else
-    let rec loop pos count columns =
-      if pos >= len then
-        { byte_offset = len; grapheme_count = count; columns_used = columns }
-      else
-        let cp, cp_len = decode_codepoint str pos in
-        let width = codepoint_width_wcwidth ~tab_width cp in
-        if columns >= max_columns || columns + width > max_columns then
-          { byte_offset = pos; grapheme_count = count; columns_used = columns }
-        else loop (pos + cp_len) (count + 1) (columns + width)
-    in
-    loop 0 0 0
-
-let find_pos_wcwidth ~tab_width ~include_start_before str ~columns =
-  let len = Stdlib.String.length str in
-  if len = 0 || columns <= 0 then zero_position
-  else
-    let rec loop pos count used =
-      if pos >= len then
-        { byte_offset = len; grapheme_count = count; columns_used = used }
-      else
-        let cp, cp_len = decode_codepoint str pos in
-        let width = codepoint_width_wcwidth ~tab_width cp in
-        let next_used = used + width in
-        if
-          (include_start_before && used >= columns)
-          || ((not include_start_before) && next_used > columns)
-        then { byte_offset = pos; grapheme_count = count; columns_used = used }
-        else loop (pos + cp_len) (count + 1) next_used
-    in
-    loop 0 0 0
+    find_units (unit_seg width_method)
+      ~wide:(width_method = `Unicode_wide)
+      ~wcwidth:(width_method = `Wcwidth) str len tab_width include_start_before
+      columns 0 0 0 0 0
 
 let find_wrap_pos ~width_method ~tab_width str ~max_columns =
-  let tab_width = normalize_tab_width tab_width in
-  match width_method with
-  | `Wcwidth -> find_wrap_pos_wcwidth ~tab_width str ~max_columns
-  | `Unicode | `Unicode_wide ->
-      find_pos_grapheme ~width_method ~tab_width ~include_start_before:false str
-        ~columns:max_columns
+  find_pos_units ~width_method
+    ~tab_width:(normalize_tab_width tab_width)
+    ~include_start_before:false str ~columns:max_columns
 
 let find_pos ~width_method ~tab_width ?(include_start_before = false) str
     ~columns =
-  let tab_width = normalize_tab_width tab_width in
-  match width_method with
-  | `Wcwidth -> find_pos_wcwidth ~tab_width ~include_start_before str ~columns
-  | `Unicode | `Unicode_wide ->
-      find_pos_grapheme ~width_method ~tab_width ~include_start_before str
-        ~columns
+  find_pos_units ~width_method
+    ~tab_width:(normalize_tab_width tab_width)
+    ~include_start_before str ~columns
+
+(* The width of the unit that starts at [i]. *)
+let rec first_unit_width seg ~wide ~wcwidth str len tab i u =
+  if i >= len then unit_width u
+  else
+    let d = decode str i len in
+    let cp = decoded_cp d in
+    let u' = unit_step seg ~wide ~wcwidth ~tab cp u in
+    if unit_starts u' && u <> 0 then unit_width u
+    else first_unit_width seg ~wide ~wcwidth str len tab (i + decoded_len d) u'
 
 let width_at ~width_method ~tab_width str ~byte_offset =
   let tab_width = normalize_tab_width tab_width in
@@ -464,40 +648,32 @@ let width_at ~width_method ~tab_width str ~byte_offset =
       && (byte_offset + 1 = len || Char.code str.[byte_offset + 1] < 0x80)
     then ascii_width ~tab_width b
     else
-      match width_method with
-      | `Wcwidth ->
-          let decoded = Stdlib.String.get_utf_8_uchar str byte_offset in
-          codepoint_width_wcwidth ~tab_width
-            (Uchar.to_int (Uchar.utf_decode_uchar decoded))
-      | `Unicode | `Unicode_wide ->
-          let seg = Uuseg_grapheme_cluster.create () in
-          let end_pos = next_boundary seg str byte_offset len in
-          cluster_width ~method_:width_method ~tab_width str byte_offset
-            (end_pos - byte_offset)
+      first_unit_width (unit_seg width_method)
+        ~wide:(width_method = `Unicode_wide)
+        ~wcwidth:(width_method = `Wcwidth) str len tab_width byte_offset 0
 
-let prev_grapheme_wcwidth ~tab_width str ~byte_offset =
-  let len = Stdlib.String.length str in
-  if byte_offset <= 0 || byte_offset > len then None
+(* The unit in progress at [start] ends at or after [stop]. *)
+let rec unit_before seg ~wide ~wcwidth str len tab stop i start u =
+  if i >= len then
+    Some
+      { byte_offset = start; byte_length = len - start; width = unit_width u }
   else
-    let rec loop pos last_offset last_len last_width =
-      if pos >= byte_offset then
-        if last_offset < 0 then None
-        else
-          Some
-            {
-              byte_offset = last_offset;
-              byte_length = last_len;
-              width = last_width;
-            }
+    let d = decode str i len in
+    let cp = decoded_cp d in
+    let u' = unit_step seg ~wide ~wcwidth ~tab cp u in
+    if unit_starts u' && i > start then
+      if i >= stop then
+        Some
+          { byte_offset = start; byte_length = i - start; width = unit_width u }
       else
-        let cp, cp_len = decode_codepoint str pos in
-        let width = codepoint_width_wcwidth ~tab_width cp in
-        if width > 0 then loop (pos + cp_len) pos cp_len width
-        else loop (pos + cp_len) last_offset last_len last_width
-    in
-    loop 0 (-1) 0 0
+        unit_before seg ~wide ~wcwidth str len tab stop (i + decoded_len d) i u'
+    else
+      unit_before seg ~wide ~wcwidth str len tab stop
+        (i + decoded_len d)
+        start u'
 
-let prev_grapheme_segmented ~width_method ~tab_width str ~byte_offset =
+let prev_grapheme ~width_method ~tab_width str ~byte_offset =
+  let tab_width = normalize_tab_width tab_width in
   let len = Stdlib.String.length str in
   if byte_offset <= 0 || byte_offset > len then None
   else if is_ascii_only str len 0 then
@@ -512,31 +688,9 @@ let prev_grapheme_segmented ~width_method ~tab_width str ~byte_offset =
     in
     loop (byte_offset - 1)
   else
-    let seg = Uuseg_grapheme_cluster.create () in
-    let rec loop offset last_offset last_len =
-      if offset >= len || offset >= byte_offset then
-        if last_offset < 0 then None else Some (last_offset, last_len)
-      else
-        let end_pos = next_boundary seg str offset len in
-        let grapheme_len = end_pos - offset in
-        if end_pos >= byte_offset then Some (offset, grapheme_len)
-        else loop end_pos offset grapheme_len
-    in
-    match loop 0 (-1) 0 with
-    | None -> None
-    | Some (byte_offset, byte_length) ->
-        let width =
-          cluster_width ~method_:width_method ~tab_width str byte_offset
-            byte_length
-        in
-        Some { byte_offset; byte_length; width }
-
-let prev_grapheme ~width_method ~tab_width str ~byte_offset =
-  let tab_width = normalize_tab_width tab_width in
-  match width_method with
-  | `Wcwidth -> prev_grapheme_wcwidth ~tab_width str ~byte_offset
-  | `Unicode | `Unicode_wide ->
-      prev_grapheme_segmented ~width_method ~tab_width str ~byte_offset
+    unit_before (unit_seg width_method)
+      ~wide:(width_method = `Unicode_wide)
+      ~wcwidth:(width_method = `Wcwidth) str len tab_width byte_offset 0 0 0
 
 (* String Measurement *)
 
@@ -565,56 +719,52 @@ let rec measure_ascii str len tab_width i total =
     measure_ascii str len tab_width (i + 4) (total + w0 + w1 + w2 + w3)
   else measure_ascii_tail str len tab_width i total
 
-let[@inline] decode_bounded str pos limit =
-  let decoded = Stdlib.String.get_utf_8_uchar str pos in
-  let remaining = limit - pos in
-  if Uchar.utf_decode_length decoded <= remaining then decoded
-  else Uchar.utf_decode_invalid remaining
-
-let rec measure_wcwidth str len tab_width i total =
-  if i >= len then total
+(* The fold of {!Segmenter} that sums unit widths. *)
+let rec measure_units seg ~wide ~wcwidth str limit tab i total u =
+  if i >= limit then total + unit_width u
   else
-    let d = decode_bounded str i len in
-    let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-    let w = codepoint_width_wcwidth ~tab_width cp in
-    measure_wcwidth str len tab_width (i + Uchar.utf_decode_length d) (total + w)
-
-(* Fused segmentation + width loop for Unicode width. [state] is a
-   [ws_step] state; a boundary flushes the finished cluster's width into
-   [total] and restarts the machine from [0]. *)
-let rec measure_segmented ~wide seg str len tab_width i total state =
-  if i >= len then total + ws_width state
-  else
-    let d = decode_bounded str i len in
-    let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
-    let next = i + Uchar.utf_decode_length d in
-    (* Single property lookup yields both boundary decision and width. *)
-    let bw =
-      Uuseg_grapheme_cluster.check_boundary_with_width seg
-        (Uchar.unsafe_of_int cp)
+    let k =
+      ascii_run ~final:true seg ~wcwidth ~ascii_left:false u str i limit
     in
-    let cp_w = if cp = 0x09 then tab_width else (bw land 3) - 1 in
-    if bw land 4 <> 0 then
-      measure_segmented ~wide seg str len tab_width next
-        (total + ws_width state)
-        (ws_step ~wide cp cp_w 0)
+    if k > 0 && i + k = limit then total + unit_width u + k
+    else if k > 0 then
+      measure_units seg ~wide ~wcwidth str limit tab (i + k)
+        (total + unit_width u + k - 1)
+        (after_ascii_run seg ~wcwidth str i k)
     else
-      measure_segmented ~wide seg str len tab_width next total
-        (ws_step ~wide cp cp_w state)
+      let d = decode str i limit in
+      let u' = unit_step seg ~wide ~wcwidth ~tab (decoded_cp d) u in
+      measure_units seg ~wide ~wcwidth str limit tab
+        (i + decoded_len d)
+        (if unit_starts u' then total + unit_width u else total)
+        u'
+
+(* Under [`Wcwidth] a unit's width is that of its one scalar of positive
+   width, so the sum over units is the sum over scalars. This loop is about
+   10% faster than [measure_units] on non-ASCII text; a test checks that
+   both agree. *)
+let rec measure_scalars str limit tab i total =
+  if i >= limit then total
+  else
+    let d = decode str i limit in
+    let cp = decoded_cp d in
+    let w =
+      if cp = 0x09 then tab
+      else if is_control cp then 0
+      else codepoint_width_wcwidth ~tab_width:0 cp
+    in
+    measure_scalars str limit tab (i + decoded_len d) (total + w)
 
 let measure ~width_method ~tab_width str =
   let tab_width = normalize_tab_width tab_width in
   let len = Stdlib.String.length str in
   if len = 0 then 0
   else if is_ascii_only str len 0 then measure_ascii str len tab_width 0 0
+  else if width_method = `Wcwidth then measure_scalars str len tab_width 0 0
   else
-    match width_method with
-    | `Wcwidth -> measure_wcwidth str len tab_width 0 0
-    | `Unicode | `Unicode_wide ->
-        let seg = Uuseg_grapheme_cluster.create () in
-        measure_segmented
-          ~wide:(width_method = `Unicode_wide)
-          seg str len tab_width 0 0 0
+    measure_units (unit_seg width_method)
+      ~wide:(width_method = `Unicode_wide)
+      ~wcwidth:(width_method = `Wcwidth) str len tab_width 0 0 0
 
 let measure_sub ~width_method ~tab_width str ~pos ~len:sub_len =
   let tab_width = normalize_tab_width tab_width in
@@ -624,14 +774,12 @@ let measure_sub ~width_method ~tab_width str ~pos ~len:sub_len =
     let end_pos = pos + sub_len in
     if is_ascii_only str end_pos pos then
       measure_ascii str end_pos tab_width pos 0
+    else if width_method = `Wcwidth then
+      measure_scalars str end_pos tab_width pos 0
     else
-      match width_method with
-      | `Wcwidth -> measure_wcwidth str end_pos tab_width pos 0
-      | `Unicode | `Unicode_wide ->
-          let seg = Uuseg_grapheme_cluster.create () in
-          measure_segmented
-            ~wide:(width_method = `Unicode_wide)
-            seg str end_pos tab_width pos 0 0)
+      measure_units (unit_seg width_method)
+        ~wide:(width_method = `Unicode_wide)
+        ~wcwidth:(width_method = `Wcwidth) str end_pos tab_width pos 0 0)
 
 let grapheme_count str =
   let n = ref 0 in
