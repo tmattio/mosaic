@@ -276,6 +276,62 @@ let split_aligns_lone_cr_row () =
     (fun width -> end_is_aligned (render renderer ~width ~height:6))
     [ 40; 30 ]
 
+(* An asynchronous highlighter whose jobs complete only when the test says
+   so. *)
+let manual_highlighter () =
+  let started = ref 0 and outstanding = ref [] in
+  let highlighter =
+    Code.Highlighter.async (fun request ~notify:_ ->
+        incr started;
+        let outcome = ref None in
+        outstanding :=
+          (fun () ->
+            outcome :=
+              Some
+                (Ok
+                   (Syntax_highlight.make
+                      ~content:request.Code.Highlighter.content [])))
+          :: !outstanding;
+        Code.Highlighter.job
+          ~poll:(fun () ->
+            let result = !outcome in
+            outcome := None;
+            result)
+          ~cancel:(fun () -> ()))
+  in
+  let complete_all () =
+    let jobs = !outstanding in
+    outstanding := [];
+    List.iter (fun complete -> complete ()) jobs
+  in
+  (started, complete_all, highlighter)
+
+(* Alignment inserts blank rows into each pane's content, which must not
+   restart the highlighting that alignment waits for. *)
+let async_wrapped_split_settles () =
+  let started, complete_all, highlighter = manual_highlighter () in
+  let syntax = Diff.syntax ~language:"text" highlighter in
+  let renderer = Renderer.create () in
+  ignore
+    (Diff.create ~parent:(Renderer.root renderer) ~style:full_style
+       ~layout:Split ~wrap:`Char
+       ~highlight:{ Diff.old = syntax; new_ = syntax }
+       (parse asymmetric_wrap_diff)
+      : Diff.t);
+  let frame () =
+    Renderer.render_frame renderer ~width:30 ~height:8 ~delta:0.;
+    complete_all ()
+  in
+  for _ = 1 to 10 do
+    frame ()
+  done;
+  let settled = !started in
+  for _ = 1 to 10 do
+    frame ()
+  done;
+  equal ~msg:"no highlighting once aligned" int settled !started;
+  end_is_aligned (render renderer ~width:30 ~height:8)
+
 let syntax_compares_styles_by_value () =
   let highlighter =
     Code.Highlighter.sync (fun ~language:_ ~content ->
@@ -325,5 +381,6 @@ let () =
         [
           test "asymmetric resize realigns" asymmetric_resize_realigns;
           test "split aligns lone CR row" split_aligns_lone_cr_row;
+          test "async wrapped split settles" async_wrapped_split_settles;
         ];
     ]

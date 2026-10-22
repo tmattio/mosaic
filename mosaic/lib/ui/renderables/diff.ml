@@ -815,6 +815,18 @@ module Split_layout = struct
     loop [] [] 0 0 0 split.left split.right
 end
 
+(* A split aligned for [left_text] and [right_text], the unaligned pane texts,
+   from their visual rows at these pane widths under these settings. *)
+type alignment = {
+  left_text : string;
+  right_text : string;
+  left_width : int;
+  right_width : int;
+  wrap : Text_surface.wrap;
+  highlight : highlight option;
+  aligned : View.split;
+}
+
 type t = {
   node : Renderable.t;
   mutable props : Props.t;
@@ -830,6 +842,7 @@ type t = {
   mutable mouse_down : (int * int) option;
   mutable pending_rebuild : bool;
   mutable waiting_for_highlight : bool;
+  mutable alignment : alignment option;
 }
 
 let node t = t.node
@@ -969,7 +982,8 @@ let destroy_children t =
   t.left_lines <- [];
   t.right_lines <- [];
   t.pending_rebuild <- false;
-  t.waiting_for_highlight <- false
+  t.waiting_for_highlight <- false;
+  t.alignment <- None
 
 (* Intra-line emphasis rides the code buffer's highlight overlays: they are
    rendered by the text surface itself, so placement is wrap-correct and syntax
@@ -1101,6 +1115,22 @@ let should_align_split t (props : Props.t) left_code right_code =
   && Renderable.width (Code.node left_code) > 0
   && Renderable.width (Code.node right_code) > 0
 
+(* The alignment [t] computed for these pane texts, when the panes have kept
+   their widths and the settings that shape their rows. Installing the aligned
+   texts directly keeps the panes' content, and so their highlighting, stable
+   across rebuilds. *)
+let reusable_alignment t (props : Props.t) ~left_text ~right_text =
+  match (t.alignment, t.left_code, t.right_code) with
+  | Some a, Some left, Some right
+    when String.equal a.left_text left_text
+         && String.equal a.right_text right_text
+         && a.left_width = Renderable.width (Code.node left)
+         && a.right_width = Renderable.width (Code.node right)
+         && a.wrap = props.wrap
+         && Option.equal highlight_equal a.highlight props.highlight ->
+      Some a.aligned
+  | _ -> None
+
 let build_split_view t (props : Props.t) =
   set_flex_direction t Toffee.Style.Flex_direction.Row;
   let split_rows lines =
@@ -1113,6 +1143,17 @@ let build_split_view t (props : Props.t) =
   let initial_right = split_rows initial.View.right in
   let initial_left_text = View.text initial_left in
   let initial_right_text = View.text initial_right in
+  let reused =
+    reusable_alignment t props ~left_text:initial_left_text
+      ~right_text:initial_right_text
+  in
+  let installed_left_text, installed_right_text =
+    match reused with
+    | Some split ->
+        ( View.text (split_rows split.View.left),
+          View.text (split_rows split.View.right) )
+    | None -> (initial_left_text, initial_right_text)
+  in
   let left_side =
     make_or_update_side t.left_side ~parent:t.node ~style:half_style
       ~theme:props.theme
@@ -1120,7 +1161,7 @@ let build_split_view t (props : Props.t) =
   let left_code =
     make_or_update_code t.left_code
       ~parent:(Line_number.node left_side)
-      props ~content:initial_left_text
+      props ~content:installed_left_text
       ?syntax:(old_code_syntax props.highlight)
       ()
   in
@@ -1131,7 +1172,7 @@ let build_split_view t (props : Props.t) =
   let right_code =
     make_or_update_code t.right_code
       ~parent:(Line_number.node right_side)
-      props ~content:initial_right_text
+      props ~content:installed_right_text
       ?syntax:(new_code_syntax props.highlight)
       ()
   in
@@ -1142,17 +1183,31 @@ let build_split_view t (props : Props.t) =
   Renderable.set_on_resize (Code.node right_code)
     (Some (fun _ -> request_split_rebuild t));
   let split, left_rows, right_rows =
-    if should_align_split t props left_code right_code then
-      let visual_counts code text =
-        Split_layout.visual_counts (code_pane code text) code
-      in
-      let split =
-        Split_layout.align initial
-          ~left_visual_counts:(visual_counts left_code initial_left_text)
-          ~right_visual_counts:(visual_counts right_code initial_right_text)
-      in
-      (split, split_rows split.View.left, split_rows split.View.right)
-    else (initial, initial_left, initial_right)
+    match reused with
+    | Some split ->
+        (split, split_rows split.View.left, split_rows split.View.right)
+    | None when should_align_split t props left_code right_code ->
+        let visual_counts code text =
+          Split_layout.visual_counts (code_pane code text) code
+        in
+        let split =
+          Split_layout.align initial
+            ~left_visual_counts:(visual_counts left_code initial_left_text)
+            ~right_visual_counts:(visual_counts right_code initial_right_text)
+        in
+        t.alignment <-
+          Some
+            {
+              left_text = initial_left_text;
+              right_text = initial_right_text;
+              left_width = Renderable.width (Code.node left_code);
+              right_width = Renderable.width (Code.node right_code);
+              wrap = props.wrap;
+              highlight = props.highlight;
+              aligned = split;
+            };
+        (split, split_rows split.View.left, split_rows split.View.right)
+    | None -> (initial, initial_left, initial_right)
   in
   let left_text = View.text left_rows in
   let right_text = View.text right_rows in
@@ -1215,6 +1270,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?layout ?theme
       mouse_down = None;
       pending_rebuild = false;
       waiting_for_highlight = false;
+      alignment = None;
     }
   in
   Renderable.on_mouse node (handle_mouse t);
