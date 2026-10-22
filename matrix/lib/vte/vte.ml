@@ -667,50 +667,17 @@ let print_scalar t u =
   cl.grown <- true
 
 (* The [k] bytes of [s] from [pos] are units of one ASCII character each
-   ({!Text.Segmenter.ascii_run}): place them a row segment at a time, as each
-   would be placed alone. The last one stays the unit in progress. *)
+   ({!Text.Segmenter.ascii_run}), which the segmenter has read: each is a
+   unit, as {!print_scalar} would make it. *)
 let print_run t s pos k =
-  finish t;
-  let g = grid t and fg = fg t and bg = bg t in
-  let attrs = t.pen.style.attrs and link = t.pen.link in
-  let protected = protection t in
-  let put ~x ~y i =
-    Grid.set_grapheme g ~x ~y ~width:1 ~fg ~bg ~attrs ?link ?protected s ~pos:i
-      ~len:1
-  in
-  let i = ref pos and stop = pos + k in
-  let last_row = ref 0 and last_col = ref 0 in
-  while !i < stop do
-    if t.cursor.last_column && t.modes.auto_wrap then wrap t;
-    let row = t.cursor.row and col = t.cursor.col in
-    let n = min (stop - !i) (t.cols - col) in
-    if t.modes.insert then shift_cols t ~x:col ~top:row ~bottom:row n;
-    for j = 0 to n - 1 do
-      put ~x:(col + j) ~y:row (!i + j)
-    done;
-    i := !i + n;
-    let last = col + n - 1 in
-    if last < t.cols - 1 then
-      set_cursor t ~row ~col:(last + 1) ~last_column:false
-    else if t.modes.auto_wrap then set_cursor t ~row ~col:last ~last_column:true
-    else begin
-      (* Without autowrap each further character replaces the last column. *)
-      if !i < stop then put ~x:last ~y:row (stop - 1);
-      i := stop;
-      set_cursor t ~row ~col:last ~last_column:false
-    end;
-    touch_row t row;
-    last_row := row;
-    last_col := last
-  done;
   let cl = t.cluster in
-  Bytes.set cl.text 0 s.[stop - 1];
-  cl.len <- 1;
-  cl.width <- 1;
-  cl.at <- Cells;
-  cl.row <- !last_row;
-  cl.col <- !last_col;
-  cl.cells <- 1
+  for i = pos to pos + k - 1 do
+    finish t;
+    Bytes.unsafe_set cl.text 0 (String.unsafe_get s i);
+    cl.len <- 1;
+    cl.width <- 1;
+    cl.grown <- true
+  done
 
 let print t s =
   let len = String.length s in
