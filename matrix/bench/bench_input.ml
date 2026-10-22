@@ -51,55 +51,7 @@ let unicode_graphemes =
 (* Emoji / complex text heavy line: chat, dashboards, fancy prompts. *)
 let complex_line = cycle_concat unicode_graphemes 256
 
-(* 1. TUI-style typing: ASCII and Unicode heavy text *)
-
-(* Scenario: editor / REPL / TUI with mostly ASCII text, arriving in small
-   bursts (multiple feed calls, partial reads, no escapes). *)
-let typing_ascii_burst =
-  let parser = I.Parser.create () in
-  let bytes = Bytes.of_string ascii_line in
-  let len = Bytes.length bytes in
-  let chunk_size = 32 in
-  let count = ref 0 in
-  bench "typing/ascii-burst" (fun () ->
-      count := 0;
-      let rec loop offset =
-        if offset >= len then ()
-        else begin
-          let chunk = min chunk_size (len - offset) in
-          I.Parser.feed parser bytes offset chunk ~now:0.0
-            ~on_event:(fun _ -> incr count)
-            ~on_response:(fun _ -> incr count);
-          loop (offset + chunk)
-        end
-      in
-      loop 0;
-      ignore (Sys.opaque_identity !count))
-
-(* Scenario: same as above but for Unicode-heavy input, including emoji and
-   complex graphemes, with UTF-8 splits across chunk boundaries. *)
-let typing_unicode_burst =
-  let parser = I.Parser.create () in
-  let bytes = Bytes.of_string complex_line in
-  let len = Bytes.length bytes in
-  let chunk_size = 48 in
-  let count = ref 0 in
-  bench "typing/unicode-burst" (fun () ->
-      count := 0;
-      let rec loop offset =
-        if offset >= len then ()
-        else begin
-          let chunk = min chunk_size (len - offset) in
-          I.Parser.feed parser bytes offset chunk ~now:0.0
-            ~on_event:(fun _ -> incr count)
-            ~on_response:(fun _ -> incr count);
-          loop (offset + chunk)
-        end
-      in
-      loop 0;
-      ignore (Sys.opaque_identity !count))
-
-(* 2. Legacy keyboard sequences (CSI, SS3, ESC+char) *)
+(* 1. Legacy keyboard sequences (CSI, SS3, ESC+char) *)
 
 (* Synthetic stream of "hot" key sequences: arrows, home/end, delete, function
    keys, and Alt-modified keys using classic ANSI encodings. *)
@@ -146,19 +98,7 @@ let legacy_keyboard_stream =
   done;
   Buffer.contents buf
 
-let keyboard_legacy_hot =
-  let parser = I.Parser.create () in
-  let bytes = Bytes.of_string legacy_keyboard_stream in
-  let len = Bytes.length bytes in
-  let count = ref 0 in
-  bench "keyboard/legacy-hot" (fun () ->
-      count := 0;
-      I.Parser.feed parser bytes 0 len ~now:0.0
-        ~on_event:(fun _ -> incr count)
-        ~on_response:(fun _ -> incr count);
-      ignore (Sys.opaque_identity !count))
-
-(* 3. Kitty keyboard protocol (CSI-u) *)
+(* 2. Kitty keyboard protocol (CSI-u) *)
 
 let kitty_key_seq ~code ~mods ~text =
   (* CSI code;mods;text u *)
@@ -189,19 +129,7 @@ let kitty_keyboard_stream =
   done;
   Buffer.contents buf
 
-let keyboard_kitty_hot =
-  let parser = I.Parser.create () in
-  let bytes = Bytes.of_string kitty_keyboard_stream in
-  let len = Bytes.length bytes in
-  let count = ref 0 in
-  bench "keyboard/kitty-hot" (fun () ->
-      count := 0;
-      I.Parser.feed parser bytes 0 len ~now:0.0
-        ~on_event:(fun _ -> incr count)
-        ~on_response:(fun _ -> incr count);
-      ignore (Sys.opaque_identity !count))
-
-(* 4. Mouse input: X10 + SGR mixed workload *)
+(* 3. Mouse input: X10 + SGR mixed workload *)
 
 (* X10/normal mouse: ESC [ M <btn> <x> <y> with all fields as single bytes. *)
 let x10_mouse_seq cb x y =
@@ -246,19 +174,7 @@ let mouse_stream =
   done;
   Buffer.contents buf
 
-let mouse_mixed_hot =
-  let parser = I.Parser.create () in
-  let bytes = Bytes.of_string mouse_stream in
-  let len = Bytes.length bytes in
-  let count = ref 0 in
-  bench "mouse/mixed" (fun () ->
-      count := 0;
-      I.Parser.feed parser bytes 0 len ~now:0.0
-        ~on_event:(fun _ -> incr count)
-        ~on_response:(fun _ -> incr count);
-      ignore (Sys.opaque_identity !count))
-
-(* 5. Bracketed paste with CI-style logs + ANSI stripping *)
+(* 4. Bracketed paste with CI-style logs + ANSI stripping *)
 
 (* CI-like log lines, including color sequences and a bit of Unicode. *)
 let ci_log_line_plain =
@@ -271,123 +187,11 @@ let ci_log_payload = repeat (ci_log_line_plain ^ ci_log_line_err) 64
 
 (* Bracketed paste payload: ESC[200~ <payload> ESC[201~ *)
 let bracketed_paste_stream = "\x1b[200~" ^ ci_log_payload ^ "\x1b[201~"
-
-let rec feed_chunks parser bytes chunk_size offset ~on_event ~on_response =
-  let len = Bytes.length bytes in
-  if offset < len then begin
-    let chunk = min chunk_size (len - offset) in
-    I.Parser.feed parser bytes offset chunk ~now:0.0 ~on_event ~on_response;
-    ignore (I.Parser.deadline parser);
-    feed_chunks parser bytes chunk_size (offset + chunk) ~on_event ~on_response
-  end
-
-(* Fragmentation must not repeatedly copy or scan an accumulating sequence.
-   Keep inputs and callbacks outside the measured body. The size series makes
-   growth visible independently of normal keyboard throughput. *)
-let fragmented_sequence name bytes chunk_size =
-  let parser = I.Parser.create () in
-  let count = ref 0 in
-  let on_event _ = incr count in
-  let on_response _ = incr count in
-  bench name (fun () ->
-      I.Parser.reset parser;
-      count := 0;
-      feed_chunks parser bytes chunk_size 0 ~on_event ~on_response;
-      ignore (Sys.opaque_identity !count))
-
-let fragmented_osc size chunk_size =
-  fragmented_sequence
-    (Printf.sprintf "fragmented/osc-%d-bytes-chunk-%d" size chunk_size)
-    (Bytes.of_string ("\x1b]10;" ^ String.make size 'x' ^ "\x1b\\"))
-    chunk_size
-
-let fragmented_keyboard =
-  fragmented_sequence "fragmented/keyboard-bytewise"
-    (Bytes.of_string legacy_keyboard_stream)
-    1
-
-let paste_ci_log =
-  let parser = I.Parser.create () in
-  let bytes = Bytes.of_string bracketed_paste_stream in
-  let len = Bytes.length bytes in
-  let chunk_size = 1024 in
-  let count = ref 0 in
-  bench "paste/ci-log" (fun () ->
-      (* For bracketed paste we want a clean parser state each run. *)
-      I.Parser.reset parser;
-      count := 0;
-      let rec loop offset =
-        if offset >= len then ()
-        else begin
-          let chunk = min chunk_size (len - offset) in
-          I.Parser.feed parser bytes offset chunk ~now:0.0
-            ~on_event:(fun _ -> incr count)
-            ~on_response:(fun _ -> incr count);
-          ignore (I.Parser.deadline parser);
-          loop (offset + chunk)
-        end
-      in
-      loop 0;
-      ignore (Sys.opaque_identity !count))
-
 let paste_stream payload = Bytes.of_string ("\x1b[200~" ^ payload ^ "\x1b[201~")
 
-let valid_paste name size =
-  let parser = I.Parser.create () in
-  let bytes = paste_stream (String.make size 'x') in
-  let count = ref 0 in
-  let on_event _ = incr count in
-  let on_response _ = incr count in
-  bench name (fun () ->
-      I.Parser.reset parser;
-      count := 0;
-      feed_chunks parser bytes 4096 0 ~on_event ~on_response;
-      ignore (Sys.opaque_identity !count))
-
-let paste_valid_64k = valid_paste "paste/valid-64KiB" (64 * 1024)
-let paste_valid_1m = valid_paste "paste/valid-1MiB" (1024 * 1024)
-
-let paste_split_end_marker =
-  let parser = I.Parser.create () in
-  let prefix = Bytes.of_string ("\x1b[200~" ^ String.make (64 * 1024) 'x') in
-  let suffix = "\x1b[201~" in
-  let count = ref 0 in
-  let on_event _ = incr count in
-  let on_response _ = incr count in
-  bench "paste/split-end-marker" (fun () ->
-      count := 0;
-      for split = 1 to String.length suffix - 1 do
-        I.Parser.reset parser;
-        feed_chunks parser prefix 4096 0 ~on_event ~on_response;
-        I.Parser.feed parser
-          (Bytes.unsafe_of_string suffix)
-          0 split ~now:0.0 ~on_event ~on_response;
-        ignore (I.Parser.deadline parser);
-        I.Parser.feed parser
-          (Bytes.unsafe_of_string suffix)
-          split
-          (String.length suffix - split)
-          ~now:0.0 ~on_event ~on_response;
-        ignore (I.Parser.deadline parser)
-      done;
-      ignore (Sys.opaque_identity !count))
-
-let paste_overflow_recovery =
-  let max_paste_bytes = 64 * 1024 in
-  let parser = I.Parser.create ~max_paste_bytes () in
-  let bytes =
-    Bytes.of_string ("\x1b[200~" ^ String.make (1024 * 1024) 'x' ^ "\x1b[201~z")
-  in
-  let count = ref 0 in
-  let on_event _ = incr count in
-  let on_response _ = incr count in
-  bench "paste/overflow-recovery" (fun () ->
-      I.Parser.reset parser;
-      count := 0;
-      feed_chunks parser bytes 4096 0 ~on_event ~on_response;
-      ignore (Sys.opaque_identity !count))
-
-(* The decoder, on the same workloads *)
+(* The decoder on these workloads. Typing arrives in small reads, with UTF-8
+   split across them; fragmented strings must not be copied or scanned again
+   as they grow. *)
 
 module D = I.Decoder
 
@@ -464,8 +268,7 @@ let decoder_benchmarks =
              (fun _ -> incr count)
          done;
          ignore (Sys.opaque_identity !count)));
-    (* The decoder holds no paste, so a paste over the previous parser's limit
-       is a paste like any other. *)
+    (* The decoder holds no paste, so a large one is a paste like any other. *)
     decoder_bench ~fresh:true "paste/overflow-recovery"
       (Bytes.of_string
          ("\x1b[200~" ^ String.make (1024 * 1024) 'x' ^ "\x1b[201~z"))
@@ -474,32 +277,7 @@ let decoder_benchmarks =
 
 (* Benchmark tree *)
 
-let benchmarks =
-  [
-    group "input"
-      [
-        (* TUI/editor typing workloads *)
-        typing_ascii_burst;
-        typing_unicode_burst;
-        (* Keyboard hot paths: legacy + Kitty protocol *)
-        keyboard_legacy_hot;
-        keyboard_kitty_hot;
-        fragmented_keyboard;
-        fragmented_osc 256 1;
-        fragmented_osc 1024 1;
-        fragmented_osc 3072 1;
-        fragmented_osc 3072 32;
-        (* Pointer-heavy TUI / terminal apps *)
-        mouse_mixed_hot;
-        (* CI logs pasted into a TUI, with ANSI stripping *)
-        paste_ci_log;
-        paste_valid_64k;
-        paste_valid_1m;
-        paste_split_end_marker;
-        paste_overflow_recovery;
-      ];
-    group "decoder" decoder_benchmarks;
-  ]
+let benchmarks = [ group "decoder" decoder_benchmarks ]
 
 let () =
   run "input"
