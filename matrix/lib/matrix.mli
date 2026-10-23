@@ -819,15 +819,4 @@ type device = {
 
 val on_device : device -> config -> config
 
-(* For test harnesses that drive a run they did not start, such as
-   [Matrix_test]: the run that holds the terminal, whether it owes a frame,
-   and events decoded elsewhere, queued as if the input had just been
-   decoded. *)
-
-type held = Held : 'msg app -> held
-
-val holder : unit -> held option
-val frame_owed : 'msg app -> bool
-val inject : 'msg app -> event -> unit
-
 (**/**)

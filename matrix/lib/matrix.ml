@@ -596,8 +596,6 @@ let request_redraw t =
   check t;
   ask_frame t
 
-let frame_owed t = t.dirty
-
 let at t time =
   check t;
   heap_add t.heap time
@@ -760,7 +758,6 @@ let silence t =
 let answer_wait t = max (ms 500) (4 * t.rtt)
 let owed_bound t = max (ms 5000) (4 * t.rtt)
 let push t event = Queue.push event t.events
-let inject = push
 
 (* A batch leaves the decoder's counts once, answered or given up. *)
 let close t b =
@@ -2005,12 +2002,6 @@ let setup t =
   take_modes t;
   ask_own t Pixel_size;
   t.usable <- size t
-
-(* The innermost run of the calling thread. *)
-let holder () =
-  let self = thread_id () in
-  Mutex.protect runs_lock (fun () ->
-      List.find_opt (fun (Held app) -> app.owner = self) !runs)
 
 (* Registers [t], unless its terminal is the controlling one and another
    run holds it. *)
