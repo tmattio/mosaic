@@ -73,7 +73,9 @@ let idle_matrix () =
   in
   loop ()
 
-(* A 0.25 s timer, twelve times. *)
+(* A 0.25 s timer, until twelve periods have ended. Each fire is printed
+   with the periods ended so far and its time since [init], which ran
+   before the timer's origin. *)
 let timer () =
   let t0 = ref 0. and fires = ref [] in
   M.run
@@ -84,15 +86,13 @@ let timer () =
           (0, M.Cmd.none));
       update =
         (fun periods n ->
-          fires := (now () -. !t0) :: !fires;
           let n = n + periods in
+          fires := (n, now () -. !t0) :: !fires;
           (n, if n >= 12 then M.Cmd.quit else M.Cmd.none));
       view = (fun n -> M.text (Printf.sprintf "T=%d" n));
       subscriptions = (fun _ -> M.Sub.every ~id:"e" 0.25 Fun.id);
     };
-  List.rev !fires
-  |> List.iteri (fun i at ->
-      result "fire" "%d %.6f" (i + 1) (at -. (0.25 *. float (i + 1))))
+  List.rev !fires |> List.iter (fun (n, at) -> result "fire" "%d %.6f" n at)
 
 (* A worker that dispatches 2,000 messages a second. *)
 let busy_worker =
@@ -148,13 +148,13 @@ let storm () =
   result "seconds" "%.3f" (now () -. t0);
   result "writes" "%d" writes
 
-(* A worker that dispatches as fast as it can for 3 s, on a systhread or on
-   a domain of its own; the view shows the keys and the messages applied. *)
+(* A worker that dispatches as fast as it can until the run ends, on a
+   systhread or on a domain of its own; the view shows the keys and the
+   messages applied. *)
 let flood ~domain () =
   let t0 = now () in
   let produce stop (mailbox : _ M.mailbox) =
-    let until = now () +. 3. in
-    while now () < until && not (M.Sub.Stop.requested stop) do
+    while not (M.Sub.Stop.requested stop) do
       mailbox.dispatch `Other
     done
   in
