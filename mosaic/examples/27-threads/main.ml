@@ -1,4 +1,5 @@
-(** A program fed by a thread it did not start, and stopped by another. *)
+(** A program fed by a worker thread, and stopped by a thread it did not start.
+*)
 
 open Mosaic
 
@@ -30,72 +31,42 @@ let view model =
         (if model.paused then "p resume  •  q quit" else "p pause  •  q quit");
     ]
 
+(* A worker gives the program a line every quarter second, on a thread
+   of its own, until its stop is requested when the program ends. *)
+let feed stop { dispatch; _ } =
+  let n = ref 0 in
+  while not (Sub.Stop.requested stop) do
+    incr n;
+    dispatch (Line (Printf.sprintf "line %d from a thread" !n));
+    Thread.delay 0.25
+  done
+
 let subscriptions _ =
-  Sub.on_keys
+  Sub.batch
     [
-      (Shortcut.char 'p', Toggle);
-      (Shortcut.char 'q', Quit);
-      (Shortcut.escape, Quit);
+      Sub.worker ~id:"feed" feed;
+      Sub.on_keys
+        [
+          (Shortcut.char 'p', Toggle);
+          (Shortcut.char 'q', Quit);
+          (Shortcut.escape, Quit);
+        ];
     ]
 
-(* Returns once one of the program's descriptors is readable or its
-   deadline comes, as Mosaic.run waits. *)
-let wait program =
-  let timeout =
-    match Mosaic.deadline program with
-    | None -> -1.
-    | Some deadline ->
-        Float.max 0. (Float.of_int (deadline - Matrix.clock ()) *. 1e-9)
-  in
-  try ignore (Unix.select (Mosaic.fds program) [] [] timeout)
-  with Unix.Unix_error (EINTR, _, _) -> ()
-
-(* A thread that is not the program's work gives it lines with [dispatch].
-   It starts once the program runs, and ends with it: [dispatch] does
-   nothing after the run, and the thread sees [over]. With [--for SECONDS],
-   a watchdog thread stops the program after that long, with the stop
-   request made before the program started. *)
+(* With [--for SECONDS], a watchdog thread the program did not start stops
+   it after that long, with a stop request made before the program
+   started. *)
 let () =
-  let limit =
-    match Sys.argv with
-    | [| _; "--for"; seconds |] -> Some (float_of_string seconds)
-    | _ -> None
-  in
   let stop = Matrix.Stop.create () in
-  Option.iter
-    (fun seconds ->
+  (match Sys.argv with
+  | [| _; "--for"; seconds |] ->
+      let seconds = float_of_string seconds in
       ignore
         (Thread.create
            (fun () ->
              Thread.delay seconds;
              Matrix.Stop.request stop)
            ()
-          : Thread.t))
-    limit;
-  let over = Atomic.make false in
-  Mosaic.start ~stop { init; update; view; subscriptions } @@ fun program ->
-  let feed =
-    Thread.create
-      (fun () ->
-        let n = ref 0 in
-        while not (Atomic.get over) do
-          incr n;
-          Mosaic.dispatch program
-            (Line (Printf.sprintf "line %d from a thread" !n));
-          Thread.delay 0.25
-        done)
-      ()
-  in
-  let rec loop () =
-    match Mosaic.step program ~now:(Matrix.clock ()) with
-    | `Stepped -> loop ()
-    | `Idle ->
-        wait program;
-        loop ()
-    | `Stopped -> ()
-  in
-  Fun.protect
-    ~finally:(fun () ->
-      Atomic.set over true;
-      Thread.join feed)
-    loop
+          : Thread.t)
+  | _ -> ());
+  Mosaic.run ~stop { init; update; view; subscriptions }

@@ -37,7 +37,7 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `24-eio`       | A program run from Eio, its jobs as fibers        |
 | `25-diff`      | Unified and split-view diff display               |
 | `26-lwt`       | A program as an Lwt promise, cancelled by `Lwt.pick` |
-| `27-threads`   | A program fed by one thread and stopped by another |
+| `27-threads`   | A program fed by a worker and stopped by a thread  |
 | `x-code-editor` | Editable code editor with completion + line numbers |
 | `x-agent`      | Agent-style primary-screen semantics demo         |
 | `x-dashboard`  | Component composition with TEA `map`             |

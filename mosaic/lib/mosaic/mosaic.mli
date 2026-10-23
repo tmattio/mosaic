@@ -880,6 +880,12 @@ module Cmd : sig
       [process_perform] (by default a thread of a helper domain), so that long
       work never holds the loop. [f] gives the program messages with [dispatch],
       which is a mailbox's [dispatch] ({!type-mailbox}): it never blocks.
+      [dispatch] stays valid after [f] returns, until the run ends, so [f] may
+      hand it to a thread or a callback the program did not start:
+      {[
+      Cmd.perform (fun dispatch ->
+          Watcher.on_change (fun path -> dispatch (Changed path)))
+      ]}
 
       An exception [f] raises ends the run: {!val-run} gives the terminal back
       and raises it, with the backtrace of where [f] raised it (when backtraces
@@ -1280,9 +1286,10 @@ end
     {!val-run} runs a program until it ends, waiting for the terminal with
     [select(2)], and runs the work of {!Cmd.val-perform} and {!Sub.val-worker}
     on threads. A program with threads of its own needs nothing more. A thread
-    ends the run with a stop request ([stop]), and gives the program messages
-    through the [dispatch] or the mailbox of that work, or with {!val-dispatch}
-    from a thread the program did not start ({{!event_loops}Event loops}). *)
+    ends the run with a stop request ([stop]). Work done off the loop gives the
+    program messages through its [dispatch] or its mailbox, and a thread the
+    program did not start through the [dispatch] a {!Cmd.val-perform} handed it.
+*)
 
 val run :
   ?input:Unix.file_descr ->

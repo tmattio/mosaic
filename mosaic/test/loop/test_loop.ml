@@ -2703,6 +2703,44 @@ let%expect_test "send returns once update has applied the message" =
     send 3 returned
     |}]
 
+(* A thread the program did not start gives it messages with the dispatch
+   a perform handed it, after the perform has returned. *)
+let%expect_test "a perform's dispatch serves a thread after it returned" =
+  let log = ref [] and returned = Atomic.make false in
+  let thread = Atomic.make None in
+  let application =
+    {
+      Mosaic.init =
+        (fun () ->
+          ( 0,
+            Mosaic.Cmd.perform (fun dispatch ->
+                let feed () =
+                  while not (Atomic.get returned) do
+                    Thread.yield ()
+                  done;
+                  Thread.delay 0.01;
+                  dispatch 1;
+                  dispatch 2
+                in
+                Atomic.set thread (Some (Thread.create feed ()));
+                Atomic.set returned true) ));
+      update =
+        (fun i _ ->
+          record log (Printf.sprintf "applied %d" i);
+          (i, Mosaic.Cmd.none));
+      view = (fun _ -> Mosaic.text "feed");
+      subscriptions = (fun _ -> Mosaic.Sub.none);
+    }
+  in
+  run_live [ Until (fun () -> List.length (read log) = 2); End ] application;
+  Option.iter Thread.join (Atomic.get thread);
+  List.iter print_endline (read log);
+  [%expect
+    {|
+    applied 1
+    applied 2
+    |}]
+
 let%expect_test "send on the loop's thread raises" =
   let application =
     {

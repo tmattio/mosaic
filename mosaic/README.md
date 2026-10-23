@@ -269,7 +269,7 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `23-resize`        | Terminal resize and focus events                  |
 | `24-eio`           | A program run from Eio                            |
 | `26-lwt`           | A program as an Lwt promise                       |
-| `27-threads`       | A program fed by a thread and stopped by another  |
+| `27-threads`       | A program fed by a worker and stopped by a thread |
 | `x-agent`          | Agent-style primary-screen CLI                    |
 | `x-dashboard`      | Component composition with `map`                  |
 | `x-syspanel`       | System monitor: CPU, memory, disk, processes      |
