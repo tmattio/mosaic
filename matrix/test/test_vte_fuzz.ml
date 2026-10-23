@@ -362,23 +362,34 @@ let program =
   let+ ops = list ~size:(int_range 1 12) op in
   { rows; cols; scrollback; width_method; ops }
 
-(* Replies are the answers this terminal gives: DA, DA2, DSR, CPR and
-   DECXCPR, each a whole control sequence. *)
+(* Replies are the answers this terminal gives, each whole: DA, DA2, DSR,
+   CPR, DECXCPR and DECRPM, control sequences, and the colour reports, OSCs
+   ended by BEL or ST. *)
 let check_replies r =
   let n = String.length r in
+  let rec final j =
+    if j >= n then failf "replies %S: unfinished" r
+    else
+      match r.[j] with
+      | '0' .. '9' | ';' | '?' | '>' | '$' -> final (j + 1)
+      | 'c' | 'n' | 'R' | 'y' -> j + 1
+      | c -> failf "replies %S: %C" r c
+  in
+  let rec osc j =
+    if j >= n then failf "replies %S: unfinished OSC" r
+    else
+      match r.[j] with
+      | '\x07' -> j + 1
+      | '\x1b' when j + 1 < n && r.[j + 1] = '\\' -> j + 2
+      | '0' .. '9' | 'a' .. 'f' | ';' | ':' | '/' | 'r' | 'g' -> osc (j + 1)
+      | c -> failf "replies %S: %C in an OSC" r c
+  in
   let rec go i =
-    if i < n then (
-      if i + 1 >= n || r.[i] <> '\x1b' || r.[i + 1] <> '[' then
-        failf "replies %S: no CSI at %d" r i;
-      let rec final j =
-        if j >= n then failf "replies %S: unfinished" r
-        else
-          match r.[j] with
-          | '0' .. '9' | ';' | '?' | '>' -> final (j + 1)
-          | 'c' | 'n' | 'R' -> j
-          | c -> failf "replies %S: %C" r c
-      in
-      go (final (i + 2) + 1))
+    if i < n then
+      if i + 1 < n && r.[i] = '\x1b' && r.[i + 1] = '[' then go (final (i + 2))
+      else if i + 1 < n && r.[i] = '\x1b' && r.[i + 1] = ']' then
+        go (osc (i + 2))
+      else failf "replies %S: no CSI or OSC at %d" r i
   in
   go 0
 

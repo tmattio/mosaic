@@ -108,6 +108,7 @@
 #### Fixed
 
 - A mouse report on the first row of the primary live region counts as its row 0; it mapped to -1, above the region
+- The VTE answers DECRQM with DECRPM for the modes it keeps (0 for the others), and OSC 10, 11 and 4 colour queries with the colours its cells take, ended as the query was; fish 4 and programs that pick a light or dark theme waited for a timeout
 - Capability probing: stray cursor-position replies no longer flip `explicit_width`/`scaled_text` for the session; late capability replies are still applied, and modern terminals seed synchronized output. The environment is no longer read behind the caller's back (a `$TMUX` set in the developer's shell wrapped the probe)
 - Kitty keyboard stack balanced on flag changes; teardown resets only the title/cursor appearance the app actually set
 - Terminal setup rolls back transactionally when probing or protocol negotiation fails, so no path escapes with the terminal left raw; app-owned signal dispositions, including SIGHUP, are restored in reverse

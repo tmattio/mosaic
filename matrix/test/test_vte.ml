@@ -938,6 +938,38 @@ let query_replies () =
     (ignore (Vte.feed_string vte "\x1b[5" : string);
      Vte.feed_string vte "n")
 
+(* DECRQM reports a mode as set (1), reset (2) or not recognized (0); OSC 10,
+   11 and 4 with [?] report a colour with the query's terminator. *)
+let mode_and_colour_queries () =
+  let vte = Vte.create ~rows:2 ~cols:10 () in
+  equal ~msg:"DEC modes" string
+    "\x1b[?2004;2$y\x1b[?7;1$y\x1b[?1049;2$y\x1b[?2026;0$y"
+    (Vte.feed_string vte "\x1b[?2004$p\x1b[?7$p\x1b[?1049$p\x1b[?2026$p");
+  equal ~msg:"DEC modes after setting them" string
+    "\x1b[?2004;1$y\x1b[?7;2$y\x1b[?1049;1$y\x1b[?47;1$y"
+    (Vte.feed_string vte
+       "\x1b[?2004h\x1b[?7l\x1b[?1049h\x1b[?2004$p\x1b[?7$p\x1b[?1049$p\x1b[?47$p");
+  equal ~msg:"ANSI modes" string "\x1b[4;2$y\x1b[4;1$y\x1b[2;0$y"
+    (Vte.feed_string vte "\x1b[4$p\x1b[4h\x1b[4$p\x1b[2$p");
+  equal ~msg:"dynamic colours, BEL and ST" string
+    "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x1b\\"
+    (Vte.feed_string vte "\x1b]10;?\x07\x1b]11;?\x1b\\");
+  equal ~msg:"successive dynamic colours" string
+    "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x07"
+    (Vte.feed_string vte "\x1b]10;?;?;?\x07");
+  equal ~msg:"palette colours" string
+    "\x1b]4;1;rgb:8080/0000/0000\x07\x1b]4;196;rgb:ffff/0000/0000\x07"
+    (Vte.feed_string vte "\x1b]4;1;?;2;red;196;?;256;?;+1;?\x07");
+  equal ~msg:"no answer: cursor colour, a set, a query cut short" string ""
+    (Vte.feed_string vte "\x1b]12;?\x07\x1b]11;#ffffff\x07\x1b]10;?\x18");
+  let vte =
+    Vte.create ~default_fg:(Ansi.Color.of_rgb 1 2 3)
+      ~default_bg:Ansi.Color.default_bg ~rows:2 ~cols:10 ()
+  in
+  equal ~msg:"the default colours create was given" string
+    "\x1b]10;rgb:0101/0202/0303\x07\x1b]11;rgb:0000/0000/0000\x07"
+    (Vte.feed_string vte "\x1b]10;?\x07\x1b]11;?\x07")
+
 (* An OSC acts only when it ends with ST or BEL; one cut short does nothing.
    Only OSC 0, 2 and 8 are kept, each up to 64 KiB. *)
 let osc_acts_only_when_terminated () =
@@ -2171,6 +2203,7 @@ let tests =
     test "combined mode sequence" combined_mode_sequence;
     test "OSC set title" osc_set_title;
     test "query replies" query_replies;
+    test "mode and colour queries" mode_and_colour_queries;
     test "OSC acts only when terminated" osc_acts_only_when_terminated;
     test "zero counts mean one" zero_counts_mean_one;
     test "replies by parameter value" replies_by_parameter_value;

@@ -1123,6 +1123,36 @@ let dsr t = function
 let decxcpr t =
   Printf.bprintf t.replies "\027[?%d;%d;1R" (report_row t) (t.cursor.col + 1)
 
+(* The state of the modes [set_ansi_mode] and [set_dec_mode] keep, [None] for
+   a mode this terminal does not have. *)
+let ansi_mode t = function 4 -> Some t.modes.insert | _ -> None
+
+let dec_mode t mode =
+  let m = t.modes in
+  match mode with
+  | 1 -> Some m.cursor_keys
+  | 6 -> Some m.origin
+  | 7 -> Some m.auto_wrap
+  | 25 -> Some m.cursor_visible
+  | 42 -> Some m.national
+  | 45 -> Some m.reverse_wrap
+  | 47 | 1047 | 1049 -> Some m.alternate_screen
+  | 2004 -> Some m.bracketed_paste
+  | _ -> None
+
+(* DECRQM: DECRPM's Pm is 1 for set, 2 for reset and 0 for a mode not
+   recognized (VT320 Programmer Information, Table 2). *)
+let decrqm t ~private_ mode =
+  let pm =
+    match (if private_ then dec_mode else ansi_mode) t mode with
+    | Some true -> 1
+    | Some false -> 2
+    | None -> 0
+  in
+  Printf.bprintf t.replies "\027[%s%d;%d$y"
+    (if private_ then "?" else "")
+    mode pm
+
 (* {1:dispatch Dispatch}
 
    A function is named by the private marker, the intermediates and the final
@@ -1218,6 +1248,8 @@ let csi t (s : Ansi.Parser.sequence) =
   | Some '?', "", 'K' -> decsel t (ps 0)
   | Some '?', "", 'n' when ps 0 = 6 -> decxcpr t
   | Some '>', "", 'c' when ps 0 = 0 -> da2 t
+  | None, "$", 'p' -> decrqm t ~private_:false (ps 0)
+  | Some '?', "$", 'p' -> decrqm t ~private_:true (ps 0)
   | None, "!", 'p' -> decstr t
   | None, "\"", 'q' -> decsca t (ps 0)
   | None, " ", '@' -> sl t (pn 0)
@@ -1232,7 +1264,8 @@ let csi t (s : Ansi.Parser.sequence) =
    longer one is dropped whole, as xterm drops an over-long string. It is
    performed when it ends with ST or BEL, never when it is cut short. OSC 0 and
    2 set the title; OSC 8 opens a hyperlink, [8 ; params ; URI], or closes it
-   when the URI is empty. *)
+   when the URI is empty; OSC 4, 10 and 11 are answered when they ask for a
+   colour. *)
 
 let osc_budget = 65536
 
@@ -1252,7 +1285,7 @@ let rec osc_number t s i n =
     match s.[i] with
     | '0' .. '9' as c ->
         osc_number t s (i + 1) (min 1000 ((max n 0 * 10) + Char.code c - 48))
-    | ';' when n = 0 || n = 2 || n = 8 ->
+    | ';' when n = 0 || n = 2 || n = 4 || n = 8 || n = 10 || n = 11 ->
         t.osc <- Osc_text n;
         osc_keep t s (i + 1)
     | _ -> osc_drop t
@@ -1263,6 +1296,49 @@ let osc_hyperlink t text =
   | Some i ->
       let uri = String.sub text (i + 1) (String.length text - i - 1) in
       t.pen <- { t.pen with link = (if uri = "" then None else Some uri) }
+
+(* A colour as XParseColor reads it and xterm reports it: 16 bits a channel,
+   each 8-bit value [v] scaled to [v * 257], so 0xff is 0xffff. *)
+let rgb_spec c =
+  let r, g, b = Ansi.Color.to_rgb c in
+  Printf.sprintf "rgb:%04x/%04x/%04x" (r * 257) (g * 257) (b * 257)
+
+let decimal s =
+  if s <> "" && String.for_all (function '0' .. '9' -> true | _ -> false) s
+  then int_of_string_opt s
+  else None
+
+(* OSC 4 is pairs [c ; spec]; OSC 10 is specs for the dynamic colours from 10
+   on, the foreground then the background (ctlseqs). A spec [?] asks for the
+   colour, answered as the OSC that would set it, with the query's
+   terminator. Setting a colour has no effect: the cells hold the colours
+   they were given. *)
+let osc_colours t n ending text =
+  let st = match ending with `Bel -> "\007" | `St -> "\027\\" in
+  let answer prefix colour =
+    Printf.bprintf t.replies "\027]%s;%s%s" prefix (rgb_spec colour) st
+  in
+  let rec palette = function
+    | c :: "?" :: rest ->
+        (match decimal c with
+        | Some i when i <= 255 ->
+            answer (Printf.sprintf "4;%d" i) (Ansi.Color.indexed i)
+        | _ -> ());
+        palette rest
+    | _ :: _ :: rest -> palette rest
+    | _ -> ()
+  in
+  let rec dynamic n = function
+    | spec :: rest ->
+        (match (n, spec) with
+        | 10, "?" -> answer "10" t.default_fg
+        | 11, "?" -> answer "11" t.default_bg
+        | _ -> ());
+        dynamic (n + 1) rest
+    | [] -> ()
+  in
+  let specs = String.split_on_char ';' text in
+  if n = 4 then palette specs else dynamic n specs
 
 let open_string t (o : Ansi.Parser.opening) =
   match o with Osc -> t.osc <- Osc_number (-1) | _ -> t.osc <- Osc_skip
@@ -1277,6 +1353,8 @@ let close_string t ending =
   (match (t.osc, ending) with
   | Osc_text (0 | 2), (`St | `Bel) -> t.title <- Buffer.contents t.osc_text
   | Osc_text 8, (`St | `Bel) -> osc_hyperlink t (Buffer.contents t.osc_text)
+  | Osc_text n, ((`St | `Bel) as ending) ->
+      osc_colours t n ending (Buffer.contents t.osc_text)
   | _ -> ());
   osc_drop t
 
