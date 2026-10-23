@@ -589,16 +589,24 @@ let copy_rendition t ~lead idx =
   Buf.set t.fg_color idx (Buf.get t.fg_color lead);
   Buf.set t.bg_color idx (Buf.get t.bg_color lead)
 
+(* How a write treats the cell under it. [Copy] stores the colors as they
+   are. [Draw] blends them over the cell's and writes the code, a space
+   included, as text drawing does. [Overlay] blends them too, but a space or
+   an empty code lets the cell's text show through, tinted, as a translucent
+   fill and the blanks of a drawn layer do. *)
+type write = Copy | Draw | Overlay
+
 (* A grapheme has one rendition, its start cell's: blending works on the start
    cell, and the other cells copy it. A wide character's start cell is
    written before its other cells. *)
-let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~blending =
+let set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~write =
   let fg_alpha = Color_packed.alpha fg_color in
   let bg_alpha = Color_packed.alpha bg_color in
+  let blending = write <> Copy in
   if blending && fg_alpha = 0 && bg_alpha = 0 then ()
   else if blending && (fg_alpha < 255 || bg_alpha < 255) then begin
     let dest_code = Buf.get_cell t.chars idx in
-    let blank = code = space_cell || code = null_cell in
+    let blank = write = Overlay && (code = space_cell || code = null_cell) in
     if Packed_cell.is_continuation code then begin
       (* The rest of a wide character whose start cell was just drawn. *)
       let lead = idx - Packed_cell.left_extent code in
@@ -661,7 +669,8 @@ let set_uchar t ~x ~y ~uchar ~fg ~bg ~attrs ?link ?(blend = false) () =
       in
       set_cell_internal t
         ~idx:((y * t.width) + x + dx)
-        ~code:cell ~fg_color ~bg_color ~attrs ~link ~blending:blend
+        ~code:cell ~fg_color ~bg_color ~attrs ~link
+        ~write:(if blend then Draw else Copy)
     done
   end
 
@@ -693,12 +702,11 @@ let set_grapheme t ~x ~y ~width ~fg ~bg ~attrs ?(link = no_link)
     else Ansi.Attr.pack attrs
   in
   let idx = (y * t.width) + x in
-  set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link
-    ~blending:false;
+  set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link ~write:Copy;
   for i = 1 to width - 1 do
     let code = Packed_cell.make_continuation ~left:i ~right:(width - 1 - i) in
     set_cell_internal t ~idx:(idx + i) ~code ~fg_color ~bg_color ~attrs ~link
-      ~blending:false
+      ~write:Copy
   done
 
 let erase_unprotected t (r : region) =
@@ -789,7 +797,7 @@ let fill_rect t ~x ~y ~width ~height ~color =
           for dx = 0 to r.width - 1 do
             set_cell_internal t ~idx:(base + dx) ~code:space_cell
               ~fg_color:default_fg_packed ~bg_color ~attrs:0 ~link:no_link
-              ~blending:true
+              ~write:Overlay
           done
         done
 
@@ -1043,7 +1051,7 @@ let transfer_region ~blend ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y
                 set_cell_internal dst
                   ~idx:((dy * dst.width) + dx)
                   ~code:mapped_code ~fg_color ~bg_color ~attrs ~link
-                  ~blending:blend
+                  ~write:(if blend then Overlay else Copy)
               end;
 
               k := !k + x_step
@@ -1178,7 +1186,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
             begin
               let idx = (y * t.width) + !cur_x in
               set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link
-                ~blending:true;
+                ~write:Draw;
               for i = 1 to w - 1 do
                 let c_x = !cur_x + i in
                 let c_idx = (y * t.width) + c_x in
@@ -1186,7 +1194,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
                   Packed_cell.make_continuation ~left:i ~right:(w - 1 - i)
                 in
                 set_cell_internal t ~idx:c_idx ~code:cont ~fg_color ~bg_color
-                  ~attrs ~link ~blending:true
+                  ~attrs ~link ~write:Draw
               done
             end;
             cur_x := !cur_x + w
@@ -1203,7 +1211,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
                     | Some _ -> bg_color
                   in
                   set_cell_internal t ~idx ~code:space_cell ~fg_color ~bg_color
-                    ~attrs ~link ~blending:false
+                    ~attrs ~link ~write:Copy
               done;
             cur_x := !cur_x + w
           end
@@ -1306,7 +1314,7 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
           set_cell_internal t
             ~idx:((by * t.width) + bx)
             ~code:cell ~fg_color:b_fg_color ~bg_color:bg_color_packed
-            ~attrs:b_attrs ~link:no_link ~blending:true
+            ~attrs:b_attrs ~link:no_link ~write:Draw
       in
 
       (* Horizontal borders *)

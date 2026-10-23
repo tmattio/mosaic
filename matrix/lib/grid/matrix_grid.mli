@@ -261,9 +261,13 @@ val draw_region :
 (** [draw_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y] draws the
     cells of [src] that {!blit_region} would copy over those of [dst]. The
     colors of [src] are multiplied by the opacity of [dst], and a cell whose
-    colors are then both transparent leaves its cell of [dst] as it is. When
-    [src] and [dst] are the same grid, it reads a copy of [src] taken first. It
-    draws nothing while the opacity of [dst] is [0]. *)
+    colors are then both transparent leaves its cell of [dst] as it is. A blank
+    or empty cell of [src] on a background that is not opaque keeps the text of
+    the cell it covers, so that a layer shows what lies under its blanks. It
+    tints that cell's colors and gives it its hyperlink, and tints a wide
+    grapheme whole when it covers the start cell, leaving it as it is otherwise.
+    When [src] and [dst] are the same grid, it reads a copy of [src] taken
+    first. It draws nothing while the opacity of [dst] is [0]. *)
 
 val fill_rect :
   t -> x:int -> y:int -> width:int -> height:int -> color:Ansi.Color.t -> unit
@@ -301,10 +305,9 @@ val draw_text :
     right edge leaves spaces in [style] up to it, and nothing is drawn if both
     colors of [style] are transparent.
 
-    A space on a translucent background keeps the text of the cell it covers,
-    tints its colors and gives it the hyperlink of [style]. It tints a wide
-    grapheme whole when it covers the start cell, and leaves it as it is
-    otherwise.
+    Each unit replaces the text of the cells it covers, a space included, so
+    drawing spaces in any style erases the text under them. To tint cells and
+    keep their text, a program draws a translucent {!fill_rect}.
 
     Raises [Invalid_argument] if [tab_width < 1]. *)
 

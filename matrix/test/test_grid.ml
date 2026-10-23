@@ -2013,8 +2013,38 @@ let many_distinct_graphemes () =
   equal ~msg:"first cell" string (text 0) (Grid.get_text grid 0);
   equal ~msg:"last cell" string (text last) (Grid.get_text grid last)
 
+(* Regression: draw_text kept the text under a space whose background was
+   not opaque, the default style's included, so drawing "  " over a word
+   erased nothing. Text drawing writes every unit; tinting the cells under
+   a translucent color is fill_rect's, and keeping the cells under a layer's
+   blanks is draw_region's. *)
+let spaces_draw_and_layers_composite () =
+  let over style =
+    let grid = Grid.create ~width:3 ~height:1 () in
+    Grid.draw_text grid ~x:0 ~y:0 ~text:"XYZ";
+    Grid.draw_text grid ~x:0 ~y:0 ~text:" b" ?style;
+    grid
+  in
+  equal ~msg:"default style" string " bZ" (Grid.to_text (over None));
+  let tinted = Ansi.Style.make ~bg:(Ansi.Color.of_rgba 255 0 0 128) () in
+  equal ~msg:"translucent background" string " bZ"
+    (Grid.to_text (over (Some tinted)));
+  let grid = Grid.create ~width:3 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"XYZ";
+  Grid.fill_rect grid ~x:0 ~y:0 ~width:3 ~height:1
+    ~color:(Ansi.Color.of_rgba 255 0 0 128);
+  equal ~msg:"a translucent fill keeps the text" string "XYZ"
+    (Grid.to_text grid);
+  let layer = Grid.create ~width:3 ~height:1 () in
+  Grid.draw_text layer ~x:1 ~y:0 ~text:"b";
+  Grid.draw_region ~src:layer ~dst:grid ~src_x:0 ~src_y:0 ~width:3 ~height:1
+    ~dst_x:0 ~dst_y:0;
+  equal ~msg:"a layer's blanks keep the cells under them" string "XbZ"
+    (Grid.to_text grid)
+
 let tests =
   [
+    test "spaces draw, layers composite" spaces_draw_and_layers_composite;
     test "to_ansi ends each row with one reset" (fun () ->
         let grid = Grid.create ~width:2 ~height:2 () in
         Grid.draw_text grid ~x:0 ~y:0 ~text:"ab"
