@@ -374,7 +374,59 @@ val strip : string -> string
     {!Parser.Text} and C0 {!Parser.Control} tokens of {!Parser.parse}[ s], in
     order. Line feeds and tabs stay; sequences, strings, DEL and C1 controls go,
     an unfinished one at the end included. As {!Parser} reads UTF-8, ill-formed
-    bytes become U+FFFD and U+0080..U+009F are dropped. *)
+    bytes become U+FFFD and U+0080..U+009F are dropped.
+
+    The C0 controls that stay, such as CR, BS and BEL, still act: for text from
+    someone else, use {!sanitize}. *)
+
+val sanitize : string -> string
+(** [sanitize s] is the text of [s] that shows, safe to print to a terminal when
+    [s] comes from someone else: a file name, a subprocess's output, a message
+    read off the network.
+
+    Such text can hold what a terminal performs instead of showing. Printed as
+    it is, it can move the cursor and write over what is on the screen, clear
+    it, set the title or the clipboard, or ask the terminal a question whose
+    answer arrives as if it were typed. And text can show other than what it
+    holds: a CR or a BS makes the end of a line write over its start, and
+    Unicode's bidirectional controls reorder the characters after them, so that
+    the reader sees one order and a program reads another (CVE-2021-42574,
+    "Trojan Source"). [sanitize s] keeps what shows, in the order of [s]:
+    - Every control function goes, as {!Parser} reads them: escape and control
+      sequences, control strings with their content (a title, a link's target),
+      C1 controls written ESC Fe, DEL, and the C0 controls but HT and the line
+      ends. U+0080..U+009F and ill-formed UTF-8 go as {!Parser} reads them:
+      dropped, and U+FFFD.
+    - A line ends at LF, at VT and FF, which a terminal performs as LF (VT220
+      Programmer Reference Manual §4.6.6), at NEL, and at CR, which returns to
+      the start of the line to write over it. A run of CRs and the LF, VT, FF or
+      NEL after it end one line. Each line end is one LF.
+    - The characters a terminal shows as nothing go: Unicode's
+      Default_Ignorable_Code_Point (DerivedCoreProperties.txt). They include
+      every bidirectional control (Bidi_Control: the embeddings, overrides and
+      isolates of UAX #9, and the marks LRM, RLM and ALM), which "if they are
+      not supported by an implementation, they should not be rendered with a
+      visible glyph" (Unicode §23.2), the zero-width space and the word joiner,
+      the tag characters, the Hangul fillers and the soft hyphen.
+    - Three of them stay where they change how the character before them shows:
+      a variation selector directly after a character that shows, a joiner (ZWJ
+      or ZWNJ) after such a character or its selector, and the tags of an RGI
+      emoji tag sequence, the flags of England, Scotland and Wales (Unicode's
+      emoji-sequences.txt). So emoji and scripts that need joiners show as they
+      should, and no run of invisible characters hides text.
+
+    Styles go too, as control functions: SGR can hide text (SGR 8 conceals it, a
+    foreground equal to the background hides it), so no style is safe. To show
+    the colours of a source trusted with them, read its SGR with {!Parser} and
+    {!Style.apply_sgr}, and draw what they select.
+
+    Two things stay that no character filter can remove: text in a right-to-left
+    script is still reordered by a terminal that implements bidirectional
+    display, in the order its own letters give, and characters that look alike,
+    such as Latin "a" and Cyrillic "а", stay distinct.
+
+    The result is valid UTF-8 with no control character but LF and HT, and
+    [sanitize (sanitize s) = sanitize s]. *)
 
 (** {1:submodules Sub-modules} *)
 

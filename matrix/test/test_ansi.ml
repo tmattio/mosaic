@@ -1220,6 +1220,128 @@ let strip_keeps_c0_and_follows_the_parser () =
   equal ~msg:"text kept whole" string "\xc3\xa9\xe4\xb8\xad"
     (Ansi.strip "\xc3\xa9\x1b[m\xe4\xb8\xad")
 
+let contains s sub =
+  let n = String.length sub in
+  let rec at i =
+    i + n <= String.length s && (String.sub s i n = sub || at (i + 1))
+  in
+  at 0
+
+(* Untrusted text keeps only what shows, in its order. *)
+let sanitize_untrusted_text () =
+  let plain = "line 1\n\tline 2" in
+  is_true ~msg:"plain text is returned as is" (Ansi.sanitize plain == plain);
+  List.iter
+    (fun (msg, input, expected) ->
+      equal ~msg string expected (Ansi.sanitize input))
+    [
+      ( "sequences and strings",
+        "\x1b[2J\x1b]0;t\x07a\x1b]8;;http://x\x1b\\b\x1b[31mc",
+        "abc" );
+      ("C1 in both forms, DEL", "a\x1bDb\xc2\x9bc\x7fd", "abcd");
+      ( "BS, BEL, SO and NUL go",
+        "rm -rf /\b\b\b\b\b\b\bls\x07\x0e\x00",
+        "rm -rf /ls" );
+      ("a CR ends a line", "safe\revil", "safe\nevil");
+      ("CR LF, CR CR LF, LF LF", "a\r\nb\r\r\nc\n\nd", "a\nb\nc\n\nd");
+      ("VT, FF and NEL end lines", "a\x0bb\x0cc\x1bEd", "a\nb\nc\nd");
+      ("tabs stay", "a\tb", "a\tb");
+      ("ill-formed UTF-8", "a\xffb", "a\xef\xbf\xbdb");
+      ( "bidi overrides and isolates",
+        "if (\u{202E}nimda\u{202C}) \u{2066}x\u{2069}\u{200F}",
+        "if (nimda) x" );
+      ( "invisible characters",
+        "pay\u{200B}pal\u{2060}\u{00AD}\u{FEFF}\u{3164}\u{E0041}",
+        "paypal" );
+      ("a selector after a base", "\u{2764}\u{FE0F}", "\u{2764}\u{FE0F}");
+      ("a selector after no base", "\u{FE0F}a \u{FE0F}", "a ");
+      ("a run of selectors", "a\u{FE0F}\u{FE0E}\u{E0100}", "a\u{FE0F}");
+      ( "a ZWJ sequence",
+        "\u{1F468}\u{200D}\u{1F4BB}\u{1F441}\u{FE0F}\u{200D}\u{1F5E8}\u{FE0F}",
+        "\u{1F468}\u{200D}\u{1F4BB}\u{1F441}\u{FE0F}\u{200D}\u{1F5E8}\u{FE0F}"
+      );
+      ( "a ZWNJ in Persian",
+        "\u{0645}\u{06CC}\u{200C}\u{062E}",
+        "\u{0645}\u{06CC}\u{200C}\u{062E}" );
+      ("a run of joiners", "a\u{200D}\u{200D}\u{200C}b", "a\u{200D}b");
+      ("joiners after nothing", "\u{200D}a \u{200C}", "a ");
+      ( "the flag of Scotland",
+        "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+        "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}" );
+      ( "tags on a flag that is not one",
+        "\u{1F3F4}\u{E0068}\u{E0069}\u{E007F}",
+        "\u{1F3F4}" );
+      ("U+0085 is not NEL", "a\u{0085}b", "ab");
+    ]
+
+(* Whatever the input: valid UTF-8, no control but LF and HT, no bidi
+   control, and sanitized already. *)
+let sanitize_properties () =
+  let pieces =
+    [|
+      "a";
+      " ";
+      "\n";
+      "\r";
+      "\t";
+      "\x08";
+      "\x07";
+      "\x1b";
+      "[";
+      "]";
+      "0";
+      ";";
+      "m";
+      "\x07";
+      "\x1b\\";
+      "\x9b";
+      "\xc2\x9b";
+      "\x7f";
+      "\xff";
+      "\xe4\xb8";
+      "\u{202E}";
+      "\u{2067}";
+      "\u{200E}";
+      "\u{061C}";
+      "\u{200D}";
+      "\u{200C}";
+      "\u{FE0F}";
+      "\u{E0100}";
+      "\u{180B}";
+      "\u{E0067}";
+      "\u{E0062}";
+      "\u{E0073}";
+      "\u{E0063}";
+      "\u{E0074}";
+      "\u{E007F}";
+      "\u{1F3F4}";
+      "\u{2764}";
+      "\u{0301}";
+      "\u{00AD}";
+      "\u{FEFF}";
+    |]
+  in
+  let rng = Random.State.make [| 42 |] in
+  for _ = 1 to 20_000 do
+    let s =
+      String.concat ""
+        (List.init (Random.State.int rng 12) (fun _ ->
+             pieces.(Random.State.int rng (Array.length pieces))))
+    in
+    let t = Ansi.sanitize s in
+    if not (String.is_valid_utf_8 t) then failf "%S: invalid UTF-8 %S" s t;
+    String.iter
+      (fun c ->
+        if (c < ' ' && c <> '\n' && c <> '\t') || c = '\x7f' then
+          failf "%S: control %C in %S" s c t)
+      t;
+    List.iter
+      (fun bidi -> if contains t bidi then failf "%S: bidi control in %S" s t)
+      [ "\u{202E}"; "\u{2067}"; "\u{200E}"; "\u{061C}" ];
+    let again = Ansi.sanitize t in
+    if again <> t then failf "%S: %S then %S" s t again
+  done
+
 let parameter_clamping () =
   (* Cursor movement: negative -> 0 -> empty string *)
   check_seq "negative lines" "" Ansi.(to_string (cursor_up ~n:(-5)));
@@ -1469,6 +1591,8 @@ let tests =
         test "strip protocol string controls" strip_protocol_string_controls;
         test "strip keeps C0 and follows the parser"
           strip_keeps_c0_and_follows_the_parser;
+        test "sanitize untrusted text" sanitize_untrusted_text;
+        test "sanitize properties" sanitize_properties;
         test "param clamping" parameter_clamping;
         test "input validation" explicit_error_handling;
         test "cursor & explicit width" cursor_and_explicit_width_sequences;
