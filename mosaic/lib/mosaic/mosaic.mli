@@ -924,6 +924,9 @@ module Sub : sig
     | Every of string * float * (int -> 'msg)
         (** [Every (id, period, f)] fires [f k] every [period] seconds; see
             {!val-every}. *)
+    | After of string * float * 'msg
+        (** [After (id, delay, msg)] dispatches [msg] once, [delay] seconds
+            after [id] appears; see {!val-after}. *)
     | On_tick of string * (dt:float -> 'msg)
         (** [On_tick (id, f)] fires [f ~dt] on every render frame, where [dt] is
             the elapsed time in seconds since the previous frame. *)
@@ -977,7 +980,20 @@ module Sub : sig
 
       Raises [Invalid_argument] if [id] is empty or [period] is not positive and
       finite. The run raises it when two subscriptions declare the same id,
-      among those that take one ({!val-every}, {!val-on_tick}). *)
+      among those that take one ({!val-every}, {!val-after}, {!val-on_tick}). *)
+
+  val after : id:string -> float -> 'msg -> 'msg t
+  (** [after ~id delay msg] dispatches [msg] once, [delay] seconds after [id]
+      first appears in the subscriptions: in the first turn at or past that
+      time, as {!val-every} fires. Dropping [id] before then cancels it, which
+      makes a debounce: declare [after] while the model waits, and each update
+      that should restart the wait declares it under a new id. Once fired, it
+      stays inert while [id] stays declared, and fires again only if [id] leaves
+      and returns. Declaring [id] with another [delay] starts it again from that
+      time.
+
+      Raises [Invalid_argument] if [id] is empty or [delay] is negative or not
+      finite. *)
 
   val on_tick : id:string -> (dt:float -> 'msg) -> 'msg t
   (** [on_tick ~id f] fires [f ~dt] on every rendered frame. [dt] is the elapsed

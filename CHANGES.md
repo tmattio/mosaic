@@ -6,6 +6,7 @@
 
 #### Added
 
+- **One-shot timers** – `Sub.after ~id delay msg` dispatches `msg` once, `delay` seconds after `id` appears in the subscriptions; dropping `id` first cancels it, so a debounce is an `after` declared under a new id by each update that restarts the wait
 - **Shortcut subscriptions** – `Mosaic.Shortcut` and `Sub.on_keys` bind keys to messages declaratively, with base-key and modifier matching
 - **Runtime probe** – `Mosaic.run ~probe` hands test harnesses a quiescence probe (`Probe.is_settled`) for deterministic settling in headless tests
 - **Idle-cheap timers** – a pending `Sub.every` arms a one-shot wakeup instead of holding the render cadence live; only `Sub.on_tick` keeps the cadence running

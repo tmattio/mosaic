@@ -1562,7 +1562,7 @@ let%expect_test "timer ids must be unique across every and on_tick" =
   (match drive (app ~subs ()) [] with
   | () -> print_endline "accepted"
   | exception Invalid_argument message -> print_endline message);
-  [%expect {| Mosaic.Sub: empty or duplicate timer id: clock |}]
+  [%expect {| Mosaic.Sub: empty or duplicate id: clock |}]
 
 (* An application that records every message it receives, by name. *)
 let recording subs =
@@ -2232,3 +2232,80 @@ let%expect_test "T3: a timer that missed periods fires once with their count" =
     views after the stall: 2
     A x100 at 10050 ms
     |}]
+
+let%expect_test "after fires once, and a new id restarts it, as a debounce" =
+  (* Each key restarts a 0.3 s wait by declaring it under a new id: the
+     message comes 0.3 s after the last key, once. The driver draws each
+     key's frame before the next step, so the last key comes at 416 ms. *)
+  let log = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> (0, Mosaic.Cmd.none));
+      update =
+        (fun msg keys ->
+          match msg with
+          | Stall -> (keys + 1, Mosaic.Cmd.none)
+          | Fired (id, _) ->
+              log := (id, 1, clock ()) :: !log;
+              (keys, Mosaic.Cmd.none));
+      view = (fun _ -> Mosaic.text "after");
+      subscriptions =
+        (fun keys ->
+          let id = Printf.sprintf "wait-%d" keys in
+          Mosaic.Sub.batch
+            [
+              on_s Stall;
+              (if keys > 0 then Mosaic.Sub.after ~id 0.3 (Fired (id, 1))
+               else Mosaic.Sub.none);
+            ]);
+    }
+  in
+  drive application
+    [
+      `Run (fun t -> terminal := Some t);
+      `Feed "s";
+      `Advance 0.2;
+      `Feed "s";
+      `Advance 0.2;
+      `Feed "s";
+      `Step_to 2.0;
+    ];
+  print_fires !log;
+  [%expect {| wait-3 x1 at 716 ms |}]
+
+let%expect_test
+    "after is cancelled by dropping its id, and fires again on return" =
+  let log = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> (false, Mosaic.Cmd.none));
+      update =
+        (fun msg on ->
+          match msg with
+          | Stall -> (not on, Mosaic.Cmd.none)
+          | Fired (id, _) ->
+              log := (id, 1, clock ()) :: !log;
+              (on, Mosaic.Cmd.none));
+      view = (fun _ -> Mosaic.text "after");
+      subscriptions =
+        (fun on ->
+          Mosaic.Sub.batch
+            [
+              on_s Stall;
+              (if on then Mosaic.Sub.after ~id:"once" 0.5 (Fired ("once", 1))
+               else Mosaic.Sub.none);
+            ]);
+    }
+  in
+  drive application
+    [
+      `Run (fun t -> terminal := Some t);
+      `Feed "s" (* declared at 0 *);
+      `Advance 0.4;
+      `Feed "s" (* dropped at 0.4: cancelled *);
+      `Step_to 1.0;
+      `Feed "s" (* declared again at 1.0 *);
+      `Step_to 3.0 (* fires at 1.5, then stays inert *);
+    ];
+  print_fires !log;
+  [%expect {| once x1 at 1500 ms |}]

@@ -81,6 +81,18 @@ let sub_every_map_preserves_identity () =
       equal ~msg:"the count reaches the mapped callback" int 7 (f 2)
   | _ -> fail "expected Every sub"
 
+let sub_after_map_and_validation () =
+  (match Sub.map (fun n -> n + 1) (Sub.after ~id:"save" 0.5 1) with
+  | Sub.After (id, delay, msg) ->
+      equal string "save" id;
+      equal float_exact 0.5 delay;
+      equal int 2 msg
+  | _ -> fail "expected After sub");
+  raises
+    (Invalid_argument
+       "Mosaic.Sub.after: nonempty id and nonnegative finite delay required")
+    (fun () -> Sub.after ~id:"save" (-1.) 0)
+
 let timer_model_accumulates_elapsed () =
   (* Verify the timer model accumulates elapsed time across ticks and decrements
      time_remaining after 1 second. *)
@@ -321,6 +333,7 @@ let () =
     [
       test "Sub.on_tick produces messages" sub_on_tick_produces_messages;
       test "Sub.every produces messages" sub_every_produces_messages;
+      test "Sub.after mapping and validation" sub_after_map_and_validation;
       test "Sub.every mapping preserves identity"
         sub_every_map_preserves_identity;
       test "timer model accumulates elapsed" timer_model_accumulates_elapsed;

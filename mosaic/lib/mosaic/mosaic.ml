@@ -241,6 +241,7 @@ module Sub = struct
     | None
     | Batch of 'msg t list
     | Every of string * float * (int -> 'msg)
+    | After of string * float * 'msg
     | On_tick of string * (dt:float -> 'msg)
     | On_key of phase * (Event.key -> 'msg option)
     | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
@@ -260,6 +261,12 @@ module Sub = struct
       invalid_arg
         "Mosaic.Sub.every: nonempty id and positive finite period required";
     Every (id, period, f)
+
+  let after ~id delay msg =
+    if id = "" || (not (Float.is_finite delay)) || delay < 0. then
+      invalid_arg
+        "Mosaic.Sub.after: nonempty id and nonnegative finite delay required";
+    After (id, delay, msg)
 
   let on_tick ~id f =
     if id = "" then invalid_arg "Mosaic.Sub.on_tick: empty id";
@@ -296,6 +303,7 @@ module Sub = struct
     | None -> None
     | Batch subs -> Batch (List.map (map f) subs)
     | Every (id, period, g) -> Every (id, period, fun k -> f (g k))
+    | After (id, delay, msg) -> After (id, delay, f msg)
     | On_tick (id, g) -> On_tick (id, fun ~dt -> f (g ~dt))
     | On_key (phase, g) -> On_key (phase, fun ev -> Option.map f (g ev))
     | On_key_release g -> On_key_release (fun ev -> Option.map f (g ev))
@@ -316,20 +324,37 @@ type ('model, 'msg) app = {
   subscriptions : 'model -> 'msg Sub.t;
 }
 
-(* Every-timer state. A timer's grid is [origin + n * interval] for
-   [n = 1, 2, ...], in the runtime's integer nanoseconds, computed from the
-   origin each time: an exact grid, which a clock read and compared with it
-   reaches exactly. [fired] is the last [n] it fired for, so its deadline is
-   the grid point after it. *)
-type 'msg every_timer = {
+(* Timer state, for [every] and [after]. A timer's deadlines are on the grid
+   [origin + n * interval] for [n = 1, 2, ...], in the runtime's integer
+   nanoseconds, computed from the origin each time: an exact grid, which a
+   clock read and compared with it reaches exactly. [fired] is the last [n]
+   it fired for, so its deadline is the grid point after it; an [after]
+   timer has only the first. *)
+type 'msg timer = {
   id : string;
   interval : int;
   origin : int;
   mutable fired : int;
-  callback : int -> 'msg;
+  fire : 'msg fire;
 }
 
-let every_deadline timer = timer.origin + ((timer.fired + 1) * timer.interval)
+and 'msg fire = Every of (int -> 'msg) | After of 'msg
+
+let timer_deadline timer =
+  match timer.fire with
+  | Every _ -> timer.origin + ((timer.fired + 1) * timer.interval)
+  | After _ ->
+      if timer.fired = 0 then timer.origin + timer.interval else max_int
+
+(* Whether [timer] continues [prev]: the same subscription, declared again. *)
+let continues prev timer =
+  String.equal prev.id timer.id
+  && Int.equal prev.interval timer.interval
+  &&
+  match (prev.fire, timer.fire) with
+  | Every _, Every _ | After _, After _ -> true
+  | Every _, After _ | After _, Every _ -> false
+
 let nanoseconds seconds = Float.to_int (Float.round (seconds *. 1e9))
 
 (* What work done off the loop sends it: a message for [update], a widget's
@@ -361,11 +386,11 @@ type ('model, 'msg) runtime = {
   mutable paste_subs : (Sub.phase * (Event.paste -> 'msg option)) list;
   mutable resize_sub : (width:int -> height:int -> 'msg) list;
   mutable tick_sub : (string * (dt:float -> 'msg)) list;
-  mutable every_subs : 'msg every_timer list;
+  mutable timers : 'msg timer list;
   mutable focus_sub : 'msg list;
   mutable blur_sub : 'msg list;
   mutable color_scheme_sub : ([ `Dark | `Light ] -> 'msg option) list;
-  (* The timer armed at the earliest deadline of the every-timers and the
+  (* The timer armed at the earliest deadline of the timers and the
      paste stalls, and that deadline. *)
   mutable wakeup : (Matrix.timer * int) option;
   (* The bracketed paste being received, assembled for the widgets. *)
@@ -464,12 +489,28 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   match sub with
   | Sub.None -> ()
   | Sub.Batch subs -> List.iter (collect_subs runtime) subs
-  | Sub.Every (id, interval, callback) ->
+  | Sub.Every (id, period, f) ->
       (* The schedule is assigned in [update_subscriptions], where the current
          time and the previous timer generation are both at hand. *)
-      runtime.every_subs <-
-        { id; interval = nanoseconds interval; origin = 0; fired = 0; callback }
-        :: runtime.every_subs
+      runtime.timers <-
+        {
+          id;
+          interval = nanoseconds period;
+          origin = 0;
+          fired = 0;
+          fire = Every f;
+        }
+        :: runtime.timers
+  | Sub.After (id, delay, msg) ->
+      runtime.timers <-
+        {
+          id;
+          interval = nanoseconds delay;
+          origin = 0;
+          fired = 0;
+          fire = After msg;
+        }
+        :: runtime.timers
   | Sub.On_tick (id, f) -> runtime.tick_sub <- (id, f) :: runtime.tick_sub
   | Sub.On_key (phase, f) -> runtime.key_subs <- (phase, f) :: runtime.key_subs
   | Sub.On_key_release f ->
@@ -497,15 +538,15 @@ let paste_stalls runtime =
         if due > runtime.paste_checked then Some (due, msg) else None)
       runtime.paste_stalled_subs
 
-(* Arm one timer at the earliest every-sub or paste-stall deadline, or none
+(* Arm one timer at the earliest timer or paste-stall deadline, or none
    when nothing is pending. Runs after every subscription recollection, after
    every fire and as a paste receives data: each can move the earliest
    deadline. *)
-let arm_every_wakeup runtime =
+let arm_wakeup runtime =
   let deadline =
     List.fold_left
-      (fun acc timer -> min acc (every_deadline timer))
-      max_int runtime.every_subs
+      (fun acc timer -> min acc (timer_deadline timer))
+      max_int runtime.timers
   in
   let deadline =
     List.fold_left
@@ -529,7 +570,7 @@ let animating runtime =
   || Renderable.Private.live_count (Renderer.root runtime.renderer) > 0
 
 let update_subscriptions runtime =
-  let prev_every = runtime.every_subs in
+  let prev_timers = runtime.timers in
   runtime.key_subs <- [];
   runtime.key_release_subs <- [];
   runtime.mouse_subs <- [];
@@ -537,7 +578,7 @@ let update_subscriptions runtime =
   runtime.paste_stalled_subs <- [];
   runtime.resize_sub <- [];
   runtime.tick_sub <- [];
-  runtime.every_subs <- [];
+  runtime.timers <- [];
   runtime.focus_sub <- [];
   runtime.blur_sub <- [];
   runtime.color_scheme_sub <- [];
@@ -554,7 +595,7 @@ let update_subscriptions runtime =
   let ids = Hashtbl.create 8 in
   let check_id id =
     if id = "" || Hashtbl.mem ids id then
-      invalid_arg ("Mosaic.Sub: empty or duplicate timer id: " ^ id);
+      invalid_arg ("Mosaic.Sub: empty or duplicate id: " ^ id);
     Hashtbl.add ids id ()
   in
   List.iter
@@ -563,24 +604,20 @@ let update_subscriptions runtime =
       ignore callback)
     runtime.tick_sub;
   let now = Matrix.now runtime.matrix_app in
-  runtime.every_subs <-
+  runtime.timers <-
     List.rev_map
       (fun timer ->
         check_id timer.id;
-        if timer.interval <= 0 then
-          invalid_arg "Mosaic.Sub.every: positive finite interval required";
-        match
-          List.find_opt
-            (fun prev ->
-              String.equal prev.id timer.id
-              && Int.equal prev.interval timer.interval)
-            prev_every
-        with
+        (match timer.fire with
+        | Every _ when timer.interval <= 0 ->
+            invalid_arg "Mosaic.Sub.every: period shorter than a nanosecond"
+        | Every _ | After _ -> ());
+        match List.find_opt (fun prev -> continues prev timer) prev_timers with
         | Some prev -> { timer with origin = prev.origin; fired = prev.fired }
         | None -> { timer with origin = now })
-      runtime.every_subs;
+      runtime.timers;
   if animating runtime then Matrix.request_redraw runtime.matrix_app;
-  arm_every_wakeup runtime
+  arm_wakeup runtime
 
 let dispatch runtime msg =
   let model', cmd = runtime.app.update msg runtime.model in
@@ -663,24 +700,30 @@ let handle_tick runtime ~dt =
   List.iter (fun pair -> push_msg runtime ((snd pair) ~dt)) runtime.tick_sub
 
 (* The timers whose deadline the turn reached fire once each, in the order of
-   their deadlines: an every-timer with the periods that ended since it last
-   fired, which is more than one after a stall, and a paste stall. *)
+   their deadlines: an [every] timer with the periods that ended since it
+   last fired, which is more than one after a stall, an [after] timer, and a
+   paste stall. *)
 let handle_timers runtime =
   let now = Matrix.now runtime.matrix_app in
-  let every =
+  let timers =
     List.filter_map
       (fun timer ->
-        let deadline = every_deadline timer in
+        let deadline = timer_deadline timer in
         if deadline > now then None
         else
           Some
             ( deadline,
               fun () ->
-                let ended = (now - timer.origin) / timer.interval in
-                let periods = ended - timer.fired in
-                timer.fired <- ended;
-                timer.callback periods ))
-      runtime.every_subs
+                match timer.fire with
+                | Every f ->
+                    let ended = (now - timer.origin) / timer.interval in
+                    let periods = ended - timer.fired in
+                    timer.fired <- ended;
+                    f periods
+                | After msg ->
+                    timer.fired <- 1;
+                    msg ))
+      runtime.timers
   in
   let stalls =
     List.filter_map
@@ -688,7 +731,7 @@ let handle_timers runtime =
       (paste_stalls runtime)
   in
   runtime.paste_checked <- now;
-  List.stable_sort (fun (a, _) (b, _) -> Int.compare a b) (every @ stalls)
+  List.stable_sort (fun (a, _) (b, _) -> Int.compare a b) (timers @ stalls)
   |> List.iter (fun (_, fire) -> push_msg runtime (fire ()))
 
 (* The paste in progress received data: its silence starts again. *)
@@ -696,7 +739,7 @@ let paste_heard runtime =
   let now = Matrix.now runtime.matrix_app in
   runtime.paste_heard <- now;
   runtime.paste_checked <- now;
-  if runtime.paste_stalled_subs <> [] then arm_every_wakeup runtime
+  if runtime.paste_stalled_subs <> [] then arm_wakeup runtime
 
 let dispatch_paste runtime text =
   let path = Renderer.focus_path runtime.renderer in
@@ -836,7 +879,7 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
       paste_checked = 0;
       resize_sub = [];
       tick_sub = [];
-      every_subs = [];
+      timers = [];
       focus_sub = [];
       blur_sub = [];
       color_scheme_sub = [];
@@ -946,7 +989,7 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
         synchronize runtime;
         (* A fired timer moved its deadline even when no message re-collected
            subscriptions, so the wakeup re-arms here. *)
-        arm_every_wakeup runtime
+        arm_wakeup runtime
     | _ -> ()
   in
   let rec loop () =
