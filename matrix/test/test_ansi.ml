@@ -459,7 +459,7 @@ let sgr_rgb_downgrades_to_ansi256 () =
   let w = Writer.create 128 in
   Sgr_state.update state w ~fg:(Color.of_rgb 255 0 0) ~bg:(Color.of_rgb 0 0 255)
     ~attrs:0 ~link:"";
-  check_seq "rgb downgraded to ansi256" "\x1b[0;38;5;9;48;5;12m"
+  check_seq "rgb downgraded to ansi256" "\x1b[0;38;5;196;48;5;21m"
     (Writer.contents w)
 
 let sgr_rgb_downgrades_to_ansi16 () =
@@ -469,6 +469,108 @@ let sgr_rgb_downgrades_to_ansi16 () =
   Sgr_state.update state w ~fg:(Color.of_rgb 255 0 0) ~bg:(Color.of_rgb 0 0 255)
     ~attrs:0 ~link:"";
   check_seq "rgb downgraded to ansi16" "\x1b[0;91;104m" (Writer.contents w)
+
+let sgr_rgb_to_ansi8_and_mono () =
+  let emit depth =
+    let state = Sgr_state.create () in
+    Sgr_state.set_color_depth state depth;
+    let w = Writer.create 128 in
+    Sgr_state.update state w ~fg:Color.bright_red ~bg:(Color.of_rgb 0 0 200)
+      ~attrs:0 ~link:"";
+    Writer.contents w
+  in
+  check_seq "ansi8" "\x1b[0;31;44m" (emit `Ansi8);
+  check_seq "mono" "\x1b[0m" (emit `Mono)
+
+(* xterm's palette from 256colres.pl, and xterm's search (xtermClosestColor):
+   from the top entry down, the first of least squared distance. *)
+let xterm_rgb i =
+  if i < 232 then
+    let level v = if v = 0 then 0 else (v * 40) + 55 in
+    let n = i - 16 in
+    (level (n / 36), level (n / 6 mod 6), level (n mod 6))
+  else
+    let v = ((i - 232) * 10) + 8 in
+    (v, v, v)
+
+let xterm_closest ~first r g b =
+  let best = ref (-1) and best_d = ref max_int in
+  for i = 255 downto first do
+    let pr, pg, pb = xterm_rgb i in
+    let d =
+      ((r - pr) * (r - pr)) + ((g - pg) * (g - pg)) + ((b - pb) * (b - pb))
+    in
+    if d < !best_d then (
+      best := i;
+      best_d := d)
+  done;
+  !best
+
+let color_to_depth_256_matches_xterm_search () =
+  let check r g b =
+    let expected = xterm_closest ~first:16 r g b in
+    match Color.intent (Color.to_depth `Ansi256 (Color.of_rgb r g b)) with
+    | Color.Indexed i when i = expected -> ()
+    | Color.Indexed i -> failf "rgb(%d,%d,%d): %d, xterm %d" r g b i expected
+    | _ -> failf "rgb(%d,%d,%d): not indexed" r g b
+  in
+  (* Each channel at the cube's midpoints and around them, and in steps. *)
+  let values =
+    List.sort_uniq Int.compare
+      (List.concat_map
+         (fun v -> [ v - 1; v; v + 1 ])
+         [ 0; 47; 48; 114; 115; 154; 155; 194; 195; 234; 235; 255 ]
+      @ List.init 16 (fun k -> 17 * k))
+    |> List.filter (fun v -> v >= 0 && v <= 255)
+  in
+  List.iter
+    (fun r ->
+      List.iter (fun g -> List.iter (fun b -> check r g b) values) values)
+    values;
+  (* Near the gray axis, where the ramp and the cube's grays compete. *)
+  for v = 0 to 255 do
+    check v v v;
+    if v < 255 then (
+      check v v (v + 1);
+      check v (v + 1) (v + 1))
+  done;
+  for i = 16 to 255 do
+    let r, g, b = xterm_rgb i in
+    equal
+      ~msg:(Printf.sprintf "entry %d is xterm's" i)
+      (triple int int int) (r, g, b)
+      (Color.to_rgb (Color.indexed i))
+  done
+
+let color_to_depth () =
+  let check msg depth c expected =
+    equal ~msg check_color expected (Color.to_depth depth c)
+  in
+  let red = Color.of_rgb 255 0 0 in
+  check "truecolor keeps rgb" `Truecolor red red;
+  check "an exact cube entry" `Ansi256 red (Color.indexed 196);
+  check "a gray goes to the ramp" `Ansi256 (Color.of_rgb 128 128 128)
+    (Color.indexed 244);
+  check "black stays in the cube" `Ansi256 (Color.of_rgb 0 0 0)
+    (Color.indexed 16);
+  check "never one of the 16 at ansi256" `Ansi256 (Color.of_rgb 128 0 0)
+    (Color.indexed 88);
+  check "ansi16" `Ansi16 (Color.of_rgb 128 0 0) Color.red;
+  check "an indexed color above 15" `Ansi16 (Color.indexed 196) Color.bright_red;
+  check "indexed within the depth" `Ansi16 Color.bright_blue Color.bright_blue;
+  check "indexed within ansi256" `Ansi256 Color.bright_blue Color.bright_blue;
+  check "ansi8 takes the nearest of 8" `Ansi8 Color.bright_black Color.white;
+  check "ansi8 bright red" `Ansi8 Color.bright_red Color.red;
+  check "default at every depth" `Ansi8 Color.default_fg Color.default_fg;
+  check "transparent is unchanged" `Ansi16 Color.transparent Color.transparent;
+  let translucent = Color.of_rgba 255 0 0 128 in
+  equal ~msg:"alpha is kept" int 128
+    (let _, _, _, a = Color.to_rgba (Color.to_depth `Ansi256 translucent) in
+     a);
+  let mono = Color.to_depth `Mono red in
+  is_true ~msg:"mono is the default" (Color.intent mono = Color.Default);
+  equal ~msg:"mono keeps the snapshot" (triple int int int) (255, 0, 0)
+    (Color.to_rgb mono)
 
 let sgr_indexed_stays_indexed_without_truecolor () =
   let state = Sgr_state.create () in
@@ -1598,6 +1700,10 @@ let tests =
         test "rgb downgrade to ansi16" sgr_rgb_downgrades_to_ansi16;
         test "indexed preserved without truecolor"
           sgr_indexed_stays_indexed_without_truecolor;
+        test "rgb to ansi8 and mono" sgr_rgb_to_ansi8_and_mono;
+        test "to_depth" color_to_depth;
+        test "to_depth 256 matches xterm's search"
+          color_to_depth_256_matches_xterm_search;
       ];
     group "Parser"
       [

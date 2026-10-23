@@ -81,6 +81,7 @@
 - `Matrix_text.grapheme_cluster_break` is the Grapheme_Cluster_Break property of a character (UAX #29), as a variant with the short value aliases uucp uses
 - `Grid.span g idx` is the start index and width of the grapheme that covers a cell, read from that cell alone, so a wide grapheme can be acted on whole from any of its cells
 - `Ansi.Writer.of_bytes` writes into caller-owned bytes that it never replaces, raising `Ansi.Writer.Buffer_full` on a write that does not fit; `Screen.render_into` with such a writer renders a frame in memory the caller bounds, and a frame that does not fit commits nothing
+- `Ansi.Color.to_depth` reduces a color to what a terminal of a given depth shows (`Truecolor`, `Ansi256`, `Ansi16`, `Ansi8`, `Mono`), by the squared RGB distance xterm uses to show a direct color in its palette, reading no environment
 
 #### Changed
 
@@ -121,6 +122,7 @@
 - **Primary frames have their rows before they are drawn** – `Matrix.prepare ?primary_required_rows` grows the live region and sizes the frame to it, and `run` asks `primary_required_rows` before `on_render`, so a frame that needs more rows shows them, where the first grown frame showed only the old height. `Matrix.submit` no longer takes the rows; static writes go to the transcript in `prepare`, after which the live region still has the rows the frame requires. Mosaic lays its tree out before the frame to know them
 - `Grid` reads and writes its cell planes with direct loads and stores, where every access called into the runtime: a full repaint takes a third of the time it took, and drawing a screen of text less than half
 - `Screen.Hit_grid` fills its cells with direct stores, where every cell called into the runtime: a wheel event in a 250x70 Mosaic application costs a fifth of what it did, and a frame a quarter less
+- **Colors at 256 colors are xterm's** – an RGB color reduced to 256 colors becomes the nearest of entries 16 to 255, whose colors every such terminal shares, never one of the 16 the user's theme sets, and a tie goes to the higher entry, as in xterm: `rgb(255,0,0)` is `38;5;196`, not `38;5;9`. `Sgr_state.color_depth` is `Color.depth`, which adds `Ansi8` and `Mono`, and the screen emits colors as `Color.to_depth` reduces them
 
 #### Fixed
 

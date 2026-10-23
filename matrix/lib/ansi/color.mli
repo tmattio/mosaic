@@ -151,6 +151,53 @@ val invert : t -> t
 (** [invert c] maps each RGB component [v] to [255 - v]. The result is an opaque
     literal RGB color. *)
 
+(** {1:depth Color depth}
+
+    A terminal shows colors at one of a few depths. With direct color it shows
+    any RGB value ([38;2]). With 256 colors it shows the entries of xterm's
+    palette ([38;5]): 0 to 15 are the 16 colors below, 16 to 231 a 6×6×6 cube
+    whose levels in each channel are 0, 95, 135, 175, 215 and 255, and 232 to
+    255 a ramp of grays from 8 to 238 by steps of 10, "intentionally leaving out
+    black and white" (xterm, [256colres.pl]). With 16 colors it shows entries 0
+    to 15 ([30]..[37], [90]..[97]), with 8 colors 0 to 7, and a monochrome
+    terminal shows only its default colors.
+
+    Entries 16 to 255 are the same in every terminal that has them. Entries 0 to
+    15 are not: xterm takes them from resources, "usually more-or-less a
+    reproduction of the standard ANSI colors, but possibly more pleasing shades"
+    (256colres.pl), and users and themes set them. A program cannot know them;
+    {!indexed} gives them the 16 colors of HTML 4.01 (maroon [#800000], green
+    [#008000], ..., silver [#c0c0c0], gray [#808080], red [#ff0000], ..., white
+    [#ffffff]), which this module uses wherever it needs their RGB. *)
+
+type depth = [ `Truecolor | `Ansi256 | `Ansi16 | `Ansi8 | `Mono ]
+(** The type for color depths: direct color, 256, 16 and 8 colors, and none. *)
+
+val to_depth : depth -> t -> t
+(** [to_depth d c] is [c] as a terminal of depth [d] can show it:
+    - A {!Default} color is unchanged at every depth, and so is every color at
+      [`Truecolor].
+    - At [`Mono] every color becomes the terminal default, keeping [c]'s RGBA
+      snapshot.
+    - At [`Ansi256], [`Ansi16] and [`Ansi8], a color already {!Indexed} within
+      the depth, or with alpha [0], is unchanged. Any other color becomes the
+      palette entry nearest to its RGB: one of 16 to 255 at [`Ansi256], one of 0
+      to 15 at [`Ansi16], one of 0 to 7 at [`Ansi8]. It keeps [c]'s alpha.
+
+    Nearest is by the squared Euclidean distance between RGB values, a tie going
+    to the higher entry. This is how xterm itself shows a direct color when it
+    is built without direct-color support: "it uses the closest match in its
+    palette for the given RGB" (ctlseqs, SGR 38), by that distance
+    (xtermClosestColor in xterm's misc.c). A perceptual distance, such as
+    CIELAB's, would match some colors differently; this one gives what xterm
+    shows. At [`Ansi256] the search leaves out entries 0 to 15, whose colors are
+    the user's, so the result shows the color it was chosen for. At [`Ansi16]
+    and [`Ansi8] there is nothing else, and the result is nearest by the colors
+    {!indexed} assumes.
+
+    [to_depth] reads no environment: the depth is the caller's, from what the
+    terminal reports. *)
+
 (** {1:sgr ANSI SGR codes} *)
 
 val to_sgr_codes : bg:bool -> t -> int list

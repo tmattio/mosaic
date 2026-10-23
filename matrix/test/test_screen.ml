@@ -181,7 +181,8 @@ let test_color_depth_reaches_sgr_emission () =
         Grid.draw_text grid ~x:0 ~y:0 ~text:"R" ~style)
   in
   let output = Screen.render frame in
-  contains ~msg:"screen downgraded rgb to ansi256" ~sub:"\027[0;38;5;9m" output;
+  contains ~msg:"screen downgraded rgb to ansi256" ~sub:"\027[0;38;5;196m"
+    output;
   not_contains ~msg:"screen did not emit truecolor" ~sub:"38;2;255;0;0" output
 
 (* 2. Diff Algorithm Tests *)

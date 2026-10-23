@@ -13,8 +13,9 @@
 type t
 (** The type for mutable SGR state trackers. Not thread-safe. *)
 
-type color_depth = [ `Ansi16 | `Ansi256 | `Truecolor ]
-(** The type for terminal color emission depth. *)
+type color_depth = Color.depth
+(** The type for terminal color emission depth. Colors are emitted as
+    {!Color.to_depth} reduces them. *)
 
 (** {1:lifecycle Lifecycle} *)
 

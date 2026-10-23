@@ -166,6 +166,77 @@ let indexed idx =
   let idx = clamp_byte idx in
   make_indexed idx
 
+(* Depths *)
+
+type depth = [ `Truecolor | `Ansi256 | `Ansi16 | `Ansi8 | `Mono ]
+
+let[@inline] distance r g b c =
+  let dr = r - Packed.red c and dg = g - Packed.green c in
+  let db = b - Packed.blue c in
+  (dr * dr) + (dg * dg) + (db * db)
+
+(* The palette entry of [first..last] nearest to [(r, g, b)], a tie going to
+   the higher index, as xterm's search from the top keeps the first best. *)
+let nearest_entry ~first ~last r g b =
+  let best = ref last and best_d = ref (distance r g b (make_indexed last)) in
+  for i = last - 1 downto first do
+    let d = distance r g b (make_indexed i) in
+    if d < !best_d then (
+      best := i;
+      best_d := d)
+  done;
+  !best
+
+(* The cube step whose level (0, 95, 135, 175, 215, 255) is nearest to [v]. The
+   midpoints are 47.5, 115, 155, 195 and 235; at one, the higher step. *)
+let[@inline] cube_step v =
+  if v < 48 then 0 else if v < 115 then 1 else (v - 35) / 40
+
+(* The entry of 16..255 nearest to [(r, g, b)]. The distance is a sum over the
+   channels, so the nearest cube color is the nearest level in each; the
+   nearest gray, at 8 + 10k, is the one nearest to the channels' mean, of the
+   two around it. On a tie the higher index wins, so the gray. *)
+let nearest_256 r g b =
+  let cube = 16 + (36 * cube_step r) + (6 * cube_step g) + cube_step b in
+  let k = max 0 (min 23 ((r + g + b - 24) / 30)) in
+  let k =
+    if
+      k < 23
+      && distance r g b (make_indexed (233 + k))
+         <= distance r g b (make_indexed (232 + k))
+    then k + 1
+    else k
+  in
+  let gray = 232 + k in
+  if distance r g b (make_indexed gray) <= distance r g b (make_indexed cube)
+  then gray
+  else cube
+
+let to_depth depth c =
+  let tag = Packed.intent_tag c in
+  if tag = Packed.intent_default then c
+  else
+    match depth with
+    | `Truecolor -> c
+    | `Mono ->
+        c
+        land lnot (0xFF lsl Packed.slot_shift)
+        land lnot (Packed.intent_mask lsl Packed.intent_shift)
+        lor (Packed.intent_default lsl Packed.intent_shift)
+    | (`Ansi256 | `Ansi16 | `Ansi8) as depth ->
+        let entries =
+          match depth with `Ansi256 -> 256 | `Ansi16 -> 16 | `Ansi8 -> 8
+        in
+        let shown = tag = Packed.intent_indexed && Packed.slot c < entries in
+        if shown || Packed.alpha c = 0 then c
+        else
+          let r = Packed.red c and g = Packed.green c and b = Packed.blue c in
+          let entry =
+            if entries = 256 then nearest_256 r g b
+            else nearest_entry ~first:0 ~last:(entries - 1) r g b
+          in
+          Packed.with_alpha (make_indexed entry) (Packed.alpha c)
+
 let of_palette_index = indexed
 let black = indexed 0
 let red = indexed 1
