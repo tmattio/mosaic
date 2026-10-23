@@ -801,7 +801,11 @@ val run_on :
    moves its clock there, as a terminal that never answers leaves the run's
    wait for an answer. [read] returns [-1] when nothing is queued, [window]
    [None] for an output with no window, and [frame] is called as each frame
-   begins. *)
+   begins. [next] does not wait on a device: when the run has nothing to do
+   it calls [idle ~until ~stepped], [until] the run's deadline and [stepped]
+   whether [next] returned a step since its last call, which returns once
+   input is queued or the clock has moved, and says whether input is
+   queued. *)
 
 type device = {
   read_clock : unit -> int;
@@ -815,6 +819,7 @@ type device = {
   tty : bool;
   env : Terminal.Caps.env;
   frame : unit -> unit;
+  idle : until:int option -> stepped:bool -> bool;
 }
 
 val on_device : device -> config -> config

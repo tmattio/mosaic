@@ -629,6 +629,7 @@ let device ?(frames = ref 0) f : Matrix.device =
     tty = f.tty;
     env = no_env;
     frame = (fun () -> incr frames);
+    idle = (fun ~until:_ ~stepped:_ -> fail "the run waits");
   }
 
 let run_device ?(frames = ref 0) ?(config = quiet ()) f body =

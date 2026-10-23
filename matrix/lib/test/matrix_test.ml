@@ -365,27 +365,46 @@ end
 
 (* Sessions *)
 
-type program = {
+(* A program the test drives by its steps ([attach]). *)
+type steps = {
   step : now:int -> [ `Stepped | `Idle | `Stopped ];
   deadline : unit -> int option;
-  quiesce : unit -> unit;
 }
+
+(* How the session drives its program: by its steps; or as a program that
+   waits with [Matrix.next] ([run]), whose waits suspend it until the test
+   gives it input or time, as the continuation [Waiting] holds. *)
+type driver =
+  | Detached
+  | Steps of steps
+  | Waiting of (bool, unit) Effect.Deep.continuation
+  | Running
+  | Returned
 
 type t = {
   term : Terminal.t;
+  base : Matrix.config;
   mutable clock : int;
   (* What the terminal sent and the run has not read, one write each, and
      how much of the first the run has read. *)
   writes : string Queue.t;
   mutable read_off : int;
+  mutable closed : bool;
   mutable resized : bool;
   jobs : (unit -> unit) Queue.t;
-  mutable program : program option;
+  mutable quiesce : unit -> unit;
+  mutable driver : driver;
+  (* The run's deadline when it last waited, and whether its executor has
+     finished since it last stepped. *)
+  mutable waiting_until : int option;
+  mutable quiesced : bool;
   mutable ended : bool;
   mutable frames : int;
   mutable steps : int;
   mutable device : Matrix.device option;
 }
+
+type _ Effect.t += Wait : t -> bool Effect.t
 
 let send s bytes = if bytes <> "" then Queue.push bytes s.writes
 
@@ -397,7 +416,7 @@ let report_size s =
 
 let read s buf off len =
   match Queue.peek_opt s.writes with
-  | None -> -1
+  | None -> if s.closed then 0 else -1
   | Some w ->
       let n = min len (String.length w - s.read_off) in
       Bytes.blit_string w s.read_off buf off n;
@@ -407,6 +426,23 @@ let read s buf off len =
         s.read_off <- 0);
       n
 
+let queued s = s.closed || not (Queue.is_empty s.writes)
+
+(* A run that waits with [Matrix.next] has nothing to do: its executor
+   finishes first, and the run looks again; once it has nothing to do with
+   the executor finished, the program is settled, and waits for the test. *)
+let idle s ~until ~stepped =
+  if queued s then true
+  else if stepped || not s.quiesced then (
+    s.quiesced <- true;
+    s.quiesce ();
+    false)
+  else (
+    s.waiting_until <- until;
+    let ready = Effect.perform (Wait s) in
+    s.quiesced <- false;
+    ready)
+
 let make_device s : Matrix.device =
   let profile = Terminal.profile s.term in
   let vte = Terminal.vte s.term in
@@ -414,16 +450,10 @@ let make_device s : Matrix.device =
     read_clock = (fun () -> s.clock);
     wait =
       (fun ~until ->
-        if not (Queue.is_empty s.writes) then true
-        else
-          match until with
-          | Some u ->
-              if u > s.clock then s.clock <- u;
-              false
-          | None ->
-              invalid_arg
-                "Matrix_test: the run waits for input; take its steps with \
-                 Matrix_test.attach");
+        if queued s then true
+        else (
+          (match until with Some u when u > s.clock -> s.clock <- u | _ -> ());
+          false));
     read = read s;
     write = (fun b off len -> send s (Terminal.apply s.term b off len));
     window =
@@ -445,55 +475,57 @@ let make_device s : Matrix.device =
         (fun name -> List.assoc_opt name profile.env)
         ~win32:false;
     frame = (fun () -> s.frames <- s.frames + 1);
+    idle = (fun ~until ~stepped -> idle s ~until ~stepped);
   }
-
-let create ?(now = 0) term =
-  let s =
-    {
-      term;
-      clock = now;
-      writes = Queue.create ();
-      read_off = 0;
-      resized = false;
-      jobs = Queue.create ();
-      program = None;
-      ended = false;
-      frames = 0;
-      steps = 0;
-      device = None;
-    }
-  in
-  s.device <- Some (make_device s);
-  if not (Terminal.profile term).tty then report_size s;
-  s
-
-let terminal s = s.term
-let config s c = Matrix.on_device (Option.get s.device) c
-let perform s job = Queue.push job s.jobs
 
 let run_jobs s =
   while not (Queue.is_empty s.jobs) do
     (Queue.pop s.jobs) ()
   done
 
+let create ?(config = Matrix.config ()) ?(now = 0) term =
+  let s =
+    {
+      term;
+      base = config;
+      clock = now;
+      writes = Queue.create ();
+      read_off = 0;
+      closed = false;
+      resized = false;
+      jobs = Queue.create ();
+      quiesce = ignore;
+      driver = Detached;
+      waiting_until = None;
+      quiesced = false;
+      ended = false;
+      frames = 0;
+      steps = 0;
+      device = None;
+    }
+  in
+  s.quiesce <- (fun () -> run_jobs s);
+  s.device <- Some (make_device s);
+  if not (Terminal.profile term).tty then report_size s;
+  s
+
+let terminal s = s.term
+let config s = Matrix.on_device (Option.get s.device) s.base
+let perform s job = Queue.push job s.jobs
 let now s = s.clock
 let frames s = s.frames
 let steps s = s.steps
 let ended s = s.ended
 
-let program s fn =
-  match s.program with
-  | None -> invalid_arg ("Matrix_test." ^ fn ^ ": no program is attached")
-  | Some p -> p
-
-let running s fn =
-  let p = program s fn in
-  if s.ended then invalid_arg ("Matrix_test." ^ fn ^ ": the run has ended");
-  p
+let check s fn =
+  match s.driver with
+  | Detached -> invalid_arg ("Matrix_test." ^ fn ^ ": no program is attached")
+  | _ ->
+      if s.ended then invalid_arg ("Matrix_test." ^ fn ^ ": the run has ended")
 
 (* Steps at the session's time until the program has nothing to do, then
    lets its executor finish, and goes on while that gave it something. *)
-let settle_program s p =
+let settle_steps s p =
   let rec go ~quiesced =
     if not s.ended then
       match p.step ~now:s.clock with
@@ -503,54 +535,73 @@ let settle_program s p =
       | `Stopped -> s.ended <- true
       | `Idle ->
           if not quiesced then (
-            p.quiesce ();
+            s.quiesce ();
             go ~quiesced:true)
   in
   go ~quiesced:false
 
-let settle s = settle_program s (running s "settle")
+(* Has a waiting program go on, [ready] whether input is queued, until it
+   waits again or returns. *)
+let resume s ready =
+  match s.driver with
+  | Waiting k ->
+      s.driver <- Running;
+      Effect.Deep.continue k ready
+  | _ -> ()
+
+let go_on s ~ready =
+  match s.driver with
+  | Steps p -> settle_steps s p
+  | Waiting _ -> resume s ready
+  | Detached | Running | Returned -> ()
+
+let settle s =
+  check s "settle";
+  go_on s ~ready:false
 
 let attach ?quiesce s ~step ~deadline =
-  if s.program <> None then
+  if s.driver <> Detached then
     invalid_arg "Matrix_test.attach: a program is attached";
-  let quiesce =
-    match quiesce with Some q -> q | None -> fun () -> run_jobs s
-  in
-  let p = { step; deadline; quiesce } in
-  s.program <- Some p;
-  settle_program s p
+  Option.iter (fun q -> s.quiesce <- q) quiesce;
+  let p = { step; deadline } in
+  s.driver <- Steps p;
+  settle_steps s p
 
-let deadline s = (program s "deadline").deadline ()
+let deadline s =
+  match s.driver with
+  | Steps p -> p.deadline ()
+  | Detached -> invalid_arg "Matrix_test.deadline: no program is attached"
+  | Waiting _ | Running | Returned -> s.waiting_until
 
 let input s bytes =
-  let p = running s "input" in
+  check s "input";
   send s bytes;
-  settle_program s p
+  go_on s ~ready:(queued s)
 
 let resize s ~cols ~rows =
-  let p = running s "resize" in
+  check s "resize";
   let report = Terminal.resize s.term ~cols ~rows in
   if (Terminal.profile s.term).tty then (
     s.resized <- true;
     send s report)
   else report_size s;
-  settle_program s p
+  go_on s ~ready:(queued s)
 
 let advance s ns =
   if ns < 0 then invalid_arg "Matrix_test.advance: negative time";
-  let p = running s "advance" in
+  check s "advance";
   let target = s.clock + ns in
-  settle_program s p;
+  go_on s ~ready:false;
   let rec go () =
     if not s.ended then
-      match p.deadline () with
+      match deadline s with
       | Some d when d <= target ->
           s.clock <- max s.clock d;
-          settle_program s p;
+          go_on s ~ready:false;
           go ()
       | _ ->
           s.clock <- max s.clock target;
-          settle_program s p
+          go_on s ~ready:false
   in
   go ()
 
@@ -558,6 +609,48 @@ let set_time s time =
   if time < s.clock then
     invalid_arg "Matrix_test.set_time: the time is earlier than the clock's";
   s.clock <- time
+
+(* The program runs inside a handler of its waits: it runs until it waits
+   for the test, and each of the test's calls has it go on until it waits
+   again. Its end, or its exception, is the test's. *)
+let run ?config ?now ?quiesce term program body =
+  let s = create ?config ?now term in
+  Option.iter (fun q -> s.quiesce <- q) quiesce;
+  s.driver <- Running;
+  let returned () =
+    s.driver <- Returned;
+    s.ended <- true
+  in
+  Effect.Deep.match_with program s
+    {
+      retc = returned;
+      exnc =
+        (fun e ->
+          let bt = Printexc.get_raw_backtrace () in
+          returned ();
+          Printexc.raise_with_backtrace e bt);
+      effc =
+        (fun (type a) (e : a Effect.t) ->
+          match e with
+          | Wait s' when s' == s ->
+              Some
+                (fun (k : (a, unit) Effect.Deep.continuation) ->
+                  s.driver <- Waiting k)
+          | _ -> None);
+    };
+  (* The end of the input ends the program. *)
+  let finish () =
+    s.closed <- true;
+    resume s true
+  in
+  match body s with
+  | v ->
+      finish ();
+      v
+  | exception e ->
+      let bt = Printexc.get_raw_backtrace () in
+      (try finish () with _ -> ());
+      Printexc.raise_with_backtrace e bt
 
 (* Programs in another process *)
 

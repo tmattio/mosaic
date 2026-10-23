@@ -8,10 +8,13 @@
 
     A {e session} ({!t}) runs a program in the test's process on a terminal,
     with a {e clock} that only the test moves. The program runs on {!Matrix}, or
-    on a library built on it, with the session's configuration ({!config}), and
-    the test {!attach}es the program's steps. From then on the program takes
-    steps only inside the session's functions, and between two calls nothing
-    runs.
+    on a library built on it, with the session's configuration ({!config}),
+    which gives the run the terminal and the clock. A program that waits for its
+    input, with [Matrix.next] as [Mosaic.run] does, runs unchanged ({!run}).
+    When it has nothing to do, it waits for the test instead of the terminal. A
+    program that takes its own steps has the test take them ({!attach}). Either
+    way the program goes on only inside the session's functions, and between two
+    calls nothing runs.
 
     The terminal shows each write as it is made and sends each input as one
     write. So the run draws a frame asked for by input, a timer, a message or
@@ -25,8 +28,8 @@
     A session is {e settled} when the program has nothing to do at the session's
     time and the work handed off its loop has finished or waits for something
     only the test can change. That work runs on an {e executor}, the session's
-    queue ({!perform}) or the program's own, for which {!attach} takes a
-    [quiesce].
+    queue ({!perform}) or the program's own, for which {!run} and {!attach} take
+    a [quiesce].
 
     Two facts of a real terminal stay outside a session. A terminal writes over
     time, so a lone ESC can wait for what may follow it, and a child on a
@@ -36,13 +39,15 @@
     clock does not.
 
     The life cycle of a session:
-    + {!Terminal.create} and {!create} make the terminal and the session.
-    + The program starts its run with {!config}.
-    + {!attach} gives the session the program's steps, and settles.
+    + {!Terminal.create} makes the terminal.
+    + {!run} makes the session, starts the program, and settles; or {!create}
+      makes it, the program starts with {!config}, and {!attach} gives the
+      session its steps.
     + {!input}, {!resize}, {!settle}, {!advance} and {!set_time} drive it, and
       the readers of {!Terminal} observe it.
-    + The run ends when its steps say it has stopped or the program returns, and
-      the terminal then shows what the run left on it.
+    + The run ends when the program returns, at the end of the input that {!run}
+      gives once its body returns, or when it stops itself, and the terminal
+      then shows what the run left on it.
 
     Unless a function's doc says otherwise, a function that takes a session
     settles it before it returns, and raises [Invalid_argument] if no program is
@@ -51,28 +56,30 @@
     This runs a program that counts keys, types two and prints the screen:
     {[
     let term = Matrix_test.Terminal.create ~cols:20 ~rows:1 () in
-    let s = Matrix_test.create term in
-    Matrix.run ~config:(Matrix_test.config s (Matrix.config ())) @@ fun app ->
-    let keys = ref 0 in
-    let step ~now =
-      match Matrix.step app ~now with
-      | None -> `Idle
-      | Some Stopped -> `Stopped
-      | Some (Event (Key _)) ->
-          incr keys;
-          Matrix.request_redraw app;
-          `Stepped
-      | Some Frame ->
-          Matrix.draw app (fun grid ->
-              Matrix.Grid.draw_text grid ~x:0 ~y:0
-                ~text:(Printf.sprintf "%d keys" !keys));
-          `Stepped
-      | Some _ -> `Stepped
-    in
-    Matrix_test.attach s ~step ~deadline:(fun () -> Matrix.deadline app);
+    Matrix_test.run term (fun s ->
+        Matrix.run ~config:(Matrix_test.config s) @@ fun app ->
+        let rec loop keys =
+          match Matrix.next app with
+          | Stopped -> ()
+          | Event (Key _) ->
+              Matrix.request_redraw app;
+              loop (keys + 1)
+          | Frame ->
+              Matrix.draw app (fun grid ->
+                  Matrix.Grid.draw_text grid ~x:0 ~y:0
+                    ~text:(Printf.sprintf "%d keys" keys));
+              loop keys
+          | Event _ | Timer _ | Posted _ -> loop keys
+        in
+        loop 0)
+    @@ fun s ->
     Matrix_test.input s (Matrix_test.Terminal.text term "ab");
     print_string (Matrix_test.Screen.text (Matrix_test.Terminal.screen term))
-    ]} *)
+    ]}
+    A Mosaic program is
+    [Mosaic.run ~config:(Matrix_test.config s)
+     ~process_perform:(Matrix_test.perform s) app], so that its work off the
+    loop runs on the session's queue. *)
 
 (** {1:profiles Profiles} *)
 
@@ -289,24 +296,47 @@ end
 type t
 (** The type for sessions. *)
 
-val create : ?now:int -> Terminal.t -> t
+val run :
+  ?config:Matrix.config ->
+  ?now:int ->
+  ?quiesce:(unit -> unit) ->
+  Terminal.t ->
+  (t -> unit) ->
+  (t -> 'a) ->
+  'a
+(** [run term program body] runs [program s] on a session [s] of [term], whose
+    run takes {!config}[ s], until the program waits for input ([Matrix.next],
+    as in [Mosaic.run]) with nothing to do, then is [body s]. The program stays
+    where it waits, and each function of [body] that settles has it go on until
+    it waits again. When [body] returns or raises, the input ends, and the
+    program goes on until it returns, as it does at the end of its input.
+    [config] is the configuration the run is given on the session's device
+    (default [Matrix.config ()]), [now] as for {!create}, and [quiesce] as for
+    {!attach}.
+
+    Raises what [program] raises, at the call that had it go on. *)
+
+val create : ?config:Matrix.config -> ?now:int -> Terminal.t -> t
 (** [create term] is a session on [term] whose clock reads [now] (default [0])
-    nanoseconds. A terminal must have at most one session. *)
+    nanoseconds, for a program driven by its steps ({!attach}), whose run takes
+    [config] (default [Matrix.config ()]) on the session's device ({!config}). A
+    terminal must have at most one session. *)
 
 val terminal : t -> Terminal.t
 (** [terminal s] is [s]'s terminal. *)
 
-val config : t -> Matrix.config -> Matrix.config
-(** [config s c] is [c] for a run on [s]'s terminal and clock. The run takes no
-    descriptor and no environment of its own, since the terminal's profile has
-    them. *)
+val config : t -> Matrix.config
+(** [config s] is the configuration [s] was made with, for a run on [s]'s
+    terminal and clock. The run takes no descriptor and no environment of its
+    own, since the terminal's profile has them. *)
 
 val perform : t -> (unit -> unit) -> unit
 (** [perform s job] queues [job] on the session's queue, an executor such as
     [Mosaic.start]'s [process_perform]. Settling runs the queue in order, on the
     calling thread. A job must return and must not wait for the loop, so work
     that runs as long as the program does, such as a worker reading a stream,
-    must run on the program's own executor ({!attach}). It does not settle. *)
+    must run on the program's own executor, with a [quiesce] ({!attach}). It
+    does not settle. *)
 
 val attach :
   ?quiesce:(unit -> unit) ->
@@ -314,10 +344,11 @@ val attach :
   step:(now:int -> [ `Stepped | `Idle | `Stopped ]) ->
   deadline:(unit -> int option) ->
   unit
-(** [attach s ~step ~deadline] has [s] drive a program, and settles. [step ~now]
-    takes the program's next step at [now], as [Matrix.step] does, and says
-    whether it took one, the program has nothing to do, or its run has stopped.
-    [deadline ()] is [Matrix.deadline] of the program's run. They are
+(** [attach s ~step ~deadline] has [s] drive a program that takes its own steps,
+    as one does that waits with an event loop of its own, and settles.
+    [step ~now] takes the program's next step at [now], as [Matrix.step] does,
+    and says whether it took one, the program has nothing to do, or its run has
+    stopped. [deadline ()] is [Matrix.deadline] of the program's run. They are
     [Mosaic.step] and [Mosaic.deadline] for a Mosaic program. [quiesce ()] must
     return once every piece of work the program's executor was given has
     finished or waits for something only the test can change. It defaults to

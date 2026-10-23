@@ -53,20 +53,17 @@ let drive ?(focused = true) ?(disabled = false) ?(accept_focus = true)
   (* Key releases have the program ask the kitty protocol for every
      enhancement, so the terminal sends every fact of a keystroke. *)
   let term = Matrix_test.Terminal.create ~cols:20 ~rows:2 () in
-  let s = Matrix_test.create term in
-  let config = Matrix_test.config s (Matrix.config ~key_releases:true ()) in
-  Mosaic.start ~config ~process_perform:(Matrix_test.perform s) application
-    (fun r ->
-      Matrix_test.attach s ~step:(Mosaic.step r) ~deadline:(fun () ->
-          Mosaic.deadline r);
-      List.iter
-        (function
-          | Bytes bytes -> Matrix_test.input s bytes
-          | Key k -> Matrix_test.input s (Matrix_test.Terminal.keystroke term k)
-          | Release r ->
-              Matrix_test.input s (Matrix_test.Terminal.release term r)
-          | Check check -> check trace term)
-        steps);
+  Matrix_test.run ~config:(Matrix.config ~key_releases:true ()) term (fun s ->
+      Mosaic.run ~config:(Matrix_test.config s)
+        ~process_perform:(Matrix_test.perform s) application)
+  @@ fun s ->
+  List.iter
+    (function
+      | Bytes bytes -> Matrix_test.input s bytes
+      | Key k -> Matrix_test.input s (Matrix_test.Terminal.keystroke term k)
+      | Release r -> Matrix_test.input s (Matrix_test.Terminal.release term r)
+      | Check check -> check trace term)
+    steps;
   trace
 
 let activation_count trace =

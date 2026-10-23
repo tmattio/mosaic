@@ -85,16 +85,18 @@ let caps : Matrix.Terminal.capabilities =
 
 let profile = { Matrix_test.Profile.pipe with width_method = `Unicode }
 
-(* A session and its terminal. *)
-type t = { s : Matrix_test.t; term : Matrix_test.Terminal.t }
+(* A session and its terminal. A test that takes the program's steps itself
+   uses the session made with the terminal; [run] gives the one it runs the
+   program on. *)
+type t = { mutable s : Matrix_test.t; term : Matrix_test.Terminal.t }
+
+let base ?(mode = `Alt) () = Matrix.config ~mode ~caps ()
 
 let terminal ?(profile = profile) ~width ~height () =
   let term = Matrix_test.Terminal.create ~profile ~cols:width ~rows:height () in
-  { s = Matrix_test.create term; term }
+  { s = Matrix_test.create ~config:(base ()) term; term }
 
-let config ?(mode = `Alt) t =
-  Matrix_test.config t.s (Matrix.config ~mode ~caps ())
-
+let config t = Matrix_test.config t.s
 let screen_value t = Matrix_test.Terminal.screen t.term
 
 (* The screen's rows without their trailing blanks, one a line. *)
@@ -133,19 +135,19 @@ let occurrences ?(from = 0) s sub =
   done;
   !count
 
-(* Runs [application] on [t]'s terminal, attaching the session, and calls
-   [f] with the running program; the program ends when [f] returns. Work
-   off the loop runs on the session's queue unless [process_perform] says
-   otherwise, with [quiesce] for it. *)
-let run ?mode ?stop ?process_perform ?quiesce ?probe t application f =
-  let process_perform =
-    Option.value process_perform ~default:(Matrix_test.perform t.s)
-  in
-  Mosaic.start ~config:(config ?mode t) ?stop ~process_perform ?probe
-    application (fun r ->
-      Matrix_test.attach ?quiesce t.s ~step:(Mosaic.step r) ~deadline:(fun () ->
-          Mosaic.deadline r);
-      f r)
+(* Runs [application] with [Mosaic.run] on [t]'s terminal, then [f], and
+   ends the input. Work off the loop runs on the session's queue unless
+   [process_perform] says otherwise, with [quiesce] for it. *)
+let run ?mode ?process_perform ?quiesce ?probe t application f =
+  Matrix_test.run ~config:(base ?mode ()) ?quiesce t.term
+    (fun s ->
+      t.s <- s;
+      let process_perform =
+        Option.value process_perform ~default:(Matrix_test.perform s)
+      in
+      Mosaic.run ~config:(Matrix_test.config s) ~process_perform ?probe
+        application)
+    f
 
 let drive ?mode ?(width = 48) ?(height = 2) ?process_perform ?quiesce ?probe
     application steps =
@@ -162,7 +164,7 @@ let drive ?mode ?(width = 48) ?(height = 2) ?process_perform ?quiesce ?probe
           | `Snap -> snap t
           | `Run f ->
               f t;
-              Matrix_test.settle t.s)
+              if not (Matrix_test.ended t.s) then Matrix_test.settle t.s)
         steps)
 
 let on_keys _ = Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))
@@ -2619,29 +2621,29 @@ type live_step = Until of (unit -> bool) | Type of string | End
 
 let run_live ?process_perform steps application =
   let t = terminal ~width:20 ~height:1 () in
-  Mosaic.start ~config:(config t) ?process_perform application (fun r ->
-      Matrix_test.attach ~quiesce:ignore t.s ~step:(Mosaic.step r)
-        ~deadline:(fun () -> Mosaic.deadline r);
-      let rec go = function
-        | [] | End :: _ -> ()
-        | Type bytes :: rest ->
-            feed t bytes;
-            go rest
-        | Until ready :: rest ->
-            let since = Unix.gettimeofday () in
-            let rec wait () =
-              Matrix_test.settle t.s;
-              if ready () then true
-              else if Unix.gettimeofday () -. since > 60. then (
-                print_endline "timed out";
-                false)
-              else (
-                Thread.delay 0.001;
-                wait ())
-            in
-            if wait () then go rest
-      in
-      go steps)
+  Matrix_test.run ~config:(base ()) ~quiesce:ignore t.term (fun s ->
+      Mosaic.run ~config:(Matrix_test.config s) ?process_perform application)
+  @@ fun s ->
+  let rec go = function
+    | [] | End :: _ -> ()
+    | Type bytes :: rest ->
+        Matrix_test.input s bytes;
+        go rest
+    | Until ready :: rest ->
+        let since = Unix.gettimeofday () in
+        let rec wait () =
+          Matrix_test.settle s;
+          if ready () then true
+          else if Unix.gettimeofday () -. since > 60. then (
+            print_endline "timed out";
+            false)
+          else (
+            Thread.delay 0.001;
+            wait ())
+        in
+        if wait () then go rest
+  in
+  go steps
 
 let locked = Mutex.create ()
 let record log s = Mutex.protect locked (fun () -> log := s :: !log)

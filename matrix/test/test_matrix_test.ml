@@ -8,14 +8,36 @@ module K = Matrix.Input.Keystroke
 
 let ms n = n * 1_000_000
 
-(* A matrix program that draws [view] on each frame and hands every other
-   step to [on], which says whether the program goes on. *)
+(* A matrix program that waits with [Matrix.next], draws [view] on each
+   frame and hands every other step to [on], which says whether the program
+   goes on; [body] drives it. *)
 let session ?(profile = T.Profile.vte) ?(cols = 20) ?(rows = 2)
     ?(config = Matrix.config ()) ?(view = fun _ _ -> ()) ?(on = fun _ _ -> true)
     body =
   let term = T.Terminal.create ~profile ~cols ~rows () in
+  let app = ref None in
+  T.run ~config term
+    (fun s ->
+      Matrix.run ~config:(T.config s) @@ fun a ->
+      app := Some a;
+      let rec loop () =
+        match Matrix.next a with
+        | Stopped -> ()
+        | Frame ->
+            Matrix.draw a (view a);
+            loop ()
+        | st -> if on a st then loop ()
+      in
+      loop ())
+    (fun s -> body s term (Option.get !app));
+  term
+
+(* The same program, taking its steps through the session. *)
+let stepped ?(cols = 20) ?(rows = 2) ?(view = fun _ _ -> ())
+    ?(on = fun _ _ -> true) body =
+  let term = T.Terminal.create ~cols ~rows () in
   let s = T.create term in
-  Matrix.run ~config:(T.config s config) (fun app ->
+  Matrix.run ~config:(T.config s) (fun app ->
       let step ~now =
         match Matrix.step app ~now with
         | None -> `Idle
@@ -54,6 +76,23 @@ let test_settles_at_its_time () =
   equal ~msg:"a lone ESC is Escape at once" string "3 keys" (row term 0);
   equal ~msg:"the clock" int 0 (T.now s);
   equal ~msg:"no deadline" (option int) None (T.deadline s)
+
+(* A program that takes its own steps settles the same way. *)
+let test_stepped () =
+  let keys = ref 0 in
+  let on app = function
+    | Matrix.Event (Key _) ->
+        incr keys;
+        Matrix.request_redraw app;
+        true
+    | _ -> true
+  in
+  ignore
+  @@ stepped ~on ~view:(draw (fun () -> Printf.sprintf "%d keys" !keys))
+  @@ fun s term _ ->
+  T.input s (T.Terminal.text term "abc");
+  equal ~msg:"typed" string "3 keys" (row term 0);
+  equal ~msg:"the clock" int 0 (T.now s)
 
 (* The profile answers the program's probe as it writes it, in no time. *)
 let test_probe () =
@@ -360,6 +399,7 @@ let () =
       group "Sessions"
         [
           test "a session settles at its time" test_settles_at_its_time;
+          test "a program that takes its own steps" test_stepped;
           test "the probe is answered in no time" test_probe;
           test "a silent terminal costs its wait" test_silent;
           test "a pipe" test_pipe;

@@ -219,6 +219,7 @@ type device = {
   tty : bool;
   env : Terminal.Caps.env;
   frame : unit -> unit;
+  idle : until:int option -> stepped:bool -> bool;
 }
 
 let backend_of_device d : Backend.t =
@@ -433,6 +434,8 @@ type 'msg app = {
   mutable asked_outside : bool;
   mutable in_frame_step : bool;
   on_frame : unit -> unit;
+  (* Whether [next] returned a step since it last waited. *)
+  mutable stepped : bool;
   mutable drawing : bool;
   (* The frame being drawn was drawn across a release. *)
   mutable void : bool;
@@ -1827,9 +1830,19 @@ let clock = Tty.now
    whether the input is readable, so the turn after it looks no further. *)
 let rec next t =
   match step_exn t ~now:(t.backend.now ()) with
-  | step -> step
+  | step ->
+      t.stepped <- true;
+      step
   | exception Idle ->
-      t.waited_ready <- wait_only t ~until:(wait_deadline t);
+      let until = wait_deadline t in
+      t.waited_ready <-
+        (match t.config.device with
+        | Some d ->
+            (* A device decides how a run that waits goes on. *)
+            let stepped = t.stepped in
+            t.stepped <- false;
+            d.idle ~until ~stepped && not t.input_ended
+        | None -> wait_only t ~until);
       t.waited <- true;
       next t
 
@@ -1904,6 +1917,7 @@ let make backend ?stop config =
     in_process = Option.is_some config.device;
     asked_outside = true;
     in_frame_step = false;
+    stepped = false;
     on_frame =
       (match config.device with Some d -> d.frame | None -> Fun.const ());
     drawing = false;
