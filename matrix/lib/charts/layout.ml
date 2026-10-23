@@ -1529,6 +1529,10 @@ let compute ?(view = View.empty) ?(x = 0) ?(y = 0) (cfg : config) ~width ~height
   in
 
   let marks = cfg.marks in
+  if
+    Option.is_none cfg.y2_scale
+    && List.exists (fun (m : Mark.t) -> m.y_axis = `Y2) marks
+  then invalid_arg "Matrix_charts: a `Y2 mark on a chart without a y2 scale";
   let x_kind = infer_axis_kind_x cfg.x_scale marks in
   let y_kind = infer_axis_kind_y cfg.y_scale marks in
 

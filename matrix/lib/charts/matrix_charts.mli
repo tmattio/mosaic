@@ -633,8 +633,9 @@ module Mark : sig
 
   type y_axis_selector = [ `Y1 | `Y2 ]
   (** The type for y axes. [`Y2] is the second y axis that
-      {!Matrix_charts.with_y2_scale} adds. A [`Y2] mark on a chart without one
-      is drawn against the primary y axis and left out of its domain. *)
+      {!Matrix_charts.with_y2_scale} adds. A chart may take a [`Y2] mark before
+      that scale, and must have the scale when it is laid out or drawn
+      ({!Matrix_charts.val-layout}). *)
 
   (** {2:constructors Constructors} *)
 
@@ -1445,7 +1446,10 @@ val histogram :
 val layout :
   ?view:View.t -> ?x:int -> ?y:int -> t -> width:int -> height:int -> Layout.t
 (** [layout ?view ?x ?y c ~width ~height] is the layout {!draw} returns for the
-    same arguments, computed without drawing. *)
+    same arguments, computed without drawing.
+
+    Raises [Invalid_argument] if a mark of [c] is drawn against [`Y2] and [c]
+    has no second y scale ({!with_y2_scale}). *)
 
 val draw :
   ?view:View.t ->
@@ -1458,4 +1462,6 @@ val draw :
   Layout.t
 (** [draw ?view ?x ?y c grid ~width ~height] draws [c] on [grid] and returns its
     layout. It fills the region with the theme's background, then draws the
-    gridlines, the marks in order, the axes and the title. *)
+    gridlines, the marks in order, the axes and the title.
+
+    Raises [Invalid_argument] as {!val-layout} does. *)

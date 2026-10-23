@@ -808,3 +808,24 @@ let%expect_test "a tooltip avoids covering its point" =
     |b                   |
     |c                   |
     |}]
+
+(* A mark on the second y axis needs that axis's scale, which a chart may
+   take after the mark, so the check comes when the chart is laid out. *)
+let%expect_test "a `Y2 mark needs a second y scale" =
+  let chart = empty () |> line ~y_axis:`Y2 ~x:fst ~y:snd simple_points in
+  let grid = Grid.create ~width:20 ~height:7 () in
+  (match draw chart grid ~width:20 ~height:7 with
+  | _ -> print_endline "drawn"
+  | exception Invalid_argument _ -> print_endline "Invalid_argument");
+  (match layout chart ~width:20 ~height:7 with
+  | _ -> print_endline "laid out"
+  | exception Invalid_argument _ -> print_endline "Invalid_argument");
+  let chart = with_y2_scale (Scale.numeric ()) chart in
+  ignore (draw chart grid ~width:20 ~height:7 : Layout.t);
+  print_endline "drawn with a second y scale";
+  [%expect
+    {|
+    Invalid_argument
+    Invalid_argument
+    drawn with a second y scale
+    |}]
