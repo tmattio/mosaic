@@ -2857,3 +2857,177 @@ let%expect_test "C3: a batch starts its commands in list order, depth first" =
   drive ~process_perform:(fun work -> work ()) application [];
   print_endline (String.concat "," (List.rev !order));
   [%expect {| p1,p2,p3,p4 |}]
+
+(* Timers against a reference model. A case declares random sets of
+   timers (ids from a pool, periods from 1 ms to 10 s, a period changed now
+   and then, timers dropped) at random times, the clock jumping by up to a
+   minute between them as when the loop is stalled. The reference fires, at
+   each time the loop ran, every timer whose grid point it reached, once,
+   with the periods that ended, in the order of their grid points then of
+   their declaration; a timer kept keeps its grid, a changed period starts a
+   new one, and a dropped one never fires again. *)
+
+let reference_timers events =
+  (* Timers: id, period, origin, fired. *)
+  let timers = ref [] and fires = ref [] in
+  let fire_due t =
+    List.mapi
+      (fun i (id, p, o, f) -> (o + ((f + 1) * p), i, id, p, o, f))
+      !timers
+    |> List.filter (fun (deadline, _, _, _, _, _) -> deadline <= t)
+    |> List.sort compare
+    |> List.iter (fun (_, _, id, p, o, f) ->
+        let ended = (t - o) / p in
+        fires := (t, id, ended - f) :: !fires;
+        timers :=
+          List.map
+            (fun ((id', _, _, _) as timer) ->
+              if id' = id then (id, p, o, ended) else timer)
+            !timers)
+  in
+  List.iter
+    (function
+      | `Turn t -> fire_due t
+      | `Declare (t, set) ->
+          timers :=
+            List.map
+              (fun (id, p) ->
+                match
+                  List.find_opt
+                    (fun (id', p', _, _) -> id' = id && p' = p)
+                    !timers
+                with
+                | Some kept -> kept
+                | None -> (id, p, t, 0))
+              set)
+    events;
+  List.rev !fires
+
+let declare = ref []
+
+let%expect_test "timers follow the reference model" =
+  let rand = Random.State.make [| 6 |] in
+  let pool = [ "a"; "b"; "c"; "d" ] in
+  let period () =
+    match Random.State.int rand 3 with
+    | 0 -> ns 0.001 * (1 + Random.State.int rand 20)
+    | 1 -> ns 0.01 * (1 + Random.State.int rand 100)
+    | _ -> ns 0.1 * (1 + Random.State.int rand 100)
+  in
+  let next_set previous =
+    List.filter_map
+      (fun id ->
+        if Random.State.int rand 4 = 0 then None
+        else
+          match List.assoc_opt id previous with
+          | Some p when Random.State.int rand 4 > 0 -> Some (id, p)
+          | _ -> Some (id, period ()))
+      pool
+  in
+  let gap () =
+    match Random.State.int rand 4 with
+    | 0 -> Random.State.full_int rand (ns 0.05)
+    | 1 -> Random.State.full_int rand (ns 2.)
+    | 2 -> Random.State.full_int rand (ns 10.)
+    | _ -> Random.State.full_int rand (ns 60.)
+  in
+  let cases = 10_000 and failures = ref 0 in
+  let total = ref 0 and counted = ref 0 in
+  for case = 1 to cases do
+    let sets = List.init (2 + Random.State.int rand 6) (fun _ -> ()) in
+    let sets =
+      List.fold_left
+        (fun acc () ->
+          next_set (match acc with s :: _ -> s | [] -> []) :: acc)
+        [] sets
+      |> List.rev
+    in
+    let script = ref (List.map (fun set -> (set, gap ())) sets) in
+    let events = ref [] and fires = ref [] in
+    let application =
+      {
+        Mosaic.init = (fun () -> ([], Mosaic.Cmd.none));
+        update =
+          (fun msg set ->
+            match msg with
+            | `Declare set -> (set, Mosaic.Cmd.none)
+            | `Fire (id, k) ->
+                fires := (clock (), id, k) :: !fires;
+                (set, Mosaic.Cmd.none));
+        view = (fun set -> Mosaic.text (string_of_int (List.length set)));
+        subscriptions =
+          (fun set ->
+            Mosaic.Sub.batch
+              (List.map
+                 (fun (id, p) ->
+                   Mosaic.Sub.every ~id
+                     (Float.of_int p *. 1e-9)
+                     (fun k -> `Fire (id, k)))
+                 set));
+      }
+    in
+    let pending = ref None in
+    let t =
+      Matrix_test.create ~width:20 ~height:1
+        ~on_idle:(fun t ~until ->
+          let now = Matrix_test.now t in
+          events := `Turn now :: !events;
+          match !pending with
+          | Some target when now < target ->
+              (* Step to the loop's deadlines as often as past them. *)
+              let step =
+                match until with
+                | Some until when until > now && Random.State.bool rand ->
+                    min (until - now) (target - now)
+                | _ -> target - now
+              in
+              Matrix_test.advance t step
+          | _ -> (
+              match !script with
+              | [] -> Matrix_test.stop t
+              | (set, gap) :: rest ->
+                  script := rest;
+                  pending := Some (now + gap);
+                  events := `Declare (now, set) :: !events;
+                  Matrix_test.feed_event t
+                    (Matrix.Key
+                       {
+                         Matrix.Input.Keystroke.key = Char (Uchar.of_char 'x');
+                         mods = Matrix.Input.Keystroke.no_mods;
+                         text = "x";
+                         base = None;
+                         keypad = false;
+                         repeat = false;
+                       });
+                  declare := set))
+        ()
+    in
+    terminal := Some t;
+    let application =
+      {
+        application with
+        subscriptions =
+          (fun set ->
+            Mosaic.Sub.batch
+              [
+                Mosaic.Sub.on_key (fun _ -> Some (`Declare !declare));
+                application.subscriptions set;
+              ]);
+      }
+    in
+    Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+      application;
+    let expected = reference_timers (List.rev !events) in
+    total := !total + List.length expected;
+    List.iter (fun (_, _, k) -> if k > 1 then incr counted) expected;
+    if expected <> List.rev !fires then (
+      incr failures;
+      if !failures = 1 then Printf.printf "case %d differs\n" case)
+  done;
+  Printf.printf "%d of %d cases differ\n" !failures cases;
+  Printf.printf "%d fires, %d with a count above 1\n" !total !counted;
+  [%expect
+    {|
+    0 of 10000 cases differ
+    123306 fires, 79438 with a count above 1
+    |}]
