@@ -4,7 +4,8 @@
    quits. With the arguments [served PATH], it also runs a second session on
    the terminal at [PATH], in a domain of its own, which draws SERVED; with
    [only-served PATH], it runs that session alone. With [keys], it draws
-   every letter typed, until [q]. *)
+   every letter typed, until [q]. Without arguments, [x] calls [exit 3]
+   inside the run. *)
 
 let ready app =
   let frames = ref 0 in
@@ -30,6 +31,7 @@ let ready app =
             Unix.kill (Unix.getpid ()) Sys.sigabrt;
             loop ()
         | 0x71 (* q *) -> ()
+        | 0x78 (* x *) -> exit 3
         | _ -> loop ())
     | Event _ | Timer _ | Posted _ -> loop ()
   in

@@ -755,6 +755,16 @@ let test_size_reported_before_the_run () =
       | Event e -> failf "expected the first frame, got %a" Matrix.pp_event e
       | _ -> fail "expected the first frame")
 
+(* A stop requested before the run is the run's first step. *)
+let test_stop_before_the_run () =
+  let stop = Matrix.Stop.create () in
+  Matrix.Stop.request stop;
+  let f = fake () in
+  Matrix.run_on (backend f) ~stop ~config:(quiet ()) (fun app ->
+      match Matrix.next app with
+      | Stopped -> ()
+      | _ -> fail "expected the run to stop")
+
 let test_post_after_the_run () =
   let f = fake () in
   let app = run ~config:(quiet ()) f Fun.id in
@@ -2772,6 +2782,34 @@ let test_unix_post_wakes_the_loop () =
       in
       is_true ~msg:"woken without input" woken)
 
+(* A stop requested from another thread wakes a run that waits for input
+   that never comes. *)
+let test_unix_stop_wakes_the_loop () =
+  let input, writer = Unix.pipe ~cloexec:true () in
+  let output = Unix.openfile "/dev/null" [ O_WRONLY; O_CLOEXEC ] 0 in
+  Fun.protect
+    ~finally:(fun () -> List.iter Unix.close [ input; writer; output ])
+    (fun () ->
+      let stop = Matrix.Stop.create () in
+      let stopper =
+        Thread.create
+          (fun () ->
+            Thread.delay 0.05;
+            Matrix.Stop.request stop)
+          ()
+      in
+      Matrix.run ~input ~output ~stop ~config:(quiet ()) (fun app ->
+          let rec loop () =
+            match Matrix.next app with
+            | Stopped -> ()
+            | Frame ->
+                Matrix.draw app ignore;
+                loop ()
+            | _ -> loop ()
+          in
+          loop ());
+      Thread.join stopper)
+
 (* A run takes the environment of the session its terminal runs, a served
    session's client's, in place of the process's. *)
 let test_unix_session_environment () =
@@ -2929,6 +2967,7 @@ let () =
           test "post from other domains" test_post_from_other_domains;
           test "post after the run" test_post_after_the_run;
           test "a step never waits" test_step_never_waits;
+          test "a stop requested before the run" test_stop_before_the_run;
           test "an idle step leaves nothing due, a property"
             test_idle_deadline_property;
           test "frame calls outside a frame" test_frame_calls_outside_a_frame;
@@ -3123,6 +3162,7 @@ let () =
         [
           test "a post wakes the loop" test_unix_post_wakes_the_loop;
           test "the session's environment" test_unix_session_environment;
+          test "a stop wakes the loop" test_unix_stop_wakes_the_loop;
           test "a reported size survives a release"
             test_unix_reported_size_survives_a_release;
           test "each run has its own wake" test_unix_wakes_per_run;

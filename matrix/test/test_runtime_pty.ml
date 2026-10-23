@@ -498,6 +498,19 @@ let test_keys_faster_than_frames () =
   | WEXITED 0 -> is_true ~msg:"cooked after" (cooked s)
   | _ -> fail "expected a normal exit"
 
+(* A program that calls [exit] inside a run ends with the terminal given
+   back: its exit path restores it, as an abort does. *)
+let test_exit_inside_a_run () =
+  with_session @@ fun s ->
+  await s "READY";
+  let from = mark s in
+  send s "x";
+  match wait_exit s with
+  | WEXITED 3 ->
+      await ~from s "\027[?1049l";
+      is_true ~msg:"cooked" (cooked s)
+  | _ -> fail "expected the program's exit status"
+
 let supported =
   Sys.os_type = "Unix" && Sys.file_exists child && Sys.file_exists job
 
@@ -530,6 +543,9 @@ let () =
              test "a termination signal resets a served session"
                test_termination_resets_a_served_session;
            ]);
+      group "Exit"
+        (if not supported then []
+         else [ test "exit inside a run" test_exit_inside_a_run ]);
       group "Frames"
         (if not supported then []
          else

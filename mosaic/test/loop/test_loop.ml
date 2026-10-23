@@ -115,9 +115,9 @@ let start t = Matrix_test.now t - Matrix_test.elapsed t
    for it, [on_idle t ~until] scripts what happens next, given the run's
    deadline; if it returns without acting, it runs again. Without
    [on_idle], the input ends at the first idle. *)
-let run ?config ?process_perform ?probe
+let run ?config ?stop ?process_perform ?probe
     ?(on_idle = fun t ~until:_ -> Matrix_test.stop t) t application =
-  Mosaic.start ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
+  Mosaic.start ~input:(Matrix_test.input t) ~output:(Matrix_test.output t) ?stop
     ~config:(Option.value config ~default:(Matrix_test.config t))
     ?process_perform ?probe application
     (fun r ->
@@ -3186,3 +3186,25 @@ let%expect_test "a caller drives a started program by its steps" =
     keys:[a] ticks:0 size:- note:dispatched
     stopped
     |}]
+
+(* A stop requested before the program starts ends it at its first step:
+   it is never idle, and no update runs. *)
+let%expect_test "a stop requested before the start ends the program" =
+  let stop = Matrix.Stop.create () in
+  Matrix.Stop.request stop;
+  let t = Matrix_test.create ~width:48 ~height:1 () in
+  let updates = ref 0 in
+  let base = app ~subs:on_keys () in
+  Matrix_test.feed t "a";
+  run ~stop
+    ~on_idle:(fun _ ~until:_ -> failwith "the program went idle")
+    t
+    {
+      base with
+      update =
+        (fun msg m ->
+          incr updates;
+          base.update msg m);
+    };
+  Printf.printf "updates: %d\n" !updates;
+  [%expect {| updates: 0 |}]

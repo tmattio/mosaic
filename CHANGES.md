@@ -79,6 +79,7 @@
 
 #### Added
 
+- **Stop requests** – `Matrix.Stop.create ()` is made before the run and given to `Matrix.run ~stop` (and `Mosaic.run`, `Mosaic.start`); `Matrix.Stop.request` from any thread, domain or fiber makes every later step `Stopped`, waking a run that waits for its descriptors. A stop requested before the run began, when nothing could post to it yet, stops it at its first step
 - `Tty.readable fd` says whether a read would return without waiting (`poll(2)` with no timeout), allocating nothing and taking nothing from `fd`
 - **Driving a run by steps** – `Matrix.step app ~now` is the next step at the time the caller gives, or `None` when the run has nothing to do until one of `Matrix.fds app` is readable or `Matrix.deadline app` comes; it never waits. `Matrix.next` is that loop waiting with `select(2)`, and allocates nothing while idle. A program with an event loop of its own waits with that loop instead, and a test or a replay gives the steps the times of its own clock: a step is a function of the run's state, its input and `now`, which must never decrease (`Invalid_argument` otherwise) and must be on the clock `deadline` answers in, `Matrix.clock` or a test's own
 - **A run on any terminal, with its session's environment** – `Matrix.run ?input ?output ?env` takes the terminal on any pair of descriptors, and guesses its capabilities from the environment of the session it runs (`TERM`, `COLORTERM`, `NO_COLOR`…) rather than the process's: a served session runs with its client's. A served session runs on a pseudo-terminal pair the program pumps, and receives its size in band (`CSI 48 ; rows ; cols ; height ; width t`), before the run and on each change
@@ -147,6 +148,7 @@
 #### Fixed
 
 - `Matrix_text.Layout` hangs the blanks at the end of a row that wraps, shown in no cell and taking none of its width, as CSS Text 3 hangs white space at the end of a pre-wrap line (at the end of a line only where they do not fit): a word that filled its row left the blank after it on a row of its own, a blank could start a continuation, and a row whose last word fitted exactly wrapped before that word (`a b c d e` at 5 cells was `a b` / `c d e`, now `a b c` / `d e`)
+- A process that exits while a run holds its terminal, by `exit` inside the run or by its main domain returning while a run on another domain gives its terminal back, restores the terminal on its exit path, as an abort does: the terminal was left raw, in the alternate screen, with the mouse reported
 - An output with no window keeps the size its terminal reported in band: giving the terminal away and taking it back, a SIGCONT and `static_clear` replaced it with 80×24
 - An idle turn on a real terminal allocates nothing: asking the signal handlers what they recorded allocated a closure every turn
 - Giving the terminal back waits for an owed answer only until as long after its batch was sent as any answer: a cancel during a silent terminal's probe ended 500 ms after the probe had already given up, waiting for the same answer a second time

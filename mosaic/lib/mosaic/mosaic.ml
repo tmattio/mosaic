@@ -1294,7 +1294,7 @@ module Helper = struct
     Option.iter Domain.join ended
 end
 
-let start ?input ?output ?env ?config ?process_perform ?probe app f =
+let start ?input ?output ?env ?stop ?config ?process_perform ?probe app f =
   let config =
     match config with
     | Some config -> config
@@ -1302,7 +1302,7 @@ let start ?input ?output ?env ?config ?process_perform ?probe app f =
   in
   let init = app.init () in
   let within process_perform =
-    Matrix.run ?input ?output ?env ~config (fun matrix_app ->
+    Matrix.run ?input ?output ?env ?stop ~config (fun matrix_app ->
         program matrix_app ~process_perform ?probe app init f)
   in
   match process_perform with
@@ -1328,8 +1328,8 @@ let dispatch r msg = r.dispatch_msg msg
 
 (* [step] waiting with [Matrix.next], which allocates nothing while the run
    is idle. *)
-let run ?input ?output ?env ?config ?process_perform ?probe app =
-  start ?input ?output ?env ?config ?process_perform ?probe app (fun r ->
+let run ?input ?output ?env ?stop ?config ?process_perform ?probe app =
+  start ?input ?output ?env ?stop ?config ?process_perform ?probe app (fun r ->
       while not (r.over ()) do
         r.handle (Matrix.next r.matrix_app)
       done)

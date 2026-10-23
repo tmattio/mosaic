@@ -125,6 +125,32 @@ type event =
 val pp_event : Format.formatter -> event -> unit
 (** [pp_event] formats an event for debugging. *)
 
+(** {1:stopping Stop requests} *)
+
+(** Ending a run from another thread, domain or fiber.
+
+    A {e stop request} is made before the run it stops and given to {!run}, so
+    that a stop requested before the run has begun, when nothing could {!post}
+    to it yet, is not lost. Once the stop is requested, the run's every step is
+    {!Stopped}: the request wakes a run that waits for its descriptors, and a
+    run given a request already made stops at its first step. The application
+    ends the run by returning, as at the end of its input. *)
+module Stop : sig
+  type t
+  (** The type for stop requests. *)
+
+  val create : unit -> t
+  (** [create ()] is a stop request not yet requested. *)
+
+  val request : t -> unit
+  (** [request s] requests the stop of every run [s] is given to: each returns
+      {!Stopped} from its next step on. A run still taking its terminal or
+      giving it back sees the request once that is done: on a terminal that does
+      not answer, up to max(500 ms, four round trips) after the run's queries
+      were sent ({!run}). Any thread, domain or fiber may call it. Requesting it
+      again does nothing. *)
+end
+
 (** {1:running Running} *)
 
 type config
@@ -216,6 +242,7 @@ val run :
   ?input:Unix.file_descr ->
   ?output:Unix.file_descr ->
   ?env:Terminal.Caps.env ->
+  ?stop:Stop.t ->
   ?config:config ->
   ('msg app -> 'a) ->
   'a
@@ -225,7 +252,8 @@ val run :
     [Unix.stdin] and [output] to [Unix.stdout]. [env] is the environment of the
     session the terminal runs, from which the runtime guesses what the terminal
     can do until it answers. It defaults to the process's, with the description
-    the terminfo database has for its [TERM] ({!Tty.terminfo}).
+    the terminfo database has for its [TERM] ({!Tty.terminfo}). [stop] ends the
+    run from elsewhere ({!Stop}).
 
     Taking the terminal is a sequence of steps, each of which pushes its undo:
     the signals ({{!signals}Signals}), raw mode, the capability probe (whose
@@ -242,7 +270,9 @@ val run :
     waits at most max(500 ms, four round trips) for the terminal to answer, so
     that no reply reaches the shell as typing; then the modes are reset, the
     cursor shown, the screen left (the live region erased below the transcript
-    in [`Primary] mode), cooked mode restored, and input not read discarded.
+    in [`Primary] mode), cooked mode restored, and input not read discarded. The
+    process's exit path gives it back too
+    ({{!lifecycle}Giving the terminal away}).
 
     A {e served session} is a terminal the process runs for a client elsewhere,
     such as a remote shell's or a web page's. It runs on the slave side of a
@@ -311,8 +341,9 @@ type 'msg step =
       (** Draw a frame, with {!draw}. A frame not drawn by the next call of
           {!next} is dropped. *)
   | Stopped
-      (** The input ended: every event decoded before its end has been returned.
-          Every later call returns [Stopped]. *)
+      (** The input ended, and every event decoded before its end has been
+          returned; or the run's stop was requested ({!Stop}). Every later call
+          returns [Stopped]. *)
 
 val step : 'msg app -> now:int -> 'msg step option
 (** [step app ~now] is the next step of the run at the time [now], or [None]
@@ -452,7 +483,17 @@ val post : 'msg app -> 'msg -> unit
     collecting that memory slows the loop. After the run ends, [post] does
     nothing. *)
 
-(** {1:lifecycle Giving the terminal away} *)
+(** {1:lifecycle Giving the terminal away}
+
+    A run gives its terminal back on every way out: when the function given to
+    {!run} returns or raises, for a program run in its place ({!release}), on a
+    signal that stops or ends the process ({{!signals}Signals}), and on the
+    process's exit path. If the process exits while a run holds its terminal, as
+    when that function calls [exit], or when the program's main domain returns
+    while a run on another domain is still taking its terminal or giving it
+    back, the exit path restores the terminal as an abort does: the bytes that
+    reset the modes the run set are written and the terminal's saved settings
+    put back. A terminal given back already is left alone. *)
 
 val release : 'msg app -> (unit -> 'a) -> 'a
 (** [release app f] gives the terminal back for [f ()], as when the run ends,
@@ -727,7 +768,8 @@ module Backend : sig
     t
 end
 
-val run_on : Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
+val run_on :
+  Backend.t -> ?stop:Stop.t -> ?config:config -> ('msg app -> 'a) -> 'a
 
 (* For test harnesses that drive a run they did not start, such as
    [Matrix_test]: the run that holds the terminal, whether it owes a frame,

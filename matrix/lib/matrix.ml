@@ -202,6 +202,32 @@ module Backend = struct
     }
 end
 
+(* Stop requests. A request wakes the runs the request was given to, by
+   their serial, so that a run waiting for its descriptors steps and sees
+   it; a run given one already requested sees it at its first step. *)
+module Stop = struct
+  type t = {
+    requested : bool Atomic.t;
+    lock : Mutex.t;
+    mutable wakes : (int * (unit -> unit)) list;
+  }
+
+  let create () =
+    { requested = Atomic.make false; lock = Mutex.create (); wakes = [] }
+
+  let request t =
+    if not (Atomic.exchange t.requested true) then
+      Mutex.protect t.lock (fun () ->
+          List.iter (fun (_, wake) -> wake ()) t.wakes)
+
+  let attach t serial wake =
+    Mutex.protect t.lock (fun () -> t.wakes <- (serial, wake) :: t.wakes)
+
+  let detach t serial =
+    Mutex.protect t.lock (fun () ->
+        t.wakes <- List.filter (fun (s, _) -> s <> serial) t.wakes)
+end
+
 (* Configuration *)
 
 type config = {
@@ -323,6 +349,7 @@ type 'msg app = {
   events : event Queue.t;
   config : config;
   backend : Backend.t;
+  stop : Stop.t option;
   owner : int;
   screen : Screen.t;
   (* One retained writer owns the complete terminal frame. *)
@@ -1677,8 +1704,13 @@ let within_budget t = t.latest - t.now < t.interval
    [next]'s idle turns allocate nothing. *)
 exception Idle
 
+(* Whether the run's stop was requested. *)
+let stop_requested t =
+  match t.stop with Some s -> Atomic.get s.Stop.requested | None -> false
+
 let rec work t =
-  if t.owe_event && not (Queue.is_empty t.events) then (
+  if stop_requested t then Stopped
+  else if t.owe_event && not (Queue.is_empty t.events) then (
     t.owe_event <- false;
     deliver t (Queue.pop t.events))
   else if t.owe_timer && has_due_timer t then (
@@ -1759,7 +1791,7 @@ let rec next t =
 
 (* Running *)
 
-let make backend config =
+let make backend ?stop config =
   let evidence =
     match config.caps with
     | Some caps -> Terminal.Caps.assume caps
@@ -1797,6 +1829,7 @@ let make backend config =
     events = Queue.create ();
     config;
     backend;
+    stop;
     owner = thread_id ();
     screen;
     submit_buf = Ansi.Writer.create 4096;
@@ -1956,9 +1989,20 @@ let unhold t =
   Mutex.protect runs_lock (fun () ->
       runs := List.filter (fun (Held app) -> app.serial <> t.serial) !runs)
 
-let run_on backend ?(config = config ()) f =
+(* The process can end while a run holds its terminal: a program that calls
+   [exit] in a run, or whose main domain returns while a run on another
+   domain is still giving its terminal back. Its exit path restores every
+   terminal not yet given back, as an abort does; one given back is left
+   alone. *)
+let exit_restores = Atomic.make false
+
+let restore_on_exit () =
+  if not (Atomic.exchange exit_restores true) then at_exit Signal.restore_all
+
+let run_on backend ?stop ?(config = config ()) f =
+  restore_on_exit ();
   let t =
-    try make backend config
+    try make backend ?stop config
     with exn ->
       let bt = Printexc.get_raw_backtrace () in
       (try backend.Backend.cleanup () with _ -> ());
@@ -1967,8 +2011,10 @@ let run_on backend ?(config = config ()) f =
   if not (hold t) then (
     (try backend.cleanup () with _ -> ());
     invalid_arg "Matrix.run: another run holds the terminal");
+  Option.iter (fun s -> Stop.attach s t.serial t.backend.wake) stop;
   let finish () =
     Atomic.set t.accepting false;
+    Option.iter (fun s -> Stop.detach s t.serial) stop;
     unhold t;
     t.backend.cleanup ()
   in
@@ -1989,8 +2035,8 @@ let run_on backend ?(config = config ()) f =
       (try teardown () with _ -> ());
       Printexc.raise_with_backtrace exn bt
 
-let run ?input ?output ?env ?config f =
-  run_on (Backend.unix ?input ?output ?env ()) ?config f
+let run ?input ?output ?env ?stop ?config f =
+  run_on (Backend.unix ?input ?output ?env ()) ?stop ?config f
 
 (* Diagnostics *)
 
