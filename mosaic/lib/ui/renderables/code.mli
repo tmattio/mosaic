@@ -138,13 +138,16 @@ val with_highlighter :
     A synchronous highlighter's result is shown at once. While an asynchronous
     result is pending, the code still shows its current content: bytes it shares
     with the source of the latest result, as a common prefix or a common suffix,
-    keep that result's styling, and the other bytes are plain. A streaming
-    append therefore keeps its highlighted prefix and shows its new tail plain
-    until the result arrives, and content seen for the first time shows plain. A
-    result for content that has since changed is never shown as such, but it
-    becomes the latest result, so styling keeps up with content that changes
-    faster than it can be highlighted. A different highlighter or language
-    starts again from plain text. *)
+    keep that result's styling, also under a capture the change cuts through,
+    and the other bytes are plain. A concealing capture the change cuts through
+    shows its bytes instead, since its replacement stood for all of them (see
+    {!Syntax_highlight.conceals}). A streaming append therefore keeps its
+    highlighted prefix and shows its new tail plain until the result arrives,
+    and content seen for the first time shows plain. A result for content that
+    has since changed is never shown as such, but it becomes the latest result,
+    so styling keeps up with content that changes faster than it can be
+    highlighted. A different highlighter or language starts again from plain
+    text. *)
 
 (** {1:props Props} *)
 

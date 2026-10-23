@@ -76,6 +76,9 @@ let conceal_replacement range =
         else Some ""
       else None
 
+let conceals range =
+  range.meta.conceal_lines || conceal_replacement range <> None
+
 (* A range open at the sweep's position, with its declaration index. *)
 type open_range = { index : int; specificity : int; range : range }
 
@@ -258,12 +261,7 @@ let prepare ~conceal content ranges =
 let make ~content ranges =
   validate ~content ranges;
   let plain = Atomic.make None in
-  let has_conceal =
-    List.exists
-      (fun range ->
-        range.meta.conceal_lines || conceal_replacement range <> None)
-      ranges
-  in
+  let has_conceal = List.exists conceals ranges in
   let concealed = if has_conceal then Atomic.make None else plain in
   { content; ranges; plain; concealed }
 

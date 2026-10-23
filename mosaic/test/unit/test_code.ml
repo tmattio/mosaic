@@ -156,6 +156,49 @@ let pending_edit_keeps_shared_prefix_and_suffix () =
   is_true ~msg:"suffix range shifted" (is_red code 7 && is_red code 8);
   is_false ~msg:"shift is exact" (is_red code 6)
 
+let pending_edit_inside_a_range_keeps_its_other_bytes () =
+  let jobs, highlighter = async_highlighter () in
+  let syntax =
+    Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
+      highlighter
+  in
+  let _ctx, code = make_code ~content:"(* hello *) x" ~syntax () in
+  complete (List.hd !jobs) (Ok (keyword_at "(* hello *) x" 0 11));
+  render_code code;
+  Code.set_content code "(* helxlo *) x";
+  is_true ~msg:"highlighting" (Code.is_highlighting code);
+  is_true ~msg:"the range keeps its bytes before the edit"
+    (List.for_all (is_red code) [ 0; 1; 2; 3; 4; 5 ]);
+  is_false ~msg:"the inserted byte is plain" (is_red code 6);
+  is_true ~msg:"the range keeps its bytes after the edit"
+    (List.for_all (is_red code) [ 7; 8; 9; 10; 11 ]);
+  is_false ~msg:"bytes outside the range stay plain" (is_red code 13);
+  Code.set_content code "(* helo *) x";
+  is_true ~msg:"a deletion keeps both sides"
+    (List.for_all (is_red code) [ 0; 1; 2; 3; 4; 5; 6; 7; 8; 9 ])
+
+let pending_edit_drops_a_touched_concealing_range () =
+  let jobs, highlighter = async_highlighter () in
+  let meta = { Syntax_highlight.default_meta with conceal = Some "*" } in
+  let concealed content =
+    Syntax_highlight.make ~content
+      [
+        Syntax_highlight.range ~meta ~start_byte:0 ~end_byte:4 ~scope:"keyword"
+          ();
+      ]
+  in
+  let syntax =
+    Code.with_highlighter ~language:"md" ~style:(syntax_style red) highlighter
+  in
+  let _ctx, code = make_code ~content:"abcd e" ~syntax () in
+  complete (List.hd !jobs) (Ok (concealed "abcd e"));
+  render_code code;
+  equal ~msg:"concealed" string "* e"
+    (Text_buffer.plain_text (Code.buffer code));
+  Code.set_content code "abXcd e";
+  equal ~msg:"a touched concealing range shows its bytes" string "abXcd e"
+    (Text_buffer.plain_text (Code.buffer code))
+
 let stale_result_styles_shared_bytes () =
   let jobs, highlighter = async_highlighter () in
   let syntax =
@@ -668,6 +711,10 @@ let () =
             pending_append_keeps_highlighted_prefix;
           test "pending edit keeps shared prefix and suffix"
             pending_edit_keeps_shared_prefix_and_suffix;
+          test "pending edit inside a range keeps its other bytes"
+            pending_edit_inside_a_range_keeps_its_other_bytes;
+          test "pending edit drops a touched concealing range"
+            pending_edit_drops_a_touched_concealing_range;
           test "stale result styles shared bytes"
             stale_result_styles_shared_bytes;
           test "new producer starts plain" new_producer_starts_plain;

@@ -68,6 +68,7 @@
 - Word motions treat newlines as boundaries in the edit buffer
 - Single-line editors reserve the caret cell, so an empty focused input shows its cursor
 - Builds on OCaml 5.4 again (`Option.for_all` is 5.5-only)
+- Typing inside a highlighted comment or string blanked all of it until the next highlight result; while a result is pending, a capture the change cuts through keeps its bytes on either side styled (`Syntax_highlight.conceals` names the captures that conceal, which show their bytes instead)
 
 ### Matrix
 

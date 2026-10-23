@@ -262,41 +262,58 @@ let common_suffix a b ~limit =
   in
   loop 0
 
-(* [carry captures content] moves [captures] onto [content]. Ranges that lie
-   in the bytes [content] shares with their source, as a common prefix or a
-   common suffix, keep their scope; ranges that touch changed bytes are
-   dropped, so captures never style bytes they were not computed for. *)
-let carry captures content =
+(* [carry ~conceal captures content] moves [captures] onto [content], which
+   differs from their source in one span of bytes: those after the common
+   prefix and before the common suffix. A range keeps its scope over its
+   bytes outside that span, which is plain, so captures never style bytes
+   they were not computed for. A range that conceals is dropped when the span
+   touches it, since its replacement stands for all its bytes. *)
+let carry ~conceal captures content =
   let source = Syntax_highlight.content captures in
   if String.equal source content then captures
   else
     let prefix = common_prefix source content in
     let limit = min (String.length source) (String.length content) - prefix in
     let suffix = common_suffix source content ~limit in
-    let suffix_start = String.length source - suffix in
-    let shift = String.length content - String.length source in
-    let keep range =
+    let removed_end = String.length source - suffix in
+    let inserted_end = String.length content - suffix in
+    let shift = inserted_end - removed_end in
+    (* Ranges accumulate in reverse declaration order. *)
+    let part range ~start_byte ~end_byte moved =
+      if start_byte < end_byte then
+        Syntax_highlight.range
+          ~meta:(Syntax_highlight.meta range)
+          ~start_byte ~end_byte
+          ~scope:(Syntax_highlight.scope range)
+          ()
+        :: moved
+      else moved
+    in
+    let move moved range =
       let start_byte = Syntax_highlight.start_byte range in
       let end_byte = Syntax_highlight.end_byte range in
-      if end_byte <= prefix then Some range
-      else if start_byte >= suffix_start then
-        Some
-          (Syntax_highlight.range
-             ~meta:(Syntax_highlight.meta range)
-             ~start_byte:(start_byte + shift) ~end_byte:(end_byte + shift)
-             ~scope:(Syntax_highlight.scope range)
-             ())
-      else None
+      if end_byte <= prefix then range :: moved
+      else if start_byte >= removed_end then
+        part range ~start_byte:(start_byte + shift) ~end_byte:(end_byte + shift)
+          moved
+      else if conceal && Syntax_highlight.conceals range then moved
+      else
+        let moved =
+          part range ~start_byte ~end_byte:(min end_byte prefix) moved
+        in
+        part range ~start_byte:inserted_end ~end_byte:(end_byte + shift) moved
     in
     Syntax_highlight.make ~content
-      (List.filter_map keep (Syntax_highlight.ranges captures))
+      (List.rev (List.fold_left move [] (Syntax_highlight.ranges captures)))
 
 (* While a result is pending, [content] shows with the latest captures carried
    onto it. *)
 let show_pending t content syntax =
   match t.latest with
   | Some captures ->
-      ignore (paint t content syntax (carry captures content) : bool)
+      ignore
+        (paint t content syntax (carry ~conceal:syntax.conceal captures content)
+          : bool)
   | None -> apply_plain t content
 
 let finish_job t (running : running_job) outcome =
