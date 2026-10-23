@@ -2735,3 +2735,36 @@ let%expect_test
     |keys:[e] ticks:0 size:- note:back
     ran 1 time
     |}]
+
+let%expect_test "a posted message that changes nothing asks for no frame" =
+  (* The driver acts once the first frame is drawn, then reports whether the
+     loop owes a frame when it next goes idle. *)
+  let dispatch = ref ignore and step = ref 0 in
+  let application =
+    app ~init_cmd:(Mosaic.Cmd.perform (fun d -> dispatch := d)) ()
+  in
+  let t =
+    Matrix_test.create ~width:40 ~height:1
+      ~on_idle:(fun t ~until ->
+        let owed = Matrix_test.frame_owed t in
+        incr step;
+        match !step with
+        | 1 -> ignore (Matrix_test.settle t ~until : bool)
+        | 2 -> List.iter !dispatch [ Ignored; Ignored; Ignored ]
+        | 3 ->
+            Printf.printf "after messages that change nothing: %b\n" owed;
+            !dispatch (Note "changed")
+        | 4 ->
+            Printf.printf "after one that changes the model: %b\n" owed;
+            Matrix_test.stop t
+        | _ -> Matrix_test.stop t)
+      ()
+  in
+  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+    ~process_perform:(fun work -> work ())
+    application;
+  [%expect
+    {|
+    after messages that change nothing: false
+    after one that changes the model: true
+    |}]

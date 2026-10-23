@@ -434,6 +434,8 @@ type ('model, 'msg) runtime = {
   mutable view_dirty : bool;
   mutable synchronizing : bool;
   mutable delivering : bool;
+  (* A frame is being drawn, from the frame step on. *)
+  mutable framing : bool;
   mutable quit : bool;
   mutable map_message : 'msg -> unit;
   app : ('model, 'msg) app;
@@ -479,15 +481,14 @@ type ('model, 'msg) runtime = {
   mutable paste_checked : int;
 }
 
-(* Push [msg] for the loop's thread to apply, and ask for a frame. *)
+(* Push [msg] for the loop's thread to apply. *)
 let push_msg runtime msg =
   let rec push () =
     let cur = Atomic.get runtime.pending_msgs in
     if not (Atomic.compare_and_set runtime.pending_msgs cur (msg :: cur)) then
       push ()
   in
-  push ();
-  Matrix.request_redraw runtime.matrix_app
+  push ()
 
 (* Static output renders offscreen with an auto-height root, mirroring the
    primary-screen path: one pass at the terminal height measures the content's
@@ -770,6 +771,9 @@ let dispatch runtime msg =
   process_cmd runtime cmd;
   update_subscriptions runtime
 
+(* Applies the pending messages. A frame is asked for when one changed the
+   model, unless a frame is being drawn, which will show it: a message that
+   changes nothing draws nothing. *)
 let process_pending_msgs runtime =
   let rec drain () =
     match Atomic.exchange runtime.pending_msgs [] with
@@ -778,7 +782,9 @@ let process_pending_msgs runtime =
         List.iter (dispatch runtime) (List.rev msgs);
         drain ()
   in
-  drain ()
+  drain ();
+  if runtime.view_dirty && not runtime.framing then
+    Matrix.request_redraw runtime.matrix_app
 
 (* The space the tree is laid out in, for input and for frames alike. In
    [`Primary] mode it is the terminal's height, the most rows the live region
@@ -1016,6 +1022,7 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
       view_dirty = true;
       synchronizing = false;
       delivering = false;
+      framing = false;
       quit = false;
       map_message = Fun.const ();
       app;
@@ -1130,6 +1137,7 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
     let now = Matrix.now matrix_app in
     let dt = Float.of_int (now - !last_frame) *. 1e-9 in
     last_frame := now;
+    runtime.framing <- true;
     handle_tick runtime;
     synchronize runtime;
     (* Matrix reports time in nanoseconds; the render pipeline runs on
@@ -1140,6 +1148,7 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
     Fun.protect
       ~finally:(fun () ->
         runtime.delivering <- false;
+        runtime.framing <- false;
         finish_render ())
       render_frame
   in
