@@ -238,12 +238,14 @@ val reset : t -> unit
 (** {2:resets Resets}
 
     RIS ([ESC c], or {!reset}) returns the terminal to its power-up state. It
-    empties the scrollback, clears the title and restores the palette
-    {!val-create} was given, since RIS "replaces all set-up features with their
-    saved settings" (VT510, RIS). At power-up the screens are blank, the cursor
-    is a visible blinking block at the top left, autowrap is on and the other
-    modes are off, the tab stops are every eight columns, and the pen and the
-    character sets are their defaults.
+    empties the scrollback, clears the title and restores the whole palette
+    {!val-create} was given, the colors of OSC 10, 11 and 12 included, since RIS
+    "replaces all set-up features with their saved settings" (VT510, RIS). xterm
+    (patch 398) restores the colors of OSC 4 and keeps those of OSC 10, 11 and
+    12. At power-up the screens are blank, the cursor is a visible blinking
+    block at the top left, autowrap is on and the other modes are off, the tab
+    stops are every eight columns, and the pen and the character sets are their
+    defaults.
 
     DECSTR ([CSI ! p]) returns each terminal setting to its power-up value
     (VT510, DECSTR). These are the insert, origin, autowrap, reverse-wrap and

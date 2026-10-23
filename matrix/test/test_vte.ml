@@ -1110,6 +1110,8 @@ let cursor_style () =
     (style "\x1b[4 q\x1b[!p");
   equal ~msg:"both screens share it" shape (`Underline, true)
     (style "\x1b[3 q\x1b[?1049h\x1b[?1049l");
+  equal ~msg:"DECSC does not save it" shape (`Line, true)
+    (style "\x1b[3 q\x1b7\x1b[5 q\x1b8");
   let vte = Vte.create ~rows:2 ~cols:4 () in
   Vte.clear_dirty vte;
   feed vte "\x1b[5 q";
@@ -1117,6 +1119,25 @@ let cursor_style () =
   Vte.clear_dirty vte;
   feed vte "\x1b[5 q";
   is_false ~msg:"no change, nothing dirty" (Vte.is_dirty vte)
+
+(* The dynamic colors are walked from the OSC's number, so an empty spec
+   moves on to the next color, and OSC 13, which is not one of them, asks
+   nothing. *)
+let dynamic_color_walk () =
+  let vte = Vte.create ~rows:1 ~cols:4 () in
+  let replies =
+    Testable.make ~equal:( = )
+      ~pp:
+        (Format.pp_print_list
+           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf "; ")
+           Matrix_input.Reply.pp)
+  in
+  let cursor = (Vte.palette vte).cursor in
+  equal ~msg:"OSC 11 ; ; ? reports the cursor's color" replies
+    [ Color { target = `Cursor; rgb = cursor; terminator = `St } ]
+    (Vte.feed_string vte "\x1b]11;;?\x1b\\");
+  equal ~msg:"OSC 13 ; ? gets no answer" replies []
+    (Vte.feed_string vte "\x1b]13;?\x1b\\")
 
 (* DECRQM reports a mode as set (1), reset (2) or not recognized (0); OSC 10,
    11 and 4 with [?] report a colour with the query's terminator. *)
@@ -1227,7 +1248,7 @@ let palette_set_query_reset () =
       Vte.create ~palette:{ given with cursor = (256, 0, 0) } ~rows:1 ~cols:1 ())
 
 (* An OSC acts only when it ends with ST or BEL; one cut short does nothing.
-   Only OSC 0, 2 and 8 are kept, each up to 64 KiB. *)
+   An OSC's text after its number is kept up to 64 KiB. *)
 let osc_acts_only_when_terminated () =
   let vte = Vte.create ~rows:1 ~cols:20 () in
   feed vte "\x1b]2;kept\x1b\\";
@@ -2492,6 +2513,7 @@ let tests =
     test "mode and colour queries" mode_and_colour_queries;
     test "line feed/new line mode" line_feed_new_line_mode;
     test "cursor style" cursor_style;
+    test "dynamic color walk" dynamic_color_walk;
     test "OSC acts only when terminated" osc_acts_only_when_terminated;
     test "zero counts mean one" zero_counts_mean_one;
     test "replies by parameter value" replies_by_parameter_value;
