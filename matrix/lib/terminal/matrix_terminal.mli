@@ -365,9 +365,7 @@ val reset_state : t -> unit
     handle's kitty keyboard flags, sets modifyOtherKeys to 0, and resets mouse
     tracking, bracketed paste, focus reporting, color scheme reports, resize
     reports, metaSendsEscape and grapheme cluster mode. It makes the whole
-    screen the scrolling region and leaves the alternate screen. On Windows,
-    when the primary screen shows, it moves the cursor up by the tracked row
-    less one ({!val-cursor_position}) and erases from there to the end of the
-    screen. It sets the window title to [""] if the handle set it. The handle
-    then tracks the state {!make} gives, but for its capabilities, its pixel
-    resolution and its cursor position. *)
+    screen the scrolling region and leaves the alternate screen. It sets the
+    window title to [""] if the handle set it. The handle then tracks the state
+    {!make} gives, but for its capabilities, its pixel resolution and its cursor
+    position. *)

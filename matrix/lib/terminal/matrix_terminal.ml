@@ -88,7 +88,6 @@ let cursor_hide = "\027[?25l"
 let unicode_on = "\027[?2027h"
 let unicode_off = "\027[?2027l"
 let reset_sgr = "\027[0m"
-let erase_below = "\027[J"
 let cursor_default = "\027[0 q"
 
 let reset_cursor_color_seq =
@@ -489,13 +488,7 @@ let reset_state t =
   t.meta_sends_escape_armed <- false;
   if t.grapheme_mode_enabled then enable_grapheme_mode t false;
   if t.scroll_region <> None then clear_scroll_region t;
-  if t.alt_screen then leave_alternate_screen t
-  else if Sys.win32 then (
-    send t "\r";
-    for _ = 1 to max 0 (t.cursor.y - 1) do
-      send t Ansi.(to_string (cursor_up ~n:1))
-    done;
-    send t erase_below);
+  if t.alt_screen then leave_alternate_screen t;
   if t.title_sent then (
     set_title t "";
     t.title_sent <- false);

@@ -348,6 +348,17 @@ let test_hidden_cursor_change_reaches_the_terminal () =
   contains ~msg:"the style is put back" ~sub:"\027[0 q" out;
   contains ~msg:"the color is put back" ~sub:"\027]112" out
 
+(* On the primary screen the cells are the shell's as much as the
+   program's: reset_state erases none of them, wherever the cursor is. *)
+let test_reset_state_erases_nothing () =
+  with_tty_terminal @@ fun term buf ->
+  T.move_cursor term ~row:5 ~col:1;
+  Buffer.clear buf;
+  T.reset_state term;
+  let out = Buffer.contents buf in
+  not_contains ~msg:"no erase" ~sub:"\027[J" out;
+  not_contains ~msg:"no move up" ~sub:"\027[A" out
+
 let test_cursor_batch_matches_immediate_output () =
   with_tty_terminal @@ fun term output ->
   T.set_cursor_style term `Line ~blinking:true;
@@ -1143,6 +1154,7 @@ let () =
             test_reset_state_skips_untouched_appearance;
           test "reset state restores touched appearance"
             test_reset_state_restores_touched_appearance;
+          test "reset state erases nothing" test_reset_state_erases_nothing;
           test "cursor batch matches immediate output"
             test_cursor_batch_matches_immediate_output;
           test "cursor reset survives partial output"
