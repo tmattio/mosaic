@@ -44,6 +44,7 @@ let rec is_ascii_only str len i =
 (* Width Predicates *)
 
 let[@inline] is_regional_indicator cp = cp >= 0x1F1E6 && cp <= 0x1F1FF
+let[@inline] is_emoji_modifier cp = cp >= 0x1F3FB && cp <= 0x1F3FF
 
 (* OpenTUI widens spacing marks with positive scalar width. Its width table
    zeroes Mc marks, unlike Uucp's tty hints. In Unicode 17, the remaining
@@ -67,10 +68,10 @@ let uchar_width ~tab_width uchar =
 (* Unicode-width state machine.
 
    The [`Unicode] and [`Unicode_wide] methods fold the scalars of a unit
-   through a small state machine handling VS16 emoji promotion,
-   regional-indicator pairs and spacing marks. The whole state is one
-   immediate int: the unit's width in the bits above bit 2 and three flags
-   below. The width bits are [0] while [ws_has_width] is unset,
+   through a small state machine handling VS16 emoji promotion, emoji
+   modifier sequences, regional-indicator pairs and spacing marks. The whole
+   state is one immediate int: the unit's width in the bits above bit 3 and
+   four flags below. The width bits are [0] while [ws_has_width] is unset,
    except in a TAB's unit, which [unit_step] makes [tab] wide without it.
 
    The initial state is [0]; [ws_step] handles the first codepoint of a unit
@@ -80,13 +81,15 @@ let uchar_width ~tab_width uchar =
 let ws_has_width = 1 (* cluster has a base width *)
 let ws_ri_pair = 2 (* last codepoint was the first RI of a pair *)
 let ws_emoji = 4 (* last codepoint was a narrow emoji *)
-let[@inline] ws_make w flags = (w lsl 3) lor flags
-let[@inline] ws_width state = state lsr 3
+let ws_base = 8 (* last codepoint was a narrow emoji modifier base *)
+let ws_last = ws_emoji lor ws_base
+let[@inline] ws_make w flags = (w lsl 4) lor flags
+let[@inline] ws_width state = state lsr 4
 
 (* [ws_step cp cp_w state] advances the state machine by the codepoint [cp]
    whose individual display width is [cp_w]. *)
 let[@inline] ws_step ~wide cp cp_w state =
-  let flags = state land 7 in
+  let flags = state land 15 in
   if cp = 0xFE0F then
     if flags land ws_emoji <> 0 && ws_width state = 1 then ws_make 2 flags
     else state
@@ -100,16 +103,20 @@ let[@inline] ws_step ~wide cp cp_w state =
     wide
     && flags land ws_has_width <> 0
     && not (Unicode.is_zero_in_grapheme (Uchar.unsafe_of_int cp))
-  then ws_make (max 2 (ws_width state)) (flags land lnot ws_emoji)
+  then ws_make (max 2 (ws_width state)) (flags land lnot ws_last)
   else if flags land ws_has_width <> 0 && cp_w > 0 && is_wide_spacing_mark cp
-  then ws_make (max 2 (ws_width state)) (flags land lnot ws_emoji)
+  then ws_make (max 2 (ws_width state)) (flags land lnot ws_last)
+  else if (not wide) && flags land ws_base <> 0 && is_emoji_modifier cp then
+    ws_make 2 (flags land lnot ws_last)
   else if flags land ws_has_width = 0 && cp_w > 0 then
+    let u = Uchar.unsafe_of_int cp in
     let emoji =
-      if cp_w = 1 && Unicode.is_emoji (Uchar.unsafe_of_int cp) then ws_emoji
+      if cp_w = 1 && Unicode.is_emoji u then
+        if Unicode.is_emoji_modifier_base u then ws_last else ws_emoji
       else 0
     in
     ws_make cp_w (flags lor ws_has_width lor emoji)
-  else state land lnot ws_emoji
+  else state land lnot ws_last
 
 (* UTF-8 decoding
 

@@ -21,8 +21,11 @@ type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
       protocol): what continues a cluster takes no cells of its own, be it a
       mark, a joined emoji or a conjoined consonant, so the conjunct क्ष (U+0915
       U+094D U+0937) takes the one cell of क. A cluster is two cells wide when
-      VS16 follows an emoji, for a pair of regional indicators, and with Thai
-      SARA AM (U+0E33) or Lao AM (U+0EB3), which kitty's protocol widens.
+      VS16 follows an emoji or an emoji modifier follows a modifier base, as in
+      ☝🏽 (U+261D U+1F3FD), both of which have the emoji presentation
+      ({{:https://www.unicode.org/reports/tr51/}UTS #51} §2.7.1, §4); for a pair
+      of regional indicators; and with Thai SARA AM (U+0E33) or Lao AM (U+0EB3),
+      which kitty's protocol widens.
     - [`Unicode_wide] uses grapheme segmentation and promotes clusters with
       additional visible components to at least two cells, matching modern
       Ghostty's width policy.

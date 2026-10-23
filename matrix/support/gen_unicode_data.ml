@@ -15,7 +15,7 @@
    Layout per 16-bit entry: - bits 0-4: grapheme_cluster_break (0-17) - bits
    5-6: indic_conjunct_break (0-3) - bit 7: extended_pictographic (boolean) -
    bits 8-9: width (encoded: 0=-1, 1=0, 2=1, 3=2) - bit 10: zero width inside a grapheme
-   - bit 11: emoji (boolean)
+   - bit 11: emoji (boolean) - bit 12: emoji modifier base (boolean)
 
    Surrogates (U+D800-U+DFFF) are excluded from the table.
 
@@ -55,6 +55,7 @@ let compute_prop_table () =
     let incb = Uucp.Break.Low.indic_conjunct_break u in
     let extpic = Uucp.Emoji.is_extended_pictographic u in
     let emoji = Uucp.Emoji.is_emoji u in
+    let modifier_base = Uucp.Emoji.is_emoji_modifier_base u in
     (* Two cells exactly for East_Asian_Width W and F (UAX #11), which
        include every Emoji_Presentation character but the regional
        indicators. An emoji without Emoji_Presentation, such as U+2764, and a
@@ -69,7 +70,8 @@ let compute_prop_table () =
       lor (if extpic then 0x80 else 0)
       lor ((width_enc land 0x03) lsl 8)
       lor (if zero_in_grapheme u gcb then 0x400 else 0)
-      lor if emoji then 0x800 else 0
+      lor (if emoji then 0x800 else 0)
+      lor if modifier_base then 0x1000 else 0
     in
     Bytes.set_uint16_le buf (packed * 2) v
   done;

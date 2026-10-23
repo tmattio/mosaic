@@ -120,6 +120,24 @@ let measurement_rows =
     ("emoji family", "👨\u{200D}👩\u{200D}👧\u{200D}👦", `Unicode, 8, 2);
     ("regional indicator pair", "🇺🇸", `Unicode, 8, 2);
     ("skin tone sequence", "👍🏽", `Unicode, 8, 2);
+    (* An emoji modifier sequence has the emoji presentation whatever its
+       base's (UTS #51 §2.7.1): kitty, WezTerm and foot draw ☝🏽 in two cells.
+       Ghostty's code leaves it at its base's width. *)
+    ("skin tone on a text-default base", "\u{261D}\u{1F3FD}", `Unicode, 8, 2);
+    ( "skin tone on a text-default base wcwidth",
+      "\u{261D}\u{1F3FD}",
+      `Wcwidth,
+      8,
+      3 );
+    ( "skin tone on a text-default base wide",
+      "\u{261D}\u{1F3FD}",
+      `Unicode_wide,
+      8,
+      1 );
+    ("skin tone after writing hand", "\u{270D}\u{1F3FB}", `Unicode, 8, 2);
+    ("skin tone after VS16", "\u{261D}\u{FE0F}\u{1F3FD}", `Unicode, 8, 2);
+    (* A modifier after an emoji that is no modifier base makes no sequence. *)
+    ("skin tone after a heart", "\u{2764}\u{1F3FD}", `Unicode, 8, 1);
     ("wcwidth strategy", "👩\u{200D}🚀", `Wcwidth, 8, 4);
     ("combining accent", "a\u{0301}", `Unicode, 8, 1);
     ("Thai spacing mark", "น้ำ", `Unicode, 8, 2);
