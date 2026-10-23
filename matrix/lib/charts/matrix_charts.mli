@@ -89,14 +89,10 @@ module Charset : sig
 
   type t = {
     frame : frame;
-        (** Axis lines, the corners where axes meet, lines drawn at [`Cell]
-            resolution and arrows. *)
-    axis_h : string;
-        (** Horizontal axis glyph. {!Matrix_charts.draw} draws axis lines with
-            [frame.h] instead. *)
-    axis_v : string;
-        (** Vertical axis glyph. {!Matrix_charts.draw} draws axis lines with
-            [frame.v] instead. *)
+        (** The corners, tees and cross where axis lines meet each other or a
+            tick mark, and the lines drawn at [`Cell] resolution and arrows. *)
+    axis_h : string;  (** Horizontal axis lines and frame edges. *)
+    axis_v : string;  (** Vertical axis lines and frame edges. *)
     tick_h : string;  (** Tick marks of the y axes. *)
     tick_v : string;  (** Tick marks of the x axis. *)
     grid_h_solid : string;  (** Horizontal line, [`Solid]. *)

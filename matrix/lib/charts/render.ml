@@ -461,6 +461,31 @@ let draw_grid (layout : Layout.t) (grid : G.t) =
 
 (* {1 Axes} *)
 
+(* The arms of a cell of an axis line, and whether a line through it runs
+   across or down, which decides the glyph of a cell with no arm. *)
+let arm_up = 1
+let arm_down = 2
+let arm_left = 4
+let arm_right = 8
+let horizontal = 16
+let vertical = 32
+
+let junction_glyph (ch : Layout.Charset.t) bits =
+  let f = ch.frame in
+  match bits land 15 with
+  | 0 -> if bits land vertical <> 0 then ch.axis_v else ch.axis_h
+  | 4 | 8 | 12 -> ch.axis_h
+  | 1 | 2 | 3 -> ch.axis_v
+  | 10 -> f.tl
+  | 6 -> f.tr
+  | 9 -> f.bl
+  | 5 -> f.br
+  | 14 -> f.tee_down
+  | 13 -> f.tee_up
+  | 11 -> f.tee_right
+  | 7 -> f.tee_left
+  | _ -> f.cross
+
 let draw_axes (layout : Layout.t) (grid : G.t) =
   let r = layout.plot in
   (* Ticks, labels and titles are drawn only within the chart's region. *)
@@ -469,236 +494,233 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
   let in_rows y = y >= region.y && y < region.y + region.height in
   let ip = layout.frame_inner_padding in
   let ch = layout.theme.charset in
-  let line_symbols : G.line_symbols =
-    {
-      G.h = ch.frame.h;
-      v = ch.frame.v;
-      diag_up = ch.diag_up;
-      diag_down = ch.diag_down;
-    }
+  (* Axis lines, frame edges and the tick marks that touch them meet in
+     junctions. Each cell of a line records its arms, the directions in which
+     a line or a tick leaves it, and is drawn last with the glyph its arms
+     give. A cell keeps the style of the first line through it. *)
+  let cells = Hashtbl.create 64 in
+  let add ~st x y bits =
+    match Hashtbl.find_opt cells (x, y) with
+    | Some (arms, _) -> arms := !arms lor bits
+    | None -> Hashtbl.add cells (x, y) (ref bits, st)
   in
-
-  let draw_y_axis_line ~ax ~st =
-    match layout.y_axis.line with
-    | `None -> ()
-    | `Axis_only ->
-        G.draw_line grid ~x1:ax ~y1:r.y ~x2:ax
-          ~y2:(r.y + r.height - 1)
-          ~style:st ~symbols:line_symbols ~kind:`Line ()
-    | `Frame ->
-        G.draw_line grid ~x1:ax ~y1:r.y ~x2:ax
-          ~y2:(r.y + r.height - 1)
-          ~style:st ~symbols:line_symbols ~kind:`Line ();
-        G.draw_line grid ~x1:ax ~y1:r.y
-          ~x2:(r.x + r.width - 1)
-          ~y2:r.y ~style:st ~symbols:line_symbols ~kind:`Line ();
-        if not layout.x_axis.show then
-          G.draw_line grid ~x1:ax
-            ~y1:(r.y + r.height - 1)
-            ~x2:(r.x + r.width - 1)
-            ~y2:(r.y + r.height - 1)
-            ~style:st ~symbols:line_symbols ~kind:`Line ()
+  let hline ~st y x1 x2 =
+    for x = x1 to x2 do
+      add ~st x y
+        (horizontal
+        lor (if x > x1 then arm_left else 0)
+        lor if x < x2 then arm_right else 0)
+    done
   in
-
-  let draw_x_axis_line ~ay ~st =
-    match layout.x_axis.line with
-    | `None -> ()
-    | `Axis_only ->
-        G.draw_line grid ~x1:r.x ~y1:ay
-          ~x2:(r.x + r.width - 1)
-          ~y2:ay ~style:st ~symbols:line_symbols ~kind:`Line ()
-    | `Frame ->
-        G.draw_line grid ~x1:r.x ~y1:ay
-          ~x2:(r.x + r.width - 1)
-          ~y2:ay ~style:st ~symbols:line_symbols ~kind:`Line ();
-        G.draw_line grid
-          ~x1:(r.x + r.width - 1)
-          ~y1:r.y
-          ~x2:(r.x + r.width - 1)
-          ~y2:ay ~style:st ~symbols:line_symbols ~kind:`Line ();
-        if not layout.y_axis.show then
-          G.draw_line grid ~x1:r.x ~y1:r.y ~x2:r.x ~y2:ay ~style:st
-            ~symbols:line_symbols ~kind:`Line ()
+  let vline ~st x y1 y2 =
+    for y = y1 to y2 do
+      add ~st x y
+        (vertical
+        lor (if y > y1 then arm_up else 0)
+        lor if y < y2 then arm_down else 0)
+    done
   in
+  let tick ~length x y arm =
+    if length > 0 then
+      match Hashtbl.find_opt cells (x, y) with
+      | Some (arms, _) -> arms := !arms lor arm
+      | None -> ()
+  in
+  let top = r.y and bottom = r.y + r.height - 1 in
+  let first = r.x and last = r.x + r.width - 1 in
+  let ax = r.x - ip - 1 and ay = r.y + r.height + ip in
+  let ax2 = r.x + r.width + ip in
+  let y2_axis =
+    match (layout.y2_axis, layout.y2_scale, layout.y2_view) with
+    | Some a, Some _, Some _ when a.Layout.Axis.show -> Some a
+    | _ -> None
+  in
+  let has_line (a : Layout.Axis.t) = a.show && a.line <> `None in
+  let y_line = has_line layout.y_axis and x_line = has_line layout.x_axis in
+  let y2_line = match y2_axis with Some a -> has_line a | None -> false in
+  let y_end = if x_line then ay else bottom in
+  if y_line then (
+    let st = Option.get layout.y_axis.style in
+    vline ~st ax top y_end;
+    if layout.y_axis.line = `Frame then (
+      hline ~st top ax last;
+      if not layout.x_axis.show then hline ~st bottom ax last));
+  (match y2_axis with
+  | Some a when y2_line ->
+      let st = Option.get a.style in
+      vline ~st ax2 top y_end;
+      if a.line = `Frame then (
+        if not layout.y_axis.show then hline ~st top first ax2;
+        if not layout.x_axis.show then hline ~st bottom first ax2)
+  | _ -> ());
+  if x_line then (
+    let st = Option.get layout.x_axis.style in
+    hline ~st ay (if y_line then ax else first) (if y2_line then ax2 else last);
+    if layout.x_axis.line = `Frame then (
+      vline ~st last top ay;
+      if not layout.y_axis.show then vline ~st first top ay));
 
   (* Y axis *)
-  if layout.y_axis.show then (
-    let ax = r.x - ip - 1 in
-    let st = Option.get layout.y_axis.style in
-    let tick_st = Option.get layout.y_axis.tick_style in
-    let label_st = Option.get layout.y_axis.label_style in
-    draw_y_axis_line ~ax ~st;
-    (match layout.y_scale with
-    | Numeric _ ->
-        List.iteri
-          (fun i v ->
-            let py =
-              Layout.y_to_px ~minv:layout.y_view.min ~maxv:layout.y_view.max
-                ~extent:r.height ~origin:r.y ~clamp:true v
-            in
-            for k = 1 to layout.y_axis.tick_length do
-              let x = ax - k in
-              if x >= left then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
-            done;
-            let label = layout.y_axis.format i v in
-            let lw = Layout.text_width label in
-            let label_x =
-              ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
-            in
-            if label_x >= left then
-              draw_text grid ~x:label_x ~y:py ~style:label_st label)
-          layout.y_ticks
-    | Log { base; view; _ } ->
-        List.iteri
-          (fun i v ->
-            let py =
-              Layout.y_to_px_log ~base ~minv:view.min ~maxv:view.max
-                ~extent:r.height ~origin:r.y ~clamp:true v
-            in
-            for k = 1 to layout.y_axis.tick_length do
-              let x = ax - k in
-              if x >= left then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
-            done;
-            let label = layout.y_axis.format i v in
-            let lw = Layout.text_width label in
-            let label_x =
-              ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
-            in
-            if label_x >= left then
-              draw_text grid ~x:label_x ~y:py ~style:label_st label)
-          layout.y_ticks
-    | Band { categories; padding; _ } ->
-        let offset, bw =
-          Layout.band_params ~cats:categories ~padding ~extent:r.height
-        in
-        List.iteri
-          (fun i cat ->
-            let band_h = max 1 (int_of_float (Float.max 1. (bw -. 1.))) in
-            let y0 = r.y + int_of_float (offset +. (float i *. bw)) in
-            let py = y0 + (band_h / 2) in
-            for k = 1 to layout.y_axis.tick_length do
-              let x = ax - k in
-              if x >= left then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
-            done;
-            let lw = Layout.text_width cat in
-            let label_x =
-              ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
-            in
-            if label_x >= left then
-              draw_text grid ~x:label_x ~y:py ~style:label_st cat)
-          categories);
-    if layout.x_axis.show then
-      let y_corner = r.y + r.height + ip in
-      if in_rows y_corner then
-        draw_text grid ~x:ax ~y:y_corner ~style:st ch.frame.bl);
+  (if layout.y_axis.show then
+     let tick_st = Option.get layout.y_axis.tick_style in
+     let label_st = Option.get layout.y_axis.label_style in
+     let tick py = tick ~length:layout.y_axis.tick_length ax py arm_left in
+     match layout.y_scale with
+     | Numeric _ ->
+         List.iteri
+           (fun i v ->
+             let py =
+               Layout.y_to_px ~minv:layout.y_view.min ~maxv:layout.y_view.max
+                 ~extent:r.height ~origin:r.y ~clamp:true v
+             in
+             tick py;
+             for k = 1 to layout.y_axis.tick_length do
+               let x = ax - k in
+               if x >= left then
+                 draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
+             done;
+             let label = layout.y_axis.format i v in
+             let lw = Layout.text_width label in
+             let label_x =
+               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
+             in
+             if label_x >= left then
+               draw_text grid ~x:label_x ~y:py ~style:label_st label)
+           layout.y_ticks
+     | Log { base; view; _ } ->
+         List.iteri
+           (fun i v ->
+             let py =
+               Layout.y_to_px_log ~base ~minv:view.min ~maxv:view.max
+                 ~extent:r.height ~origin:r.y ~clamp:true v
+             in
+             tick py;
+             for k = 1 to layout.y_axis.tick_length do
+               let x = ax - k in
+               if x >= left then
+                 draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
+             done;
+             let label = layout.y_axis.format i v in
+             let lw = Layout.text_width label in
+             let label_x =
+               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
+             in
+             if label_x >= left then
+               draw_text grid ~x:label_x ~y:py ~style:label_st label)
+           layout.y_ticks
+     | Band { categories; padding; _ } ->
+         let offset, bw =
+           Layout.band_params ~cats:categories ~padding ~extent:r.height
+         in
+         List.iteri
+           (fun i cat ->
+             let band_h = max 1 (int_of_float (Float.max 1. (bw -. 1.))) in
+             let y0 = r.y + int_of_float (offset +. (float i *. bw)) in
+             let py = y0 + (band_h / 2) in
+             tick py;
+             for k = 1 to layout.y_axis.tick_length do
+               let x = ax - k in
+               if x >= left then
+                 draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
+             done;
+             let lw = Layout.text_width cat in
+             let label_x =
+               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
+             in
+             if label_x >= left then
+               draw_text grid ~x:label_x ~y:py ~style:label_st cat)
+           categories);
 
   (* X axis *)
-  if layout.x_axis.show then (
-    let ay = r.y + r.height + ip in
-    let st = Option.get layout.x_axis.style in
-    let tick_st = Option.get layout.x_axis.tick_style in
-    let label_st = Option.get layout.x_axis.label_style in
-    draw_x_axis_line ~ay ~st;
-    match layout.x_scale with
-    | Numeric _ ->
-        let last_label_right = ref min_int in
-        List.iteri
-          (fun i v ->
-            let px =
-              Layout.x_to_px ~minv:layout.x_view.min ~maxv:layout.x_view.max
-                ~extent:r.width ~origin:r.x ~clamp:true v
-            in
-            for k = 1 to layout.x_axis.tick_length do
-              let y = ay + k in
-              if in_rows y then draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
-            done;
-            let label = layout.x_axis.format i v in
-            let lw = Layout.text_width label in
-            let label_y =
-              ay + layout.x_axis.tick_length + layout.x_axis.label_padding
-            in
-            let label_x = px - (lw / 2) in
-            if in_rows label_y && label_x > !last_label_right then (
-              draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
-                label;
-              last_label_right := label_x + lw))
-          layout.x_ticks
-    | Log { base; view; _ } ->
-        let last_label_right = ref min_int in
-        List.iteri
-          (fun i v ->
-            let px =
-              Layout.x_to_px_log ~base ~minv:view.min ~maxv:view.max
-                ~extent:r.width ~origin:r.x ~clamp:true v
-            in
-            for k = 1 to layout.x_axis.tick_length do
-              let y = ay + k in
-              if in_rows y then draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
-            done;
-            let label = layout.x_axis.format i v in
-            let lw = Layout.text_width label in
-            let label_y =
-              ay + layout.x_axis.tick_length + layout.x_axis.label_padding
-            in
-            let label_x = px - (lw / 2) in
-            if in_rows label_y && label_x > !last_label_right then (
-              draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
-                label;
-              last_label_right := label_x + lw))
-          layout.x_ticks
-    | Band { categories; padding; _ } ->
-        let offset, bw =
-          Layout.band_params ~cats:categories ~padding ~extent:r.width
-        in
-        let last_label_right = ref min_int in
-        List.iteri
-          (fun i cat ->
-            let band_w = max 1 (int_of_float (Float.max 1. (bw -. 1.))) in
-            let x0 = r.x + int_of_float (offset +. (float i *. bw)) in
-            let px = x0 + (band_w / 2) in
-            for k = 1 to layout.x_axis.tick_length do
-              let y = ay + k in
-              if in_rows y then draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
-            done;
-            let lw = Layout.text_width cat in
-            let label_y =
-              ay + layout.x_axis.tick_length + layout.x_axis.label_padding
-            in
-            let label_x = px - (lw / 2) in
-            if in_rows label_y && label_x > !last_label_right then (
-              draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
-                cat;
-              last_label_right := label_x + lw))
-          categories);
+  (if layout.x_axis.show then
+     let tick_st = Option.get layout.x_axis.tick_style in
+     let label_st = Option.get layout.x_axis.label_style in
+     let tick px = tick ~length:layout.x_axis.tick_length px ay arm_down in
+     match layout.x_scale with
+     | Numeric _ ->
+         let last_label_right = ref min_int in
+         List.iteri
+           (fun i v ->
+             let px =
+               Layout.x_to_px ~minv:layout.x_view.min ~maxv:layout.x_view.max
+                 ~extent:r.width ~origin:r.x ~clamp:true v
+             in
+             tick px;
+             for k = 1 to layout.x_axis.tick_length do
+               let y = ay + k in
+               if in_rows y then
+                 draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
+             done;
+             let label = layout.x_axis.format i v in
+             let lw = Layout.text_width label in
+             let label_y =
+               ay + layout.x_axis.tick_length + layout.x_axis.label_padding
+             in
+             let label_x = px - (lw / 2) in
+             if in_rows label_y && label_x > !last_label_right then (
+               draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
+                 label;
+               last_label_right := label_x + lw))
+           layout.x_ticks
+     | Log { base; view; _ } ->
+         let last_label_right = ref min_int in
+         List.iteri
+           (fun i v ->
+             let px =
+               Layout.x_to_px_log ~base ~minv:view.min ~maxv:view.max
+                 ~extent:r.width ~origin:r.x ~clamp:true v
+             in
+             tick px;
+             for k = 1 to layout.x_axis.tick_length do
+               let y = ay + k in
+               if in_rows y then
+                 draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
+             done;
+             let label = layout.x_axis.format i v in
+             let lw = Layout.text_width label in
+             let label_y =
+               ay + layout.x_axis.tick_length + layout.x_axis.label_padding
+             in
+             let label_x = px - (lw / 2) in
+             if in_rows label_y && label_x > !last_label_right then (
+               draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
+                 label;
+               last_label_right := label_x + lw))
+           layout.x_ticks
+     | Band { categories; padding; _ } ->
+         let offset, bw =
+           Layout.band_params ~cats:categories ~padding ~extent:r.width
+         in
+         let last_label_right = ref min_int in
+         List.iteri
+           (fun i cat ->
+             let band_w = max 1 (int_of_float (Float.max 1. (bw -. 1.))) in
+             let x0 = r.x + int_of_float (offset +. (float i *. bw)) in
+             let px = x0 + (band_w / 2) in
+             tick px;
+             for k = 1 to layout.x_axis.tick_length do
+               let y = ay + k in
+               if in_rows y then
+                 draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
+             done;
+             let lw = Layout.text_width cat in
+             let label_y =
+               ay + layout.x_axis.tick_length + layout.x_axis.label_padding
+             in
+             let label_x = px - (lw / 2) in
+             if in_rows label_y && label_x > !last_label_right then (
+               draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
+                 cat;
+               last_label_right := label_x + lw))
+           categories);
 
   (* Y2 axis *)
   (match (layout.y2_axis, layout.y2_scale, layout.y2_view) with
-  | Some y2_ax, Some y2_sc, Some y2_view when y2_ax.Layout.Axis.show ->
-      let ax2 = r.x + r.width + ip in
-      let st = Option.get y2_ax.style in
+  | Some y2_ax, Some y2_sc, Some y2_view when y2_ax.Layout.Axis.show -> (
       let tick_st = Option.get y2_ax.tick_style in
       let label_st = Option.get y2_ax.label_style in
-      (match y2_ax.line with
-      | `None -> ()
-      | `Axis_only ->
-          G.draw_line grid ~x1:ax2 ~y1:r.y ~x2:ax2
-            ~y2:(r.y + r.height - 1)
-            ~style:st ~symbols:line_symbols ~kind:`Line ()
-      | `Frame ->
-          G.draw_line grid ~x1:ax2 ~y1:r.y ~x2:ax2
-            ~y2:(r.y + r.height - 1)
-            ~style:st ~symbols:line_symbols ~kind:`Line ();
-          if not layout.y_axis.show then
-            G.draw_line grid ~x1:r.x ~y1:r.y ~x2:ax2 ~y2:r.y ~style:st
-              ~symbols:line_symbols ~kind:`Line ();
-          if not layout.x_axis.show then
-            G.draw_line grid ~x1:r.x
-              ~y1:(r.y + r.height - 1)
-              ~x2:ax2
-              ~y2:(r.y + r.height - 1)
-              ~style:st ~symbols:line_symbols ~kind:`Line ());
       let y2_tick_values = Option.value layout.y2_ticks ~default:[] in
-      (match y2_sc with
+      match y2_sc with
       | Numeric _ ->
           List.iteri
             (fun i v ->
@@ -706,6 +728,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
                 Layout.y_to_px ~minv:y2_view.min ~maxv:y2_view.max
                   ~extent:r.height ~origin:r.y ~clamp:true v
               in
+              tick ~length:y2_ax.tick_length ax2 py arm_right;
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < right then
@@ -723,6 +746,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
                 Layout.y_to_px_log ~base ~minv:view.min ~maxv:view.max
                   ~extent:r.height ~origin:r.y ~clamp:true v
               in
+              tick ~length:y2_ax.tick_length ax2 py arm_right;
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < right then
@@ -742,6 +766,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               let band_h = max 1 (int_of_float (Float.max 1. (bw -. 1.))) in
               let y0 = r.y + int_of_float (offset +. (float i *. bw)) in
               let py = y0 + (band_h / 2) in
+              tick ~length:y2_ax.tick_length ax2 py arm_right;
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < right then
@@ -750,12 +775,13 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               let label_x = ax2 + y2_ax.tick_length + y2_ax.label_padding in
               if label_x < right then
                 draw_text grid ~x:label_x ~y:py ~style:label_st cat)
-            categories);
-      if layout.x_axis.show then
-        let y_corner = r.y + r.height + ip in
-        if in_rows y_corner then
-          draw_text grid ~x:ax2 ~y:y_corner ~style:st ch.frame.br
+            categories)
   | _ -> ());
+
+  Hashtbl.iter
+    (fun (x, y) (arms, st) ->
+      draw_text grid ~x ~y ~style:st (junction_glyph ch !arms))
+    cells;
 
   (* Y-axis title *)
   (match layout.y_axis.title with
