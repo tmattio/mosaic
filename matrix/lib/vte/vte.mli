@@ -466,7 +466,9 @@ val blit_row : t -> int -> Matrix_grid.t -> y:int -> unit
     A renderer redraws what changed since it last looked. Writing cells, moving
     the cursor, showing or hiding it, changing its style, changing the
     rendition, switching screens, resizing and changing the palette mark [t]
-    changed. Setting the title or another mode leaves the marks as they are. *)
+    changed. Erasing a scrollback that holds lines (ED 3) marks [t] changed and
+    no row, since the rows are those of the screen. Setting the title or another
+    mode leaves the marks as they are. *)
 
 val is_dirty : t -> bool
 (** [is_dirty t] is [true] iff [t] changed since {!clear_dirty}. *)

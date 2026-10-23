@@ -846,7 +846,10 @@ let erase_display t erase = function
       erase t ~x:0 ~y:0 ~width:t.cols ~height:row;
       erase t ~x:0 ~y:row ~width:(col + 1) ~height:1
   | 2 -> erase t ~x:0 ~y:0 ~width:t.cols ~height:t.rows
-  | 3 -> clear_history t
+  | 3 ->
+      if t.history.count > 0 then (
+        clear_history t;
+        t.dirty.any <- true)
   | _ -> ()
 
 let erase_line t erase n =

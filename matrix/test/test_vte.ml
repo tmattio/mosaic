@@ -2354,8 +2354,23 @@ let national_mode () =
 
 (** {1 Test Suite} *)
 
+(* Regression: ED 3 emptied the scrollback and marked nothing changed. *)
+let erase_scrollback_marks_a_change () =
+  let vte = Vte.create ~rows:2 ~cols:5 () in
+  feed vte "a\r\nb\r\nc\r\nd";
+  equal ~msg:"lines in the scrollback" int 2 (Vte.scrollback_size vte);
+  Vte.clear_dirty vte;
+  feed vte "\027[3J";
+  equal ~msg:"scrollback emptied" int 0 (Vte.scrollback_size vte);
+  is_true ~msg:"marked changed" (Vte.is_dirty vte);
+  equal ~msg:"no row of the screen changed" (list int) [] (Vte.dirty_rows vte);
+  Vte.clear_dirty vte;
+  feed vte "\027[3J";
+  is_false ~msg:"erasing an empty scrollback changes nothing" (Vte.is_dirty vte)
+
 let tests =
   [
+    test "ED 3 marks a change" erase_scrollback_marks_a_change;
     test "hyperlinks survive styles and scrollback"
       hyperlinks_survive_styles_and_scrollback;
     test "scrollback preserves decorated spaces"
