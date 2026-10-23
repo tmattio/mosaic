@@ -175,9 +175,11 @@ module Backend : sig
         (** Whether the output device accepts terminal modes. *)
     controlling : bool;
         (** Whether the terminal is the process's controlling terminal, the one
-            its job runs in, which one run at a time holds ({!run}). A terminal
-            the process serves, such as a pseudo-terminal it opened or a remote
-            session, is not. *)
+            its job runs in. Its window, stop and continue signals are that
+            terminal's, so only a run on it takes the process's signals
+            ({{!signals}Signals}), and one run at a time holds it ({!run}). A
+            terminal the process serves, such as a pseudo-terminal it opened or
+            a remote session, is not: it reports its size itself (mode 2048). *)
     protect : (unit -> unit) -> unit;
         (** [protect f] runs [f ()] with cancellation deferred until it returns
             or raises. Used only for teardown; synchronous backends call [f]
@@ -487,13 +489,14 @@ val stop_job : 'msg app -> unit
 
 (** {1:signals Signals}
 
-    When its terminal is a terminal, a run takes SIGINT, SIGTERM, SIGHUP,
-    SIGQUIT, SIGTSTP and SIGABRT if their action is the default when it begins,
-    as X/Open Curses allows; an application that installed its own action keeps
-    it. SIGWINCH and SIGCONT are taken always, and a handler installed before is
-    still called. The handlers record the signal and write a byte to
-    {!Backend.wake_fd}; the loop acts on it in its next turn, and the actions
-    are restored when the run ends.
+    When its terminal is the process's controlling terminal ({!Backend.t}'s
+    [controlling]), a run takes SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGTSTP and
+    SIGABRT if their action is the default when it begins, as X/Open Curses
+    allows; an application that installed its own action keeps it. SIGWINCH and
+    SIGCONT are taken always, and a handler installed before is still called.
+    The handlers record the signal and write a byte to {!Backend.wake_fd}; the
+    loop acts on it in its next turn, and the actions are restored when the run
+    ends.
 
     - SIGINT, SIGTERM, SIGHUP, SIGQUIT end the run: the terminal is given back,
       then the signal is raised again with its default action, so the process

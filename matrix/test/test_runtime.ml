@@ -2508,6 +2508,19 @@ let test_release_signal_dispositions () =
         is_true ~msg:"TERM taken again" (caught sigterm));
     is_false ~msg:"TERM given back" (caught sigterm))
 
+(* A terminal that is not the controlling one, such as a pseudo-terminal the
+   process serves, gets none of the process's signals: its run takes none. *)
+let test_signals_only_on_the_controlling_terminal () =
+  if linux && not (caught sigterm) then (
+    let f = fake ~tty:true () in
+    f.answer <- probe_answer;
+    Matrix.run
+      ~backend:{ (backend f) with controlling = false }
+      (fun _ ->
+        List.iter
+          (fun (name, s) -> is_false ~msg:("not taken: " ^ name) (caught s))
+          [ ("TERM", sigterm); ("HUP", sighup); ("WINCH", sigwinch) ]))
+
 let peek_signal number =
   let behavior = Sys.signal number Sys.Signal_ignore in
   ignore (Sys.signal number behavior : Sys.signal_behavior);
@@ -2800,6 +2813,8 @@ let () =
       group "Signals"
         [
           test "dispositions while released" test_release_signal_dispositions;
+          test "signals only on the controlling terminal"
+            test_signals_only_on_the_controlling_terminal;
           test "signals left to the application"
             test_signals_left_to_the_application;
           test "stop_job when SIGTSTP is ignored"

@@ -1791,8 +1791,11 @@ let probe t =
       await t ~from:b.sent [ b ];
       t.anchor <- None))
 
+(* The signals are the process's, and a terminal's window and job-control
+   signals come from the controlling terminal only: a run takes them when
+   that is its terminal. *)
 let setup t =
-  if t.backend.input_is_tty || t.backend.output_is_tty then take_signals t;
+  if t.backend.controlling then take_signals t;
   abort_reset (abort_bytes t.config.mode);
   take_raw_mode t;
   probe t;

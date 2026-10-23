@@ -478,9 +478,10 @@ let test_cancelled_setup_restores_terminal () =
         (List.mem sequence !output))
     [ "\027[?1049h"; "\027[?1049l"; "\027[?2004h"; "\027[?2004l" ]
 
-(* A run on a terminal takes SIGWINCH, calling the handler installed before,
-   and wakes on it: the new size comes as a [Resize]. The disposition is
-   restored when the run ends. *)
+(* A run on the controlling terminal takes SIGWINCH, calling the handler
+   installed before, and wakes on it: the new size comes as a [Resize]. The
+   disposition is restored when the run ends. The test's pseudo-terminal is
+   not the process's controlling terminal; its backend says it is. *)
 let test_sigwinch_wakes_eio_runtime () =
   let calls = ref 0 in
   let prior _ = incr calls in
@@ -499,6 +500,7 @@ let test_sigwinch_wakes_eio_runtime () =
       ~clock:(Eio.Stdenv.mono_clock env)
       ~stdin:tty ~stdout:tty ()
   in
+  let backend = { backend with controlling = true } in
   let resized = ref None in
   let result =
     Eio.Time.with_timeout (Eio.Stdenv.clock env) 2. (fun () ->
