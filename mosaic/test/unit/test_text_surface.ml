@@ -299,6 +299,18 @@ let update_local_selection_extends () =
   is_true ~msg:"changed" changed;
   equal ~msg:"full text" string "hello world" (Text_surface.selected_text s)
 
+(* A drag that leaves the text above or below selects to its start or end. *)
+let local_selection_past_the_rows () =
+  let s = make_surface ~width:40 ~content:"ab\ncd" () in
+  ignore
+    (Text_surface.set_local_selection s ~anchor_x:1 ~anchor_y:0 ~focus_x:0
+       ~focus_y:5);
+  equal ~msg:"below" string "b\ncd" (Text_surface.selected_text s);
+  ignore
+    (Text_surface.set_local_selection s ~anchor_x:0 ~anchor_y:1 ~focus_x:5
+       ~focus_y:(-1));
+  equal ~msg:"above" string "ab\nc" (Text_surface.selected_text s)
+
 (* ── Cache Invalidation ── *)
 
 let invalidate_clears_cache () =
@@ -830,6 +842,8 @@ let () =
         [
           test "set_local_selection" set_local_selection_basic;
           test "update_local_selection extends" update_local_selection_extends;
+          test "a drag past the rows selects to the ends"
+            local_selection_past_the_rows;
         ];
       group "Cache invalidation"
         [

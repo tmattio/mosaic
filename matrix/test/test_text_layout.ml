@@ -263,6 +263,20 @@ let omitted_suffix_end_locates_after_ellipsis () =
   equal position (0, 2)
     (Layout.locate l Layout.{ grapheme = 4; affinity = Upstream })
 
+(* A row out of range stands for the start or the end of the source, in
+   coverage as in hit. *)
+let coverage_maps_rows_outside () =
+  let l =
+    Layout.create (Layout.Source.of_string "ab\ncd") ~width:0 ~wrap:`None
+  in
+  let range = pair int int in
+  equal ~msg:"a row before the first" range (0, 0)
+    (Layout.coverage l ~row:(-1) ~column:1);
+  equal ~msg:"hit there" int 0 (Layout.hit l ~row:(-1) ~column:1).grapheme;
+  equal ~msg:"a row after the last" range (5, 5)
+    (Layout.coverage l ~row:2 ~column:0);
+  equal ~msg:"hit there" int 5 (Layout.hit l ~row:2 ~column:0).grapheme
+
 let () =
   run "matrix.text_layout"
     [
@@ -276,6 +290,8 @@ let () =
             ellipsis_edge_snaps_zero_width_run;
           test "omitted suffix end locates after the ellipsis"
             omitted_suffix_end_locates_after_ellipsis;
+          test "coverage maps rows outside as hit does"
+            coverage_maps_rows_outside;
         ];
       group "Hit and locate"
         [

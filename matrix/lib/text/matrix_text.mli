@@ -335,10 +335,13 @@ module Layout : sig
 
       Unless a function's doc says otherwise, a row, line or boundary out of
       range is clamped to the nearest one, the width method defaults to
-      [`Unicode], and the tab width to [2]. A TAB is as wide as the tab width
-      wherever it is. Each cluster is as wide as {!measure} makes it, whatever
-      the width method, so a layout follows grapheme clusters even under
-      [`Wcwidth].
+      [`Unicode], and the tab width to [2]. The functions that map a cell to
+      boundaries ({!hit} and {!coverage}) take a row before the first as the
+      start of the source and a row after the last as its end, so that a pointer
+      dragged above or below the text reaches its first or last boundary. A TAB
+      is as wide as the tab width wherever it is. Each cluster is as wide as
+      {!measure} makes it, whatever the width method, so a layout follows
+      grapheme clusters even under [`Wcwidth].
 
       The life cycle of a layout:
       + {!Source.of_string} indexes a text once.
@@ -496,16 +499,17 @@ module Layout : sig
       [Downstream], which is the default. A caret at the end of a row that wraps
       is [Upstream] and one at the start of a row [Downstream], so that it
       locates on [row]. In a truncated row, the ellipsis gives the boundary
-      before it, and a column after the row its end. A row before the first
-      gives boundary [0] and a row after the last the end of the source. Several
-      cells hit one caret, so {!locate} of a hit may be another cell. *)
+      before it, and a column after the row its end. A row out of range gives
+      the start or the end of the source ({!Layout}). Several cells hit one
+      caret, so {!locate} of a hit may be another cell. *)
 
   val coverage : t -> row:int -> column:int -> int * int
   (** [coverage t ~row ~column] is [(first, last)], the boundaries around the
       clusters the cell at [row] and [column] shows. These are the cluster for
       each cell of a wide cluster, and the omitted suffix for the ellipsis. The
-      range is empty for a cell that shows nothing. The program decides whether
-      a gesture on the cell selects it. *)
+      range is empty for a cell that shows nothing, and for a row out of range,
+      at the start or the end of the source ({!Layout}). The program decides
+      whether a gesture on the cell selects it. *)
 
   val iter_cells :
     t ->
