@@ -72,6 +72,7 @@
 - **Primary-mode static output** – `Matrix.static_write ?preserve_live_region` keeps the live region across writes, `Matrix.static_replace` swaps all static content in one frame transaction, and `Matrix.static_clear` resets it
 - Clipboard (OSC 52), desktop notifications, bell, and colour-scheme queries on `Terminal`, with tmux passthrough
 - Scroll hints: `Matrix.set_scroll_hint` turns scrolling into a DECSTBM hardware scroll plus edge-row diffs
+- **Line feed/new line mode in the VTE** – `CSI 20 h` (LNM) makes LF, VT and FF also return to the first column, reported as `Vte.modes`'s `new_line`; feeding it first reads a program's output as a tty with output processing (ONLCR) shows it, with no option on `Vte.create`
 - **Application queries** – `Matrix.query app ~owed q` sends the application's queries as a batch closed by DA1, owed as the runtime's own are, and delivers their replies as `Matrix.Reply` events ending with the DA1 reply. Every DA1 reply is alike, so one batch that ends with DA1, the runtime's or the application's, is in flight at a time. A query sent with `Terminal.send` is not owed: its reply never reaches the application as a reply, and one that is a control string (DA3, XTVERSION, OSC 10/11, an OSC 52 read, XTGETTCAP) decodes as typing
 
 #### Changed

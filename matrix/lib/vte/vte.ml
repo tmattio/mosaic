@@ -41,6 +41,7 @@ type margins = { top : int; bottom : int }
 
 type modes = {
   insert : bool;
+  new_line : bool;
   origin : bool;
   auto_wrap : bool;
   reverse_wrap : bool;
@@ -140,6 +141,7 @@ let power_up =
 let power_up_modes =
   {
     insert = false;
+    new_line = false;
     origin = false;
     auto_wrap = true;
     reverse_wrap = false;
@@ -943,7 +945,10 @@ let leave_alternate t =
   switch_screen t ~alternate:false
 
 let set_ansi_mode t mode on =
-  match mode with 4 -> t.modes <- { t.modes with insert = on } | _ -> ()
+  match mode with
+  | 4 -> t.modes <- { t.modes with insert = on }
+  | 20 -> t.modes <- { t.modes with new_line = on }
+  | _ -> ()
 
 let set_dec_mode t mode on =
   let m = t.modes in
@@ -1059,12 +1064,14 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
   t
 
 (* DECSTR: the settings, the pen and the character sets to their power-up
-   values (VT510 DECSTR, Table 5-9), autowrap on as at power-up. *)
+   values (VT510 DECSTR, Table 5-9), autowrap on as at power-up. LNM is not
+   in the table, and stays. *)
 let decstr t =
   set_cursor_visible t true;
   t.modes <-
     {
       power_up_modes with
+      new_line = t.modes.new_line;
       bracketed_paste = t.modes.bracketed_paste;
       alternate_screen = t.modes.alternate_screen;
     };
@@ -1125,7 +1132,10 @@ let decxcpr t =
 
 (* The state of the modes [set_ansi_mode] and [set_dec_mode] keep, [None] for
    a mode this terminal does not have. *)
-let ansi_mode t = function 4 -> Some t.modes.insert | _ -> None
+let ansi_mode t = function
+  | 4 -> Some t.modes.insert
+  | 20 -> Some t.modes.new_line
+  | _ -> None
 
 let dec_mode t mode =
   let m = t.modes in
@@ -1176,10 +1186,15 @@ let sub t =
   print t "\u{2E2E}";
   break_text t
 
+(* LF, VT and FF are one function, a new line in LNM (vte.mli). *)
+let line_feed t =
+  index t;
+  if t.modes.new_line then goto t ~row:t.cursor.row ~col:0
+
 let control t = function
   | '\x08' -> cub t 1
   | '\x09' -> cht t 1
-  | '\x0a' | '\x0b' | '\x0c' -> index t
+  | '\x0a' | '\x0b' | '\x0c' -> line_feed t
   | '\x0d' -> goto t ~row:t.cursor.row ~col:0
   | '\x0e' -> ls t 1
   | '\x0f' -> ls t 0

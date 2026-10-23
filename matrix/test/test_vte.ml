@@ -938,6 +938,33 @@ let query_replies () =
     (ignore (Vte.feed_string vte "\x1b[5" : string);
      Vte.feed_string vte "n")
 
+(* LNM makes LF, VT and FF return to the first column, as a tty's ONLCR
+   makes LF; it leaves IND alone, RIS resets it and DECSTR keeps it. *)
+let line_feed_new_line_mode () =
+  let screen s =
+    let vte = Vte.create ~rows:4 ~cols:6 () in
+    feed vte s;
+    Vte.to_string vte
+  in
+  equal ~msg:"LF keeps the column" string "ab    \n  cd  \n      \n      "
+    (screen "ab\ncd");
+  equal ~msg:"LF, VT and FF in LNM" string "ab    \ncd    \nef    \ngh    "
+    (screen "\x1b[20hab\ncd\x0bef\x0cgh");
+  equal ~msg:"IND in LNM keeps the column" string
+    "ab    \n  cd  \n      \n      "
+    (screen "\x1b[20hab\x1bDcd");
+  equal ~msg:"RM 20" string "ab    \n  cd  \n      \n      "
+    (screen "\x1b[20h\x1b[20lab\ncd");
+  equal ~msg:"RIS resets LNM" string "ab    \n  cd  \n      \n      "
+    (screen "\x1b[20h\x1bcab\ncd");
+  equal ~msg:"DECSTR keeps LNM" string "ab    \ncd    \n      \n      "
+    (screen "\x1b[20h\x1b[!pab\ncd");
+  let vte = Vte.create ~rows:2 ~cols:4 () in
+  is_false ~msg:"off at power-up" (Vte.modes vte).new_line;
+  equal ~msg:"DECRQM 20" string "\x1b[20;2$y\x1b[20;1$y"
+    (Vte.feed_string vte "\x1b[20$p\x1b[20h\x1b[20$p");
+  is_true ~msg:"in the modes" (Vte.modes vte).new_line
+
 (* DECRQM reports a mode as set (1), reset (2) or not recognized (0); OSC 10,
    11 and 4 with [?] report a colour with the query's terminator. *)
 let mode_and_colour_queries () =
@@ -2204,6 +2231,7 @@ let tests =
     test "OSC set title" osc_set_title;
     test "query replies" query_replies;
     test "mode and colour queries" mode_and_colour_queries;
+    test "line feed/new line mode" line_feed_new_line_mode;
     test "OSC acts only when terminated" osc_acts_only_when_terminated;
     test "zero counts mean one" zero_counts_mean_one;
     test "replies by parameter value" replies_by_parameter_value;

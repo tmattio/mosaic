@@ -126,6 +126,22 @@
     set this terminal has no table for, such as DEC Supplemental, leaves the
     characters unchanged.
 
+    {2:line_feeds Line feeds}
+
+    LF, VT and FF move the cursor down a line, scrolling at the bottom margin,
+    and keep its column: "These three codes are always processed identically"
+    (VT220 Programmer Reference Manual §4.6.6). With line feed/new line mode
+    (LNM, [CSI 20 h]) set, they also move it to the first column, as NEL does;
+    IND and NEL do not change. LNM also says that the Return key sends CR LF
+    instead of CR, which {!type-modes} reports for whoever encodes the keys.
+
+    A program's output usually reaches its terminal through a tty, whose output
+    processing (the ONLCR flag of termios) writes each LF as CR LF: the terminal
+    never sees a bare LF, and lines start at the first column. This terminal
+    reads the bytes it is fed, as a tty delivers them. To read a program's
+    output as a cooked tty shows it, set LNM: feed [CSI 20 h] first. The two
+    differ only on VT and FF, which LNM also returns and ONLCR leaves alone.
+
     {2:parameters Parameters}
 
     For counts and positions 0 means the default, as an absent parameter does
@@ -172,8 +188,8 @@
     character sets to their defaults; both DECSC slots to the power-up cursor
     state. The VT510's table gives "No autowrap", its own power-up value; this
     terminal powers up with autowrap on, so DECSTR sets it on. The screen, the
-    cursor position, the active screen, bracketed paste, the tab stops and the
-    title stay. *)
+    cursor position, the active screen, LNM, bracketed paste, the tab stops and
+    the title stay: the table does not list LNM. *)
 
 type t
 (** The type for terminal emulators. Mutable, not thread-safe. *)
@@ -264,6 +280,9 @@ val wrapped : t -> int -> bool
 
 type modes = {
   insert : bool;  (** IRM (SM 4). *)
+  new_line : bool;
+      (** LNM (SM 20): LF, VT and FF also return to the first column
+          ({!section-line_feeds}), and the Return key sends CR LF. *)
   origin : bool;  (** DECOM (DECSET 6). *)
   auto_wrap : bool;  (** DECAWM (DECSET 7). *)
   reverse_wrap : bool;
