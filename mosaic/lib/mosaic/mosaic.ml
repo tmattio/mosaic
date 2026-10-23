@@ -1086,6 +1086,7 @@ let button ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
          || Shortcut.matches Shortcut.space event)
     then begin
       Event.Key.prevent_default event;
+      Event.Key.stop_propagation event;
       Some on_activate
     end
     else None

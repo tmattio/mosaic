@@ -8,18 +8,25 @@
     widget is keyboard- and mouse-navigable and automatically scrolls to keep
     the selected row visible.
 
-    {2:navigation Keyboard and mouse navigation}
+    {2:keys Keys}
 
-    Keyboard bindings:
-    - Up/Down arrows move the selection by one row. Shift+Up/Down skips by
-      {!Props.t}'s [fast_scroll_step] rows.
-    - PageUp/PageDown move by the number of data rows in the measured viewport
-      and clamp at the first or last row, independently of selection wrapping.
-    - [j]/[k] move the selection by one row.
-    - Enter or KP_enter activates the current row, firing the {!set_on_activate}
-      callback.
+    When focused, the widget's behavior (see {!Renderable.set_key_behavior})
+    acts on the keys below and consumes them: they reach neither its ancestors
+    nor any listener after the elements, such as an application's shortcuts.
+    Every other key passes on.
+    - Up, Down, k, j — move the selection by one row.
+    - Shift+Up, Shift+Down — move it by {!Props.t}'s [fast_scroll_step] rows.
+    - PageUp, PageDown — move it by the number of data rows in the measured
+      viewport, clamped at the first or last row, independently of selection
+      wrapping.
+    - Enter, Ctrl+J — activate the current row, firing the {!set_on_activate}
+      callback if a row is selected.
 
-    Mouse bindings:
+    It acts on them even when the selection cannot move. [key_bindings] adds
+    keys to the list or binds one in it to another action.
+
+    {2:mouse Mouse}
+
     - Left click selects a row.
     - Pointer movement reports row transitions through {!set_on_hover}.
     - Scroll wheel navigates rows.

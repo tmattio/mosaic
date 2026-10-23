@@ -2,7 +2,41 @@
 
     Default events propose complete states through [on_change]. The displayed
     text, caret, selection and undo history change only when the owner applies
-    accepted state. Paste strips ANSI escapes. *)
+    accepted state. Paste strips ANSI escapes.
+
+    {1:keys Keys}
+
+    When focused, the textarea's behavior (see {!Renderable.set_key_behavior})
+    acts on every key that types text, inserting it, and on the keys below, and
+    consumes them: they reach neither its ancestors nor any listener after the
+    elements, such as an application's shortcuts. A chord (Ctrl, Alt, Super or
+    Hyper held) types nothing (see {!Matrix_input.Keystroke}), and neither do
+    Tab, Escape and the function keys: those not listed below pass on.
+    - Left, Right, Ctrl+B, Ctrl+F — move by a character; Shift+Left and
+      Shift+Right extend the selection.
+    - Up, Down — move by a display row; with Shift, extend.
+    - Ctrl+A, Ctrl+E — move to the start or end of the line; with Shift, extend.
+    - Alt+A, Alt+E, Super+Left, Super+Right — move to the start or end of the
+      display row; with Shift, extend.
+    - Home, End, Super+Up, Super+Down — move to the start or end of the text;
+      with Shift, extend.
+    - Alt+B, Alt+F, Alt+Left, Alt+Right, Ctrl+Left, Ctrl+Right — move by a word;
+      Alt+Shift+B, Alt+Shift+F, Alt+Shift+Left and Alt+Shift+Right extend.
+    - Backspace, Shift+Backspace — delete backward; Delete, Shift+Delete, Ctrl+D
+      — delete forward.
+    - Ctrl+W, Ctrl+Backspace, Alt+Backspace — delete a word backward; Alt+D,
+      Alt+Delete, Ctrl+Delete — delete a word forward.
+    - Ctrl+Shift+D — delete the line; Ctrl+K — delete to its end; Ctrl+U —
+      delete to its start.
+    - Enter, Ctrl+J — insert a line break.
+    - Alt+Enter, Ctrl+Enter, Super+Enter, Ctrl+Alt+J, Ctrl+Super+J — submit.
+    - Ctrl+Z, Ctrl+-, Super+Z — undo; Ctrl+Shift+Z, Ctrl+., Super+Shift+Z —
+      redo.
+    - Super+A — select everything.
+
+    It acts on them even when they change nothing, at the start of the text for
+    instance. [key_bindings] adds keys to the list or binds one in it to another
+    action. *)
 
 type t
 (** A multi-line text editing widget. *)

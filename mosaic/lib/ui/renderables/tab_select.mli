@@ -8,11 +8,20 @@
     navigation and optional scroll arrows. Each tab has a label and an optional
     description line displayed below the strip.
 
-    Selection state and scroll offset are managed internally. The built-in key
-    handler responds to:
-    - Left arrow and [\[] — move selection left.
-    - Right arrow and [\]] — move selection right.
-    - Enter — activate the selected tab.
+    Selection state and scroll offset are managed internally.
+
+    {2:keys Keys}
+
+    When focused and holding at least one tab, the widget's behavior (see
+    {!Renderable.set_key_behavior}) acts on the keys below and consumes them:
+    they reach neither its ancestors nor any listener after the elements, such
+    as an application's shortcuts. Every other key passes on.
+    - Left, [\[] — move the selection left.
+    - Right, [\]] — move the selection right.
+    - Enter, Ctrl+J — activate the selected tab.
+
+    It acts on them even when the selection cannot move. [key_bindings] adds
+    keys to the list or binds one in it to another action.
 
     Callbacks ({!set_on_change}, {!set_on_activate}) are not part of {!Props}
     and must be set separately. *)

@@ -223,9 +223,16 @@ val apply_props : t -> Props.t -> unit
 (** {1:keyboard Keyboard interaction} *)
 
 val handle_key : t -> Event.key -> bool
-(** [handle_key t event] is [true] iff [event] was consumed by [t]. Handles
-    directional arrows, Page Up/Down, and Home/End to adjust the scroll
-    position. *)
+(** [handle_key t event] proposes a new position for the keys a scroll bar acts
+    on, and is [true] iff [event] is one of them; that is the bar's behavior
+    when focused (see {!Renderable.set_key_behavior}), which consumes the keys
+    it acts on. A vertical bar acts on:
+    - Up, k, Down, j — move by a fifth of the viewport;
+    - PageUp, PageDown — move by half the viewport;
+    - Home, End — move to the start or the end.
+
+    A horizontal bar acts on Left, h, Right and l in place of Up, k, Down and j.
+    It acts on them at an edge too. *)
 
 (** {1:fmt Formatting} *)
 

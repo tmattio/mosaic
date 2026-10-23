@@ -206,6 +206,184 @@ let subscriptions_and_widgets_agree build ~mlx =
       (Key.Char (Uchar.of_int 0x0441), Some (Uchar.of_char 'Q'), false);
     ]
 
+(* The keys a widget's interface lists are the keys its behavior consumes;
+   any other key passes on to its ancestors and the application. *)
+let consumes view ~acts ~passes () =
+  let renderer = Renderer.create () in
+  let reconciler =
+    Mosaic.Reconciler.create ~container:(Renderer.root renderer)
+  in
+  Mosaic.Reconciler.render reconciler ~viewport_width:30 (Vnode.map ignore view);
+  (match Mosaic.Reconciler.focused reconciler with
+  | Some node -> ignore (Renderer.focus renderer node : bool)
+  | None -> failwith "consumption fixture has no focused widget");
+  Renderer.render_frame renderer ~width:30 ~height:6 ~delta:0.;
+  let consumed (mods, key) =
+    let event = Event.Key.of_input (keystroke ~mods key) in
+    Renderer.dispatch_key renderer (Renderer.focus_path renderer) event;
+    Event.Key.propagation_stopped event
+  in
+  List.iter
+    (fun key -> is_true ~msg:"a listed key is consumed" (consumed key))
+    acts;
+  List.iter
+    (fun key -> is_false ~msg:"an unlisted key passes on" (consumed key))
+    passes
+
+let plain key = (Key.no_mods, key)
+let shift key = ({ Key.no_mods with shift = true }, key)
+let ctrl c = ({ Key.no_mods with ctrl = true }, Key.Char (Uchar.of_char c))
+let alt key = ({ Key.no_mods with alt = true }, key)
+let super key = ({ Key.no_mods with super = true }, key)
+let char c = plain (Key.Char (Uchar.of_char c))
+
+let consumed_keys =
+  let items = List.map (fun v -> Mosaic.Select.item v v) values in
+  [
+    ( "select",
+      consumes
+        (Mosaic.select ~size ~focused:true ~equal:String.equal
+           ~selected:(Some "A") ~on_change:ignore items)
+        ~acts:
+          [
+            plain Key.Up;
+            plain Key.Down;
+            char 'k';
+            char 'j';
+            shift Key.Up;
+            shift Key.Down;
+            plain Key.Enter;
+          ]
+        ~passes:[ char 'q'; plain Key.Escape; plain Key.Left; plain Key.Tab ] );
+    ( "tab_select",
+      consumes
+        (Mosaic.tab_select ~size ~focused:true ~equal:String.equal
+           ~selected:(Some "A") ~on_change:ignore
+           (List.map (fun v -> Mosaic.Tab_select.item v v) values))
+        ~acts:
+          [
+            plain Key.Left;
+            plain Key.Right;
+            char '[';
+            char ']';
+            plain Key.Enter;
+            ctrl 'j';
+          ]
+        ~passes:[ char 'q'; plain Key.Escape; plain Key.Up ] );
+    ( "table",
+      consumes
+        (Mosaic.table ~size ~focused:true ~equal:String.equal
+           ~selected:(Some "A") ~on_change:ignore
+           ~columns:[ Mosaic.Table.column "Value" ]
+           ~rows:
+             (List.map
+                (fun v -> Mosaic.Table.row v [| Mosaic.Table.cell v |])
+                values)
+           ())
+        ~acts:
+          [
+            plain Key.Up;
+            plain Key.Down;
+            char 'k';
+            char 'j';
+            shift Key.Up;
+            shift Key.Down;
+            plain Key.Page_up;
+            plain Key.Page_down;
+            plain Key.Enter;
+            ctrl 'j';
+          ]
+        ~passes:[ char 'q'; plain Key.Escape; plain Key.Left ] );
+    ( "tree",
+      consumes
+        (Mosaic.tree ~size ~focused:true
+           ~state:(Mosaic.Tree.State.make ~selected:"A" ())
+           ~on_change:ignore
+           ~items:(List.map (fun id -> Mosaic.Tree.item ~id id) values)
+           ())
+        ~acts:
+          [
+            plain Key.Up;
+            plain Key.Down;
+            char 'k';
+            char 'j';
+            shift Key.Up;
+            shift Key.Down;
+            plain Key.Right;
+            plain Key.Left;
+            char ' ';
+            plain Key.Enter;
+            ctrl 'j';
+          ]
+        ~passes:[ char 'q'; plain Key.Escape; plain Key.Page_up ] );
+    ( "scroll_box",
+      consumes
+        (Mosaic.scroll_box ~size ~focused:true ~scroll:(Mosaic.Scroll.at 0)
+           ~on_scroll:ignore
+           [ Mosaic.text "content" ])
+        ~acts:
+          [
+            plain Key.Up;
+            char 'k';
+            plain Key.Down;
+            char 'j';
+            plain Key.Left;
+            char 'h';
+            plain Key.Right;
+            char 'l';
+            plain Key.Page_up;
+            plain Key.Page_down;
+            plain Key.Home;
+            plain Key.End;
+          ]
+        ~passes:[ char 'q'; plain Key.Escape; plain Key.Enter ] );
+    ( "input",
+      consumes
+        (Mosaic.input ~size ~focused:true ~state:Mosaic.Editor.empty
+           ~on_change:ignore ())
+        ~acts:
+          [
+            char 'a';
+            plain Key.Left;
+            plain Key.Backspace;
+            ctrl 'a';
+            plain Key.Enter;
+            ctrl 'j';
+            ctrl 'z';
+            super (Key.Char (Uchar.of_char 'a'));
+          ]
+        ~passes:
+          [
+            plain Key.Up;
+            plain Key.Down;
+            shift Key.Up;
+            plain Key.Tab;
+            plain Key.Escape;
+            plain (Key.F 5);
+            ctrl 'q';
+          ] );
+    ( "textarea",
+      consumes
+        (Mosaic.textarea ~size ~focused:true ~state:Mosaic.Editor.empty
+           ~on_change:ignore ())
+        ~acts:
+          [
+            char 'a';
+            plain Key.Up;
+            plain Key.Down;
+            plain Key.Enter;
+            ctrl 'k';
+            alt Key.Enter;
+          ]
+        ~passes:[ plain Key.Tab; plain Key.Escape; plain (Key.F 5); ctrl 'q' ]
+    );
+    ( "button",
+      consumes
+        (Mosaic.button ~size ~focused:true ~on_activate:() "Save")
+        ~acts:[ plain Key.Enter; char ' ' ]
+        ~passes:[ char 'q'; plain Key.Escape; plain Key.Tab ] );
+  ]
+
 let () =
   run "mosaic.navigation-keys"
     (List.concat_map
@@ -224,4 +402,8 @@ let () =
                      subscriptions_and_widgets_agree build ~mlx);
                ])
            [ false; true ])
-       widgets)
+       widgets
+    @ [
+        group "consumed keys"
+          (List.map (fun (name, check) -> test name check) consumed_keys);
+      ])

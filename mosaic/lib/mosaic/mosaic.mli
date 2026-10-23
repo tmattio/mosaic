@@ -1434,6 +1434,9 @@ val button :
     primary-button click or an unmodified Enter, keypad Enter or Space press. A
     click requires a press and release inside the button without dragging. Key
     repeat and release events do not activate it; lock modifiers are ignored.
+    When focused, the button acts on those keys and consumes them: they reach
+    neither its ancestors nor a [Bubble] listener ({!Sub.section-phases}); every
+    other key passes on.
 
     [focused] defaults to [false] and is owned by the application. Use
     [on_focus_request] to accept pointer focus before activation. [disabled],
@@ -1714,8 +1717,9 @@ val input :
 
     Raises [Invalid_argument] if [state] contains CR or LF. Typed and pasted
     newlines are stripped. Undo and redo that would restore multiline text are
-    ignored. Widget-specific visual options follow {!Mosaic_ui.Text_input};
-    layout and paint use the labelled arguments above. *)
+    ignored. Widget-specific visual options follow {!Mosaic_ui.Text_input},
+    which lists the keys the input acts on when focused; layout and paint use
+    the labelled arguments above. *)
 
 val select :
   ?key:string ->
@@ -1794,8 +1798,9 @@ val select :
     value; activation without a selection does nothing. Values must be distinct
     under [equal]. Callbacks receive the value from the current options.
 
-    Each declaration performs a linear selection lookup and presentation
-    conversion. Event-to-value lookup is constant-time. *)
+    When focused, the list acts on the keys {!Mosaic_ui.Select} lists. Each
+    declaration performs a linear selection lookup and presentation conversion.
+    Event-to-value lookup is constant-time. *)
 
 val tab_select :
   ?key:string ->
@@ -1870,7 +1875,8 @@ val tab_select :
 (** [tab_select ~equal ~selected ~on_change options] displays horizontal tabs
     with the value-selection and callback semantics of {!select}. [None] or a
     value absent from [options] displays no selection. Values must be distinct
-    under [equal]. *)
+    under [equal]. When focused, the tabs act on the keys
+    {!Mosaic_ui.Tab_select} lists. *)
 
 val canvas :
   ?key:string ->
@@ -2111,8 +2117,9 @@ val scroll_bar :
   unit ->
   'msg t
 (** [scroll_bar ()] is a scroll indicator. Widget-specific visual options follow
-    {!Mosaic_ui.Scroll_bar}; layout and paint use the labelled arguments above.
-*)
+    {!Mosaic_ui.Scroll_bar}, whose {!Mosaic_ui.Scroll_bar.handle_key} lists the
+    keys the bar acts on when focused; layout and paint use the labelled
+    arguments above. *)
 
 val scroll_box :
   ?key:string ->
@@ -2179,7 +2186,8 @@ val scroll_box :
     options follow {!Mosaic_ui.Scroll_box}; layout and paint use the labelled
     arguments above. [scrollbar_style] sets shared bar appearance;
     [vertical_bar_style] and [horizontal_bar_style] replace it for the
-    corresponding axis. *)
+    corresponding axis. When focused, the box acts on the keys
+    {!Mosaic_ui.Scroll_box} lists. *)
 
 val textarea :
   ?key:string ->
@@ -2255,7 +2263,8 @@ val textarea :
   unit ->
   'msg t
 (** [textarea ()] is a multiline editor. Widget-specific visual options follow
-    {!Mosaic_ui.Textarea}; layout and paint use the labelled arguments above. *)
+    {!Mosaic_ui.Textarea}, which lists the keys the editor acts on when focused;
+    layout and paint use the labelled arguments above. *)
 
 val code :
   ?key:string ->
@@ -2608,7 +2617,8 @@ val table :
     the table cancels the remaining callbacks. [on_hover] receives [None] when
     the pointer leaves all rows.
 
-    Each declaration performs a linear selection lookup and row conversion.
+    When focused, the table acts on the keys {!Mosaic_ui.Table} lists. Each
+    declaration performs a linear selection lookup and row conversion.
     Event-to-value lookup is constant-time. *)
 
 val tree :
@@ -2685,6 +2695,7 @@ val tree :
   unit ->
   'msg t
 (** [tree ()] is a tree view. Widget-specific visual options follow
-    {!Mosaic_ui.Tree}; layout and paint use the labelled arguments above. *)
+    {!Mosaic_ui.Tree}, which lists the keys the tree acts on when focused;
+    layout and paint use the labelled arguments above. *)
 
 module Reconciler = Reconciler

@@ -1,6 +1,19 @@
 (** A clipped viewport rendering an application's accepted {!Scroll.t}. Input
     proposes a new value through [on_scroll]; only [apply_props] or [set_scroll]
-    accepts it. Wheel events at a boundary bubble to the enclosing viewport. *)
+    accepts it. Wheel events at a boundary bubble to the enclosing viewport.
+
+    {1:keys Keys}
+
+    When focused, the scroll box's behavior (see {!Renderable.set_key_behavior})
+    acts on the keys of its two scroll bars ({!Scroll_bar.handle_key}) and
+    consumes them: they reach neither its ancestors nor any listener after the
+    elements, such as an application's shortcuts. Every other key passes on.
+    - Up, k, Down, j — scroll up or down by a fifth of the viewport.
+    - Left, h, Right, l — scroll left or right by a fifth of the viewport.
+    - PageUp, PageDown — scroll up or down by half the viewport.
+    - Home, End — scroll to the top or the bottom.
+
+    It acts on them along an axis it does not scroll, and at an edge too. *)
 
 module Scroll_accel : sig
   type t

@@ -4,7 +4,14 @@
     text, caret, selection and undo history change only when the owner applies
     accepted state. Declared text must not contain CR or LF; invalid
     declarations raise [Invalid_argument]. Paste strips ANSI escapes and
-    newlines. Undo and redo that would restore multiline text are ignored. *)
+    newlines. Undo and redo that would restore multiline text are ignored.
+
+    {1:keys Keys}
+
+    When focused, the input acts on the keys {!Textarea} acts on, and consumes
+    them, with two differences: Enter and Ctrl+J submit instead of inserting a
+    line break, and Up, Down, Shift+Up and Shift+Down, which have no line to
+    move to, pass on. *)
 
 type t
 (** The type for single-line text inputs. *)

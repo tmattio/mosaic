@@ -119,6 +119,20 @@ let modifiers_and_capture () =
   let trace = drive ~capture:true button [ press Enter ] in
   equal ~msg:"global capture prevents activation" int 0 (activation_count trace)
 
+let activation_consumes_the_key () =
+  let ancestor = ref 0 in
+  let build focused disabled =
+    Mosaic.box
+      ~on_key:(fun _ ->
+        incr ancestor;
+        None)
+      [ button focused disabled ]
+  in
+  let trace = drive build [ press Enter; press (Char (Uchar.of_char 'x')) ] in
+  equal ~msg:"Enter activates" int 1 (activation_count trace);
+  equal ~msg:"only the key the button did not act on reaches its ancestor" int 1
+    !ancestor
+
 let pointer_focus_before_activation () =
   let trace =
     drive ~focused:false button
@@ -228,6 +242,7 @@ let () =
     [
       test "keyboard press semantics" key_presses_only;
       test "modifiers and capture" modifiers_and_capture;
+      test "activation consumes the key" activation_consumes_the_key;
       test "pointer focus acceptance" pointer_focus_before_activation;
       test "complete primary click gesture" click_requires_complete_gesture;
       test "disabled blocks input" disabled_blocks_input;

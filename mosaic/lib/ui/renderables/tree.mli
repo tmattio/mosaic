@@ -11,16 +11,24 @@
 
     {1:navigation Navigation}
 
-    Keyboard bindings:
-    - Up/Down arrows move the selection. Shift moves by [fast_scroll_step]
-      items.
-    - [j]/[k] move the selection by one item.
-    - Right expands the focused node or moves to its first child.
-    - Left collapses the focused node or moves to its parent.
-    - Space toggles expand/collapse of the focused node.
-    - Enter/KP_enter activates the focused node (fires [on_activate]).
+    {2:keys Keys}
 
-    Mouse bindings:
+    When focused, the widget's behavior (see {!Renderable.set_key_behavior})
+    acts on the keys below and consumes them: they reach neither its ancestors
+    nor any listener after the elements, such as an application's shortcuts.
+    Every other key passes on.
+    - Up, Down, k, j — move the selection by one item.
+    - Shift+Up, Shift+Down — move it by [fast_scroll_step] items.
+    - Right — expand the selected node, or move to its first child.
+    - Left — collapse the selected node, or move to its parent.
+    - Space — expand or collapse the selected node.
+    - Enter, Ctrl+J — activate the selected node (fires [on_activate]).
+
+    It acts on them even when there is nothing to move to. [key_bindings] adds
+    keys to the list or binds one in it to another action.
+
+    {2:mouse Mouse}
+
     - Left click on the icon area toggles expand/collapse.
     - Left click on the label area selects the node.
     - Scroll wheel navigates through the list.

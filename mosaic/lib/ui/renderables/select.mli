@@ -17,18 +17,23 @@
     constrains this size; explicit dimensions take precedence. Text is clipped
     horizontally rather than wrapped.
 
-    {2:keys Keyboard}
+    {2:keys Keys}
 
-    - Up / Down — move selection (Shift for fast scroll by
-      {!val-set_fast_scroll_step} items).
-    - j / k — move selection by one item.
-    - Enter / KP_enter — activate the current selection (fires the
-      {!val-set_on_activate} callback).
+    When focused, the widget's behavior (see {!Renderable.set_key_behavior})
+    acts on the keys below and consumes them: they reach neither its ancestors
+    nor any listener after the elements, such as an application's shortcuts.
+    Every other key passes on.
+    - Up, Down, k, j — move the selection by one item.
+    - Shift+Up, Shift+Down — move it by {!val-set_fast_scroll_step} items.
+    - Enter — activate the selection, firing the {!val-set_on_activate} callback
+      if an item is selected.
 
-    Bindings use {!Shortcut} matching: modifiers are exact apart from lock
-    state, keypad equivalents and base-layout keys are recognized, and release
-    events are ignored. Widget actions run after raw key handlers and respect
-    [prevent_default].
+    It acts on them even when the selection cannot move. [key_bindings] adds
+    keys to the list or binds one in it to another action. Bindings use
+    {!Shortcut} matching: modifiers are exact apart from lock state, keypad
+    equivalents and base-layout keys are recognized, and release events are
+    ignored. A key handler on the widget runs first, and can keep the behavior
+    from acting with {!Event.Key.prevent_default}.
 
     {2:mouse Mouse}
 
