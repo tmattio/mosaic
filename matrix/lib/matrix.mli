@@ -452,7 +452,10 @@ val query : app -> owed:Input.Decoder.owed -> string -> unit
     coming, or a string reply such as XTVERSION's [DCS > | text ST] decodes as
     Alt+P and typed text, and a cursor report [CSI 1 ; m R] as F3. A terminal
     answers in order and answers DA1, so its DA1 reply says that [q] has been
-    answered, or never will be, as for the runtime's own queries.
+    answered, or never will be, as for the runtime's own queries. Every DA1
+    reply is alike, so one batch that ends with DA1 is in flight at a time: [q]
+    is sent once the terminal has answered the batches sent before it, or they
+    have been given up.
 
     A query sent any other way, such as with {!Terminal.send}, is not owed: its
     reply is never a {!Reply}, and one that is a control string, or a cursor

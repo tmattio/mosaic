@@ -2628,7 +2628,15 @@ let test_application_query () =
    metaSendsEscape is set where it was reset, and reset on exit. *)
 let test_late_answer_changes_modes () =
   let ((app, c) as t) =
-    clocked_app ~limit:3. [ (1., "\027[?0u\027[?1036;2$y") ]
+    clocked_app ~limit:3.
+      ~answer:(fun s ->
+        (* DA1, after the probe, which the terminal answers late. *)
+        if
+          String.ends_with ~suffix:"\027[c" s
+          && not (String.starts_with ~prefix:"\027 F" s)
+        then [ "\027[?64;1c" ]
+        else [])
+      [ (1., "\027[?0u\027[?1036;2$y\027[?64;1c") ]
   in
   let startup = Buffer.contents c.written in
   is_true ~msg:"S7C1T first" (String.starts_with ~prefix:"\027 F" startup);
@@ -2772,7 +2780,9 @@ let test_ctrl_c_ignores_releases () =
 (* Inside tmux, the probe goes to tmux; once it answers, passthrough is
    asked about with a wrapped DA1, and only once that answers are the
    questions about the outer terminal sent, wrapped, each group closed by its
-   own wrapped DA1. *)
+   own wrapped DA1. tmux answers every unwrapped DA1, the runtime's pixel size
+   query's too, and a DA1 says only that a batch was answered, not which:
+   without passthrough, that answer must not pass for the wrapped one. *)
 let test_tmux_groups () =
   let wrapped_da1 = "\027Ptmux;\027\027[c\027\\" in
   let tmux ~passthrough s =
@@ -2781,6 +2791,7 @@ let test_tmux_groups () =
     else if s = wrapped_da1 && passthrough then [ "\027[?64;1c" ]
     else if String.starts_with ~prefix:"\027Ptmux;\027\027_G" s && passthrough
     then [ "\027_Gi=31337;OK\027\\\027[?64;1c" ]
+    else if String.ends_with ~suffix:"\027[c" s then [ "\027[?1;2;4c" ]
     else []
   in
   let app, c =

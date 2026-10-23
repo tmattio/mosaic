@@ -116,6 +116,9 @@ type app = {
   (* Cursor reports owed by batches given up, which a late report answers
      first. *)
   mutable lost_reports : int;
+  (* Batches that end with DA1 and wait for the one in flight, oldest
+     first. *)
+  mutable waiting : (question * (string * Input.Decoder.owed)) list;
   (* Events decoded and not yet delivered. *)
   events : event Queue.t;
   (* The size the last resize event reported. *)
@@ -421,6 +424,23 @@ let send_batch t question (bytes, owed) =
   t.batches <- t.batches @ [ b ];
   b
 
+let ends_with_da1 = function
+  | Capabilities _ | Own | Application -> true
+  | Cursor -> false
+
+(* A batch that ends with DA1 is sent once no other is in flight. Every DA1
+   reply is alike, so a reply is told to answer a batch by the order of the
+   batches alone, and a batch whose DA1 never comes, such as a passthrough
+   check that tmux drops, would otherwise take the next batch's. *)
+let ask_batch t question bytes_owed =
+  if List.exists (fun b -> ends_with_da1 b.question) t.batches then (
+    if
+      (* The runtime's own query, already waiting, would be answered the
+       same. *)
+      not (question = Own && List.mem (question, bytes_owed) t.waiting)
+    then t.waiting <- t.waiting @ [ (question, bytes_owed) ])
+  else ignore (send_batch t question bytes_owed : batch)
+
 let da1 = Ansi.(to_string (query Device_attributes))
 
 (* A query whose reply the runtime takes as it comes, such as the pixel size,
@@ -428,11 +448,9 @@ let da1 = Ansi.(to_string (query Device_attributes))
    application's. *)
 let ask_own t q =
   if can_query t then
-    ignore
-      (send_batch t Own
-         ( Ansi.(to_string (query q)) ^ da1,
-           { Input.Decoder.cursor_reports = 0; string_replies = 0 } )
-        : batch)
+    ask_batch t Own
+      ( Ansi.(to_string (query q)) ^ da1,
+        { Input.Decoder.cursor_reports = 0; string_replies = 0 } )
 
 (* Input modes follow the configuration and the capabilities, and are set
    again whenever the capabilities change: setting a mode a terminal has is
@@ -524,7 +542,12 @@ let push t event =
 let close t b =
   if List.memq b t.batches then (
     Input.Decoder.settle t.decoder b.owed;
-    t.batches <- List.filter (fun b' -> b' != b) t.batches)
+    t.batches <- List.filter (fun b' -> b' != b) t.batches;
+    match t.waiting with
+    | (question, bytes_owed) :: rest when ends_with_da1 b.question ->
+        t.waiting <- rest;
+        ignore (send_batch t question bytes_owed : batch)
+    | _ -> ())
 
 let give_up t b =
   t.lost_reports <-
@@ -532,9 +555,7 @@ let give_up t b =
   close t b
 
 let ask t batch =
-  ignore
-    (send_batch t (Capabilities batch) (Terminal.Caps.ask t.evidence batch)
-      : batch)
+  ask_batch t (Capabilities batch) (Terminal.Caps.ask t.evidence batch)
 
 let ask_cursor t =
   send_batch t Cursor
@@ -565,17 +586,11 @@ let cursor_report t ~row ~col =
         | Application -> push t (Reply (Cursor { row; col }))
         | Own -> ())
 
-(* The oldest batch that ends with DA1, which the replies that are not cursor
-   reports answer. *)
-let replying t =
-  List.find_opt
-    (fun b ->
-      match b.question with
-      | Capabilities _ | Own | Application -> true
-      | Cursor -> false)
-    t.batches
+(* The batch that ends with DA1 in flight, which the replies that are not
+   cursor reports answer. *)
+let replying t = List.find_opt (fun b -> ends_with_da1 b.question) t.batches
 
-(* A DA1 reply answers the oldest batch that asked for one. The terminal
+(* A DA1 reply answers the batch in flight that asked for one. The terminal
    answers in order, so every query sent before it has been answered or never
    will be. *)
 let attributes_report t attributes =
@@ -694,7 +709,7 @@ let abort_paste t = Input.Decoder.cut_paste t.decoder (decoded t)
 
 let query t ~owed bytes =
   if t.lifecycle = `Ready && can_query t then
-    ignore (send_batch t Application (bytes ^ da1, owed) : batch)
+    ask_batch t Application (bytes ^ da1, owed)
 
 (* Adopts a primary layout transition: its operations go out with the next
    frame, and a frame after operations or a move of the live region redraws
@@ -1382,6 +1397,7 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           evidence;
           batches = [];
           lost_reports = 0;
+          waiting = [];
           events = Queue.create ();
           reported_size = (width, height);
           config;
