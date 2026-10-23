@@ -2382,3 +2382,57 @@ let%expect_test "T5: a tick fires once per frame, whatever else wakes the loop"
   run_until 1.0 application;
   Printf.printf "%d ticks, %.3f s of dt\n" !ticks !total;
   [%expect {| 60 ticks, 0.983 s of dt |}]
+
+(* Work done off the loop. *)
+
+let%expect_test "frames keep coming while posted messages are applied" =
+  (* A worker posts 1,000 messages whose updates take 1 ms each. A message
+     is applied when the loop takes it, inside the turn's budget, so a frame
+     comes about every frame interval; applied at the next frame, the whole
+     backlog ran inside one frame, a second without one. *)
+  let views = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> (0, Mosaic.Cmd.none));
+      update =
+        (fun msg n ->
+          match msg with
+          | `Go ->
+              ( n,
+                Mosaic.Cmd.perform (fun dispatch ->
+                    for _ = 1 to 1000 do
+                      dispatch `Work
+                    done) )
+          | `Work ->
+              stall 0.001;
+              (n + 1, Mosaic.Cmd.none));
+      view =
+        (fun n ->
+          views := (n, clock ()) :: !views;
+          Mosaic.text (string_of_int n));
+      subscriptions = (fun _ -> on_s `Go);
+    }
+  in
+  let t =
+    Matrix_test.create ~width:20 ~height:1
+      ~on_idle:(fun t ~until ->
+        if not (Matrix_test.settle t ~until) then
+          if Matrix_test.now t = 0 then Matrix_test.feed t "s"
+          else Matrix_test.stop t)
+      ()
+  in
+  terminal := Some t;
+  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+    ~process_perform:(fun work -> work ())
+    application;
+  let views = List.rev !views in
+  let gap =
+    List.fold_left
+      (fun (gap, last) (_, at) -> (max gap (at - last), at))
+      (0, 0) views
+    |> fst
+  in
+  Printf.printf "applied %d; %d views; longest gap %d ms\n"
+    (fst (List.hd (List.rev views)))
+    (List.length views) (gap / 1_000_000);
+  [%expect {| applied 1000; 60 views; longest gap 17 ms |}]

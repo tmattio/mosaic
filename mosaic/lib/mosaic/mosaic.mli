@@ -813,10 +813,11 @@ module Cmd : sig
   val perform : (('msg -> unit) -> unit) -> 'msg t
   (** [perform f] is a command that calls [f dispatch] asynchronously.
 
-      [f] may call [dispatch msg] any number of times; each call enqueues [msg]
-      for the next update cycle. By default the runtime runs [f] on a fresh
-      native thread so that long-running operations never block the UI loop.
-      This behaviour can be overridden with the [process_perform] argument of
+      [f] may call [dispatch msg] any number of times; each call queues [msg]
+      for the loop, which applies it with [update] when it takes it, a step of a
+      turn as an event is. By default the runtime runs [f] on a fresh native
+      thread so that long-running operations never block the UI loop. This
+      behaviour can be overridden with the [process_perform] argument of
       {!val-run}. *)
 
   val quit : 'msg t

@@ -1016,8 +1016,10 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
           timer fired;
           loop ()
       | Posted (Message msg) ->
+          (* Applied now, so the turn's budget counts its update. *)
           Atomic.decr runtime.posted_msgs;
           push_msg runtime msg;
+          process_pending_msgs runtime;
           loop ()
       | Posted Redraw ->
           redraw ();
