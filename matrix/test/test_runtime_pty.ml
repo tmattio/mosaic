@@ -9,10 +9,10 @@ let child =
 
 type session = { pty : Pty.t; pid : int; output : Buffer.t }
 
-let spawn ?(args = []) () =
+let spawn ?(args = []) ?(rows = 24) ?(cols = 80) () =
   let pty =
     Pty.spawn ~prog:child ~args
-      ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
+      ~winsize:Pty.{ rows; cols; xpixel = 0; ypixel = 0 }
       ()
   in
   Pty.set_nonblock pty;
@@ -80,8 +80,8 @@ let cooked s =
 
 let finish s = try Pty.close s with _ -> ()
 
-let with_session ?args f =
-  let s = spawn ?args () in
+let with_session ?args ?rows ?cols f =
+  let s = spawn ?args ?rows ?cols () in
   Fun.protect ~finally:(fun () -> finish s.pty) (fun () -> f s)
 
 (* A termination signal ends the run: the terminal is given back, then the
@@ -498,6 +498,70 @@ let test_keys_faster_than_frames () =
   | WEXITED 0 -> is_true ~msg:"cooked after" (cooked s)
   | _ -> fail "expected a normal exit"
 
+(* What a terminal of [cols] by [rows] shows of the output so far. *)
+let shown ?(rows = 24) ?(cols = 80) s =
+  let vte = Vte.create ~rows ~cols () in
+  ignore
+    (Vte.feed_string vte (Buffer.contents s.output) : Matrix_input.Reply.t list);
+  vte
+
+(* A run on the controlling terminal takes SIGWINCH, which the kernel sends
+   when the terminal's size changes, and draws its next frame at the new
+   size. *)
+let test_sigwinch () =
+  with_session ~args:[ "goodbye" ] @@ fun s ->
+  await s "SIZE 80x24";
+  let from = mark s in
+  Pty.resize s.pty ~rows:5 ~cols:30;
+  await ~from s "SIZE 30x5";
+  send s "q";
+  match wait_exit s with
+  | WEXITED 0 -> is_true ~msg:"cooked after" (cooked s)
+  | _ -> fail "expected a normal exit"
+
+(* A terminal that takes no output holds the run in its write: frames
+   larger together than what the terminal buffers wait until it reads, and
+   none is lost or cut. *)
+let test_back_pressure () =
+  let rows = 60 and cols = 200 in
+  with_session ~args:[ "fill" ] ~rows ~cols @@ fun s ->
+  await s "FILLED .";
+  let from = mark s in
+  (* Each frame rewrites every cell, 12,000 bytes and more: two of them
+     outgrow the terminal's buffer (about 20 KB on Linux), which nothing
+     reads meanwhile, and the keys typed meanwhile wait for the run. *)
+  String.iter
+    (fun c ->
+      send s (String.make 1 c);
+      Unix.sleepf 0.05)
+    "abcde";
+  Unix.sleepf 0.3;
+  (match Unix.waitpid [ Unix.WNOHANG ] s.pid with
+  | 0, _ -> ()
+  | _ -> fail "the program ended while its output was held");
+  let deadline = Unix.gettimeofday () +. 10. in
+  let complete () =
+    let vte = shown ~rows ~cols s in
+    Vte.text vte 0 = "FILLED e"
+    && Vte.text vte (rows - 1) = String.make cols 'e'
+  in
+  while (not (complete ())) && Unix.gettimeofday () < deadline do
+    try await ~timeout:0.05 s " " with _ -> ()
+  done;
+  is_true ~msg:"more than the terminal buffers"
+    (Buffer.length s.output - from > 24_000);
+  let vte = shown ~rows ~cols s in
+  equal ~msg:"the last frame, whole" string "FILLED e" (Vte.text vte 0);
+  for y = 1 to rows - 1 do
+    equal
+      ~msg:(Printf.sprintf "row %d" y)
+      string (String.make cols 'e') (Vte.text vte y)
+  done;
+  send s "q";
+  match wait_exit s with
+  | WEXITED 0 -> is_true ~msg:"cooked after" (cooked s)
+  | _ -> fail "expected a normal exit"
+
 (* A program that calls [exit] inside a run ends with the terminal given
    back: its exit path restores it, as an abort does. *)
 let test_exit_inside_a_run () =
@@ -552,6 +616,10 @@ let () =
            [
              test "keys faster than frames are painted"
                test_keys_faster_than_frames;
+             test "SIGWINCH has the next frame drawn at the new size"
+               test_sigwinch;
+             test "a terminal that takes no output holds the run"
+               test_back_pressure;
            ]);
       group "Handoff"
         (if not supported then []
