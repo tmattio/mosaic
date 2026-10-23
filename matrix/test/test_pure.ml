@@ -13,4 +13,11 @@ let () =
   ignore (Matrix_input.Decoder.create () : Matrix_input.Decoder.t);
   ignore (Matrix_text.grapheme_count "pure" : int);
   ignore (Matrix_charts.empty () : Matrix_charts.t);
-  ignore (Ansi.strip "pure" : string)
+  ignore (Ansi.strip "pure" : string);
+  let terminal =
+    Matrix_terminal.make ~output:ignore ~tty:false
+      (Matrix_terminal.Caps.derive
+         (Matrix_terminal.Caps.evidence
+            (Matrix_terminal.Caps.env (fun _ -> None) ~win32:false)))
+  in
+  Matrix_terminal.close terminal

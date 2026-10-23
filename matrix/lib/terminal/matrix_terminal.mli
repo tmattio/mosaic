@@ -2,8 +2,10 @@
 
     [Terminal] manages terminal protocol state and writes escape sequences
     through a caller-provided {e output} callback. The caller ({e runtime}) owns
-    all I/O resources: no {!Unix.select}, no threads, no wakeup pipe, no signal
-    handling.
+    all I/O: this library reads no descriptor, waits for nothing, starts no
+    thread and handles no signal, so a program with no operating system under it
+    can use it. The device itself, its settings and its signals, is
+    [Matrix_tty]'s.
 
     {2:caps_detect Capabilities}
 
@@ -343,41 +345,3 @@ val reset_state : t -> unit
     mode, scroll region, and alternate screen. Resets SGR attributes. Cursor
     colour, cursor style, and the window title are reset only when they were
     changed through the handle. *)
-
-(** {1:tty_helpers TTY helpers}
-
-    Stateless functions for terminal I/O. These do not require a {!type-t}
-    session handle. *)
-
-type raw_saved = { termios : Unix.terminal_io; iexten : bool }
-(** The terminal state captured by {!set_raw}: the record [Unix.tcgetattr]
-    models, plus the IEXTEN local flag, which [Unix.terminal_io] cannot express.
-    IEXTEN gates the implementation-defined input specials — VDISCARD (^O) and
-    VLNEXT (^V) — that the line discipline processes even in non-canonical mode.
-*)
-
-val set_raw : Unix.file_descr -> raw_saved
-(** [set_raw fd] puts [fd] into raw mode (no echo, no canonical processing, no
-    terminal-generated signals, no extended input specials — a raw terminal that
-    leaves IEXTEN set never sees ^O, the kernel eats it) and returns the
-    original state for later restoration with {!restore}. File status flags such
-    as [O_NONBLOCK] are owned by the I/O backend and are left unchanged. *)
-
-val restore : Unix.file_descr -> raw_saved -> unit
-(** [restore fd saved] restores [fd] to the given saved state once the output
-    written to it has been sent, keeping input not yet read for whoever reads
-    next, without changing its file status flags. *)
-
-val size : Unix.file_descr -> int * int
-(** [size fd] is the terminal dimensions as [(cols, rows)]. Falls back to
-    [(80, 24)] on failure. *)
-
-val is_tty : Unix.file_descr -> bool
-(** [is_tty fd] is [true] iff [fd] is a terminal. *)
-
-val flush_input : Unix.file_descr -> unit
-(** [flush_input fd] discards unread input on [fd] via [tcflush]. *)
-
-val enable_vt : Unix.file_descr -> unit
-(** [enable_vt fd] enables VT100 processing on Windows consoles. No-op on Unix.
-    Failures are silently ignored. *)

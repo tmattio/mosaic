@@ -54,13 +54,13 @@
  (name test_terminal)
  (package matrix)
  (modules test_terminal)
- (libraries
-  windtrap
-  matrix.terminal
-  unix
-  matrix.ansi
-  matrix.input
-  matrix.pty))
+ (libraries windtrap matrix.terminal matrix.ansi matrix.input))
+
+(test
+ (name test_tty)
+ (package matrix)
+ (modules test_tty)
+ (libraries windtrap matrix.tty matrix.pty unix))
 
 (test
  (name test_screen)
@@ -169,5 +169,6 @@
   matrix.screen
   matrix.image
   matrix.charts
-  matrix.vte)
+  matrix.vte
+  matrix.terminal)
  (forbidden_libraries unix threads))

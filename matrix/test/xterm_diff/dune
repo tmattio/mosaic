@@ -9,4 +9,4 @@
 (executable
  (name input_diff)
  (modules input_diff)
- (libraries unix matrix))
+ (libraries unix matrix matrix.tty))

@@ -69,7 +69,7 @@ let write_file path s =
 
 (* The replies xterm sends to the runtime's probe, read raw for a second. *)
 let agent_raw path =
-  let saved = Matrix.Terminal.set_raw Unix.stdin in
+  let saved = Matrix_tty.raw Unix.stdin in
   let env = Matrix.Terminal.Caps.env Sys.getenv_opt ~win32:false in
   let probe, _ =
     Matrix.Terminal.Caps.ask (Matrix.Terminal.Caps.evidence env) Probe
@@ -82,7 +82,7 @@ let agent_raw path =
     | [], _, _ -> ()
     | _ -> Buffer.add_subbytes got buf 0 (Unix.read Unix.stdin buf 0 4096)
   done;
-  Matrix.Terminal.restore Unix.stdin saved;
+  Matrix_tty.restore Unix.stdin saved;
   write_file path (escape (Buffer.contents got) ^ "\n")
 
 let agent_caps path =

@@ -1,0 +1,11 @@
+(library
+ (instrumentation
+  (backend ppx_windtrap.coverage))
+ (instrumentation
+  (backend ppx_windtrap.mutate))
+ (name matrix_tty)
+ (public_name matrix.tty)
+ (libraries unix)
+ (foreign_stubs
+  (language c)
+  (names tty_stubs)))

@@ -1,13 +1,12 @@
-/* The runtime's clock and signal handlers.
+/* The runtime's signal handlers.
 
-   OCaml has no monotonic clock in its distribution, and an OCaml signal
-   handler runs only at the next point where OCaml code may run: a signal
-   that lands after the runtime's last check and before select(2) blocks is
-   not seen until something else wakes the loop, and SIGABRT, which abort()
-   raises and never returns from, reaches no such point at all. These
-   handlers are C: they record the signal for each run it concerns and
-   write one byte to that run's wake pipe, which is async-signal-safe, so a
-   waiting loop always wakes. */
+   An OCaml signal handler runs only at the next point where OCaml code may
+   run: a signal that lands after the runtime's last check and before
+   select(2) blocks is not seen until something else wakes the loop, and
+   SIGABRT, which abort() raises and never returns from, reaches no such point
+   at all. These handlers are C: they record the signal for each run it
+   concerns and write one byte to that run's wake pipe, which is
+   async-signal-safe, so a waiting loop always wakes. */
 
 #define _GNU_SOURCE
 #include <caml/alloc.h>
@@ -27,28 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
-#include <time.h>
 #include <unistd.h>
 #endif
-
-/* Clock */
-
-CAMLprim value matrix_now_ns(value unit) {
-  (void)unit;
-#ifdef _WIN32
-  static LARGE_INTEGER frequency;
-  LARGE_INTEGER counter;
-  if (frequency.QuadPart == 0) QueryPerformanceFrequency(&frequency);
-  QueryPerformanceCounter(&counter);
-  return Val_long((intnat)(counter.QuadPart / frequency.QuadPart) * 1000000000 +
-                  (intnat)(counter.QuadPart % frequency.QuadPart) * 1000000000 /
-                      frequency.QuadPart);
-#else
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return Val_long((intnat)ts.tv_sec * 1000000000 + ts.tv_nsec);
-#endif
-}
 
 #ifdef _WIN32
 
@@ -60,7 +39,6 @@ CAMLprim value matrix_signal_restore(value s) { (void)s; return Val_unit; }
 CAMLprim value matrix_signal_ignored(value s) { (void)s; return Val_false; }
 CAMLprim value matrix_signal_raise(value s) { (void)s; return Val_unit; }
 CAMLprim value matrix_signal_stop_group(value u) { (void)u; return Val_unit; }
-CAMLprim value matrix_is_controlling(value fd) { (void)fd; return Val_false; }
 CAMLprim value matrix_run_register(value controlling) {
   (void)controlling;
   caml_failwith("Matrix: no wake pipe on Windows");
@@ -86,12 +64,6 @@ CAMLprim value matrix_run_reset_bytes(value id, value s) {
 CAMLprim value matrix_fatal_restore(value u) { (void)u; return Val_unit; }
 
 #else
-
-/* Whether [fd] is the process's controlling terminal: only that terminal
-   has a foreground process group the process can read. */
-CAMLprim value matrix_is_controlling(value fd) {
-  return Val_bool(tcgetpgrp(Int_val(fd)) != -1);
-}
 
 #define SIGNALS 65
 

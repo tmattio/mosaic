@@ -1,8 +1,3 @@
-(* C stubs *)
-
-external get_size : Unix.file_descr -> int * int = "terminal_get_size"
-external enable_vt_raw : Unix.file_descr -> unit = "terminal_enable_vt"
-
 (* Types *)
 
 type mouse_mode =
@@ -524,42 +519,3 @@ let reset_state t =
   t.cursor.color <- (1., 1., 1., 1.)
 
 let close t = reset_state t
-
-(* TTY helpers *)
-
-let is_tty fd = try Unix.isatty fd with Unix.Unix_error _ -> false
-
-external get_iexten : Unix.file_descr -> bool = "terminal_get_iexten"
-external set_iexten : Unix.file_descr -> bool -> unit = "terminal_set_iexten"
-
-type raw_saved = { termios : Unix.terminal_io; iexten : bool }
-
-let set_raw fd =
-  let termios = Unix.tcgetattr fd in
-  let iexten = get_iexten fd in
-  let raw =
-    {
-      termios with
-      c_echo = false;
-      c_icanon = false;
-      c_isig = false;
-      c_vmin = 1;
-      c_vtime = 0;
-      c_ixon = false;
-      c_icrnl = false;
-    }
-  in
-  Unix.tcsetattr fd Unix.TCSANOW raw;
-  (* IEXTEN is not part of [Unix.terminal_io], so the record write above
-     leaves it set — and with icanon off the line discipline still processes
-     VDISCARD (^O) and VLNEXT (^V), eating those bytes before any read. *)
-  set_iexten fd false;
-  { termios; iexten }
-
-let restore fd saved =
-  Unix.tcsetattr fd Unix.TCSADRAIN saved.termios;
-  set_iexten fd saved.iexten
-
-let size fd = try get_size fd with _ -> (80, 24)
-let flush_input fd = try Unix.tcflush fd Unix.TCIFLUSH with _ -> ()
-let enable_vt fd = try enable_vt_raw fd with _ -> ()

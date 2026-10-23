@@ -13,6 +13,7 @@
   matrix.input
   matrix.terminal
   matrix.text
+  matrix.tty
   threads.posix
   unix)
  (foreign_stubs

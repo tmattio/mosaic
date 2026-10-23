@@ -44,9 +44,7 @@ let pp_event ppf = function
   | Invalid s -> Format.fprintf ppf "Invalid %S" s
   | Reply r -> Format.fprintf ppf "Reply %a" Input.Reply.pp r
 
-(* The clock and the signal handlers, in C (matrix_stubs.c). *)
-
-external now_ns : unit -> int = "matrix_now_ns" [@@noalloc]
+(* The signal handlers, in C (matrix_stubs.c). *)
 
 (* [signal_take s always restart] takes [s] if its action is the default,
    or whatever it is when [always], and says whether it did. *)
@@ -55,7 +53,6 @@ external signal_restore : int -> unit = "matrix_signal_restore"
 external signal_ignored : int -> bool = "matrix_signal_ignored"
 external signal_raise : int -> unit = "matrix_signal_raise"
 external signal_stop_group : unit -> unit = "matrix_signal_stop_group"
-external is_controlling : Unix.file_descr -> bool = "matrix_is_controlling"
 
 (* The runs the handlers know: [run_register controlling] is a run's id and
    its wake pipe's read and write ends. *)
@@ -158,9 +155,11 @@ module Backend = struct
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) -> -1
 
   let unix ?(input = Unix.stdin) ?(output = Unix.stdout) () =
-    let input_is_tty = Terminal.is_tty input in
-    let output_is_tty = Terminal.is_tty output in
-    let controlling = is_controlling input || is_controlling output in
+    let input_is_tty = Matrix_tty.is_tty input in
+    let output_is_tty = Matrix_tty.is_tty output in
+    let controlling =
+      Matrix_tty.is_controlling input || Matrix_tty.is_controlling output
+    in
     let id, wake_r, wake_w = run_register controlling in
     let wake () =
       try ignore (Unix.write wake_w wake_byte 0 1 : int)
@@ -172,7 +171,7 @@ module Backend = struct
       match (raw, !saved) with
       | true, None when input_is_tty ->
           run_settings id input output;
-          saved := Some (Terminal.set_raw input)
+          saved := Some (Matrix_tty.raw input)
       | false, Some termios ->
           saved := None;
           (* Restoring from the background would stop the process with
@@ -180,7 +179,7 @@ module Backend = struct
           let mask = Thread.sigmask SIG_BLOCK [ Sys.sigttou ] in
           Fun.protect
             ~finally:(fun () -> ignore (Thread.sigmask SIG_SETMASK mask))
-            (fun () -> Terminal.restore input termios);
+            (fun () -> Matrix_tty.restore input termios);
           run_forget_settings id
       | _ -> ()
     in
@@ -189,7 +188,8 @@ module Backend = struct
       let timeout =
         match until with
         | None -> -1.
-        | Some until -> Float.max 0. (Float.of_int (until - now_ns ()) *. 1e-9)
+        | Some until ->
+            Float.max 0. (Float.of_int (until - Matrix_tty.now ()) *. 1e-9)
       in
       let readable, _, _ =
         try Unix.select fds [] [] timeout
@@ -199,15 +199,19 @@ module Backend = struct
       reading && List.mem input readable
     in
     {
-      now = now_ns;
+      now = Matrix_tty.now;
       wait;
       wake;
       take_signals = signals_from_handlers id;
       read_input = read_input input;
       write_output = write_all id output;
-      terminal_size = (fun () -> Terminal.size output);
+      (* A descriptor with no window, a pipe or a file, is given the size
+         of a classic terminal. *)
+      terminal_size =
+        (fun () -> Option.value (Matrix_tty.window output) ~default:(80, 24));
       set_raw_mode;
-      flush_input = (fun () -> if input_is_tty then Terminal.flush_input input);
+      flush_input =
+        (fun () -> if input_is_tty then Matrix_tty.flush_input input);
       input_is_tty;
       output_is_tty;
       controlling;
