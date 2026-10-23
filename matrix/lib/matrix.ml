@@ -70,14 +70,19 @@ module Backend = struct
     env : Terminal.Caps.env;
   }
 
-  (* The wake pipes of the backends [unix] made, by their [wake], which a
-     backend built from one keeps. *)
-  let pipes : ((unit -> unit) * Unix.file_descr) list ref = ref []
+  (* The input and the wake pipe of the backends [unix] made, by their
+     [wake], which a backend built from one keeps. *)
+  let pipes : ((unit -> unit) * (Unix.file_descr * Unix.file_descr)) list ref =
+    ref []
+
   let pipes_lock = Mutex.create ()
 
+  let descriptors b =
+    Mutex.protect pipes_lock (fun () -> List.assq_opt b.wake !pipes)
+
   let wake_fd b =
-    match Mutex.protect pipes_lock (fun () -> List.assq_opt b.wake !pipes) with
-    | Some fd -> fd
+    match descriptors b with
+    | Some (_, wake) -> wake
     | None -> invalid_arg "Matrix.Backend.wake_fd: not a backend unix made"
 
   let drain fd =
@@ -124,7 +129,8 @@ module Backend = struct
     in
     let wake_r = Signal.wake_fd holder in
     let wake () = Signal.wake holder in
-    Mutex.protect pipes_lock (fun () -> pipes := (wake, wake_r) :: !pipes);
+    Mutex.protect pipes_lock (fun () ->
+        pipes := (wake, (input, wake_r)) :: !pipes);
     let saved = ref None in
     let set_raw_mode raw =
       match (raw, !saved) with
@@ -147,7 +153,9 @@ module Backend = struct
       let timeout =
         match until with
         | None -> -1.
-        | Some until -> Float.max 0. (Float.of_int (until - Tty.now ()) *. 1e-9)
+        | Some until ->
+            let now = Tty.now () in
+            if until <= now then 0. else Float.of_int (until - now) *. 1e-9
       in
       let readable, _, _ =
         try Unix.select fds [] [] timeout
@@ -313,6 +321,8 @@ type 'msg app = {
   events : event Queue.t;
   config : config;
   backend : Backend.t;
+  (* The input and the wake of a backend [Backend.unix] made. *)
+  descriptors : (Unix.file_descr * Unix.file_descr) option;
   owner : int;
   screen : Screen.t;
   (* One retained writer owns the complete terminal frame. *)
@@ -347,9 +357,17 @@ type 'msg app = {
   mailbox : 'msg list Atomic.t;
   accepting : bool Atomic.t;
   posted : 'msg Queue.t;
-  (* Whether a turn has begun, and whether each kind of work still owes the
-     current turn the step every turn gives it. *)
+  (* Whether a turn has begun since the run last had nothing to do, and
+     whether each kind of work still owes the current turn the step every
+     turn gives it. *)
   mutable begun : bool;
+  (* The time of the latest step, against which the turn's budget and the
+     frame interval are measured. *)
+  mutable latest : int;
+  (* Whether [next]'s wait has just ended, and whether the input was
+     readable then: the turn after it need not look again. *)
+  mutable waited : bool;
+  mutable waited_ready : bool;
   mutable owe_event : bool;
   mutable owe_timer : bool;
   mutable owe_post : bool;
@@ -777,7 +795,7 @@ let attributes_report t attributes =
       close t b;
       match b.question with
       | Capabilities q ->
-          if q = Probe then t.rtt <- t.backend.now () - b.sent;
+          if q = Probe then t.rtt <- max 0 (t.now - b.sent);
           t.evidence <- Terminal.Caps.answered t.evidence q ~attributes;
           Option.iter (ask t) (Terminal.Caps.next t.evidence q)
       | Application -> push t (Reply (Primary_attributes attributes))
@@ -860,16 +878,26 @@ let read_input t ~ready =
      | _ -> ());
   expire t
 
-let wait t ~until =
+(* Waits in the backend, which says whether the input is readable. A wait
+   until a time already past ([past]) looks without waiting. *)
+let wait_only t ~until =
   t.waiting_backend <- true;
   match t.backend.wait ~until ~reading:(not t.input_ended) with
   | ready ->
       t.waiting_backend <- false;
-      t.now <- t.backend.now ();
       ready
   | exception exn ->
       t.waiting_backend <- false;
       raise exn
+
+let past = Some min_int
+
+(* The run's own waits, as it takes and gives back the terminal, are on its
+   clock. *)
+let wait t ~until =
+  let ready = wait_only t ~until in
+  t.now <- t.backend.now ();
+  ready
 
 (* Reads input until every batch in [batches] is answered, the wait for an
    answer since [from] is over, or the input ends. The wait grows if the
@@ -1414,7 +1442,13 @@ let take_fatal_reset t =
    for replies, and a paste in progress is cut ([release] says why). Batches
    still owed are dropped: their answers went to whoever has the terminal. *)
 let settle t =
-  if t.batches <> [] && can_query t then await t ~from:t.now t.batches;
+  (* Each batch is waited for until as long after it was sent as any answer
+     is: the probe's, already waited for as the run began, is not waited for
+     again. *)
+  if t.batches <> [] && can_query t then
+    await t
+      ~from:(List.fold_left (fun from b -> max from b.sent) min_int t.batches)
+      t.batches;
   let kept = Queue.create () in
   Queue.iter (function Reply _ as e -> Queue.push e kept | _ -> ()) t.events;
   Queue.clear t.events;
@@ -1527,17 +1561,15 @@ let render_blocked t =
       false
   | None -> false
 
-(* A frame is due once its interval has passed by the clock as the turn's
-   work ends: work that took the turn's budget may have taken the interval
-   with it. *)
+(* A frame is due once its interval has passed by the latest step's time:
+   work that took the turn's budget may have taken the interval with it. *)
 let frame_due t =
   t.dirty && (not t.released)
-  && (t.now >= t.last_frame + t.interval
-     || t.backend.now () >= t.last_frame + t.interval)
+  && t.latest >= t.last_frame + t.interval
   && not (render_blocked t)
 
-(* The time the turn waits until: now when work is left, otherwise the
-   earliest deadline, if any. *)
+(* The time the run next needs a step if nothing it waits for comes first:
+   now when work is left, otherwise the earliest deadline, if any. *)
 let wait_deadline t =
   if
     (not (Queue.is_empty t.events))
@@ -1621,8 +1653,17 @@ let take_posts t =
   | [] -> ()
   | posts -> List.iter (fun f -> Queue.push f t.posted) (List.rev posts)
 
-let begin_turn t =
-  let ready = wait t ~until:(wait_deadline t) in
+(* A turn begins at [now]. The input is looked at without waiting, unless
+   [next]'s wait has just said whether it is readable; then the signals, the
+   input and the posts received are taken. *)
+let begin_turn t ~now =
+  let ready =
+    if t.waited then (
+      t.waited <- false;
+      t.waited_ready)
+    else wait_only t ~until:past
+  in
+  t.now <- now;
   (match received t with [] -> () | s -> on_signals t s);
   if Queue.is_empty t.events then read_input t ~ready else expire t;
   take_posts t;
@@ -1636,14 +1677,18 @@ let start_frame t =
   t.dirty <- false;
   t.drawing <- true;
   t.void <- false;
-  t.last_frame <- t.backend.now ();
+  t.last_frame <- t.latest;
   Frame
 
-(* Work goes on until one frame interval has passed since the clock was read
-   for the turn. *)
-let within_budget t = t.backend.now () - t.now < t.interval
+(* Work goes on until one frame interval has passed since the turn began. *)
+let within_budget t = t.latest - t.now < t.interval
 
-let rec step t =
+(* The turn has no step left: the run waits for what {!fds} and
+   {!deadline} say. Raised rather than returned in an option, so that
+   [next]'s idle turns allocate nothing. *)
+exception Idle
+
+let rec work t =
   if t.owe_event && not (Queue.is_empty t.events) then (
     t.owe_event <- false;
     deliver t (Queue.pop t.events))
@@ -1660,9 +1705,7 @@ let rec step t =
     Posted (Queue.pop t.posted)
   else if t.input_ended && Queue.is_empty t.events then Stopped
   else if frame_due t then begin_frame t
-  else (
-    begin_turn t;
-    step t)
+  else raise_notrace Idle
 
 (* The latest size is applied before a frame; a change of the usable size is
    returned first. The frame follows unless it must wait for the cursor
@@ -1674,24 +1717,58 @@ and begin_frame t =
     t.usable <- usable;
     t.frame_follows <- not (render_blocked t);
     Event (Resize (fst usable, snd usable)))
-  else if render_blocked t then (
-    begin_turn t;
-    step t)
+  else if render_blocked t then raise_notrace Idle
   else start_frame t
 
-let next t =
+(* A turn begins after every time the run had nothing to do, and when the
+   work of the last one is done. The first has the input read while the
+   terminal was taken, and what was posted and set since. *)
+let turn t =
+  begin_turn t ~now:t.latest;
+  match work t with
+  | step -> step
+  | exception Idle ->
+      t.begun <- false;
+      raise_notrace Idle
+
+let step_exn t ~now =
   check t;
+  if now < t.latest then
+    invalid_arg "Matrix.step: now is earlier than an earlier step's";
+  t.latest <- now;
   t.drawing <- false;
   if t.frame_follows then (
     t.frame_follows <- false;
     start_frame t)
-  else (
-    (* The first turn has the input read while the terminal was taken, and
-       what was posted and set since. *)
-    if not t.begun then (
-      t.begun <- true;
-      begin_turn t);
-    step t)
+  else if not t.begun then (
+    t.begun <- true;
+    turn t)
+  else match work t with step -> step | exception Idle -> turn t
+
+let step t ~now =
+  match step_exn t ~now with step -> Some step | exception Idle -> None
+
+let deadline t =
+  check t;
+  wait_deadline t
+
+let fds t =
+  check t;
+  match t.descriptors with
+  | Some (input, wake) -> if t.input_ended then [ wake ] else [ input; wake ]
+  | None -> []
+
+let clock = Tty.now
+
+(* [step] waiting with [select(2)], through the backend: the wait says
+   whether the input is readable, so the turn after it looks no further. *)
+let rec next t =
+  match step_exn t ~now:(t.backend.now ()) with
+  | step -> step
+  | exception Idle ->
+      t.waited_ready <- wait_only t ~until:(wait_deadline t);
+      t.waited <- true;
+      next t
 
 (* Running *)
 
@@ -1731,6 +1808,7 @@ let make backend config =
     events = Queue.create ();
     config;
     backend;
+    descriptors = Backend.descriptors backend;
     owner = thread_id ();
     screen;
     submit_buf = Ansi.Writer.create 4096;
@@ -1753,6 +1831,9 @@ let make backend config =
     accepting = Atomic.make true;
     posted = Queue.create ();
     begun = false;
+    latest = now;
+    waited = false;
+    waited_ready = false;
     owe_event = false;
     owe_timer = false;
     owe_post = false;
@@ -1835,10 +1916,28 @@ let measure_widths t =
     in
     await t ~from:b.sent [ b ])
 
+(* An output that is not a terminal has no window to read a size from. The
+   size its terminal has already reported in band, as the transport of a
+   served session writes it ahead of the run, is taken before the first
+   frame: the input there is read and decoded, and kept for the run. *)
+let take_reported_size t =
+  if not t.backend.output_is_tty then (
+    read_input t ~ready:(wait_only t ~until:past);
+    match t.size_report with
+    | Reported (cols, rows) ->
+        t.width <- max 1 cols;
+        t.height <- max 1 rows;
+        t.size_report <- Applied;
+        t.primary <-
+          Primary.create ~terminal_height:t.height
+            ~min_live_height:t.config.min_tui_height
+    | Applied | Read -> ())
+
 let setup t =
   take_signals t;
   take_fatal_reset t;
   take_raw_mode t;
+  take_reported_size t;
   let answered = probe t in
   take_screen t;
   if answered then measure_widths t;

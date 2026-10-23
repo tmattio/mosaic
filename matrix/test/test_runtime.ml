@@ -645,6 +645,48 @@ let test_post_from_other_domains () =
   equal ~msg:"every post" int (producers * each) !received;
   equal ~msg:"in order per producer" int 0 !disordered
 
+(* The caller drives the run: [step] never waits, says [None] when the run
+   has nothing to do, and [deadline] says until when the caller may wait.
+   The run's time is the steps': a frame asked for comes once the caller's
+   time reaches the frame's deadline. *)
+let test_step_never_waits () =
+  let f = fake () in
+  f.on_wait <- (fun _ ~until:_ -> fail "a step waited");
+  run ~config:(quiet ~fps:10. ()) f (fun app ->
+      let rec until_idle ~now frames =
+        match Matrix.step app ~now with
+        | Some Frame ->
+            Matrix.draw app ignore;
+            until_idle ~now (frames + 1)
+        | Some _ -> until_idle ~now frames
+        | None -> frames
+      in
+      equal ~msg:"the first frame, then nothing" int 1 (until_idle ~now:0 0);
+      equal ~msg:"an idle run has no deadline" (option int) None
+        (Matrix.deadline app);
+      Matrix.request_redraw app;
+      equal ~msg:"no frame before its interval" int 0
+        (until_idle ~now:(ms 50) 0);
+      equal ~msg:"the deadline is the frame's" (option int)
+        (Some (ms 100))
+        (Matrix.deadline app);
+      equal ~msg:"the frame at its deadline" int 1 (until_idle ~now:(ms 100) 0);
+      raises_match ~msg:"a step earlier than the last raises"
+        (function Invalid_argument _ -> true | _ -> false)
+        (fun () -> ignore (Matrix.step app ~now:(ms 99))))
+
+(* A size the terminal reported before the run, as the transport of a served
+   session writes it ahead of the run, is the run's size from the start on
+   an output that is not a terminal: no frame is drawn at another size. *)
+let test_size_reported_before_the_run () =
+  let f = fake ~input:[ "\027[48;5;30;0;0t" ] () in
+  run ~config:(quiet ()) f (fun app ->
+      equal ~msg:"the reported size" (pair int int) (30, 5) (Matrix.size app);
+      match Matrix.next app with
+      | Frame -> Matrix.draw app ignore
+      | Event e -> failf "expected the first frame, got %a" Matrix.pp_event e
+      | _ -> fail "expected the first frame")
+
 let test_post_after_the_run () =
   let f = fake () in
   let app = run ~config:(quiet ()) f Fun.id in
@@ -2363,6 +2405,14 @@ let test_release_drops_typeahead () =
 
 (* Before giving the terminal away, the runtime waits for an answer only if
    a reply is owed; replies decoded meanwhile are kept, other input dropped. *)
+(* A batch still owed when the run ends was sent, and waited for, already:
+   its answer is waited for until as long after it was sent as any answer,
+   so a silent terminal's probe is not waited for a second time. *)
+let test_settle_counts_from_the_send () =
+  let f = fake ~tty:true () in
+  run ~config:(quiet ()) f (fun _ -> ());
+  equal ~msg:"the run ends at the probe's deadline" int (ms 500) f.now
+
 let test_release_settles_only_when_owed () =
   let f = fake ~tty:true () in
   f.answer <-
@@ -2826,6 +2876,7 @@ let () =
           test "the turn budget, a property" test_turn_budget_property;
           test "post from other domains" test_post_from_other_domains;
           test "post after the run" test_post_after_the_run;
+          test "a step never waits" test_step_never_waits;
           test "frame calls outside a frame" test_frame_calls_outside_a_frame;
           test "a call while the loop waits" test_call_while_waiting;
         ];
@@ -2840,6 +2891,8 @@ let () =
           test "startup preserves input and partial paste"
             test_startup_preserves_input_and_partial_paste;
           test "startup EOF finalizes input" test_startup_eof_finalizes_input;
+          test "a size reported before the run"
+            test_size_reported_before_the_run;
           test "giving back runs every undo" test_give_back_runs_every_undo;
           test "setup rolls back" test_setup_rolls_back;
           test "nested runs" test_nested_runs;
@@ -2996,6 +3049,8 @@ let () =
           test "release drops typeahead" test_release_drops_typeahead;
           test "release settles only when owed"
             test_release_settles_only_when_owed;
+          test "the settle counts from the send"
+            test_settle_counts_from_the_send;
           test "release discards partial input"
             test_release_discards_partial_input;
           test "release hands over below the transcript"

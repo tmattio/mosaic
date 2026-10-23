@@ -346,27 +346,34 @@ val run : ?backend:Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
 
 (** {1:loop The loop}
 
-    A run proceeds in turns. A turn:
+    The application takes the run's work one {e step} at a time. {!val-step}
+    gives the next step at the time the caller gives it, and never waits for
+    one. When the run has nothing to do it returns [None], and the caller waits
+    until one of the descriptors {!fds} is readable or the time {!deadline}
+    comes, then asks again. {!next} is that loop, waiting with [select(2)]. A
+    program that waits with an event loop of its own, such as Eio's, calls
+    {!val-step} and waits with that loop instead. With nothing to wait for,
+    {!deadline} is [None], so an idle application costs no wakeups.
 
-    + waits for input, a {!wake}, a {!post}, a signal, or the earliest deadline:
-      a timer ({!at}), the next frame, or a terminal that has gone silent
-      mid-sequence. With nothing to wait for, it waits without a deadline, so an
-      idle application costs no wakeups;
-    + reads the clock once ({!now});
+    Steps come from {e turns}. A turn begins with the first step after [None],
+    and when the work of the turn before is done. A turn:
+
+    + takes the time of the step that began it as its own ({!now});
     + acts on the signals received;
-    + reads the input once and decodes it, unless an event decoded earlier is
-      still waiting, which leaves the rest in the operating system's buffer;
-    + takes the functions posted since the last turn;
-    + returns work, one step per call of {!next}: first one step of each kind
-      that has some (an input {!Event}, a {!Timer} that came due, a {!Posted}
-      function), then the events, then the timers, then the posted functions,
-      until none is left or one frame interval has passed since the clock was
-      read. So a flood of one kind delays the others by at most a frame, and
-      within a kind everything comes in order;
+    + reads the input once, without waiting, and decodes it, unless an event
+      decoded earlier is still waiting, which leaves the rest in the operating
+      system's buffer;
+    + takes the messages posted since the last turn;
+    + returns work, one step at a time: first one step of each kind that has
+      some (an input {!Event}, a {!Timer} that came due, a {!Posted} message),
+      then the events, then the timers, then the posted messages, until none is
+      left or one frame interval has passed between the turn's time and the
+      latest step's. So a flood of one kind delays the others by at most a
+      frame, and within a kind everything comes in order;
     + returns a {!Frame} if one was asked for ({!request_redraw}), one frame
-      interval has passed since the last when the work ends (work that took the
-      budget may have taken the interval), and the runtime waits for no answer
-      from the terminal (the place of the live region after a resize or a
+      interval has passed since the last by the latest step's time (work that
+      took the budget may have taken the interval), and the runtime waits for no
+      answer from the terminal (the place of the live region after a resize or a
       release). Before it, if the terminal's size changed, a {!Resize}.
 
     Each step is done before the next is asked for, so the application handles
@@ -390,17 +397,72 @@ type 'msg step =
       (** The input ended: every event decoded before its end has been returned.
           Every later call returns [Stopped]. *)
 
+val step : 'msg app -> now:int -> 'msg step option
+(** [step app ~now] is the next step of the run at the time [now], or [None]
+    when the run has nothing to do until one of {!fds} is readable or the time
+    {!deadline} comes. It never waits for input, a post or a time: it looks at
+    the input without waiting, and reads and decodes what is there. It blocks
+    while the terminal takes no output, and while the process is stopped by
+    SIGTSTP ({{!signals}Signals}). [now] must be on the clock {!deadline}
+    answers in, and never earlier than the time of the step before
+    ({{!time}Time}).
+
+    Raises [Invalid_argument] if [now] is earlier than the time of the step
+    before. *)
+
+val fds : 'msg app -> Unix.file_descr list
+(** [fds app] is the descriptors the run waits for: once one of them is
+    readable, {!val-step} has something to do. They are the run's choice, and
+    may differ from one wait to the next: the input while it has not ended, and
+    the run's wake, which {!post} and the signal handlers write. A caller must
+    wait for them to be readable, and must never read them: what it reads, the
+    run never sees. *)
+
+val deadline : 'msg app -> int option
+(** [deadline app] is the time by which {!val-step} must be called again after
+    it returned [None], if no descriptor of {!fds} has become readable first. It
+    is [None] when only those descriptors can give the run something to do. *)
+
+val clock : unit -> int
+(** [clock ()] is the run's own clock, {!Tty.now}, in nanoseconds. *)
+
 val next : 'msg app -> 'msg step
-(** [next app] is the next step of the run, waiting for one if there is none. *)
+(** [next app] is the next step of the run, waiting for one: {!val-step} at
+    {!clock}'s time, waiting with [select(2)] whenever it returns [None]. It
+    behaves as this loop does, but allocates nothing while the run is idle:
+    {[
+    let rec next app =
+      match Matrix.step app ~now:(Matrix.clock ()) with
+      | Some step -> step
+      | None ->
+          let timeout =
+            match Matrix.deadline app with
+            | None -> -1.
+            | Some d -> Float.max 0. (Float.of_int (d - Matrix.clock ()) *. 1e-9)
+          in
+          (try ignore (Unix.select (Matrix.fds app) [] [] timeout)
+           with Unix.Unix_error (EINTR, _, _) -> ());
+          next app
+    ]} *)
 
 (** {1:time Time}
 
-    The runtime keeps one monotonic clock, the backend's: it never goes back,
-    and setting the system's time does not move it. Times are integer
-    nanoseconds from an arbitrary origin, so a deadline computed as
-    [origin + n * interval] is exact and two computations of it are equal. The
-    loop reads the clock once per turn, after waiting; everything in that turn
-    compares with that one value. *)
+    Times are integer nanoseconds from an arbitrary origin, on a clock that
+    never goes back, so a deadline computed as [origin + n * interval] is exact
+    and two computations of it are equal. A run's time is the time of its steps:
+    everything in a turn compares with the time of the step that began it,
+    {!now}. A step is a function of the run's state, its input and that time
+    alone, so a run whose steps are given the times of a recording or a
+    simulation goes as it would have gone at those times.
+
+    The times given to {!val-step} must never decrease, and must be on the clock
+    {!deadline} answers in, for the run compares them with deadlines computed
+    from earlier steps. That clock is {!clock}, which {!next} reads, which the
+    run reads itself as it takes the terminal and gives it back, and which
+    {!now} holds before the first step. A test may instead give the steps a
+    clock that starts at {!now} before the first step and moves only when the
+    test moves it. A time from another clock, such as [Unix.gettimeofday], makes
+    the run's deadlines meaningless. *)
 
 val now : 'msg app -> int
 (** [now app] is the time of the current turn, in nanoseconds. *)

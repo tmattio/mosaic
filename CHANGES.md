@@ -77,6 +77,7 @@
 
 #### Added
 
+- **Driving a run by steps** – `Matrix.step app ~now` is the next step at the time the caller gives, or `None` when the run has nothing to do until one of `Matrix.fds app` is readable or `Matrix.deadline app` comes; it never waits. `Matrix.next` is that loop waiting with `select(2)`, and allocates nothing while idle. A program with an event loop of its own waits with that loop instead, and a test or a replay gives the steps the times of its own clock: a step is a function of the run's state, its input and `now`, which must never decrease (`Invalid_argument` otherwise) and must be on the clock `deadline` answers in, `Matrix.clock` or a test's own
 - **Pluggable backends** – `Matrix.Backend` is a record of I/O primitives with a shared `bootstrap` handshake
 - **Headless test backend (`matrix.test`)** – virtual clock, byte-level input through the real decoder, plain-text frame snapshots
 - **Unicode text layer (`matrix.text`)** – grapheme iteration, width measurement, wrap-break and line-break discovery, and position helpers, independent of cell storage
@@ -143,6 +144,8 @@
 #### Fixed
 
 - `Matrix_text.Layout` hangs the blanks at the end of a row that wraps, shown in no cell and taking none of its width, as CSS Text 3 hangs white space at the end of a pre-wrap line (at the end of a line only where they do not fit): a word that filled its row left the blank after it on a row of its own, a blank could start a continuation, and a row whose last word fitted exactly wrapped before that word (`a b c d e` at 5 cells was `a b` / `c d e`, now `a b c` / `d e`)
+- Giving the terminal back waits for an owed answer only until as long after its batch was sent as any answer: a cancel during a silent terminal's probe ended 500 ms after the probe had already given up, waiting for the same answer a second time
+- A size the terminal reported in band before the run, as the transport of a served session writes it ahead of the run, is the run's size from its first frame on an output that is not a terminal: the run started at 80×24 and resized in its first turn
 - Inside tmux, before its answer to DECRQM (3.6), `Caps` gives bracketed paste from tmux 1.7 and focus reports from 1.8, the versions that brought them, where it gave both only from 3.6, when tmux began answering for them
 - A mouse report on the first row of the primary live region counts as its row 0; it mapped to -1, above the region
 - The VTE keeps the cursor style DECSCUSR sets, `Vte.cursor_style`, so a renderer can draw the bar or underline an editor asks for; it read the sequence and dropped it
