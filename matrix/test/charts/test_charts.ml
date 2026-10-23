@@ -868,3 +868,39 @@ let%expect_test "with_theme restyles what the program left unset" =
     themed later: axis true, gridline true
     own axis style: axis false, gridline true
     |}]
+
+(* A chart drawn at an offset is the chart drawn at the origin, moved, with
+   nothing drawn outside its region. *)
+let%expect_test "draw at an offset moves the whole chart" =
+  let chart =
+    empty () |> with_title "T"
+    |> with_frame (manual_frame ~margins:(1, 1, 1, 1) ())
+    |> with_axes
+         ~x:(Axis.default |> Axis.with_title "time")
+         ~y:(Axis.default |> Axis.with_title "v" |> Axis.with_line `Frame)
+    |> with_y2_scale (Scale.numeric ())
+    |> with_y2_axis Axis.default
+    |> line ~x:fst ~y:snd simple_points
+    |> line ~y_axis:`Y2 ~x:fst ~y:(fun (_, y) -> y *. 100.) simple_points
+  in
+  let width = 30 and height = 12 in
+  let at_origin = Grid.create ~width ~height () in
+  ignore (draw chart at_origin ~width ~height : Layout.t);
+  let dx = 7 and dy = 4 in
+  let moved = Grid.create ~width:(width + 14) ~height:(height + 8) () in
+  ignore (draw ~x:dx ~y:dy chart moved ~width ~height : Layout.t);
+  let text g ~x ~y =
+    match Grid.get_text g (Grid.idx g ~x ~y) with "" -> " " | s -> s
+  in
+  let differ = ref 0 in
+  for y = 0 to Grid.height moved - 1 do
+    for x = 0 to Grid.width moved - 1 do
+      let inside = x >= dx && x < dx + width && y >= dy && y < dy + height in
+      let expected =
+        if inside then text at_origin ~x:(x - dx) ~y:(y - dy) else " "
+      in
+      if text moved ~x ~y <> expected then incr differ
+    done
+  done;
+  Printf.printf "%d cells differ\n" !differ;
+  [%expect {| 0 cells differ |}]

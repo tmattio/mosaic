@@ -657,8 +657,7 @@ type rect = { x : int; y : int; width : int; height : int }
 type title_info = { text : string; style : Style.t }
 
 type t = {
-  width : int;
-  height : int;
+  region : rect; (* The cells the chart is drawn in. *)
   plot : rect;
   theme : Theme.t;
   x_scale : axis_kind;
@@ -691,7 +690,7 @@ type t = {
 let rect_contains r ~x ~y =
   x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
 
-let size t = (t.width, t.height)
+let size t = (t.region.width, t.region.height)
 let plot_rect t = t.plot
 let is_inside_plot t ~px ~py = rect_contains t.plot ~x:px ~y:py
 let x_domain t = t.x_domain
@@ -1723,8 +1722,7 @@ let compute ?(view = View.empty) ?(x = 0) ?(y = 0) (cfg : config) ~width ~height
   in
 
   {
-    width;
-    height;
+    region = { x; y; width; height };
     plot;
     theme = cfg.theme;
     x_scale = x_scale_res;

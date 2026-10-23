@@ -463,6 +463,10 @@ let draw_grid (layout : Layout.t) (grid : G.t) =
 
 let draw_axes (layout : Layout.t) (grid : G.t) =
   let r = layout.plot in
+  (* Ticks, labels and titles are drawn only within the chart's region. *)
+  let region = layout.region in
+  let left = region.x and right = region.x + region.width in
+  let in_rows y = y >= region.y && y < region.y + region.height in
   let ip = layout.frame_inner_padding in
   let ch = layout.theme.charset in
   let line_symbols : G.line_symbols =
@@ -519,9 +523,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
 
   (* Y axis *)
   if layout.y_axis.show then (
-    let ax =
-      layout.margin_left + layout.y_axis_title_width + layout.y_axis_width - 1
-    in
+    let ax = r.x - ip - 1 in
     let st = Option.get layout.y_axis.style in
     let tick_st = Option.get layout.y_axis.tick_style in
     let label_st = Option.get layout.y_axis.label_style in
@@ -536,14 +538,14 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             in
             for k = 1 to layout.y_axis.tick_length do
               let x = ax - k in
-              if x >= 0 then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
+              if x >= left then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
             done;
             let label = layout.y_axis.format i v in
             let lw = Layout.text_width label in
             let label_x =
               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
             in
-            if label_x >= 0 then
+            if label_x >= left then
               draw_text grid ~x:label_x ~y:py ~style:label_st label)
           layout.y_ticks
     | Log { base; view; _ } ->
@@ -555,14 +557,14 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             in
             for k = 1 to layout.y_axis.tick_length do
               let x = ax - k in
-              if x >= 0 then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
+              if x >= left then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
             done;
             let label = layout.y_axis.format i v in
             let lw = Layout.text_width label in
             let label_x =
               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
             in
-            if label_x >= 0 then
+            if label_x >= left then
               draw_text grid ~x:label_x ~y:py ~style:label_st label)
           layout.y_ticks
     | Band { categories; padding; _ } ->
@@ -576,18 +578,18 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             let py = y0 + (band_h / 2) in
             for k = 1 to layout.y_axis.tick_length do
               let x = ax - k in
-              if x >= 0 then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
+              if x >= left then draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
             done;
             let lw = Layout.text_width cat in
             let label_x =
               ax - layout.y_axis.tick_length - layout.y_axis.label_padding - lw
             in
-            if label_x >= 0 then
+            if label_x >= left then
               draw_text grid ~x:label_x ~y:py ~style:label_st cat)
           categories);
     if layout.x_axis.show then
       let y_corner = r.y + r.height + ip in
-      if y_corner >= 0 && y_corner < layout.height then
+      if in_rows y_corner then
         draw_text grid ~x:ax ~y:y_corner ~style:st ch.frame.bl);
 
   (* X axis *)
@@ -608,8 +610,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             in
             for k = 1 to layout.x_axis.tick_length do
               let y = ay + k in
-              if y >= 0 && y < layout.height then
-                draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
+              if in_rows y then draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
             done;
             let label = layout.x_axis.format i v in
             let lw = Layout.text_width label in
@@ -617,11 +618,9 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               ay + layout.x_axis.tick_length + layout.x_axis.label_padding
             in
             let label_x = px - (lw / 2) in
-            if
-              label_y >= 0 && label_y < layout.height
-              && label_x > !last_label_right
-            then (
-              draw_text grid ~x:(max 0 label_x) ~y:label_y ~style:label_st label;
+            if in_rows label_y && label_x > !last_label_right then (
+              draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
+                label;
               last_label_right := label_x + lw))
           layout.x_ticks
     | Log { base; view; _ } ->
@@ -634,8 +633,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             in
             for k = 1 to layout.x_axis.tick_length do
               let y = ay + k in
-              if y >= 0 && y < layout.height then
-                draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
+              if in_rows y then draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
             done;
             let label = layout.x_axis.format i v in
             let lw = Layout.text_width label in
@@ -643,11 +641,9 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               ay + layout.x_axis.tick_length + layout.x_axis.label_padding
             in
             let label_x = px - (lw / 2) in
-            if
-              label_y >= 0 && label_y < layout.height
-              && label_x > !last_label_right
-            then (
-              draw_text grid ~x:(max 0 label_x) ~y:label_y ~style:label_st label;
+            if in_rows label_y && label_x > !last_label_right then (
+              draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
+                label;
               last_label_right := label_x + lw))
           layout.x_ticks
     | Band { categories; padding; _ } ->
@@ -662,19 +658,16 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             let px = x0 + (band_w / 2) in
             for k = 1 to layout.x_axis.tick_length do
               let y = ay + k in
-              if y >= 0 && y < layout.height then
-                draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
+              if in_rows y then draw_text grid ~x:px ~y ~style:tick_st ch.tick_v
             done;
             let lw = Layout.text_width cat in
             let label_y =
               ay + layout.x_axis.tick_length + layout.x_axis.label_padding
             in
             let label_x = px - (lw / 2) in
-            if
-              label_y >= 0 && label_y < layout.height
-              && label_x > !last_label_right
-            then (
-              draw_text grid ~x:(max 0 label_x) ~y:label_y ~style:label_st cat;
+            if in_rows label_y && label_x > !last_label_right then (
+              draw_text grid ~x:(max left label_x) ~y:label_y ~style:label_st
+                cat;
               last_label_right := label_x + lw))
           categories);
 
@@ -715,12 +708,12 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               in
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
-                if x < layout.width then
+                if x < right then
                   draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
               done;
               let label = y2_ax.format i v in
               let label_x = ax2 + y2_ax.tick_length + y2_ax.label_padding in
-              if label_x < layout.width then
+              if label_x < right then
                 draw_text grid ~x:label_x ~y:py ~style:label_st label)
             y2_tick_values
       | Log { base; view; _ } ->
@@ -732,12 +725,12 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               in
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
-                if x < layout.width then
+                if x < right then
                   draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
               done;
               let label = y2_ax.format i v in
               let label_x = ax2 + y2_ax.tick_length + y2_ax.label_padding in
-              if label_x < layout.width then
+              if label_x < right then
                 draw_text grid ~x:label_x ~y:py ~style:label_st label)
             y2_tick_values
       | Band { categories; padding; _ } ->
@@ -751,16 +744,16 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               let py = y0 + (band_h / 2) in
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
-                if x < layout.width then
+                if x < right then
                   draw_text grid ~x ~y:py ~style:tick_st ch.tick_h
               done;
               let label_x = ax2 + y2_ax.tick_length + y2_ax.label_padding in
-              if label_x < layout.width then
+              if label_x < right then
                 draw_text grid ~x:label_x ~y:py ~style:label_st cat)
             categories);
       if layout.x_axis.show then
         let y_corner = r.y + r.height + ip in
-        if y_corner >= 0 && y_corner < layout.height then
+        if in_rows y_corner then
           draw_text grid ~x:ax2 ~y:y_corner ~style:st ch.frame.br
   | _ -> ());
 
@@ -778,7 +771,7 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
       let chars = List.rev !graphemes in
       let title_len = List.length chars in
       let title_y_start = r.y + ((r.height - title_len) / 2) in
-      let title_x = layout.margin_left in
+      let title_x = left + layout.margin_left in
       List.iteri
         (fun i char_str ->
           let y = title_y_start + i in
@@ -798,8 +791,8 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
         r.y + r.height + ip + layout.x_axis.tick_length
         + layout.x_axis.label_padding + 2
       in
-      if title_y < layout.height then
-        draw_text grid ~x:(max 0 title_x) ~y:title_y ~style:title_style text
+      if in_rows title_y then
+        draw_text grid ~x:(max left title_x) ~y:title_y ~style:title_style text
 
 (* {1 Marks} *)
 
