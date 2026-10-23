@@ -503,6 +503,74 @@ let test_frame_property () =
     is_true ~msg:"a resize reports the latest size" !resizes_ok
   done
 
+(* A step that says [None] leaves nothing due: right after it, the deadline
+   is later than its time, or there is none. Random frames, timers, posts,
+   resizes, partial sequences, in-band size reports and queries a terminal
+   answers or leaves unanswered, at random times, in both modes. *)
+let test_idle_deadline_property () =
+  let rand = Random.State.make [| 13 |] in
+  let pick l = List.nth l (Random.State.int rand (List.length l)) in
+  for _ = 1 to 300 do
+    let tty = Random.State.bool rand and answers = Random.State.bool rand in
+    let answer bytes =
+      if not answers then ""
+      else if index_of bytes "\027[6n" <> None then "\027[3;1R"
+      else if String.ends_with ~suffix:"\027[c" bytes then "\027[?62c"
+      else ""
+    in
+    let f = fake ~tty ~answer () in
+    let mode = pick [ `Alt; `Primary ] in
+    run ~config:(quiet ~mode ()) f (fun app ->
+        f.on_wait <- (fun _ ~until:_ -> fail "a step waited");
+        let now = ref f.now in
+        for _ = 1 to 40 do
+          (match Random.State.int rand 7 with
+          | 0 -> Matrix.request_redraw app
+          | 1 ->
+              ignore
+                (Matrix.at app (!now + Random.State.int rand (ms 100))
+                  : Matrix.timer)
+          | 2 ->
+              f.input <-
+                f.input
+                @ [
+                    pick [ "a"; "\027"; "\027["; "\027[A"; "\027[48;9;40;0;0t" ];
+                  ]
+          | 3 -> Matrix.post app ()
+          | 4 ->
+              f.size <-
+                (10 + Random.State.int rand 70, 5 + Random.State.int rand 20);
+              f.signals <- [ Matrix.Backend.Winch ]
+          | 5 ->
+              if tty then
+                Matrix.query app
+                  ~owed:{ cursor_reports = 0; string_replies = 0 }
+                  ""
+          | _ -> ());
+          (* A driver steps again at the deadline, or when something it
+             waits for comes earlier. *)
+          (now :=
+             match Matrix.deadline app with
+             | Some d when Random.State.bool rand -> max !now d
+             | _ -> !now + Random.State.int rand (ms 30));
+          f.now <- !now;
+          let rec until_idle () =
+            match Matrix.step app ~now:!now with
+            | Some Frame ->
+                Matrix.draw app ignore;
+                until_idle ()
+            | Some Stopped -> fail "the run stopped"
+            | Some _ -> until_idle ()
+            | None -> (
+                match Matrix.deadline app with
+                | Some d when d <= !now ->
+                    failf "idle at %d with a deadline at %d" !now d
+                | _ -> ())
+          in
+          until_idle ()
+        done)
+  done
+
 (* The turn budget under random input, timers and posts from three
    producers, each step taking up to 10 ms: events and each producer's posts
    come in order, and a turn's work ends within one frame interval and one
@@ -2877,6 +2945,8 @@ let () =
           test "post from other domains" test_post_from_other_domains;
           test "post after the run" test_post_after_the_run;
           test "a step never waits" test_step_never_waits;
+          test "an idle step leaves nothing due, a property"
+            test_idle_deadline_property;
           test "frame calls outside a frame" test_frame_calls_outside_a_frame;
           test "a call while the loop waits" test_call_while_waiting;
         ];

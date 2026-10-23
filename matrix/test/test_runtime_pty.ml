@@ -9,9 +9,9 @@ let child =
 
 type session = { pty : Pty.t; pid : int; output : Buffer.t }
 
-let spawn () =
+let spawn ?(args = []) () =
   let pty =
-    Pty.spawn ~prog:child ~args:[]
+    Pty.spawn ~prog:child ~args
       ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
       ()
   in
@@ -80,8 +80,8 @@ let cooked s =
 
 let finish s = try Pty.close s with _ -> ()
 
-let with_session f =
-  let s = spawn () in
+let with_session ?args f =
+  let s = spawn ?args () in
   Fun.protect ~finally:(fun () -> finish s.pty) (fun () -> f s)
 
 (* A termination signal ends the run: the terminal is given back, then the
@@ -468,6 +468,36 @@ let test_probe_leaves_the_shell_text mode () =
         (String.trim (Vte.text vte row)))
     shell_text
 
+(* Keys typed faster than the frame interval each ask for a frame before the
+   last one's interval has passed: the run waits until that frame's
+   deadline, and every key is painted. *)
+let test_keys_faster_than_frames () =
+  with_session ~args:[ "keys" ] @@ fun s ->
+  await s "KEYS:.";
+  let letters = "abcdefghijklmnoprstuvwxyz" in
+  String.iter
+    (fun c ->
+      send s (String.make 1 c);
+      Unix.sleepf 0.002)
+    letters;
+  let shown () =
+    let vte = Vte.create ~rows:24 ~cols:80 () in
+    ignore
+      (Vte.feed_string vte (Buffer.contents s.output)
+        : Matrix_input.Reply.t list);
+    String.trim (Vte.text vte 0)
+  in
+  let expected = "KEYS:" ^ letters ^ "." in
+  let deadline = Unix.gettimeofday () +. 10. in
+  while shown () <> expected && Unix.gettimeofday () < deadline do
+    try await ~timeout:0.05 s "\000\001" with _ -> ()
+  done;
+  equal ~msg:"every key painted" string expected (shown ());
+  send s "q";
+  match wait_exit s with
+  | WEXITED 0 -> is_true ~msg:"cooked after" (cooked s)
+  | _ -> fail "expected a normal exit"
+
 let supported =
   Sys.os_type = "Unix" && Sys.file_exists child && Sys.file_exists job
 
@@ -499,6 +529,13 @@ let () =
              test "an abort resets every run" test_abort_resets_every_run;
              test "a termination signal resets a served session"
                test_termination_resets_a_served_session;
+           ]);
+      group "Frames"
+        (if not supported then []
+         else
+           [
+             test "keys faster than frames are painted"
+               test_keys_faster_than_frames;
            ]);
       group "Handoff"
         (if not supported then []

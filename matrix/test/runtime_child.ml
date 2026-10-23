@@ -3,7 +3,8 @@
    to it, [i] gives the terminal away while it sleeps, [a] aborts, [q]
    quits. With the arguments [served PATH], it also runs a second session on
    the terminal at [PATH], in a domain of its own, which draws SERVED; with
-   [only-served PATH], it runs that session alone. *)
+   [only-served PATH], it runs that session alone. With [keys], it draws
+   every letter typed, until [q]. *)
 
 let ready app =
   let frames = ref 0 in
@@ -34,6 +35,25 @@ let ready app =
   in
   loop ()
 
+let keys app =
+  let typed = Buffer.create 64 in
+  let rec loop () =
+    match Matrix.next app with
+    | Stopped -> ()
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            Matrix.Grid.draw_text grid ~x:0 ~y:0
+              ~text:("KEYS:" ^ Buffer.contents typed ^ "."));
+        loop ()
+    | Event (Key { key = Char c; _ }) when Uchar.to_int c = 0x71 (* q *) -> ()
+    | Event (Key { key = Char c; _ }) when Uchar.to_int c < 0x80 ->
+        Buffer.add_char typed (Char.chr (Uchar.to_int c));
+        Matrix.request_redraw app;
+        loop ()
+    | Event _ | Timer _ | Posted _ -> loop ()
+  in
+  loop ()
+
 let served path =
   Domain.spawn (fun () ->
       let fd = Unix.openfile path [ O_RDWR; O_NOCTTY; O_CLOEXEC ] 0 in
@@ -53,6 +73,7 @@ let served path =
 let () =
   match Sys.argv with
   | [| _; "only-served"; path |] -> Domain.join (served path)
+  | [| _; "keys" |] -> Matrix.run keys
   | [| _; "primary" |] ->
       Matrix.run ~config:(Matrix.config ~mode:`Primary ()) ready
   | [| _; "served"; path |] ->

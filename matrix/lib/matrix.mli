@@ -421,7 +421,10 @@ val fds : 'msg app -> Unix.file_descr list
 val deadline : 'msg app -> int option
 (** [deadline app] is the time by which {!val-step} must be called again after
     it returned [None], if no descriptor of {!fds} has become readable first. It
-    is [None] when only those descriptors can give the run something to do. *)
+    is [None] when only those descriptors can give the run something to do.
+    Right after [step app ~now] returned [None], it is [None] or later than
+    [now]: a run that has nothing to do at [now] has nothing due at [now]. A
+    message posted since ({!post}) makes it [now]. *)
 
 val clock : unit -> int
 (** [clock ()] is the run's own clock, {!Tty.now}, in nanoseconds. *)
