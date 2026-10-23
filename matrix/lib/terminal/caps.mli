@@ -32,14 +32,15 @@
 
     A question is asked of the terminal that does the work. Inside tmux, tmux
     draws the screen and reads the keyboard, so questions about drawing and keys
-    go to tmux itself, which answers or stays silent. tmux 3.5 answers no mode
-    query at all, so its facts then come from its identity, by version: it
-    answers for modes 2004 and 1004 from 3.6 and for 2026 from 3.7, and has no
-    mode 2027. Only a question about the terminal outside, such as kitty
-    graphics, which tmux passes through untouched, is wrapped for tmux's
-    passthrough, and only once passthrough is known to be on: tmux drops wrapped
-    queries unless its [allow-passthrough] option is set, which it is not by
-    default since 3.3.
+    go to tmux itself, which answers or stays silent. tmux answers no mode query
+    before 3.6, and none for mode 2026 before 3.7, so its facts then come from
+    its identity, by version. It brackets the pastes it passes to a pane from
+    1.7, and passes focus reports to a pane from 1.8 while its [focus-events]
+    option is on. It synchronizes a pane's output from 3.7, and it has no mode
+    2027. Only a question about the terminal outside, such as kitty graphics,
+    which tmux passes through untouched, is wrapped for tmux's passthrough, and
+    only once passthrough is known to be on: tmux drops wrapped queries unless
+    its [allow-passthrough] option is set, which it is not by default since 3.3.
 
     The environment describes the terminal the process started in, which is not
     always the one it talks to: [TERM_PROGRAM] survives into ssh sessions, GNU

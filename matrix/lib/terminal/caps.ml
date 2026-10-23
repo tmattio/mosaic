@@ -310,6 +310,15 @@ let modern_names = [ "ghostty"; "kitty"; "wezterm"; "alacritty"; "iterm" ]
 
 (* Identity rows and guesses apply to what was reported, never to what the
    caller assumed: an assumed fact is already the answer for that fact. *)
+
+(* tmux's rows follow its CHANGES: "Support for bracketed-paste mode" (1.6
+   to 1.7), "Panes can now emit focus notifications" (1.7 to 1.8), synchronized
+   output and its DECRQM answer (3.6b to 3.7); DECRQM answers for 2004 and
+   1004 came in 3.6, years after tmux had both. Measured on 3.5a with its
+   default options: a pane that set 2004 and 1004 gets the outer terminal's
+   bracketed paste bracketed, paste-buffer -p bracketed, a focus report when
+   it sets the mode and the outer terminal's focus reports, which tmux asks
+   the outer terminal for only with focus-events on. *)
 let derive ev =
   let env = ev.env and d = ev.assumed in
   let described = env.described in
@@ -349,7 +358,7 @@ let derive ev =
         [
           mode 2004;
           when_ (is "kitty") true;
-          when_ tmux (at_least version (3, 6));
+          when_ tmux (at_least version (1, 7));
           when_ env.win32 true;
           when_ described.paste true;
         ]
@@ -358,7 +367,7 @@ let derive ev =
       first
         [
           mode 1004;
-          when_ tmux (at_least version (3, 6));
+          when_ tmux (at_least version (1, 8));
           when_ described.focus true;
         ]
         d.focus_tracking;

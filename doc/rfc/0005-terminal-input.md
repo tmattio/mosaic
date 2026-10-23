@@ -6,6 +6,13 @@
 - Amended 2026-10-23: `Cut` and `Too_long` are decoder events (`Decoder.Cut`, `Decoder.Too_long`),
   not replies: they describe framing, so `Reply.t` holds only what a terminal sends, and
   `Reply.encode` (RFC 0004's amendment) is total. The runtime drops them.
+- Amended 2026-10-23 (the Multiplexers row; settles §6 question 10): tmux's rows give each fact
+  from the tmux version that brought it. Bracketed paste comes from 1.7 ("Support for
+  bracketed-paste mode", tmux CHANGES 1.6 to 1.7) and focus reports from 1.8 ("Panes can now emit
+  focus notifications", 1.7 to 1.8), delivered while tmux's `focus-events` option is on; the rows
+  had both from 3.6, when tmux began answering DECRQM 2004 and 1004. Measured on tmux 3.5a with
+  its default options: a pane that set 2004 and 1004 received the outer terminal's paste and
+  `paste-buffer -p` bracketed, and the outer terminal's focus reports.
 - Baseline: main @ `739cf2a1`, where `Input.Parser` decoded input with its own CSI reader and a
   clock, and `Terminal.Caps` folded capabilities from replies and the environment.
 - Process: the "Becoming certain" campaign of raven's `doc/dev/design.md`, applied to matrix, for
@@ -86,7 +93,7 @@ The redesign gives each fact one owner:
 | Probe | S7C1T; DECRQM of 1016, 2027, 2031, 1004, 2004, 2026 and 1036; two OSC 66 width tests on row 2, each with a CPR; XTVERSION; `CSI ? u`; kitty graphics unless a multiplexer is in the way; DA1 | measured: xterm answers with raw 0x9B after S8C1T, even in UTF-8 mode; `CSI 2 ; c R` is no key | high |
 | Precedence | user policy (`MATRIX_FORCE_*`, `VHS_RECORD`) > corrections keyed on identity, each cited (Ghostty from 1.3) > the answer of the terminal doing the work > identity > environment guess > default. `Caps.derive` is pure and not monotone; a change applies the modes by their difference | **no reference**; argued from who knows each fact (audit §6.3) | medium |
 | Environment | read once by the runtime (`Backend.t.env`). `TERM_PROGRAM` gives an identity only with none of `SSH_*`, `TMUX`, `STY`, `ZELLIJ` set | skeptic §6.2 (`TERM_PROGRAM` survives ssh, screen, zellij) | medium-high |
-| Multiplexers | drawing and key questions go to tmux unwrapped; when silent, its facts come from its version (2004 and 1004 from 3.6, 2026 from 3.7, 2027 never). Outer-terminal questions (kitty graphics) are wrapped only after a wrapped DA1 alone is answered, each group closed by its own wrapped DA1 | measured tmux 3.5a: no DECRQM answered, wrapped replies after tmux's DA1, wrapped queries silent with passthrough off (default since 3.3); tmux CHANGES (datapoint) | medium |
+| Multiplexers | drawing and key questions go to tmux unwrapped; when silent, its facts come from its version (2004 from 1.7, 1004 from 1.8, 2026 from 3.7, 2027 never; amended). Outer-terminal questions (kitty graphics) are wrapped only after a wrapped DA1 alone is answered, each group closed by its own wrapped DA1 | measured tmux 3.5a: no DECRQM answered, wrapped replies after tmux's DA1, wrapped queries silent with passthrough off (default since 3.3); tmux CHANGES (datapoint) | medium |
 | Unasked modes | 1004, 2031 and 2048 are set without asking and reset on exit; 2004 follows configuration | **no reference** says what a terminal does with a mode it lacks. Datapoints: xterm answers these DECRQMs with 0 and its `dpmodes` only traces an unknown mode; tmux 3.5a ignores them | medium |
 | Meta, kitty | 1036 is queried and set only where answered reset, so Alt arrives as ESC. `Auto` pushes kitty flags 1\|4 (1\|2\|4\|8\|16 with `key_releases`) once `CSI ? u` answers, then asks again and records the flags in effect; modifyOtherKeys 1 otherwise | measured xterm `?1036;2$y`; kitty: "first setting the desired progressive enhancements and then querying" | medium-high |
 | Application queries | `Matrix.query app ~owed q` sends `q` and DA1 as an owed batch and delivers `Reply` events, ending with the DA1 reply. `Terminal.send` owes nothing | the batch rule | medium-high |
@@ -280,7 +287,7 @@ Questions 1–5 were adjudicated as §1–§2 state, for the maintainer to confi
 9. Should a 2027 answer of "not recognized" mean `Wcwidth`, and "reset" mean that the runtime
    sets the mode? (Settled 2026-10-23: yes to both.)
 10. Should tmux's rows keep 2004 and 1004 from 3.6, when it began answering, though it had both
-    earlier?
+    earlier? (Settled 2026-10-23: no; 2004 from 1.7 and 1004 from 1.8.)
 11. Should input-method `Text` reach mosaic widgets as a paste, or as an event of its own?
 12. Is a small Python XTest driver acceptable in `matrix/test/xterm_diff`, outside CI?
 13. A kitty release carries no text, so with Caps Lock a press is `'R'` and its release `'r'`:

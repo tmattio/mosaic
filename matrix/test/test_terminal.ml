@@ -619,10 +619,10 @@ let test_description_below () =
   let c =
     described "m/matrix-test"
       [ ("TERM", "matrix-test") ]
-      [ Reply.Version "tmux 3.5a" ]
+      [ Reply.Version "tmux 1.6" ]
   in
-  is_false ~msg:"tmux 3.5's identity: no bracketed paste" c.bracketed_paste;
-  is_false ~msg:"tmux 3.5's identity: no sync" c.sync
+  is_false ~msg:"tmux 1.6's identity: no bracketed paste" c.bracketed_paste;
+  is_false ~msg:"tmux 1.6's identity: no sync" c.sync
 
 let precedence_cases =
   [
@@ -802,7 +802,8 @@ let ghostty_width_cases =
       ("forced unicode", "1.3.1", [ ("MATRIX_FORCE_UNICODE", "1") ], `Unicode);
     ]
 
-(* tmux answers no mode query before 3.6: its facts come from its version. *)
+(* tmux answers no mode query before 3.6, so its facts come from its
+   version: bracketed paste from 1.7, focus reports from 1.8. *)
 let tmux_cases =
   let tmux version = [ Reply.Version ("tmux " ^ version) ] in
   [
@@ -812,12 +813,15 @@ let tmux_cases =
       [
         Width `Wcwidth;
         Sync false;
-        Paste false;
-        Focus false;
+        Paste true;
+        Focus true;
         Repositions true;
         Hyperlinks true;
         Multiplexer (Some `Tmux);
       ] );
+    ("1.6", [], tmux "1.6", [ Paste false; Focus false ]);
+    ("1.7", [], tmux "1.7", [ Paste true; Focus false ]);
+    ("1.8", [], tmux "1.8", [ Paste true; Focus true ]);
     ("3.6", [], tmux "3.6", [ Sync false; Paste true; Focus true ]);
     ("3.7", [], tmux "3.7", [ Width `Wcwidth; Sync true ]);
     ("next-3.7", [], tmux "next-3.7", [ Sync true ]);

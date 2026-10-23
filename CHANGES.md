@@ -138,6 +138,7 @@
 
 #### Fixed
 
+- Inside tmux, before its answer to DECRQM (3.6), `Caps` gives bracketed paste from tmux 1.7 and focus reports from 1.8, the versions that brought them, where it gave both only from 3.6, when tmux began answering for them
 - A mouse report on the first row of the primary live region counts as its row 0; it mapped to -1, above the region
 - The VTE keeps the cursor style DECSCUSR sets, `Vte.cursor_style`, so a renderer can draw the bar or underline an editor asks for; it read the sequence and dropped it
 - The VTE answers DECRQM with DECRPM for the modes it keeps (0 for the others), and OSC 10, 11, 12 and 4 colour queries from its palette, ended as the query was; fish 4 and programs that pick a light or dark theme waited for a timeout
