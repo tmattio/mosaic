@@ -4,6 +4,11 @@
   Implemented on 2026-09-24, `50072f7d` through `07d38086`; R4's alignment with tree-sitter, R6
   and the pending-display rule were finished on 2026-10-22, `3acfbf30` through `e1b2ad00`. This
   text states what was built, including the decisions taken during implementation (§3).
+- Amended 2026-10-23 (R3 reopened, §8): a request carries the view's previous result, the
+  highlighter's state and the one edit from it; results stay whole, so a tree-sitter highlighter
+  parses again from its edited tree and queries the new tree whole. Merging captures was weighed
+  and refuted: with a real query it gives wrong colors. `conceal` became a property of the code
+  view, and a textarea takes syntax settings beside its annotations.
 - Bindings: public at [invariant-hq/ocaml-tree-sitter](https://github.com/invariant-hq/ocaml-tree-sitter)
   @ `880ae2c`. Its mosaic example (`examples/mosaic`) does not compile against the API of `07d38086`
   and later. A patch that makes it the recipe of [doc/highlighting.md](../highlighting.md) again is
@@ -62,7 +67,7 @@ its reason. Tests are in `mosaic/test/unit/` unless stated.
 |---|---|---|---|---|
 | R1. No language registry | `language` is an opaque string the application interprets. Mosaic holds no language names, extensions or fence info-strings | One job per library (design.md). Naming is policy that differs per application: mentat maps `ml` and `mli` to two grammars of one package. OpenTUI keeps a registry in core (`resolve-ft.ts`, 186 lines; datapoint) | high | "highlighter receives fence language" (`test_markdown.ml`) |
 | R2. Cookbook, not a bridge package | The glue is a recipe each application owns, in `doc/highlighting.md`. No `mosaic-tree-sitter` package | The glue is about ten lines; a package adds release surface, version coupling and a second home for the resolver. Revisit if a third-party backend ecosystem appears | medium (§7) | `mosaic/test/doc` compiles the guide's snippets |
-| R3. Whole-buffer requests | `{content; language}`: no edit deltas, no buffer identity. A backend may keep state behind `Highlighter.t`. Caching stays with the application, keyed on `(language, content)` | OpenTUI's unused incremental machinery (datapoint) | medium-high | "async content changes coalesce" (`test_code.ml`) |
+| R3. Whole-buffer requests, amended (§8) | `{content; language; previous}`: the whole buffer, and the content of the view's latest result with the highlighter's state and the one edit from it, derived by the view. No buffer identity. Results stay whole. Caching stays with the application | LSP's `previousResultId`; tree-sitter's `ts_parser_parse` (§8). First decided on OpenTUI's unused incremental machinery (datapoint) | high | "async content changes coalesce", "requests hold on random scripts" (`test_code.ml`) |
 | R4. The scope vocabulary is the contract | A producer emits scopes whose first segment is one of `comment string number constant keyword operator punctuation function type constructor variable property module attribute label embedded tag`. Dotted refinements fall back to their base; unmapped scopes are kept and resolve to the base style. `Syntax_style.default` styles `variable.member` as `property` | tree-sitter, [Syntax Highlighting](https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html), Queries › Highlights: "Commonly used highlight names include `keyword`, `function`, `type`, `property`, and `string`." Its CLI's default theme (`crates/cli/src/highlight.rs`, `Theme::default`) styles the rest (datapoint). `label` is mosaic's | medium-high | "scope vocabulary fallback and extensions" (`test_syntax_highlight.ml`) |
 | R5. tree-sitter leaves the repository | The bindings, the json and ocaml grammars, their tests and their opam package (`tree-sitter`, name unchanged) live in invariant-hq/ocaml-tree-sitter. `dune-project`, `mosaic.opam`, the lock and CI do not mention it; the examples use a keyword toy (`mosaic/examples/common/toy_highlighter.ml`) | No dependency used only inside an implementation (design.md); measured install (§6) | high | the build |
 | R6. Configuration compares by value | `Syntax_style.t` and `Markdown.Style.t` are values compared with `equal`. Markdown takes `?highlighter` (a `Code.Highlighter.t`) and `?syntax_style`, not a per-fence closure. Only the highlighter compares by identity: it is a resource that may own a worker and its queue | A configuration owned by an allocation site re-renders on every view call: 20 fences over 5 refreshes ran 100 highlights with a closure capturing a theme, and run 20 now (§6) | high | "styles compare by value" (`test_syntax_highlight.ml`); "syntax compares styles by value" (`test_code.ml`); "view refreshes do not highlight again", "element style rebuilt renders nothing" (`test_markdown.ml`) |
@@ -79,7 +84,8 @@ The decided text also fixed two surfaces:
   currency and keep the grammars ignorant of mosaic.
 - **Labeled requests, and the off-thread one-liner.** `Code.Highlighter.sync` and `threaded` take
   `language:string -> content:string -> Syntax_highlight.t`. `async` and `job` remain for
-  backends with their own scheduling.
+  backends with their own scheduling. Amended in §8: they take a `'state request` and return the
+  highlighter's state with the captures.
 
 ## 3. Decisions taken during implementation
 
@@ -120,7 +126,8 @@ The decided text also fixed two surfaces:
 - **A `mosaic-tree-sitter` bridge package** (the jsont, bytesrw, jsont_bytesrw pattern). Release
   surface and version coupling, to save about ten lines.
 - **Incremental requests** (edit deltas, buffer identity). OpenTUI paid for them, and its own
-  renderables do not use them.
+  renderables do not use them. Reopened in §8: a request now carries the previous result and one
+  derived edit, without buffer identity.
 - **A `GRAMMAR` module type.** Its only content beyond the function was a `name` nothing reads,
   at the price of first-class modules in every resolver.
 - **Two booleans, or a variant, for the pending display.** Each policy was wrong somewhere: plain
@@ -129,8 +136,8 @@ The decided text also fixed two surfaces:
 - **A per-fence closure for Markdown** (`?code_syntax`). It carried nothing a highlighter does not:
   the language travels in the request and the style is data. Compared by identity, it
   re-highlighted every fence on each view call that rebuilt it.
-- **Not designed:** a viewport-limited or streaming highlight API, an injection producer, a
-  per-line highlighter (byte ranges subsume it).
+- **Not designed:** a viewport-limited highlight API (§8 records querying at paint as the
+  candidate), an injection producer, a per-line highlighter (byte ranges subsume it).
 
 ## 5. Behavior breaks
 
@@ -173,3 +180,83 @@ design.md makes the `.mli` the source of truth and rules out a guide re-explaini
 while R2 chose a cookbook page. Answered on 2026-10-23: the contracts the guide restated moved into
 the `.mli` files above, and the guide keeps only the recipe, glue that needs a parser package mosaic
 does not depend on. R2 stands.
+
+## 8. Amendment 2026-10-23: R3 reopened
+
+**Process.** Campaign 8 of raven's "Becoming certain": two blind designs, an audit, a skeptic, and
+an adjudication. The skeptic re-ran the audit with tree-sitter-ocaml's own `queries/highlights.scm`
+(v0.24.2, 208 lines) instead of the bindings' 10-pattern query, which captures node kinds only;
+that run decided the result rule.
+
+**Why R3 was reopened.** R3 rested on a datapoint, OpenTUI's unused machinery. Measured on 1 MB of
+OCaml (999,982 bytes, 250,096 captures under the real query), a keystroke cost the worker about
+240 ms, a whole parse and query; a result frame cost the render thread about 300 ms and a keystroke
+while a result was pending about 310 ms; and typing inside a comment blanked it, against the
+pending-display rule (D2).
+
+**What changed.**
+
+| # | decision | reference / reason | confidence |
+|---|---|---|---|
+| 1 | A request carries `previous`: the content of the view's latest result, the state the highlighter returned with it, and the one edit from it, in bytes. The view derives the edit (longest common prefix, then suffix); the highlighter derives tree-sitter's points. A highlighter that keeps nothing ignores it and returns `()` | LSP 3.17, semantic tokens: "the client will include the result id in the next semantic token request" (principle: build on a named result; in process the state travels as a value, not an id). tree-sitter `api.h`, `ts_parser_parse`: the old tree must be edited "in a way that exactly matches the source code changes" | high |
+| 2 | Changes made while a request runs reach the next request as one enclosing edit | A formatter's or an agent's scattered hunks reach the view as one content change, so recording the view's edits would not see them; deriving several hunks is a later optimisation, if measured necessary | medium-high |
+| 3 | Results stay whole (D1 unchanged). Mosaic merges no captures: the gain is in parsing. A tree-sitter highlighter parses again from its edited tree and queries the whole new tree, correct for any query by construction | The skeptic's finding, below | high |
+| 4 | A result equals the highlighter's whole highlight of its state for the request's content: for tree-sitter, the query of the whole returned tree. No idle re-highlight | Over 120 chained runs, a reparsed tree differed from a fresh parse only while the text had a syntax error (4,944 steps in 25 runs, every one with an error, all converged); tree-sitter's fuzzer compares nothing else | high |
+| 5 | Render thread, measured against today as its own change: resolution in one sorted sweep with the same rules; annotated paint looked up by byte at paint; the pending display keeps the bytes of a capture the edit cuts through | Measured (below); D2's rule as written | high |
+| 6 | `sync`, `threaded` and `async` take a `'state request`; `Highlighter.t` hides the state's type, so Code, Diff and Markdown keep an unparameterised highlighter | The only shape with a synchronous incremental form, which a streamed fence (20 KB at 0.29 ms per token) and deterministic tests need | medium-high |
+| 7 | The textarea keeps `?annotations` and gains `?syntax:Code.syntax`; given both, it shows the annotations over the syntax styles (`Text_buffer.Annotations.merge`) | `?annotations` is its only general styling input (search hits, diagnostics); a capability is never removed | high |
+| 8 | `conceal` is a property of the code view, not of the syntax settings | Concealment says what a view may show: editable text shows every byte | medium-high |
+| 9 | Requests carry no viewport. Querying the current tree for the visible rows at paint (Neovim, Helix and Zed do; 0.13 ms per 60-row viewport at 1 MB) would reopen D1 | Recorded as the candidate for a later campaign, the maintainer's call | — |
+| 10 | The bindings report a tree to the GC as its handle only, though it holds about 47 MB per MB of source; reporting the tree's memory belongs in ocaml-tree-sitter | Not mosaic's layer | medium |
+
+**The skeptic's finding: merging captures is incorrect for real queries.** The audit had adopted a
+merge (`Syntax_highlight.update`): keep the previous captures outside a region grown from the edit
+and tree-sitter's changed ranges until it held every capture it replaced, and query the tree only
+inside it. Its evidence, 52,000 chained steps with no mismatch, used the 10-pattern query. With the
+official query the rule gave a capture set different from the whole query of the same tree in 40
+of 56 chained runs, 28 of them with wrong colors: typing `x ` into `let f = 1` to give
+`let f x = 1` leaves `f` without `@function`, because the pattern
+`(let_binding pattern: (value_name) @function (parameter))` relates siblings, and deleting it
+leaves a stale `@function`. tree-sitter's changed ranges mean identical ancestor kinds per byte
+(its fuzzer, `crates/cli/src/fuzz/scope_sequence.rs`); they say nothing about which matches a
+query finds, so no region built from them, or from capture extents, bounds a query that relates
+siblings, fields or anchors. The rule also grew one adjacent token per round: 10,004 rounds,
+51 s, for one digit in a 20 KB line. And `update` took the producer's query as a function, so the
+waist would have called back up into the producer. Parsing again and querying the whole tree took
+128 ms at 1 MB and 14.5 ms at 100 KB with the real query in the skeptic's runs (106–120 ms at 1 MB
+below), against about 240 ms for a whole parse and query.
+
+**Measured** (1 MB, the real query, medians of 9, runs of today and of the change interleaved on a
+shared host; `perf` and `fix` commits each state their own):
+
+| | before | after |
+|---|---|---|
+| worker, one keystroke (parse and query) | 232–249 ms | 106–120 ms |
+| resolution of fresh captures | 255–391 ms | 86–89 ms |
+| result frame (resolve, install, paint 60 rows) | 302–428 ms | 88–103 ms |
+| keystroke while a result is pending | 312–404 ms | 108–122 ms |
+
+The render thread, not the worker, still bounds a 1 MB file with a real query; a later campaign
+may weigh querying at paint (row 9).
+
+**Commits.** `4a64e4de` (sorted sweep), `1bc37853` (lookup by byte), `8448ac0a` (pending
+display), `fb2d74b6` (`conceal`), `64cb3897` (requests with `previous`, `Syntax_session`, the
+guide's recipe), `f1317115` (textarea `?syntax`), `15df2699` (annotations over syntax).
+
+**Pinned by.** "resolution matches the reference on random overlaps", "byte boundaries match
+styled graphemes" (`test_syntax_highlight.ml`); "pending edit inside a range keeps its other
+bytes", "conceal is a view property", "previous carries the state and the edit", "requests hold
+on random scripts" (`test_code.ml`); the "Syntax" group of `test_textarea.ml`; "merge puts the
+overlay over the base" (`test_syntax_highlight.ml`); `mosaic/test/doc`
+for the recipe.
+
+**Behavior breaks.**
+- `Code.Highlighter.request`, `result` and `job` take a `'state`; `request` gains `previous`.
+  `sync` and `threaded` take `'state request -> Syntax_highlight.t * 'state`, `async`
+  `'state request -> notify:(unit -> unit) -> 'state job`. A stateless highlighter becomes
+  `fun { language; content; _ } -> (f ~language ~content, ())`.
+- `Code.syntax` and `Code.with_highlighter` lose `?conceal`; `Code.create`, `Code.Props.make` and
+  the `code` element gain it. `Diff.syntax` keeps its own.
+- A pending view keeps the bytes of a capture the edit cuts through; a concealing one shows its
+  bytes.
+- Additive: `Textarea ?syntax`, `Syntax_highlight.conceals`, `Text_buffer.Annotations.merge`.
