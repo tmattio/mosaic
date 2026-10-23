@@ -201,6 +201,46 @@ module Backend = struct
     }
 end
 
+(* A terminal emulated in the program's own process, for [Matrix_test]. A
+   run on one keeps the device's time and is driven by its steps, so the
+   device decides how the run's own waits end: as it takes and gives back
+   the terminal, it waits for answers until a time, and a device whose
+   terminal stays silent moves its clock there, as a terminal that never
+   answers leaves the wait. *)
+type device = {
+  now : unit -> int;
+  wait : until:int option -> bool;
+  read : bytes -> int -> int -> int;
+  write : bytes -> int -> int -> unit;
+  size : unit -> (int * int) option;
+  resized : unit -> bool;
+  set_raw : bool -> unit;
+  flush : unit -> unit;
+  tty : bool;
+  env : Terminal.Caps.env;
+  frame : unit -> unit;
+}
+
+let backend_of_device d : Backend.t =
+  {
+    now = d.now;
+    wait = (fun ~until ~reading -> d.wait ~until && reading);
+    wake = ignore;
+    fds = (fun ~reading:_ -> []);
+    take_signals = (fun () -> if d.resized () then [ Backend.Winch ] else []);
+    read_input = d.read;
+    write_output = d.write;
+    terminal_size = d.size;
+    set_raw_mode = d.set_raw;
+    flush_input = d.flush;
+    input_is_tty = d.tty;
+    output_is_tty = d.tty;
+    controlling = false;
+    on_fatal = ignore;
+    cleanup = ignore;
+    env = d.env;
+  }
+
 (* Stop requests. A request wakes the runs the request was given to, by
    their serial, so that a run waiting for its descriptors steps and sees
    it; a run given one already requested sees it at its first step. *)
@@ -240,6 +280,7 @@ type config = {
   explicit_width : bool;
   min_tui_height : int;
   caps : Terminal.capabilities option;
+  device : device option;
 }
 
 let config ?(mode = `Alt) ?(raw_mode = true) ?(mouse = `Sgr_any)
@@ -258,7 +299,10 @@ let config ?(mode = `Alt) ?(raw_mode = true) ?(mouse = `Sgr_any)
     explicit_width;
     min_tui_height;
     caps;
+    device = None;
   }
+
+let on_device d config = { config with device = Some d }
 
 (* Queries sent together, which the terminal answers in order. A batch of
    capability queries, of the runtime's other queries or of the
@@ -381,6 +425,14 @@ type 'msg app = {
   (* Frames *)
   interval : int;
   mutable dirty : bool;
+  (* A run on a device ([in_process]) draws at once a frame asked for outside
+     a frame: by input, a timer, a post or the runtime itself. A frame asked
+     for from a Frame step until the next step is an animation's, and waits
+     its interval. *)
+  in_process : bool;
+  mutable asked_outside : bool;
+  mutable in_frame_step : bool;
+  on_frame : unit -> unit;
   mutable drawing : bool;
   (* The frame being drawn was drawn across a release. *)
   mutable void : bool;
@@ -388,6 +440,9 @@ type 'msg app = {
   (* The time between the latest frame and the one before, 0 until the
      second. *)
   mutable frame_dt : int;
+  (* When the latest frame was drawn, which [last_frame] is not for a frame
+     a device draws early. *)
+  mutable drawn : int;
   mutable force_full_next_frame : bool;
   mutable size_report : size_report;
   (* The usable size last returned as [Resize]. *)
@@ -523,9 +578,20 @@ let frame_dt t = Float.of_int t.frame_dt *. 1e-9
 let can_query t =
   t.backend.input_is_tty && t.config.raw_mode && not t.input_ended
 
+(* A frame the runtime needs, as after a resize, is asked for outside a
+   frame; the application's requests are an animation's from a Frame step
+   until the next step. *)
+let owe_frame t =
+  t.dirty <- true;
+  t.asked_outside <- true
+
+let ask_frame t =
+  if not t.in_frame_step then t.asked_outside <- true;
+  t.dirty <- true
+
 let request_redraw t =
   check t;
-  t.dirty <- true
+  ask_frame t
 
 let frame_owed t = t.dirty
 
@@ -655,7 +721,7 @@ let update_capabilities t =
       apply_modes t;
       refresh_capabilities t;
       force_full_redraw t;
-      t.dirty <- true))
+      owe_frame t))
 
 (* Input
 
@@ -772,7 +838,7 @@ let cursor_report t ~row ~col ~page =
             | Some a when a == b && t.now < b.sent + answer_wait t ->
                 t.anchor <- None;
                 if not t.released then anchored t anchor ~row ~col;
-                t.dirty <- true
+                owe_frame t
             | _ -> ())
         | Application -> push t (Reply (Cursor { row; col; page }))
         | Own -> ())
@@ -816,7 +882,7 @@ let reply t (r : Input.Reply.t) =
       Terminal.set_pixel_resolution t.terminal (Some (width, height));
       if (cols, rows) <> (t.width, t.height) then (
         t.size_report <- Reported (cols, rows);
-        t.dirty <- true)
+        owe_frame t)
   | r -> (
       (match r with
       | Text_area_pixels { height; width } ->
@@ -860,6 +926,11 @@ let input_deadline t =
   | [] -> silence
   | b :: _ -> min silence (b.sent + owed_bound t)
 
+(* Waits in the backend, which says whether the input is readable. A wait
+   until a time already past ([past]) looks without waiting. *)
+let wait_only t ~until = t.backend.wait ~until ~reading:(not t.input_ended)
+let past = Some min_int
+
 (* Reads what the input has, once, if [ready]; a wait that read nothing is
    silence, which decides what the decoder holds once it has lasted. *)
 let read_input t ~ready =
@@ -873,18 +944,16 @@ let read_input t ~ready =
      Input.Decoder.finish t.decoder (decoded t))
    else if n > 0 then (
      t.last_input <- t.now;
-     Input.Decoder.feed t.decoder t.input_buffer ~off:0 ~len:n (decoded t))
+     Input.Decoder.feed t.decoder t.input_buffer ~off:0 ~len:n (decoded t);
+     (* An emulated terminal has written all it sent once nothing follows. *)
+     if t.in_process && not (wait_only t ~until:past) then
+       Input.Decoder.idle t.decoder (decoded t))
    else
      match silence t with
      | Some wait when t.now >= t.last_input + wait ->
          Input.Decoder.idle t.decoder (decoded t)
      | _ -> ());
   expire t
-
-(* Waits in the backend, which says whether the input is readable. A wait
-   until a time already past ([past]) looks without waiting. *)
-let wait_only t ~until = t.backend.wait ~until ~reading:(not t.input_ended)
-let past = Some min_int
 
 (* The run's own waits, as it takes and gives back the terminal, are on its
    clock. *)
@@ -968,7 +1037,7 @@ let static_write ?(preserve_live_region = false) ?rows t grid =
     if rows > 0 then (
       t.primary <-
         Primary.enqueue_static t.primary { text; rows; preserve_live_region };
-      t.dirty <- true)
+      ask_frame t)
 
 let static_replace ?(preserve_live_region = false) ?rows t grid =
   check t;
@@ -976,7 +1045,7 @@ let static_replace ?(preserve_live_region = false) ?rows t grid =
     let rows, text = static_snapshot t ?rows grid in
     t.primary <-
       Primary.replace_static t.primary { text; rows; preserve_live_region };
-    t.dirty <- true)
+    ask_frame t)
 
 (* Immediate action, not part of the frame pipeline: the plan's terminal ops
    are encoded and sent directly, not queued into the frame buffer, so the
@@ -1001,7 +1070,7 @@ let static_clear t =
     t.width <- max 1 cols;
     t.height <- max 1 rows;
     refresh_render_region t;
-    t.dirty <- true
+    ask_frame t
 
 let set_scroll_hint t hint =
   check t;
@@ -1295,7 +1364,10 @@ let take_signal t s = if Signal.take s then t.taken <- s :: t.taken
 
 let take_signals t =
   t.tstp_ignored <- Signal.ignored Sys.sigtstp;
-  if t.backend.input_is_tty || t.backend.output_is_tty || t.backend.controlling
+  if
+    (not t.in_process)
+    && (t.backend.input_is_tty || t.backend.output_is_tty
+      || t.backend.controlling)
   then
     List.iter (take_signal t)
       (Signal.signals ~controlling:t.backend.controlling);
@@ -1479,7 +1551,7 @@ let take_again t =
   if t.config.mode = `Primary && can_query t then
     t.anchor <- Some (ask_cursor t At_cursor);
   send_waiting t;
-  t.dirty <- true
+  owe_frame t
 
 let release t f =
   check t;
@@ -1544,7 +1616,7 @@ let render_blocked t =
    work that took the turn's budget may have taken the interval with it. *)
 let frame_due t =
   t.dirty && (not t.released)
-  && t.latest >= t.last_frame + t.interval
+  && (t.latest >= t.last_frame + t.interval || (t.in_process && t.asked_outside))
   && not (render_blocked t)
 
 (* The time the run next needs a step if nothing it waits for comes first:
@@ -1607,14 +1679,14 @@ and continued t =
     Terminal.restore_modes t.terminal;
     forget_screen t;
     t.size_report <- Read;
-    t.dirty <- true)
+    owe_frame t)
 
 and on_signals t signals =
   List.iter
     (function
       | Backend.Winch ->
           t.size_report <- Read;
-          t.dirty <- true
+          owe_frame t
       | Cont -> continued t
       | Tstp ->
           if not t.released then (
@@ -1654,10 +1726,16 @@ let begin_turn t ~now =
    work may delay past the time the turn read. *)
 let start_frame t =
   t.dirty <- false;
+  t.asked_outside <- false;
+  t.in_frame_step <- true;
   t.drawing <- true;
   t.void <- false;
-  if t.last_frame <> no_frame then t.frame_dt <- t.latest - t.last_frame;
-  t.last_frame <- t.latest;
+  if t.drawn <> no_frame then t.frame_dt <- t.latest - t.drawn;
+  t.drawn <- t.latest;
+  (* A frame a device draws before the interval has passed keeps the
+     animation's grid. *)
+  if t.latest >= t.last_frame + t.interval then t.last_frame <- t.latest;
+  t.on_frame ();
   Frame
 
 (* Work goes on until one frame interval has passed since the turn began. *)
@@ -1722,6 +1800,7 @@ let step_exn t ~now =
     invalid_arg "Matrix.step: now is earlier than an earlier step's";
   t.latest <- now;
   t.drawing <- false;
+  t.in_frame_step <- false;
   if t.frame_follows then (
     t.frame_follows <- false;
     start_frame t)
@@ -1821,10 +1900,16 @@ let make backend ?stop config =
     owe_post = false;
     interval = Float.to_int (Float.round (1e9 /. config.fps));
     dirty = true;
+    in_process = Option.is_some config.device;
+    asked_outside = true;
+    in_frame_step = false;
+    on_frame =
+      (match config.device with Some d -> d.frame | None -> Fun.const ());
     drawing = false;
     void = false;
     last_frame = no_frame;
     frame_dt = 0;
+    drawn = no_frame;
     force_full_next_frame = true;
     size_report = Applied;
     usable = (width, height);
@@ -1987,7 +2072,14 @@ let run_on backend ?stop ?(config = config ()) f =
       Printexc.raise_with_backtrace exn bt
 
 let run ?input ?output ?env ?stop ?config f =
-  run_on (Backend.unix ?input ?output ?env ()) ?stop ?config f
+  let backend =
+    match (config, input, output, env) with
+    | Some { device = Some d; _ }, None, None, None -> backend_of_device d
+    | Some { device = Some _; _ }, _, _, _ ->
+        invalid_arg "Matrix.run: a run on a device takes no descriptors"
+    | _ -> Backend.unix ?input ?output ?env ()
+  in
+  run_on backend ?stop ?config f
 
 (* Diagnostics *)
 

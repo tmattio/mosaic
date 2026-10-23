@@ -784,6 +784,41 @@ end
 val run_on :
   Backend.t -> ?stop:Stop.t -> ?config:config -> ('msg app -> 'a) -> 'a
 
+(* A terminal emulated in the program's own process, for [Matrix_test], which
+   a run takes through its configuration ([on_device]), and then from [run]
+   with no descriptor and no environment of its own. Its writes are applied
+   before [write] returns and its input is queued whole, so a run on it
+   differs from one on a terminal in three ways:
+   - a frame asked for outside a frame (by input, a timer, a post or the
+     runtime itself, as after a resize) is drawn in the turn that asked, and
+     one asked for from a Frame step until the next step, an animation's,
+     waits its interval, whose grid a frame drawn early does not move;
+   - input is decoded whole once nothing follows it, as the terminal has
+     finished writing;
+   - the run takes no signal of the process: [resized] is its window signal.
+   [wait ~until] says whether input is queued. With none queued and [until]
+   later than [now ()], the terminal is silent until then, and the device
+   moves its clock there, as a terminal that never answers leaves the run's
+   wait for an answer. [read] returns [-1] when nothing is queued, [size]
+   [None] for an output with no window, and [frame] is called as each frame
+   begins. *)
+
+type device = {
+  now : unit -> int;
+  wait : until:int option -> bool;
+  read : bytes -> int -> int -> int;
+  write : bytes -> int -> int -> unit;
+  size : unit -> (int * int) option;
+  resized : unit -> bool;
+  set_raw : bool -> unit;
+  flush : unit -> unit;
+  tty : bool;
+  env : Terminal.Caps.env;
+  frame : unit -> unit;
+}
+
+val on_device : device -> config -> config
+
 (* For test harnesses that drive a run they did not start, such as
    [Matrix_test]: the run that holds the terminal, whether it owes a frame,
    and events decoded elsewhere, queued as if the input had just been

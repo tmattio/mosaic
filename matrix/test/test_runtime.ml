@@ -530,7 +530,8 @@ let test_frame_property () =
    is later than its time, or there is none. Random frames, timers, posts,
    resizes, partial sequences, in-band size reports and queries a terminal
    answers or leaves unanswered, at random times, in both modes. *)
-let test_idle_deadline_property () =
+let idle_deadline_property
+    ~(run : config:_ -> _ -> (unit Matrix.app -> unit) -> unit) () =
   let rand = Random.State.make [| 13 |] in
   let pick l = List.nth l (Random.State.int rand (List.length l)) in
   for _ = 1 to 300 do
@@ -593,6 +594,181 @@ let test_idle_deadline_property () =
           until_idle ()
         done)
   done
+
+let test_idle_deadline_property =
+  idle_deadline_property ~run:(fun ~config f body -> run ~config f body)
+
+(* A terminal in the program's own process ------------------------------- *)
+
+(* [f] as a device: each input chunk is a whole write, a wait for an answer
+   with nothing queued moves the clock to its end, and the frames begun are
+   counted. *)
+let device ?(frames = ref 0) f : Matrix.device =
+  let b = backend f in
+  {
+    now = (fun () -> f.now);
+    wait =
+      (fun ~until ->
+        if f.input <> [] then true
+        else (
+          (match until with
+          | Some u when u > f.now -> f.now <- u
+          | Some _ -> ()
+          | None -> fail "the run waits forever");
+          false));
+    read = b.read_input;
+    write = b.write_output;
+    size = (fun () -> Some f.size);
+    resized =
+      (fun () ->
+        let w = List.mem Matrix.Backend.Winch f.signals in
+        f.signals <- [];
+        w);
+    set_raw = b.set_raw_mode;
+    flush = (fun () -> f.input <- []);
+    tty = f.tty;
+    env = no_env;
+    frame = (fun () -> incr frames);
+  }
+
+let run_device ?(frames = ref 0) ?(config = quiet ()) f body =
+  Matrix.run ~config:(Matrix.on_device (device ~frames f) config) body
+
+let test_device_idle_deadline_property =
+  idle_deadline_property ~run:(fun ~config f body -> run_device ~config f body)
+
+(* Steps at [f.now] until the run is idle, drawing each frame and handing
+   every other step to [on], with [animate] asking for the next frame after
+   each is drawn, as an animation does. *)
+let settle ?(animate = fun () -> false) ?(on = ignore) f app =
+  let rec go () =
+    match Matrix.step app ~now:f.now with
+    | Some Matrix.Frame ->
+        Matrix.draw app ignore;
+        if animate () then Matrix.request_redraw app;
+        go ()
+    | Some step ->
+        on step;
+        go ()
+    | None -> ()
+  in
+  go ()
+
+(* A frame asked for by input, a timer or a post is drawn in the turn that
+   asked, without the clock moving. *)
+let test_device_frames_asked_outside () =
+  let f = fake () and frames = ref 0 in
+  run_device ~frames ~config:(quiet ~fps:30. ()) f (fun app ->
+      let on = function
+        | Matrix.Event _ | Timer _ | Posted _ -> Matrix.request_redraw app
+        | _ -> ()
+      in
+      settle ~on f app;
+      equal ~msg:"the first frame" int 1 !frames;
+      f.input <- [ "a" ];
+      settle ~on f app;
+      ignore (Matrix.at app f.now : Matrix.timer);
+      settle ~on f app;
+      Matrix.post app ();
+      settle ~on f app;
+      equal ~msg:"a frame each, at once" int 4 !frames;
+      equal ~msg:"the clock" int 0 f.now)
+
+(* An animation asks for its next frame from its Frame step, after drawing
+   it: that frame waits its interval, so a virtual second at 30 frames a
+   second draws 30, and a frame input brings in between keeps the grid. *)
+let test_device_animation () =
+  let f = fake () and frames = ref 0 and times = ref [] in
+  run_device ~frames ~config:(quiet ~fps:30. ()) f (fun app ->
+      let on = function
+        | Matrix.Event _ -> Matrix.request_redraw app
+        | _ -> ()
+      in
+      let animate () =
+        times := f.now :: !times;
+        true
+      in
+      let advance_to target =
+        let rec go () =
+          settle ~animate ~on f app;
+          match Matrix.deadline app with
+          | Some d when d <= target ->
+              f.now <- d;
+              go ()
+          | _ ->
+              f.now <- target;
+              settle ~animate ~on f app
+        in
+        go ()
+      in
+      settle ~animate ~on f app;
+      equal ~msg:"settled after one frame" int 1 !frames;
+      advance_to (ms 50);
+      f.input <- [ "a" ];
+      settle ~animate ~on f app;
+      advance_to (ms 1000);
+      let interval = 33_333_333 in
+      equal ~msg:"frames: the grid, and the one input brought at 50 ms"
+        (list int)
+        ([ 0; interval; ms 50 ] @ List.init 29 (fun k -> (k + 2) * interval))
+        (List.rev !times))
+
+(* A resize, which the runtime asks a frame for itself, is drawn at once. *)
+let test_device_resize () =
+  let f = fake () and frames = ref 0 in
+  run_device ~frames f (fun app ->
+      let resized = ref [] in
+      let on = function
+        | Matrix.Event (Resize (c, r)) -> resized := (c, r) :: !resized
+        | _ -> ()
+      in
+      settle ~on f app;
+      f.size <- (40, 10);
+      f.signals <- [ Matrix.Backend.Winch ];
+      settle ~on f app;
+      equal ~msg:"the resize" (list (pair int int)) [ (40, 10) ] !resized;
+      equal ~msg:"its frame, at once" int 2 !frames)
+
+(* Input is decoded whole once nothing follows it: a lone ESC is Escape in
+   the turn that reads it, and a paste longer than a read ends. *)
+let test_device_whole_writes () =
+  let paste = "\027[200~" ^ String.make 10_000 'x' ^ "\027[201~" in
+  let f = fake ~input:[ "\027"; paste ] () in
+  run_device f (fun app ->
+      let events = ref [] in
+      settle ~on:(function Event e -> events := e :: !events | _ -> ()) f app;
+      let shown =
+        List.rev_map
+          (function
+            | Matrix.Paste_data s -> Printf.sprintf "data %d" (String.length s)
+            | e -> Format.asprintf "%a" Matrix.pp_event e)
+          !events
+      in
+      let rec join = function
+        | a :: b :: rest
+          when String.starts_with ~prefix:"data" a
+               && String.starts_with ~prefix:"data" b ->
+            let n s = int_of_string (String.sub s 5 (String.length s - 5)) in
+            join (Printf.sprintf "data %d" (n a + n b) :: rest)
+        | a :: rest -> a :: join rest
+        | [] -> []
+      in
+      equal ~msg:"events" (list string)
+        [ "Key Escape"; "Paste_start"; "data 10000"; "Paste_end Complete" ]
+        (join shown);
+      equal ~msg:"nothing due" (option int) None (Matrix.deadline app))
+
+(* A terminal that never answers costs the run's wait for an answer: the
+   device's clock moves to its end, and the run takes no process signal. *)
+let test_device_silent () =
+  let f = fake ~tty:true () in
+  let before = Sys.signal Sys.sigterm Sys.Signal_default in
+  Fun.protect ~finally:(fun () -> Sys.set_signal Sys.sigterm before)
+  @@ fun () ->
+  run_device f (fun _ ->
+      equal ~msg:"the probe's wait" int (ms 500) f.now;
+      let during = Sys.signal Sys.sigterm Sys.Signal_default in
+      is_true ~msg:"SIGTERM is left alone" (during = Sys.Signal_default))
 
 (* The turn budget under random input, timers and posts from three
    producers, each step taking up to 10 ms: events and each producer's posts
@@ -2995,6 +3171,18 @@ let () =
           test "an idle step leaves nothing due, a property"
             test_idle_deadline_property;
           test "frame calls outside a frame" test_frame_calls_outside_a_frame;
+        ];
+      group "A terminal in process"
+        [
+          test "a frame asked for outside a frame is drawn at once"
+            test_device_frames_asked_outside;
+          test "an animation keeps its interval and its grid"
+            test_device_animation;
+          test "a resize is drawn at once" test_device_resize;
+          test "input is decoded whole" test_device_whole_writes;
+          test "a silent terminal costs its wait" test_device_silent;
+          test "an idle step leaves nothing due, a property"
+            test_device_idle_deadline_property;
         ];
       group "Lifecycle"
         [
