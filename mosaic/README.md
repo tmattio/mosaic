@@ -68,13 +68,20 @@ An application is four functions:
 | `view`          | `model -> msg t`                    | Pure UI projection          |
 | `subscriptions` | `model -> msg Sub.t`                | Event sources               |
 
-`Cmd.t` carries side effects: `Cmd.none`, `Cmd.quit`, `Cmd.perform`,
-`Cmd.batch`, `Cmd.set_title`, and static-output commands.
+`Cmd.t` carries side effects, started in list order after the update that
+returned them: `Cmd.none`, `Cmd.quit`, `Cmd.perform` (work off the loop),
+`Cmd.exec` (give the terminal to an editor or a pager), `Cmd.suspend` (stop
+the job, as Ctrl+Z in a shell), `Cmd.batch`, `Cmd.set_title`, and
+static-output commands.
 
 `Sub.t` declares event sources: `Sub.on_keys`, `Sub.on_key`, `Sub.on_mouse`,
-`Sub.on_paste`, `Sub.on_resize`, `Sub.on_tick`, `Sub.every`, `Sub.on_focus`,
-`Sub.on_blur`. Key, mouse and paste listeners run after the elements, on the
-events no element stopped, unless declared `~phase:Capture`.
+`Sub.on_paste`, `Sub.on_resize`, `Sub.on_tick`, `Sub.every`, `Sub.after`,
+`Sub.worker`, `Sub.on_focus`, `Sub.on_blur`. Key, mouse and paste listeners
+run after the elements, on the events no element stopped, unless declared
+`~phase:Capture`. A timer or a worker lives as long as its subscription is
+declared: `Sub.every` fires once with the periods that ended, `Sub.after`
+once after a delay, and a worker's stop is requested when its id is
+dropped.
 
 Components compose via `map : ('a -> 'b) -> 'a t -> 'b t`.
 
