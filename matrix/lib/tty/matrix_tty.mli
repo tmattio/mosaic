@@ -189,8 +189,13 @@ module Signal : sig
 
   val set_reset : holder -> string -> unit
   (** [set_reset h bytes] has [bytes] written to [h]'s output if the process
-      ends where no OCaml code runs: the bytes that reset the modes [h] set.
-      [""] once [h] gave the terminal back. *)
+      ends where no OCaml code runs: the bytes that reset the modes [h] set, of
+      any length. [""] once [h] gave the terminal back. The bytes replace the
+      previous ones whole: a signal reads one or the other, never a mix.
+
+      Bytes that describe what a write leaves on the terminal are set once that
+      write has returned, not before: a signal in between would reset for a
+      screen the terminal does not show. *)
 
   val restore_all : unit -> unit
   (** [restore_all ()] restores every holder's terminal as an abort does: it

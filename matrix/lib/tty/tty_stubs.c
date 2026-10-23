@@ -224,8 +224,20 @@ CAMLprim value matrix_tty_restore_all(value u) {
    The list only grows, from its head, under [holders_lock]; a holder that
    ends leaves its node to the next one. A handler walks it without the lock:
    it reads the head once, and a node's fields are set before the node is
-   published or marked active. */
-#define RESET_MAX 256
+   published or marked active.
+
+   The reset bytes are as long as the holder needs, so they are allocated,
+   and a handler may be writing them when the holder replaces them: new bytes
+   are published whole, by one pointer, and the old ones are freed only once
+   no reader is counted. A reader counts itself before it reads the pointer,
+   and the holder counts the readers after it replaced it, so a reader it does
+   not count reads the new bytes. Bytes a counted reader may hold wait in
+   [retired] for a moment when none is counted. */
+struct reset {
+  struct reset *next;
+  size_t length;
+  char bytes[];
+};
 
 struct holder {
   struct holder *next;
@@ -237,8 +249,9 @@ struct holder {
   volatile int in, out;
   struct termios settings;
   volatile sig_atomic_t have_settings;
-  char reset[RESET_MAX];
-  volatile sig_atomic_t reset_length;
+  struct reset *reset;
+  int readers;
+  struct reset *retired;
 };
 
 static struct holder *holders = NULL;
@@ -287,7 +300,6 @@ CAMLprim value matrix_tty_hold(value controlling) {
   }
   for (int s = 0; s < SIGNALS; s++) h->pending[s] = 0;
   h->have_settings = 0;
-  h->reset_length = 0;
   h->in = h->out = -1;
   h->controlling = Bool_val(controlling);
   __atomic_store_n(&h->active, 1, __ATOMIC_RELEASE);
@@ -300,12 +312,29 @@ CAMLprim value matrix_tty_hold(value controlling) {
   CAMLreturn(result);
 }
 
+/* Publishes [r] as [h]'s reset bytes and retires the ones it replaces.
+   Called under [holders_lock]. */
+static void publish_reset(struct holder *h, struct reset *r) {
+  struct reset *old = __atomic_exchange_n(&h->reset, r, __ATOMIC_SEQ_CST);
+  if (old != NULL) {
+    old->next = h->retired;
+    h->retired = old;
+  }
+  if (__atomic_load_n(&h->readers, __ATOMIC_SEQ_CST) == 0) {
+    while (h->retired != NULL) {
+      struct reset *next = h->retired->next;
+      free(h->retired);
+      h->retired = next;
+    }
+  }
+}
+
 CAMLprim value matrix_tty_unhold(value id) {
   struct holder *h = find_holder(id);
   pthread_mutex_lock(&holders_lock);
   h->active = 0;
   h->have_settings = 0;
-  h->reset_length = 0;
+  publish_reset(h, NULL);
   pthread_mutex_unlock(&holders_lock);
   return Val_unit;
 }
@@ -345,21 +374,28 @@ CAMLprim value matrix_tty_forget_settings(value id) {
 CAMLprim value matrix_tty_set_reset(value id, value bytes) {
   struct holder *h = find_holder(id);
   size_t length = caml_string_length(bytes);
-  if (length > RESET_MAX)
-    caml_invalid_argument("Matrix_tty.Signal.set_reset: too long");
-  h->reset_length = 0;
-  memcpy(h->reset, String_val(bytes), length);
-  __atomic_store_n(&h->reset_length, (sig_atomic_t)length, __ATOMIC_RELEASE);
+  struct reset *r = NULL;
+  if (length > 0) {
+    r = malloc(sizeof *r + length);
+    if (r == NULL) caml_raise_out_of_memory();
+    r->next = NULL;
+    r->length = length;
+    memcpy(r->bytes, String_val(bytes), length);
+  }
+  pthread_mutex_lock(&holders_lock);
+  publish_reset(h, r);
+  pthread_mutex_unlock(&holders_lock);
   return Val_unit;
 }
 
 static void restore_holder(struct holder *h) {
   int out = h->out;
-  sig_atomic_t length = h->reset_length;
-  if (out >= 0 && length > 0) {
+  __atomic_add_fetch(&h->readers, 1, __ATOMIC_SEQ_CST);
+  struct reset *r = __atomic_load_n(&h->reset, __ATOMIC_SEQ_CST);
+  if (out >= 0 && r != NULL) {
     size_t off = 0;
-    while (off < (size_t)length) {
-      ssize_t n = write(out, h->reset + off, (size_t)length - off);
+    while (off < r->length) {
+      ssize_t n = write(out, r->bytes + off, r->length - off);
       if (n > 0)
         off += (size_t)n;
       else if (n < 0 && errno == EINTR)
@@ -368,6 +404,7 @@ static void restore_holder(struct holder *h) {
         break;
     }
   }
+  __atomic_sub_fetch(&h->readers, 1, __ATOMIC_SEQ_CST);
   if (h->have_settings && h->in >= 0) tcsetattr(h->in, TCSANOW, &h->settings);
 }
 

@@ -260,6 +260,29 @@ let test_restore_all () =
                 Signal.set_reset h "";
                 Signal.forget_settings h)))
 
+(* Reset bytes have no length but the terminal's: a holder's teardown can
+   be as long as what it set. *)
+let test_restore_all_long () =
+  if Sys.unix then
+    with_pty (fun _ input ->
+        with_pipe (fun r output ->
+            with_holder ~controlling:false (fun h ->
+                Signal.keep_settings h ~input ~output;
+                let reset =
+                  String.init 20_000 (fun i -> Char.chr (65 + (i mod 26)))
+                in
+                Signal.set_reset h reset;
+                Signal.set_reset h (reset ^ reset);
+                Signal.restore_all ();
+                let got = Buffer.create 40_000 and buf = Bytes.create 65536 in
+                while Buffer.length got < 40_000 do
+                  let n = Unix.read r buf 0 65536 in
+                  Buffer.add_subbytes got buf 0 n
+                done;
+                equal ~msg:"the last reset bytes, whole" string (reset ^ reset)
+                  (Buffer.contents got);
+                Signal.set_reset h "")))
+
 let () =
   run "matrix.tty"
     [
@@ -285,5 +308,6 @@ let () =
           test "wake" test_wake;
           test "a write cut by termination" test_write_cut_by_termination;
           test "restore_all" test_restore_all;
+          test "restore_all with long reset bytes" test_restore_all_long;
         ];
     ]
