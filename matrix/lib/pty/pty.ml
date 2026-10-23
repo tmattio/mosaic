@@ -1,9 +1,7 @@
 type t = {
   fd : Unix.file_descr;
   mutable pid : int option;
-  (* The slave of a {!spawn} PTY, where its last close discards the output
-     not yet read from the master: holding it keeps the child's exit from
-     being that last close. *)
+  (* The slave of a {!spawn} PTY, held until [close] where [hold_slave]. *)
   slave : Unix.file_descr option;
   (* [close] must be a true no-op the second time: the kernel can reallocate
      the fd number to anything else in the process, and a second [Unix.close]
@@ -25,10 +23,10 @@ external set_winsize_raw : Unix.file_descr -> winsize -> unit
 external setsid_and_setctty : Unix.file_descr -> unit
   = "ocaml_pty_setsid_and_setctty"
 
-external close_discards_output : unit -> bool
-  = "ocaml_pty_close_discards_output"
+(* Why, and on which platforms, is in pty_stubs.c. *)
+external hold_slave : unit -> bool = "ocaml_pty_hold_slave"
 
-let hold_slave = close_discards_output ()
+let hold_slave = hold_slave ()
 let file_descr t = t.fd
 let in_fd t = t.fd
 let out_fd t = t.fd

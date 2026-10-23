@@ -50,6 +50,13 @@
     real Unix file descriptors; [Unix.select] and [Unix.poll] work as expected.
     [SIGWINCH] is delivered to child processes on resize.
 
+    Kernels differ in how long a terminal keeps the output that its child wrote,
+    once the child has exited, for the master to read. Linux keeps it until it
+    is read. macOS, OpenBSD and NetBSD keep it while some process holds the
+    slave open, which a {!spawn} handle does until {!close}. FreeBSD and
+    DragonFly may discard what the master has not read within about a second of
+    the child's exit.
+
     {2 Windows and other platforms}
 
     Not supported: every operation raises [Unix.Unix_error (ENOSYS, _, _)].
@@ -123,11 +130,11 @@ val spawn :
     stdin/stdout/stderr to the slave, and executes [prog]. The child's PID is
     available via {!pid}.
 
-    On macOS the last close of the slave discards the output that the master has
-    not read, so the parent holds the slave until {!close}. The child, exiting
-    as session leader, then waits for its output to be read: read it before
-    waiting for the child with [Unix.waitpid]. Elsewhere the slave is closed in
-    the parent.
+    On macOS, OpenBSD and NetBSD the last close of the slave discards the output
+    that the master has not read, so the parent holds the slave until {!close}.
+    The child, exiting as session leader, then waits for its output to be read:
+    read it before waiting for the child with [Unix.waitpid]. Elsewhere the
+    slave is closed in the parent.
 
     Optional arguments:
     - [env] is the child environment as ["KEY=value"] strings. Defaults to the

@@ -210,11 +210,29 @@ CAMLprim value ocaml_pty_setsid_and_setctty(value slave_fd) {
 
 #endif  // MATRIX_HAS_POSIX_PTY
 
-// Whether the last close of a slave discards the output that the master has
-// not read yet. macOS does; Linux keeps it for the master to read.
-CAMLprim value ocaml_pty_close_discards_output(value unit) {
+// Whether spawn holds the slave in the parent until close, so that the
+// child's exit is not the slave's last close. Two paths of the kernel decide.
+//
+// - The slave's last close waits a bounded time for the master to read the
+//   output, then discards what is left: 0.6 s on macOS (ptsclose sets
+//   t_timeout to 60 ticks), 5 s on OpenBSD and NetBSD (ttywflush).
+// - A session leader's exit, while the slave is still open elsewhere, waits
+//   without bound for its terminal's output to be read (ttywait with no
+//   timeout), then revokes the terminal, which ends the master's output.
+//
+// Holding the slave puts the child's exit on the second path, so its output
+// waits for the read. OpenBSD and NetBSD are held on the reading of their
+// sources, untested.
+//
+// The others gain nothing from holding it. Linux keeps the unread output
+// after the last close, and does not hang up a PTY when its session leader
+// exits, so a held slave would hide the end of output. FreeBSD's exit revokes
+// the terminal without waiting, flushing the output at once, where its last
+// close waits about 1 s. DragonFly's exit waits 1 s, no longer than its last
+// close waits.
+CAMLprim value ocaml_pty_hold_slave(value unit) {
   (void)unit;
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__OpenBSD__) || defined(__NetBSD__)
   return Val_true;
 #else
   return Val_false;
