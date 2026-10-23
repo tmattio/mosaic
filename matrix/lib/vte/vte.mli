@@ -38,6 +38,13 @@
     printed at the last column replaces the one there. Cursor reports never show
     the flag: the cursor is in the last column.
 
+    How the cursor looks is not part of this state. DECTCEM shows or hides it,
+    and DECSCUSR, [CSI Ps SP q], sets its style: 0, 1 or none is a blinking
+    block, 2 a steady block, 3 and 4 a blinking and a steady underline (VT510
+    Programmer Information, DECSCUSR), 5 and 6 a blinking and a steady bar, and
+    7 the style at power-up (xterm's ctlseqs); other values have no effect. Both
+    screens share the style, and DECSC does not save it.
+
     {2:screens Screens}
 
     The terminal has two screens, primary and alternate. Each has its own cells,
@@ -182,14 +189,16 @@
 
     {2:resets Resets}
 
-    RIS returns to the power-up state. DECSTR returns each terminal setting to
-    its power-up value: insert, origin, autowrap, reverse-wrap and national
-    modes, cursor keys, cursor visibility and the margins; the pen and the
-    character sets to their defaults; both DECSC slots to the power-up cursor
-    state. The VT510's table gives "No autowrap", its own power-up value; this
-    terminal powers up with autowrap on, so DECSTR sets it on. The screen, the
-    cursor position, the active screen, LNM, bracketed paste, the tab stops and
-    the title stay: the table does not list LNM. *)
+    RIS returns to the power-up state, the cursor a blinking block. DECSTR
+    returns each terminal setting to its power-up value: insert, origin,
+    autowrap, reverse-wrap and national modes, cursor keys, cursor visibility
+    and the margins; the pen and the character sets to their defaults; both
+    DECSC slots to the power-up cursor state. The VT510's table gives "No
+    autowrap", its own power-up value; this terminal powers up with autowrap on,
+    so DECSTR sets it on. The screen, the cursor position, the active screen,
+    LNM, the cursor style, bracketed paste, the tab stops and the title stay:
+    the table lists neither LNM nor DECSCUSR. xterm, a datapoint, resets the
+    cursor style there too. *)
 
 type t
 (** The type for terminal emulators. Mutable, not thread-safe. *)
@@ -274,6 +283,10 @@ val last_column : t -> bool
     first. It implies autowrap and [snd (cursor_pos t) = cols t - 1]. Cursor
     reports never show it. *)
 
+val cursor_style : t -> Ansi.cursor_style * bool
+(** [cursor_style t] is the cursor's shape and whether it blinks, as DECSCUSR
+    last set them ({!section-cursor}): [(`Block, true)] at power-up. *)
+
 val wrapped : t -> int -> bool
 (** [wrapped t y] is the wrap mark of row [y] of the active screen, or for
     [y < 0] of the [-y]th newest scrollback line. [false] outside them. *)
@@ -329,8 +342,8 @@ val render_with_scrollback : t -> offset:int -> Matrix_grid.t -> unit
 (** {1:dirty Changes}
 
     A renderer redraws what changed since it last looked. Writing cells, moving
-    the cursor or changing its visibility, and changing the rendition mark [t]
-    changed; the title and the other modes do not. *)
+    the cursor or changing its visibility or style, and changing the rendition
+    mark [t] changed; the title and the other modes do not. *)
 
 val is_dirty : t -> bool
 (** [is_dirty t] is [true] iff [t] changed since {!clear_dirty}. *)
@@ -340,8 +353,8 @@ val dirty_rows : t -> int list
     increasing order. *)
 
 val is_cursor_dirty : t -> bool
-(** [is_cursor_dirty t] is [true] iff the cursor moved or was shown or hidden
-    since {!clear_dirty}. *)
+(** [is_cursor_dirty t] is [true] iff the cursor moved, was shown or hidden, or
+    changed style since {!clear_dirty}. *)
 
 val clear_dirty : t -> unit
 (** [clear_dirty t] forgets the changes. *)

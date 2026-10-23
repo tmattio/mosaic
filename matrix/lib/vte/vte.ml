@@ -114,6 +114,8 @@ type t = {
   alternate : screen;
   history : history;
   cursor : cursor;
+  (* DECSCUSR's style: its shape, and whether it blinks. *)
+  mutable cursor_style : Ansi.cursor_style * bool;
   mutable pen : pen;
   mutable charsets : charsets;
   mutable modes : modes;
@@ -151,6 +153,9 @@ let power_up_modes =
     alternate_screen = false;
     national = false;
   }
+
+(* A blinking block, DECSCUSR's default (VT510 DECSCUSR). *)
+let power_up_cursor_style = (`Block, true)
 
 (* Tab stops every eight columns, as at power-up. *)
 let default_tabs cols = Array.init cols (fun i -> i > 0 && i mod 8 = 0)
@@ -933,6 +938,23 @@ let set_cursor_visible t visible =
     t.dirty.any <- true;
     t.dirty.cursor <- true)
 
+let set_cursor_style t style =
+  if t.cursor_style <> style then (
+    t.cursor_style <- style;
+    t.dirty.any <- true;
+    t.dirty.cursor <- true)
+
+(* DECSCUSR: 0 to 4 are the VT510's, 5 and 6 (bars) and 7 (the initial
+   style) xterm's (ctlseqs). Other values have no effect. *)
+let decscusr t = function
+  | 0 | 1 | 7 -> set_cursor_style t power_up_cursor_style
+  | 2 -> set_cursor_style t (`Block, false)
+  | 3 -> set_cursor_style t (`Underline, true)
+  | 4 -> set_cursor_style t (`Underline, false)
+  | 5 -> set_cursor_style t (`Line, true)
+  | 6 -> set_cursor_style t (`Line, false)
+  | _ -> ()
+
 let switch_screen t ~alternate =
   if t.modes.alternate_screen <> alternate then (
     t.modes <- { t.modes with alternate_screen = alternate };
@@ -993,6 +1015,7 @@ let ris t =
     [ t.primary; t.alternate ];
   clear_history t;
   set_cursor_visible t true;
+  set_cursor_style t power_up_cursor_style;
   t.modes <- power_up_modes;
   set_cursor t ~row:0 ~col:0 ~last_column:false;
   t.pen <- plain_pen;
@@ -1031,6 +1054,7 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
           count = 0;
         };
       cursor = { row = 0; col = 0; last_column = false };
+      cursor_style = power_up_cursor_style;
       pen = plain_pen;
       charsets = ascii_sets;
       modes = power_up_modes;
@@ -1267,6 +1291,7 @@ let csi t (s : Ansi.Parser.sequence) =
   | Some '?', "$", 'p' -> decrqm t ~private_:true (ps 0)
   | None, "!", 'p' -> decstr t
   | None, "\"", 'q' -> decsca t (ps 0)
+  | None, " ", 'q' -> decscusr t (ps 0)
   | None, " ", '@' -> sl t (pn 0)
   | None, " ", 'A' -> sr t (pn 0)
   | None, "'", '}' -> decic t (pn 0)
@@ -1514,6 +1539,7 @@ let rows t = t.rows
 let cols t = t.cols
 let cursor_pos t = (t.cursor.row, t.cursor.col)
 let last_column t = t.cursor.last_column
+let cursor_style t = t.cursor_style
 
 let wrapped t y =
   if y >= 0 then y < t.rows && wrapped_row t y

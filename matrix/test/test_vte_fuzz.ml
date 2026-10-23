@@ -458,7 +458,7 @@ let chunks_of s cuts =
   slices cuts
 
 (* What the bytes leave: every cell with its rendition and protection, the
-   cursor and its flag, the modes, the title, the wrap marks, the scrollback,
+   cursor with its flag and style, the modes, the title, the wrap marks, the scrollback,
    and the replies. *)
 let state vte replies =
   let g = Vte.grid vte in
@@ -478,7 +478,7 @@ let state vte replies =
       (fun i -> Vte.wrapped vte (i - Vte.scrollback_size vte))
   in
   ( cells,
-    (Vte.cursor_pos vte, Vte.last_column vte),
+    (Vte.cursor_pos vte, Vte.last_column vte, Vte.cursor_style vte),
     Vte.modes vte,
     Vte.title vte,
     marks,

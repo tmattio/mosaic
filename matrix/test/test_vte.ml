@@ -965,6 +965,52 @@ let line_feed_new_line_mode () =
     (Vte.feed_string vte "\x1b[20$p\x1b[20h\x1b[20$p");
   is_true ~msg:"in the modes" (Vte.modes vte).new_line
 
+(* DECSCUSR sets the cursor's shape and blinking; RIS restores the blinking
+   block and DECSTR keeps the style. *)
+let cursor_style () =
+  let style s =
+    let vte = Vte.create ~rows:2 ~cols:4 () in
+    feed vte s;
+    Vte.cursor_style vte
+  in
+  let shape =
+    Testable.make ~equal:( = ) ~pp:(fun ppf (s, b) ->
+        Format.fprintf ppf "(%s, %b)"
+          (match s with
+          | `Block -> "Block"
+          | `Underline -> "Underline"
+          | `Line -> "Line")
+          b)
+  in
+  equal ~msg:"power-up" shape (`Block, true) (style "");
+  List.iter
+    (fun (ps, expected) ->
+      equal ~msg:("DECSCUSR " ^ ps) shape expected
+        (style ("\x1b[6 q\x1b[" ^ ps ^ " q")))
+    [
+      ("", (`Block, true));
+      ("0", (`Block, true));
+      ("1", (`Block, true));
+      ("2", (`Block, false));
+      ("3", (`Underline, true));
+      ("4", (`Underline, false));
+      ("5", (`Line, true));
+      ("7", (`Block, true));
+      ("8", (`Line, false));
+    ];
+  equal ~msg:"RIS" shape (`Block, true) (style "\x1b[4 q\x1bc");
+  equal ~msg:"DECSTR keeps it" shape (`Underline, false)
+    (style "\x1b[4 q\x1b[!p");
+  equal ~msg:"both screens share it" shape (`Underline, true)
+    (style "\x1b[3 q\x1b[?1049h\x1b[?1049l");
+  let vte = Vte.create ~rows:2 ~cols:4 () in
+  Vte.clear_dirty vte;
+  feed vte "\x1b[5 q";
+  is_true ~msg:"a change marks the cursor dirty" (Vte.is_cursor_dirty vte);
+  Vte.clear_dirty vte;
+  feed vte "\x1b[5 q";
+  is_false ~msg:"no change, nothing dirty" (Vte.is_dirty vte)
+
 (* DECRQM reports a mode as set (1), reset (2) or not recognized (0); OSC 10,
    11 and 4 with [?] report a colour with the query's terminator. *)
 let mode_and_colour_queries () =
@@ -2232,6 +2278,7 @@ let tests =
     test "query replies" query_replies;
     test "mode and colour queries" mode_and_colour_queries;
     test "line feed/new line mode" line_feed_new_line_mode;
+    test "cursor style" cursor_style;
     test "OSC acts only when terminated" osc_acts_only_when_terminated;
     test "zero counts mean one" zero_counts_mean_one;
     test "replies by parameter value" replies_by_parameter_value;
