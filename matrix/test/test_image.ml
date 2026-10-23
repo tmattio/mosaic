@@ -117,6 +117,14 @@ let hit_rect_is_clipped_to_the_image () =
     Screen.Hit_grid.empty_id
     (Screen.Hit_grid.get hits ~x:3 ~y:0)
 
+(* Every value that would return an empty image returns [empty]. *)
+let hit_rect_on_empty_is_empty () =
+  is_true ~msg:"with_hit_rect on empty"
+    (Image.with_hit_rect ~id:4 ~x:0 ~y:0 ~width:2 ~height:2 Image.empty
+    == Image.empty);
+  is_true ~msg:"with_hit on empty"
+    (Image.with_hit ~id:4 Image.empty == Image.empty)
+
 (* Every crop clips what remains, a crop of nothing included. *)
 let crop_of_nothing_clips () =
   let wide =
@@ -171,6 +179,7 @@ let () =
           test "a crop of nothing clips" crop_of_nothing_clips;
           test "a hit rectangle is clipped to the image"
             hit_rect_is_clipped_to_the_image;
+          test "a hit region on empty is empty" hit_rect_on_empty_is_empty;
         ];
       group "defaults"
         [
