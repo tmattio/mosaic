@@ -2436,3 +2436,65 @@ let%expect_test "frames keep coming while posted messages are applied" =
     (fst (List.hd (List.rev views)))
     (List.length views) (gap / 1_000_000);
   [%expect {| applied 1000; 60 views; longest gap 17 ms |}]
+
+(* The run's standard error, captured: an exception off the loop must not be
+   written over the screen. *)
+let capturing_stderr f =
+  let file = Filename.temp_file "mosaic" ".err" in
+  let fd = Unix.openfile file [ O_WRONLY; O_TRUNC ] 0o600 in
+  let saved = Unix.dup Unix.stderr in
+  Unix.dup2 fd Unix.stderr;
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.dup2 saved Unix.stderr;
+      Unix.close saved;
+      Unix.close fd)
+    f;
+  let err = In_channel.with_open_bin file In_channel.input_all in
+  Sys.remove file;
+  err
+
+let%expect_test "X2: an exception in a perform ends the run" =
+  Printexc.record_backtrace true;
+  let cleanups = ref 0 in
+  let application =
+    app
+      ~init_cmd:(Mosaic.Cmd.perform (fun _ -> failwith "perform-thread"))
+      ~subs:(fun _ -> Mosaic.Sub.every ~id:"e" 0.1 (fun k -> Ticks k))
+      ()
+  in
+  let idle = ref 0 in
+  let t =
+    Matrix_test.create ~width:20 ~height:1
+      ~on_idle:(fun t ~until:_ ->
+        incr idle;
+        if !idle > 2000 then Matrix_test.stop t else Thread.delay 0.001)
+      ()
+  in
+  let backend =
+    { (Matrix_test.backend t) with cleanup = (fun () -> incr cleanups) }
+  in
+  let err =
+    capturing_stderr (fun () ->
+        match
+          Mosaic.run ~backend ~config:(Matrix_test.config t) application
+        with
+        | () -> print_endline "the run ended without the exception"
+        | exception Failure m ->
+            let bt = Printexc.get_backtrace () in
+            let names_the_raise =
+              List.exists
+                (fun line ->
+                  String.starts_with ~prefix:"Raised at Stdlib.failwith" line)
+                (String.split_on_char '\n' bt)
+            in
+            Printf.printf "raised %S, from the worker's raise: %b\n" m
+              names_the_raise)
+  in
+  Printf.printf "terminal given back: %b; standard error: %S\n" (!cleanups = 1)
+    err;
+  [%expect
+    {|
+    raised "perform-thread", from the worker's raise: true
+    terminal given back: true; standard error: ""
+    |}]

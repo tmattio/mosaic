@@ -811,14 +811,20 @@ module Cmd : sig
       order among the commands is not specified. *)
 
   val perform : (('msg -> unit) -> unit) -> 'msg t
-  (** [perform f] is a command that calls [f dispatch] asynchronously.
+  (** [perform f] runs [f dispatch] off the loop, by {!val-run}'s
+      [process_perform] (by default a new thread), so that long work never holds
+      the loop.
 
-      [f] may call [dispatch msg] any number of times; each call queues [msg]
-      for the loop, which applies it with [update] when it takes it, a step of a
-      turn as an event is. By default the runtime runs [f] on a fresh native
-      thread so that long-running operations never block the UI loop. This
-      behaviour can be overridden with the [process_perform] argument of
-      {!val-run}. *)
+      [f] may call [dispatch msg] any number of times, from any thread; each
+      call queues [msg] for the loop, which applies it with [update] when it
+      takes it, a step of a turn as an event is. Each thread's messages come in
+      the order it dispatched them.
+
+      An exception [f] raises ends the run: {!val-run} gives the terminal back
+      and raises it, with the backtrace of where [f] raised it (when backtraces
+      are recorded, {!Printexc.record_backtrace}). After the run, [dispatch]
+      does nothing, and an exception from [f] has no run left to end: it is
+      dropped. *)
 
   val quit : 'msg t
   (** [quit] requests orderly application termination after the current update

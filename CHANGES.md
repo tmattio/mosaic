@@ -46,6 +46,8 @@
 
 #### Fixed
 
+- An exception raised in a `Cmd.perform` ended its thread and printed over the screen while the program went on; it now ends the run, which gives the terminal back and raises it with the worker's backtrace
+- A message dispatched from another thread was applied only at the next event or frame, outside the turn's budget, so a flood of them held the screen; it is applied when the loop takes it
 - `Cmd.perform` messages can no longer be lost to a cross-thread race
 - `Sub.on_mouse` and `Sub.on_paste` now see event consumption (they behaved like the `_all` variants)
 - A mouse event a widget stopped reached only the first `Sub.on_mouse_all` listener; every capture listener now sees it

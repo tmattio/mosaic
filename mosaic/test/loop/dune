@@ -11,6 +11,7 @@
   matrix.test
   matrix.input
   matrix.vte
-  threads.posix)
+  threads.posix
+  unix)
  (preprocess
   (pps ppx_windtrap)))

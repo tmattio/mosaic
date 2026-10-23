@@ -358,8 +358,13 @@ let continues prev timer =
 let nanoseconds seconds = Float.to_int (Float.round (seconds *. 1e9))
 
 (* What work done off the loop sends it: a message for [update], a widget's
-   request for a frame, or a wake for a driver that waits on quiescence. *)
-type 'msg post = Message of 'msg | Redraw | Wake
+   request for a frame, a wake for a driver that waits on quiescence, or the
+   exception that work raised, which ends the run. *)
+type 'msg post =
+  | Message of 'msg
+  | Redraw
+  | Wake
+  | Failed of exn * Printexc.raw_backtrace
 
 type ('model, 'msg) runtime = {
   mutable model : 'model;
@@ -455,11 +460,20 @@ let post_msg runtime msg =
   Atomic.incr runtime.posted_msgs;
   Matrix.post runtime.matrix_app (Message msg)
 
+(* Runs [work] off the loop. Its exception is the run's: the loop raises it,
+   with the backtrace of where [work] raised it. *)
+let off_loop runtime work =
+  runtime.process_perform (fun () ->
+      try work ()
+      with exn ->
+        let bt = Printexc.get_raw_backtrace () in
+        Matrix.post runtime.matrix_app (Failed (exn, bt)))
+
 let rec process_cmd runtime (cmd : _ Cmd.t) =
   match cmd with
   | Cmd.None -> ()
   | Cmd.Batch cmds -> List.iter (process_cmd runtime) cmds
-  | Cmd.Perform f -> runtime.process_perform (fun () -> f (post_msg runtime))
+  | Cmd.Perform f -> off_loop runtime (fun () -> f (post_msg runtime))
   | Cmd.Quit -> runtime.quit <- true
   | Cmd.Set_title title ->
       let term = Matrix.terminal runtime.matrix_app in
@@ -1025,6 +1039,7 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
           redraw ();
           loop ()
       | Posted Wake -> loop ()
+      | Posted (Failed (exn, bt)) -> Printexc.raise_with_backtrace exn bt
       | Frame ->
           frame ();
           loop ()
