@@ -770,7 +770,7 @@ let start_frame r app (frame : frame) =
   (match frame.size with
   | Some (cols, rows) when (cols, rows) <> r.size ->
       let before = Vte.scrollback_size r.vte in
-      Vte.resize r.vte ~rows ~cols;
+      ignore (Vte.resize r.vte ~rows ~cols : Matrix_input.Reply.t list);
       r.pushed <- r.pushed + max 0 (Vte.scrollback_size r.vte - before);
       r.size <- (cols, rows);
       r.winch <- true

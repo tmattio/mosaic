@@ -22,18 +22,24 @@
 
     A program also asks the terminal questions, such as where the cursor is. The
     answers are the terminal's {e replies}, and {!feed} returns them
-    ({!section-replies}). The terminal performs no input or output, so the
-    caller writes the replies to the program's input. The screen depends only on
-    the bytes fed, and splitting them differently across {!feed} calls leaves
-    the same screen.
+    ({!section-replies}). It asks the terminal's host for what is not on the
+    screen, such as the bell or a desktop notification, and the terminal keeps
+    these {e requests} ({!section-requests}). It sets the modes that decide the
+    bytes the terminal sends for its user's keys and mouse ({!section-user}).
+    The terminal performs no input or output, so the caller writes the replies
+    to the program's input. The screen depends only on the bytes fed, and
+    splitting them differently across {!feed} calls leaves the same screen.
 
     The life cycle of a terminal usually goes like this:
-    + {!val-create} makes one in its power-up state, with a size and a palette.
+    + {!val-create} makes one in its power-up state, with a size, a palette, an
+      identity and the extensions it implements ({!section-extensions}).
     + {!feed} applies the program's output as it arrives and returns the
       replies, which the caller writes to the program's input.
     + A renderer reads the screen ({!grid}, {!cursor_pos}, {!val-modes}) and the
       scrollback ({!blit_view}), redraws what changed ({!section-dirty}), and
       calls {!clear_dirty}.
+    + The caller acts on the {!requests}, and writes the bytes of its user's
+      keys ({!keyboard}) and mouse ({!val-mouse}).
     + {!resize} follows the window's size, and {!reset} returns the terminal to
       its power-up state.
 
@@ -70,7 +76,35 @@ type palette = {
 
 (** {1:create Creating} *)
 
+type identity = {
+  attributes : int list;  (** The parameters of its DA1 reply. *)
+  secondary : int list;  (** The parameters of its DA2 reply. *)
+  version : string option;  (** Its XTVERSION reply, if it answers one. *)
+}
+(** The type for what a terminal says it is ({!section-extensions}). *)
+
+val vt100 : identity
+(** [vt100] is this module's own identity, a VT100 with Advanced Video
+    ([CSI ? 1 ; 2 c]), DA2's type 0, version 0 and no options
+    ([CSI > 0 ; 0 ; 0 c]), and no XTVERSION reply. *)
+
+(** The type for the protocols beyond the VT core that a terminal may implement
+    ({!section-extensions}). *)
+type extension =
+  | Kitty_keyboard  (** The kitty keyboard protocol's flags. *)
+  | Modify_other_keys  (** xterm's modifyOtherKeys. *)
+  | Synchronized_output  (** Mode 2026. *)
+  | Grapheme_clusters  (** Mode 2027, reported as the width method sets it. *)
+  | Color_scheme_reports  (** Mode 2031 and its query, [CSI ? 996 n]. *)
+  | In_band_resize  (** Mode 2048. *)
+  | Focus_reports  (** Mode 1004. *)
+
+val extensions : extension list
+(** [extensions] is every extension, in the order of {!type-extension}. *)
+
 val create :
+  ?identity:identity ->
+  ?extensions:extension list ->
   ?scrollback:int ->
   ?width_method:Matrix_text.width_method ->
   ?palette:palette ->
@@ -80,6 +114,10 @@ val create :
   t
 (** [create ~rows ~cols ()] is a terminal in its power-up state
     ({!section-resets}), with:
+    - [identity], what it answers to DA1, DA2 and XTVERSION. Defaults to
+      {!vt100}.
+    - [extensions], the protocols it implements beyond the VT core. Defaults to
+      {!val-extensions}.
     - [scrollback], the number of lines the scrollback keeps, the oldest dropped
       first. Defaults to [10000]; [0] keeps none.
     - [width_method], how wide characters are ({!section-printing}). Defaults to
@@ -208,14 +246,10 @@ val reset : t -> unit
     program's input. The answers are {!Matrix_input.Reply.t} values, the ones a
     program's input decoder reads, which {!Matrix_input.Reply.encode} writes as
     the terminal's bytes. The terminal answers these queries:
-    - DA ([CSI c]), and DECID ([ESC Z]), its obsolete form (ctlseqs), with
-      [Primary_attributes [1; 2]], [CSI ? 1 ; 2 c], a VT100 with Advanced Video,
-      and DA2 ([CSI > c]) with [Secondary_attributes [0; 0; 0]],
-      [CSI > 0 ; 0 ; 0 c]. Every terminal this module makes gives this identity,
-      which promises only what it implements. A VT220 (level 2) would promise
-      8-bit controls and DECSCL, which this terminal lacks. A caller that must
-      pass for another terminal, such as a recorder whose sessions are compared
-      with that terminal's, rewrites the reply before writing it;
+    - DA ([CSI c]), and DECID ([ESC Z]), its obsolete form (ctlseqs), with its
+      identity's [Primary_attributes], DA2 ([CSI > c]) with its
+      [Secondary_attributes], and XTVERSION ([CSI > q]) with its [Version], if
+      it has one ({!section-extensions});
     - DSR 5 with [Operating_status `Ok], [CSI 0 n], and CPR (DSR 6) with a
       [Cursor] with no page, [CSI r ; c R], the row counted from the top margin
       in origin mode;
@@ -227,8 +261,17 @@ val reset : t -> unit
       mode and [CSI ? Ps $ p] for a DEC private one, with DECRPM, a [Mode],
       [CSI Ps ; Pm $ y] and [CSI ? Ps ; Pm $ y]. [Pm] is 1 for set, 2 for reset,
       and 0 for a mode this terminal does not recognize (VT320 Programmer
-      Information, "Mode Settings"). The modes recognized are those of
-      {!type-modes}, and modes 47, 1047 and 1049 report the alternate screen;
+      Information, "Mode Settings"), and 3 and 4 for one permanently set or
+      reset. The modes recognized are those of {!type-modes} and of the mouse
+      ({!section-user}), but those of an extension the terminal lacks. Modes 47,
+      1047 and 1049 report the alternate screen. Mode 1036 is permanently set,
+      since Alt sends an ESC before the key. Mode 2027, with
+      [Grapheme_clusters], is permanently set when the width method is
+      [`Unicode], permanently reset when it is [`Wcwidth], and not recognized
+      when it is [`Unicode_wide], which no setting of the mode describes;
+    - the kitty keyboard protocol's [CSI ? u] with a [Keyboard_flags], and
+      [CSI ? 996 n] with the terminal's [Color_scheme] ({!set_color_scheme}),
+      when it has the extension;
     - a color spec [?] in OSC 4, 10, 11 or 12, which asks for a color of the
       palette ({!section-palette}), with a [Color] from the palette as it is,
       the OSC that would set it, such as [OSC 11 ; rgb:0000/0000/0000]. The
@@ -329,21 +372,23 @@ val grid : t -> Matrix_grid.t
 (** [grid t] are the cells of the active screen. The caller must not change
     them. *)
 
-val resize : t -> rows:int -> cols:int -> unit
+val resize : t -> rows:int -> cols:int -> Matrix_input.Reply.t list
 (** [resize t ~rows ~cols] changes the screen size and keeps the text without
-    reflowing it. Each screen keeps the rows around its cursor, which for the
-    inactive screen is the cursor in its DECSC slot. Shrinking drops rows below
-    that cursor first, then moves rows off the top, into the scrollback for the
-    primary screen. Growing takes the newest scrollback lines back onto the
-    primary screen, then adds rows at the bottom. The rows and columns a resize
-    adds are blank on {!Ansi.Color.default_bg}. Rows keep their wrap marks, and
-    a row back from the scrollback has no protection. Cursors and DECSC slots
-    move with their rows and lose the Last Column Flag, the margins become the
-    whole screen, and a unit in progress is ended. Tab stops stay, and new
-    columns have one every eight columns. [rows] and [cols] below [1] are taken
-    as [1]. A resize to the current size changes nothing, so a size report that
-    repeats the size keeps the margins, the Last Column Flag and the changes
-    ({!section-dirty}).
+    reflowing it, and is the report the terminal sends: the [Resize] of mode
+    2048, with no pixel size (0), when the size changed while the mode is set,
+    and [[]] otherwise. Each screen keeps the rows around its cursor, which for
+    the inactive screen is the cursor in its DECSC slot. Shrinking drops rows
+    below that cursor first, then moves rows off the top, into the scrollback
+    for the primary screen. Growing takes the newest scrollback lines back onto
+    the primary screen, then adds rows at the bottom. The rows and columns a
+    resize adds are blank on {!Ansi.Color.default_bg}. Rows keep their wrap
+    marks, and a row back from the scrollback has no protection. Cursors and
+    DECSC slots move with their rows and lose the Last Column Flag, the margins
+    become the whole screen, and a unit in progress is ended. Tab stops stay,
+    and new columns have one every eight columns. [rows] and [cols] below [1]
+    are taken as [1]. A resize to the current size changes nothing, so a size
+    report that repeats the size keeps the margins, the Last Column Flag and the
+    changes ({!section-dirty}).
 
     Raises [Invalid_argument], and changes nothing, if
     [cols > Matrix_grid.max_width]. *)
@@ -379,15 +424,113 @@ type modes = {
   national : bool;
       (** DECNRCM (DECSET 42). The national replacement character sets are
           available. *)
+  keypad : bool;
+      (** DECNKM (DECSET 66), which DECKPAM ([ESC =]) also sets and DECKPNM
+          ([ESC >]) resets. The keypad sends its application forms. *)
+  focus_reports : bool;  (** Focus reports (DECSET 1004). *)
+  synchronized_output : bool;
+      (** Synchronized output (DECSET 2026). The program is between the start
+          and the end of an update. This terminal shows every change as it is
+          fed, so a reader that must see only whole updates reads while the mode
+          is off. *)
+  color_scheme_reports : bool;  (** Color scheme reports (DECSET 2031). *)
+  resize_reports : bool;  (** In-band resize reports (DECSET 2048). *)
 }
 (** The type for the terminal's modes. At power-up autowrap is on, the cursor
-    visible and the others off. *)
+    visible and the others off. The modes of an extension the terminal lacks
+    stay off ({!section-extensions}). *)
 
 val modes : t -> modes
 (** [modes t] are [t]'s modes. *)
 
 val title : t -> string
 (** [title t] is the title OSC 0 or OSC 2 last set, [""] at power-up. *)
+
+(** {1:user The user's side}
+
+    The bytes a terminal sends for its user's keys and mouse depend on modes the
+    program sets. Beside DECCKM, DECNKM and LNM ({!type-modes}), the terminal
+    keeps:
+    - the kitty keyboard protocol's flags, on a stack for each screen, with
+      [Kitty_keyboard]. [CSI > flags u] pushes flags, [CSI < n u] pops [n]
+      entries (default 1), [CSI = flags ; mode u] sets the current flags (mode
+      1, the default), adds them (2) or takes them away (3), and [CSI ? u] asks
+      for them (kitty keyboard protocol, "Progressive enhancement"). The flags
+      are [0] while a stack is empty;
+    - xterm's modifyOtherKeys level, with [Modify_other_keys], which
+      [CSI > 4 ; v m] sets and [CSI > 4 m] and [CSI > 4 n] reset to 0;
+    - one mouse tracking mode and one format, as xterm does (ctlseqs, "Mouse
+      Tracking"). Setting mode 9, 1000, 1002 or 1003 makes it the tracking mode,
+      and resetting any of them turns tracking off. Mode 1006 makes SGR the
+      format and 1015 URXVT, and resetting the format in use returns to X10's
+      bytes. This terminal has neither UTF-8 coordinates (1005) nor SGR pixels
+      (1016).
+
+    RIS resets them, and DECSTR resets DECNKM. *)
+
+val keyboard : t -> Matrix_input.Keystroke.encoding
+(** [keyboard t] is the keyboard state the program has set, which
+    {!Matrix_input.Keystroke.encode} turns a key into bytes with. *)
+
+val mouse : t -> Matrix_input.Mouse_report.encoding option
+(** [mouse t] is the mouse reporting the program has set, [None] while tracking
+    is off. {!Matrix_input.Mouse_report.encode} turns a report into bytes with
+    it. *)
+
+(** {1:extensions Identity and extensions}
+
+    A terminal says what it is in its answers to DA1, DA2 and XTVERSION, its
+    {e identity} ({!type-identity}), and implements the VT core this module
+    describes and the {e extensions} ({!type-extension}) it was created with. A
+    terminal without an extension behaves as one that never had it: the
+    sequences that set it do nothing, DECRQM reports its mode as not recognized,
+    and its queries get no answer. *)
+
+val identity : t -> identity
+(** [identity t] is the identity [t] answers with. *)
+
+(** {1:requests Requests to the host}
+
+    A program asks the terminal's host for what is not on the screen. A
+    {e request} ({!type-request}) is one such ask, which the terminal keeps, in
+    order, for its caller to act on:
+    - BEL, outside a control string, rings the bell;
+    - OSC 9, iTerm2's notification, posts a desktop notification of its text,
+      and OSC 777 [; notify ; title ; body], urxvt's, one with a title. A
+      program that sends both posts two;
+    - OSC 52 [; selection ; data], with [data] in base64, sets a clipboard ([c]
+      the clipboard, [p] the primary selection). A read, whose data is [?], asks
+      for a clipboard this terminal does not have, and gets no answer. *)
+
+type request =
+  | Bell
+  | Notification of { title : string; body : string }
+      (** A desktop notification, its title [""] for OSC 9. *)
+  | Clipboard of { selection : string; data : string }
+      (** A clipboard write, its data decoded. *)
+
+val requests : t -> request list
+(** [requests t] is the requests the program has made since {!val-create} or
+    {!clear_requests}, oldest first. *)
+
+val clear_requests : t -> unit
+(** [clear_requests t] forgets the requests. *)
+
+(** {1:scheme Color scheme}
+
+    The terminal's {e color scheme} is dark or light, as its user chose it, and
+    dark at power-up. A program asks for it with [CSI ? 996 n] and, with mode
+    2031 set, is told of each change (contour, "Dark and Light Mode detection").
+    RIS leaves it as it is. *)
+
+val color_scheme : t -> [ `Dark | `Light ]
+(** [color_scheme t] is [t]'s color scheme. *)
+
+val set_color_scheme : t -> [ `Dark | `Light ] -> Matrix_input.Reply.t list
+(** [set_color_scheme t s] is the change of [t]'s color scheme to [s] by its
+    user, and is the report the terminal sends: a [Color_scheme] when the scheme
+    changed while mode 2031 is set, and [[]] otherwise. The caller writes it to
+    the program's input. *)
 
 (** {1:palette The palette}
 

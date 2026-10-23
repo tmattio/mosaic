@@ -141,6 +141,16 @@ let init () =
     texture_cache = Hashtbl.create 1024;
   }
 
+(* Write all of [s] to [pty]. The PTY is non-blocking: after a short write,
+   or when it can take nothing, wait until it can take more. *)
+let rec write_all pty s off len =
+  if len > 0 then
+    match Pty.write_string pty s off len with
+    | n when n > 0 -> write_all pty s (off + n) (len - n)
+    | _ | (exception Unix.Unix_error ((EAGAIN | EWOULDBLOCK | EINTR), _, _)) ->
+        ignore (Unix.select [] [ Pty.out_fd pty ] [] (-1.));
+        write_all pty s off len
+
 (** Zoom in/out by changing font size *)
 let zoom state delta =
   let new_size = max 8 (min 72 (state.font_size + delta)) in
@@ -175,7 +185,11 @@ let zoom state delta =
 
         (* Resize PTY and VTE *)
         Pty.resize state.pty ~cols:new_cols ~rows:new_rows;
-        Vte.resize state.vte ~rows:new_rows ~cols:new_cols;
+        let report =
+          Matrix_input.Reply.encode
+            (Vte.resize state.vte ~rows:new_rows ~cols:new_cols)
+        in
+        write_all state.pty report 0 (String.length report);
         Grid.resize state.view_grid ~width:new_cols ~height:new_rows;
 
         (* Clear texture cache (different font size) *)
@@ -198,16 +212,6 @@ let cleanup state =
   Sdl.destroy_window state.window;
   Ttf.quit ();
   Sdl.quit ()
-
-(* Write all of [s] to [pty]. The PTY is non-blocking: after a short write,
-   or when it can take nothing, wait until it can take more. *)
-let rec write_all pty s off len =
-  if len > 0 then
-    match Pty.write_string pty s off len with
-    | n when n > 0 -> write_all pty s (off + n) (len - n)
-    | _ | (exception Unix.Unix_error ((EAGAIN | EWOULDBLOCK | EINTR), _, _)) ->
-        ignore (Unix.select [] [ Pty.out_fd pty ] [] (-1.));
-        write_all pty s off len
 
 (** Translates TSDL keyboard events into byte sequences for the PTY. *)
 let handle_key_down state (event : Sdl.event) =
@@ -437,7 +441,11 @@ let handle_event state event =
           let new_rows = max 1 ((Int32.to_int h - 20) / state.char_height) in
           (* Resize both PTY and VTE *)
           Pty.resize state.pty ~cols:new_cols ~rows:new_rows;
-          Vte.resize state.vte ~rows:new_rows ~cols:new_cols;
+          let report =
+            Matrix_input.Reply.encode
+              (Vte.resize state.vte ~rows:new_rows ~cols:new_cols)
+          in
+          write_all state.pty report 0 (String.length report);
           Grid.resize state.view_grid ~width:new_cols ~height:new_rows;
           state.last_rendered_offset <- -1;
           (* Invalidate cache *)

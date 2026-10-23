@@ -51,7 +51,37 @@ type modes = {
   bracketed_paste : bool;
   alternate_screen : bool;
   national : bool;
+  keypad : bool;
+  focus_reports : bool;
+  synchronized_output : bool;
+  color_scheme_reports : bool;
+  resize_reports : bool;
 }
+
+type identity = {
+  attributes : int list;
+  secondary : int list;
+  version : string option;
+}
+
+type extension =
+  | Kitty_keyboard
+  | Modify_other_keys
+  | Synchronized_output
+  | Grapheme_clusters
+  | Color_scheme_reports
+  | In_band_resize
+  | Focus_reports
+
+type request =
+  | Bell
+  | Notification of { title : string; body : string }
+  | Clipboard of { selection : string; data : string }
+
+(* xterm keeps one mouse tracking mode and one format: setting one replaces
+   the other, and resetting it turns tracking off. *)
+type tracking = [ `Off | `X10 | `Normal | `Button | `Any ]
+type mouse_format = [ `X10 | `Sgr | `Urxvt ]
 
 (* A scrollback line: the text of its graphemes; in [cells], the byte length
    and the width of each, in order, as two varints, so that each comes back
@@ -142,6 +172,18 @@ type t = {
      calls. *)
   mutable replies : Reply.t list;
   dirty : dirty;
+  identity : identity;
+  extensions : extension list;
+  (* The kitty keyboard protocol's stacks of flags, the current first, one
+     for each screen. *)
+  mutable kitty_primary : int list;
+  mutable kitty_alternate : int list;
+  mutable modify_other_keys : int;
+  mutable tracking : tracking;
+  mutable mouse_format : mouse_format;
+  mutable color_scheme : [ `Dark | `Light ];
+  (* The requests to the host, the latest first. *)
+  mutable requests : request list;
 }
 
 let top_left = { row = 0; col = 0; last_column = false }
@@ -163,7 +205,28 @@ let power_up_modes =
     bracketed_paste = false;
     alternate_screen = false;
     national = false;
+    keypad = false;
+    focus_reports = false;
+    synchronized_output = false;
+    color_scheme_reports = false;
+    resize_reports = false;
   }
+
+(* A VT100 with Advanced Video, and DA2's type 0, version 0, no options. *)
+let vt100 = { attributes = [ 1; 2 ]; secondary = [ 0; 0; 0 ]; version = None }
+
+let extensions =
+  [
+    Kitty_keyboard;
+    Modify_other_keys;
+    Synchronized_output;
+    Grapheme_clusters;
+    Color_scheme_reports;
+    In_band_resize;
+    Focus_reports;
+  ]
+
+let has t e = List.mem e t.extensions
 
 (* A blinking block, DECSCUSR's default (VT510 DECSCUSR). *)
 let power_up_cursor_style = (`Block, true)
@@ -1031,6 +1094,28 @@ let set_dec_mode t mode on =
         leave_alternate t;
         decrc t)
   | 2004 -> t.modes <- { m with bracketed_paste = on }
+  | 66 -> t.modes <- { m with keypad = on }
+  | 9 | 1000 | 1002 | 1003 ->
+      t.tracking <-
+        (if not on then `Off
+         else
+           match mode with
+           | 9 -> `X10
+           | 1000 -> `Normal
+           | 1002 -> `Button
+           | _ -> `Any)
+  | 1006 ->
+      if on then t.mouse_format <- `Sgr
+      else if t.mouse_format = `Sgr then t.mouse_format <- `X10
+  | 1015 ->
+      if on then t.mouse_format <- `Urxvt
+      else if t.mouse_format = `Urxvt then t.mouse_format <- `X10
+  | 1004 when has t Focus_reports -> t.modes <- { m with focus_reports = on }
+  | 2026 when has t Synchronized_output ->
+      t.modes <- { m with synchronized_output = on }
+  | 2031 when has t Color_scheme_reports ->
+      t.modes <- { m with color_scheme_reports = on }
+  | 2048 when has t In_band_resize -> t.modes <- { m with resize_reports = on }
   | _ -> ()
 
 (* SM, RM, DECSET and DECRST: every mode listed, absent ones skipped. *)
@@ -1057,6 +1142,11 @@ let ris t =
   t.margins <- full_margins t;
   t.tabs <- default_tabs t.cols;
   t.title <- "";
+  t.kitty_primary <- [];
+  t.kitty_alternate <- [];
+  t.modify_other_keys <- 0;
+  t.tracking <- `Off;
+  t.mouse_format <- `X10;
   if t.palette != t.initial then (
     t.palette <- t.initial;
     t.dirty.cursor <- true);
@@ -1094,8 +1184,8 @@ let check_palette p =
   { p with colors = Array.copy p.colors }
 
 (* The structure, which RIS gives its power-up state. *)
-let create ?(scrollback = 10000) ?(width_method = `Unicode)
-    ?(palette = default_palette) ~rows ~cols () =
+let create ?(identity = vt100) ?(extensions = extensions) ?(scrollback = 10000)
+    ?(width_method = `Unicode) ?(palette = default_palette) ~rows ~cols () =
   check_cols "create" cols;
   let initial = check_palette palette in
   let rows = max 1 rows and cols = max 1 cols in
@@ -1143,6 +1233,15 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
       osc_text = Buffer.create 64;
       replies = [];
       dirty = { any = false; cursor = false; rows = Bytes.make rows '\000' };
+      identity;
+      extensions;
+      kitty_primary = [];
+      kitty_alternate = [];
+      modify_other_keys = 0;
+      tracking = `Off;
+      mouse_format = `X10;
+      color_scheme = `Dark;
+      requests = [];
     }
   in
   ris t;
@@ -1161,6 +1260,10 @@ let decstr t =
       new_line = t.modes.new_line;
       bracketed_paste = t.modes.bracketed_paste;
       alternate_screen = t.modes.alternate_screen;
+      focus_reports = t.modes.focus_reports;
+      synchronized_output = t.modes.synchronized_output;
+      color_scheme_reports = t.modes.color_scheme_reports;
+      resize_reports = t.modes.resize_reports;
     };
   t.margins <- full_margins t;
   t.pen <- plain_pen;
@@ -1201,10 +1304,9 @@ let ss t single = t.charsets <- { t.charsets with single }
 (* {1:replies Replies} *)
 
 let reply t r = t.replies <- r :: t.replies
-
-(* A VT100 with Advanced Video, and DA2's type 0, version 0, no options. *)
-let da t = reply t (Primary_attributes [ 1; 2 ])
-let da2 t = reply t (Secondary_attributes [ 0; 0; 0 ])
+let da t = reply t (Primary_attributes t.identity.attributes)
+let da2 t = reply t (Secondary_attributes t.identity.secondary)
+let xtversion t = Option.iter (fun v -> reply t (Version v)) t.identity.version
 
 (* The position cursor reports give: in origin mode the row counts from the
    top margin. *)
@@ -1219,36 +1321,90 @@ let dsr t = function
 let decxcpr t =
   reply t (Cursor { row = report_row t; col = t.cursor.col; page = Some 1 })
 
-(* The state of the modes [set_ansi_mode] and [set_dec_mode] keep, [None] for
-   a mode this terminal does not have. *)
-let ansi_mode t = function
-  | 4 -> Some t.modes.insert
-  | 20 -> Some t.modes.new_line
-  | _ -> None
+(* DECRQM: DECRPM's Pm is 1 for set, 2 for reset, 0 for a mode not
+   recognized (VT320 Programmer Information, Table 2), and 3 and 4 for one set
+   or reset for good. *)
+let setting : bool -> Reply.setting = function true -> Set | false -> Reset
 
-let dec_mode t mode =
+let ansi_mode t : int -> Reply.setting = function
+  | 4 -> setting t.modes.insert
+  | 20 -> setting t.modes.new_line
+  | _ -> Not_recognized
+
+let dec_mode t mode : Reply.setting =
   let m = t.modes in
+  let ext e on = if has t e then setting on else Not_recognized in
   match mode with
-  | 1 -> Some m.cursor_keys
-  | 6 -> Some m.origin
-  | 7 -> Some m.auto_wrap
-  | 25 -> Some m.cursor_visible
-  | 42 -> Some m.national
-  | 45 -> Some m.reverse_wrap
-  | 47 | 1047 | 1049 -> Some m.alternate_screen
-  | 2004 -> Some m.bracketed_paste
-  | _ -> None
+  | 1 -> setting m.cursor_keys
+  | 6 -> setting m.origin
+  | 7 -> setting m.auto_wrap
+  | 25 -> setting m.cursor_visible
+  | 42 -> setting m.national
+  | 45 -> setting m.reverse_wrap
+  | 47 | 1047 | 1049 -> setting m.alternate_screen
+  | 2004 -> setting m.bracketed_paste
+  | 66 -> setting m.keypad
+  | 9 -> setting (t.tracking = `X10)
+  | 1000 -> setting (t.tracking = `Normal)
+  | 1002 -> setting (t.tracking = `Button)
+  | 1003 -> setting (t.tracking = `Any)
+  | 1006 -> setting (t.mouse_format = `Sgr)
+  | 1015 -> setting (t.mouse_format = `Urxvt)
+  (* Alt is always an ESC before the key. *)
+  | 1036 -> Permanently_set
+  | 1004 -> ext Focus_reports m.focus_reports
+  | 2026 -> ext Synchronized_output m.synchronized_output
+  | 2031 -> ext Color_scheme_reports m.color_scheme_reports
+  | 2048 -> ext In_band_resize m.resize_reports
+  | 2027 when has t Grapheme_clusters -> (
+      match Grid.width_method t.primary.grid with
+      | `Unicode -> Permanently_set
+      | `Wcwidth -> Permanently_reset
+      | `Unicode_wide -> Not_recognized)
+  | _ -> Not_recognized
 
-(* DECRQM: DECRPM's Pm is 1 for set, 2 for reset and 0 for a mode not
-   recognized (VT320 Programmer Information, Table 2). *)
 let decrqm t ~private_ mode =
-  let setting : Reply.setting =
-    match (if private_ then dec_mode else ansi_mode) t mode with
-    | Some true -> Set
-    | Some false -> Reset
-    | None -> Not_recognized
-  in
+  let setting = (if private_ then dec_mode else ansi_mode) t mode in
   reply t (Mode { dec = private_; mode; setting })
+
+(* {2 The keyboard} *)
+
+let kitty_stack t =
+  if t.modes.alternate_screen then t.kitty_alternate else t.kitty_primary
+
+let set_kitty_stack t stack =
+  if t.modes.alternate_screen then t.kitty_alternate <- stack
+  else t.kitty_primary <- stack
+
+let kitty_flags t = match kitty_stack t with flags :: _ -> flags | [] -> 0
+
+(* The kitty protocol's progressive enhancement: [CSI > flags u] pushes,
+   [CSI < n u] pops n entries, [CSI = flags ; mode u] sets the current flags
+   (1), adds them (2) or takes them away (3), and [CSI ? u] asks for them. *)
+let kitty_push t flags = set_kitty_stack t (flags :: kitty_stack t)
+
+let kitty_pop t n =
+  let rec drop n l =
+    if n <= 0 then l else match l with [] -> [] | _ :: l -> drop (n - 1) l
+  in
+  set_kitty_stack t (drop n (kitty_stack t))
+
+let kitty_set t flags mode =
+  let current = kitty_flags t in
+  let flags =
+    match mode with
+    | 2 -> current lor flags
+    | 3 -> current land lnot flags
+    | _ -> flags
+  in
+  set_kitty_stack t
+    (match kitty_stack t with _ :: rest -> flags :: rest | [] -> [ flags ])
+
+(* xterm's XTMODKEYS, [CSI > 4 ; v m], sets modifyOtherKeys; with no value
+   it resets it. *)
+let xtmodkeys t p =
+  if Params.ps p 0 ~default:0 = 4 then
+    t.modify_other_keys <- Params.ps p 1 ~default:0
 
 (* {1:dispatch Dispatch}
 
@@ -1295,11 +1451,14 @@ let control t = function
   | '\x8e' -> ss t (Some 2)
   | '\x8f' -> ss t (Some 3)
   | '\x9a' -> da t (* ESC Z, DECID: an obsolete form of DA (ctlseqs) *)
+  | '\x07' -> t.requests <- Bell :: t.requests
   | _ -> ()
 
 let esc t intermediates final =
   match (intermediates, final) with
   | "", 'c' -> ris t
+  | "", '=' -> t.modes <- { t.modes with keypad = true } (* DECKPAM *)
+  | "", '>' -> t.modes <- { t.modes with keypad = false } (* DECKPNM *)
   | "", '7' -> decsc t
   | "", '8' -> decrc t
   | "", 'n' -> ls t 2
@@ -1350,6 +1509,18 @@ let csi t (s : Ansi.Parser.sequence) =
   | Some '?', "", 'K' -> decsel t (ps 0)
   | Some '?', "", 'n' when ps 0 = 6 -> decxcpr t
   | Some '>', "", 'c' when ps 0 = 0 -> da2 t
+  | Some '>', "", 'q' when ps 0 = 0 -> xtversion t
+  | Some '?', "", 'n' when ps 0 = 996 && has t Color_scheme_reports ->
+      reply t (Color_scheme t.color_scheme)
+  | Some '>', "", 'u' when has t Kitty_keyboard -> kitty_push t (ps 0)
+  | Some '<', "", 'u' when has t Kitty_keyboard -> kitty_pop t (pn 0)
+  | Some '=', "", 'u' when has t Kitty_keyboard ->
+      kitty_set t (ps 0) (Params.ps p 1 ~default:1)
+  | Some '?', "", 'u' when has t Kitty_keyboard ->
+      reply t (Keyboard_flags (kitty_flags t))
+  | Some '>', "", 'm' when has t Modify_other_keys -> xtmodkeys t p
+  | Some '>', "", 'n' when has t Modify_other_keys && ps 0 = 4 ->
+      t.modify_other_keys <- 0
   | None, "$", 'p' -> decrqm t ~private_:false (ps 0)
   | Some '?', "$", 'p' -> decrqm t ~private_:true (ps 0)
   | None, "!", 'p' -> decstr t
@@ -1381,9 +1552,10 @@ let osc_keep t s off =
   if Buffer.length t.osc_text + len > osc_budget then osc_drop t
   else Buffer.add_substring t.osc_text s off len
 
-(* The OSCs performed: titles, links, and the palette's colours. *)
+(* The OSCs performed: titles, links, the palette's colours, and the requests
+   to the host. *)
 let osc_kept = function
-  | 0 | 2 | 4 | 8 | 10 | 11 | 12 | 104 | 110 | 111 | 112 -> true
+  | 0 | 2 | 4 | 8 | 9 | 10 | 11 | 12 | 52 | 104 | 110 | 111 | 112 | 777 -> true
   | _ -> false
 
 (* Ps, the number before the first [;], decides whether the rest is kept. *)
@@ -1518,10 +1690,33 @@ let string_data t s =
   | Osc_number n -> osc_number t s 0 n
   | Osc_text _ -> osc_keep t s 0
 
+(* A request to the host: OSC 9 (iTerm2) is a notification's body, OSC 777
+   (urxvt) [notify ; title ; body], and OSC 52 [selection ; data] a clipboard
+   write with its data in base64; a read ([?]) asks for a clipboard this
+   terminal does not have. *)
+let host_request t n ending text =
+  let request =
+    match n with
+    | 9 -> Some (Notification { title = ""; body = text })
+    | 777 -> (
+        match String.split_on_char ';' text with
+        | "notify" :: title :: body ->
+            Some (Notification { title; body = String.concat ";" body })
+        | _ -> None)
+    | _ -> (
+        match Reply.of_osc ending ("52;" ^ text) with
+        | Clipboard { selection; data; _ } ->
+            Some (Clipboard { selection; data })
+        | _ -> None)
+  in
+  Option.iter (fun r -> t.requests <- r :: t.requests) request
+
 let close_string t ending =
   (match (t.osc, ending) with
   | Osc_text (0 | 2), (`St | `Bel) -> t.title <- Buffer.contents t.osc_text
   | Osc_text 8, (`St | `Bel) -> osc_hyperlink t (Buffer.contents t.osc_text)
+  | Osc_text ((9 | 52 | 777) as n), ((`St | `Bel) as ending) ->
+      host_request t n ending (Buffer.contents t.osc_text)
   | Osc_text n, ((`St | `Bel) as ending) ->
       osc_colours t n ending (Buffer.contents t.osc_text)
   | Osc_number ((104 | 110 | 111 | 112) as n), ((`St | `Bel) as ending) ->
@@ -1633,7 +1828,8 @@ let resize_screen t s ~row ~rows ~cols =
 let resize t ~rows ~cols =
   check_cols "resize" cols;
   let rows = max 1 rows and cols = max 1 cols in
-  if rows <> t.rows || cols <> t.cols then begin
+  if rows = t.rows && cols = t.cols then []
+  else begin
     break_text t;
     let move (c : cursor) down =
       {
@@ -1661,7 +1857,12 @@ let resize t ~rows ~cols =
     t.dirty.any <- true;
     t.dirty.cursor <- true;
     let c = move t.cursor down in
-    set_cursor t ~row:c.row ~col:c.col ~last_column:false
+    set_cursor t ~row:c.row ~col:c.col ~last_column:false;
+    (* The report of mode 2048, with no pixel size, which this terminal does
+       not have. *)
+    if t.modes.resize_reports then
+      [ Reply.Resize { rows; cols; height = 0; width = 0 } ]
+    else []
   end
 
 (* {1:access Access} *)
@@ -1673,6 +1874,32 @@ let last_column t = t.cursor.last_column
 let cursor_style t = t.cursor_style
 let modes t = t.modes
 let title t = t.title
+let identity t = t.identity
+let requests t = List.rev t.requests
+let clear_requests t = t.requests <- []
+let color_scheme t = t.color_scheme
+
+let set_color_scheme t scheme =
+  if scheme = t.color_scheme then []
+  else (
+    t.color_scheme <- scheme;
+    if t.modes.color_scheme_reports then [ Reply.Color_scheme scheme ] else [])
+
+let keyboard t : Matrix_input.Keystroke.encoding =
+  {
+    cursor_keys = t.modes.cursor_keys;
+    keypad = t.modes.keypad;
+    new_line = t.modes.new_line;
+    modify_other_keys = t.modify_other_keys;
+    kitty = kitty_flags t;
+  }
+
+let mouse t : Matrix_input.Mouse_report.encoding option =
+  match t.tracking with
+  | `Off -> None
+  | (`X10 | `Normal | `Button | `Any) as tracking ->
+      Some { tracking; format = t.mouse_format }
+
 let scrollback_capacity t = Array.length t.history.lines
 let scrollback_size t = if t.modes.alternate_screen then 0 else t.history.count
 

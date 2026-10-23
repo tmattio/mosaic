@@ -82,47 +82,12 @@ let send state s =
         Pty.close pty;
         state.pty <- None)
 
-(* xterm's bytes for a keystroke. [Char c] is the character typed, Shift
-   already applied: Ctrl with it is its C0 control, and Alt puts ESC before
-   what the key sends. *)
-let key_bytes (ke : Input.Keystroke.t) =
-  let data =
-    match ke.key with
-    | Enter -> Some "\r"
-    | Tab when ke.mods.shift -> Some "\x1b[Z"
-    | Tab -> Some "\t"
-    | Backspace -> Some "\x7f"
-    | Escape -> Some "\x1b"
-    | Up -> Some "\x1b[A"
-    | Down -> Some "\x1b[B"
-    | Right -> Some "\x1b[C"
-    | Left -> Some "\x1b[D"
-    | Begin -> Some "\x1b[E"
-    | Home -> Some "\x1b[H"
-    | End -> Some "\x1b[F"
-    | Page_up -> Some "\x1b[5~"
-    | Page_down -> Some "\x1b[6~"
-    | Delete -> Some "\x1b[3~"
-    | Insert -> Some "\x1b[2~"
-    | F n when n >= 1 && n <= 4 ->
-        Some (Printf.sprintf "\x1bO%c" (Char.chr (Char.code 'P' + n - 1)))
-    | F n when n >= 5 && n <= 12 ->
-        let codes = [| "15"; "17"; "18"; "19"; "20"; "21"; "23"; "24" |] in
-        Some (Printf.sprintf "\x1b[%s~" codes.(n - 5))
-    | Char u ->
-        let code = Uchar.to_int u in
-        if ke.mods.ctrl && code = Char.code ' ' then Some "\x00"
-        else if ke.mods.ctrl && code >= 0x40 && code <= 0x7f then
-          Some (String.make 1 (Char.chr (code land 0x1f)))
-        else
-          let buf = Buffer.create 4 in
-          Buffer.add_utf_8_uchar buf u;
-          Some (Buffer.contents buf)
-    | _ -> None
-  in
-  if ke.mods.alt then Option.map (fun s -> "\x1b" ^ s) data else data
-
-let send_key state ke = Option.iter (send state) (key_bytes ke)
+(* The bytes the terminal sends for a keystroke, in the encoding the shell's
+   program has set; a key that no terminal in it sends is dropped. *)
+let send_key state ke =
+  match Input.Keystroke.encode (Vte.keyboard state.vte) ke with
+  | bytes -> send state bytes
+  | exception Invalid_argument _ -> ()
 
 (* A paste goes to the program as it came, between the bracketed paste
    markers when the program asked for them. *)
@@ -136,12 +101,13 @@ let send_paste state event =
 
 let resize_state state ~cols ~rows =
   if cols <> state.cols || rows <> state.rows then (
-    Vte.resize state.vte ~rows ~cols;
+    let report = Vte.resize state.vte ~rows ~cols in
     (match state.pty with
     | Some pty ->
         let winsize = { Pty.rows; cols; xpixel = 0; ypixel = 0 } in
         Pty.set_winsize pty winsize
     | None -> ());
+    send state (Input.Reply.encode report);
     { state with cols; rows })
   else state
 

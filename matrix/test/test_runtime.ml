@@ -1677,7 +1677,7 @@ let run_term ?(mode = `Primary) ?(min_tui_height = 1) term body =
   run ~config:(quiet ~mode ~min_tui_height ()) term.f body
 
 let resize term ~cols ~rows =
-  Vte.resize term.vte ~rows ~cols;
+  ignore (Vte.resize term.vte ~rows ~cols : Matrix_input.Reply.t list);
   term.f.size <- (cols, rows);
   term.f.signals <- term.f.signals @ [ Matrix.Backend.Winch ]
 

@@ -413,7 +413,7 @@ let run_op vte = function
       else check_replies (Vte.feed_string vte s)
   | Feed_sub (s, off, len) ->
       check_replies (Vte.feed vte (Bytes.of_string s) off len)
-  | Resize (rows, cols) -> Vte.resize vte ~rows ~cols
+  | Resize (rows, cols) -> check_replies (Vte.resize vte ~rows ~cols)
   | Reset -> Vte.reset vte
   | Render (offset, height) -> render vte ~offset ~height
   | Clear_dirty -> Vte.clear_dirty vte

@@ -3,6 +3,12 @@ open Windtrap
 
 (** Test utilities *)
 
+(* A resize reports nothing while mode 2048 is off. *)
+let resize vte ~rows ~cols =
+  match Vte.resize vte ~rows ~cols with
+  | [] -> ()
+  | _ -> fail "a resize report without mode 2048"
+
 (* Feed output whose replies the test does not read. *)
 let feed vte s = ignore (Vte.feed_string vte s : _ list)
 
@@ -1153,8 +1159,8 @@ let dynamic_color_walk () =
 let mode_and_colour_queries () =
   let vte = Vte.create ~rows:2 ~cols:10 () in
   equal ~msg:"DEC modes" string
-    "\x1b[?2004;2$y\x1b[?7;1$y\x1b[?1049;2$y\x1b[?2026;0$y"
-    (answers vte "\x1b[?2004$p\x1b[?7$p\x1b[?1049$p\x1b[?2026$p");
+    "\x1b[?2004;2$y\x1b[?7;1$y\x1b[?1049;2$y\x1b[?1016;0$y"
+    (answers vte "\x1b[?2004$p\x1b[?7$p\x1b[?1049$p\x1b[?1016$p");
   equal ~msg:"DEC modes after setting them" string
     "\x1b[?2004;1$y\x1b[?7;2$y\x1b[?1049;1$y\x1b[?47;1$y"
     (answers vte
@@ -1336,7 +1342,7 @@ let two_byte_designators () =
 let resize_preserves_content () =
   let vte = Vte.create ~rows:5 ~cols:10 () in
   feed vte "Hello\r\nWorld";
-  Vte.resize vte ~rows:10 ~cols:20;
+  resize vte ~rows:10 ~cols:20;
   equal ~msg:"rows resized" int 10 (Vte.rows vte);
   equal ~msg:"cols resized" int 20 (Vte.cols vte);
   equal ~msg:"content kept" string "Hello" (get_line (Vte.grid vte) 0);
@@ -1346,7 +1352,7 @@ let resize_preserves_content () =
 let resize_clamps_cursor () =
   let vte = Vte.create ~rows:10 ~cols:20 () in
   feed vte "\x1b[8;15H";
-  Vte.resize vte ~rows:5 ~cols:10;
+  resize vte ~rows:5 ~cols:10;
   let row, col = Vte.cursor_pos vte in
   satisfies ~claim:"cursor row clamped (< 5 rows)" int (fun r -> r < 5) row;
   satisfies ~claim:"cursor col clamped (< 10 cols)" int (fun c -> c < 10) col
@@ -2245,37 +2251,37 @@ let more_character_sets () =
 let resize_keeps_text () =
   let vte = Vte.create ~scrollback:10 ~rows:5 ~cols:4 () in
   feed vte "1\r\n2\r\n3";
-  Vte.resize vte ~rows:3 ~cols:4;
+  resize vte ~rows:3 ~cols:4;
   equal ~msg:"rows below the cursor go first" string "1   \n2   \n3   "
     (Vte.to_string vte);
-  Vte.resize vte ~rows:2 ~cols:4;
+  resize vte ~rows:2 ~cols:4;
   equal ~msg:"then rows off the top"
     (pair string (list string))
     ("2   \n3   ", [ "1" ])
     (Vte.to_string vte, scrollback_lines vte);
   equal ~msg:"the cursor moves with its row" (pair int int) (1, 1)
     (Vte.cursor_pos vte);
-  Vte.resize vte ~rows:4 ~cols:4;
+  resize vte ~rows:4 ~cols:4;
   equal ~msg:"growing takes them back"
     (pair string (list string))
     ("1   \n2   \n3   \n    ", [])
     (Vte.to_string vte, scrollback_lines vte);
   let vte = Vte.create ~scrollback:10 ~rows:3 ~cols:4 () in
   feed vte "abcdef\x1b[2;2H\x1b7\x1b[3H";
-  Vte.resize vte ~rows:2 ~cols:4;
+  resize vte ~rows:2 ~cols:4;
   is_true ~msg:"marks go into the scrollback" (Vte.wrapped vte (-1));
   feed vte "\x1b8X";
   equal ~msg:"DECSC slots move with their rows" string "eX  \n    "
     (Vte.to_string vte);
-  Vte.resize vte ~rows:3 ~cols:4;
+  resize vte ~rows:3 ~cols:4;
   is_true ~msg:"and come back" (Vte.wrapped vte 0);
   let vte = screen_of ~rows:3 ~cols:4 [ "abcd" ] in
-  Vte.resize vte ~rows:3 ~cols:6;
+  resize vte ~rows:3 ~cols:6;
   feed vte "X";
   equal ~msg:"the Last Column Flag goes" string "abcX  \n      \n      "
     (Vte.to_string vte);
   let vte = screen_of ~rows:4 ~cols:4 [ "\x1b[2;3r\x1b[?1049hA\r\nB" ] in
-  Vte.resize vte ~rows:2 ~cols:4;
+  resize vte ~rows:2 ~cols:4;
   equal ~msg:"the alternate screen keeps its text" string "A   \nB   "
     (Vte.to_string vte);
   equal ~msg:"and has no scrollback" int 0 (Vte.scrollback_size vte);
@@ -2283,16 +2289,16 @@ let resize_keeps_text () =
   equal ~msg:"the margins are the screen" string "B   \n    "
     (Vte.to_string vte);
   let vte = screen_of ~rows:1 ~cols:2 [ "\u{1F31C}\u{FE0E}" ] in
-  Vte.resize vte ~rows:16 ~cols:49;
+  resize vte ~rows:16 ~cols:49;
   equal ~msg:"a grapheme of several characters keeps its text" string
     "\u{1F31C}\u{FE0E}"
     (Grid.get_text (Vte.grid vte) 0);
   let vte = screen_of ~rows:1 ~cols:4 [ "a\xe4\xb8\xad" ] in
-  Vte.resize vte ~rows:1 ~cols:2;
+  resize vte ~rows:1 ~cols:2;
   equal ~msg:"a wide character cut by the edge goes" string "a "
     (Vte.to_string vte);
   let vte = screen_of ~rows:2 ~cols:4 [ "e" ] in
-  Vte.resize vte ~rows:2 ~cols:5;
+  resize vte ~rows:2 ~cols:5;
   feed vte "\xcc\x81";
   equal ~msg:"the unit in progress is ended" string "e\xcc\x81"
     (Grid.get_text (Vte.grid vte) 0)
@@ -2324,7 +2330,7 @@ let scrollback_keeps_cells () =
     let dst = Grid.create ~width:cols ~height:2 () in
     Vte.blit_view vte ~offset:1 dst;
     equal ~msg:"blit_view" (list string) cells (row dst 0);
-    Vte.resize vte ~rows:3 ~cols;
+    resize vte ~rows:3 ~cols;
     equal ~msg:"resize grow" (list string) cells (row (Vte.grid vte) 0)
   in
   List.iter
@@ -2345,12 +2351,12 @@ let too_wide () =
   let vte = Vte.create ~scrollback:10 ~rows:3 ~cols:4 () in
   feed vte "1\r\n2\r\n3";
   raises_match (Exn.invalid_arg ~substring:"Vte.resize") (fun () ->
-      Vte.resize vte ~rows:1 ~cols);
+      resize vte ~rows:1 ~cols);
   equal ~msg:"resize changed nothing"
     (pair string (list string))
     ("1   \n2   \n3   ", [])
     (Vte.to_string vte, scrollback_lines vte);
-  Vte.resize vte ~rows:1 ~cols:Grid.max_width;
+  resize vte ~rows:1 ~cols:Grid.max_width;
   equal ~msg:"the widest grid" int Grid.max_width (Vte.cols vte)
 
 (* CAN ends a sequence or string and shows nothing; SUB shows the error
@@ -2403,7 +2409,7 @@ let resize_to_the_same_size () =
   let vte = Vte.create ~rows:5 ~cols:10 () in
   feed vte "\027[2;4r\027[1;10Hx";
   Vte.clear_dirty vte;
-  Vte.resize vte ~rows:5 ~cols:10;
+  resize vte ~rows:5 ~cols:10;
   is_false ~msg:"no change marked" (Vte.is_dirty vte);
   is_true ~msg:"Last Column Flag kept" (Vte.last_column vte);
   feed vte "\027[4;1H\n";
@@ -2573,4 +2579,180 @@ let tests =
     test "national mode" national_mode;
   ]
 
-let () = run "matrix.vte" [ group "vte" tests ]
+(* The user's side, identity and requests --------------------------------- *)
+
+module K = Matrix_input.Keystroke
+
+let pp_keyboard ppf (e : K.encoding) =
+  Format.fprintf ppf "ckm %b kp %b lnm %b mok %d kitty %d" e.cursor_keys
+    e.keypad e.new_line e.modify_other_keys e.kitty
+
+let keyboard_is msg vte expected =
+  equal ~msg string expected
+    (Format.asprintf "%a" pp_keyboard (Vte.keyboard vte))
+
+(* The modes a program sets for keys, and the kitty protocol's stacks, one
+   for each screen. *)
+let keyboard_state () =
+  let vte = Vte.create ~rows:2 ~cols:10 () in
+  keyboard_is "power-up" vte "ckm false kp false lnm false mok 0 kitty 0";
+  feed vte "\x1b[?1h\x1b=\x1b[20h\x1b[>4;1m";
+  keyboard_is "DECCKM, DECKPAM, LNM, modifyOtherKeys" vte
+    "ckm true kp true lnm true mok 1 kitty 0";
+  feed vte "\x1b>\x1b[>4m";
+  keyboard_is "DECKPNM and XTMODKEYS without a value" vte
+    "ckm true kp false lnm true mok 0 kitty 0";
+  feed vte "\x1b[>1u\x1b[>5u";
+  equal ~msg:"the current flags" string "\x1b[?5u" (answers vte "\x1b[?u");
+  feed vte "\x1b[=2;2u";
+  equal ~msg:"flags added" string "\x1b[?7u" (answers vte "\x1b[?u");
+  feed vte "\x1b[=1;3u";
+  equal ~msg:"flags taken away" string "\x1b[?6u" (answers vte "\x1b[?u");
+  feed vte "\x1b[<u";
+  equal ~msg:"popped" string "\x1b[?1u" (answers vte "\x1b[?u");
+  feed vte "\x1b[?1049h";
+  equal ~msg:"the alternate screen's stack" string "\x1b[?0u"
+    (answers vte "\x1b[?u");
+  feed vte "\x1b[>31u\x1b[?1049l";
+  equal ~msg:"the primary screen's again" string "\x1b[?1u"
+    (answers vte "\x1b[?u");
+  feed vte "\x1b[<5u";
+  equal ~msg:"popping past the stack empties it" string "\x1b[?0u"
+    (answers vte "\x1b[?u");
+  feed vte "\x1b[>1u\x1bc";
+  keyboard_is "RIS" vte "ckm false kp false lnm false mok 0 kitty 0"
+
+let mouse_state () =
+  let vte = Vte.create ~rows:2 ~cols:10 () in
+  let mouse () =
+    match Vte.mouse vte with
+    | None -> "off"
+    | Some { tracking; format } -> (
+        (match tracking with
+          | `X10 -> "x10"
+          | `Normal -> "normal"
+          | `Button -> "button"
+          | `Any -> "any")
+        ^ " "
+        ^
+        match format with
+        | `X10 -> "bytes"
+        | `Sgr -> "sgr"
+        | `Urxvt -> "urxvt")
+  in
+  equal ~msg:"power-up" string "off" (mouse ());
+  feed vte "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+  equal ~msg:"the last tracking mode set" string "button sgr" (mouse ());
+  equal ~msg:"DECRQM reports the one in use" string
+    "\x1b[?1000;2$y\x1b[?1002;1$y\x1b[?1006;1$y"
+    (answers vte "\x1b[?1000$p\x1b[?1002$p\x1b[?1006$p");
+  feed vte "\x1b[?1015h";
+  equal ~msg:"URXVT replaces SGR" string "button urxvt" (mouse ());
+  feed vte "\x1b[?1006l";
+  equal ~msg:"resetting a format not in use" string "button urxvt" (mouse ());
+  feed vte "\x1b[?1000l";
+  equal ~msg:"resetting any tracking mode" string "off" (mouse ())
+
+(* A terminal without an extension behaves as one that never had it. *)
+let extensions () =
+  let queries =
+    "\x1b[?2026$p\x1b[?1004$p\x1b[?2031$p\x1b[?2048$p\x1b[?2027$p"
+  in
+  let full = Vte.create ~rows:2 ~cols:10 () in
+  feed full "\x1b[?2026h\x1b[?1004h";
+  equal ~msg:"every extension" string
+    "\x1b[?2026;1$y\x1b[?1004;1$y\x1b[?2031;2$y\x1b[?2048;2$y\x1b[?2027;3$y"
+    (answers full queries);
+  equal ~msg:"Alt is ESC" string "\x1b[?1036;3$y" (answers full "\x1b[?1036$p");
+  let bare = Vte.create ~extensions:[] ~rows:2 ~cols:10 () in
+  feed bare "\x1b[?2026h\x1b[?1004h\x1b[>1u\x1b[>4;2m";
+  equal ~msg:"no extension" string
+    "\x1b[?2026;0$y\x1b[?1004;0$y\x1b[?2031;0$y\x1b[?2048;0$y\x1b[?2027;0$y"
+    (answers bare queries);
+  is_false ~msg:"its modes stay off" (Vte.modes bare).synchronized_output;
+  equal ~msg:"no kitty flags, no answer" string "" (answers bare "\x1b[?u");
+  keyboard_is "no modifyOtherKeys" bare
+    "ckm false kp false lnm false mok 0 kitty 0";
+  equal ~msg:"no color scheme answer" string "" (answers bare "\x1b[?996n");
+  let wcwidth = Vte.create ~width_method:`Wcwidth ~rows:2 ~cols:10 () in
+  equal ~msg:"2027 reset for good under wcwidth" string "\x1b[?2027;4$y"
+    (answers wcwidth "\x1b[?2027$p")
+
+let identity () =
+  let vte = Vte.create ~rows:2 ~cols:10 () in
+  equal ~msg:"a VT100, no XTVERSION" string "\x1b[?1;2c\x1b[>0;0;0c"
+    (answers vte "\x1b[c\x1b[>q\x1b[>c");
+  let identity =
+    {
+      Vte.attributes = [ 62; 22 ];
+      secondary = [ 1; 4000; 0 ];
+      version = Some "x(1)";
+    }
+  in
+  let vte = Vte.create ~identity ~rows:2 ~cols:10 () in
+  equal ~msg:"its own" string "\x1b[?62;22c\x1bP>|x(1)\x1b\\\x1b[>1;4000;0c"
+    (answers vte "\x1b[c\x1b[>0q\x1b[>c")
+
+(* Mode 2048 reports each resize while set; mode 2031 each change of scheme,
+   which [CSI ? 996 n] asks for. *)
+let reports () =
+  let vte = Vte.create ~rows:2 ~cols:10 () in
+  let replies =
+    Testable.make ~equal:( = )
+      ~pp:
+        (Format.pp_print_list
+           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf "; ")
+           Matrix_input.Reply.pp)
+  in
+  feed vte "\x1b[?2048h";
+  equal ~msg:"a resize" replies
+    [ Resize { rows = 3; cols = 12; height = 0; width = 0 } ]
+    (Vte.resize vte ~rows:3 ~cols:12);
+  equal ~msg:"the same size" replies [] (Vte.resize vte ~rows:3 ~cols:12);
+  equal ~msg:"the scheme" string "\x1b[?997;1n" (answers vte "\x1b[?996n");
+  equal ~msg:"a change, mode 2031 off" replies []
+    (Vte.set_color_scheme vte `Light);
+  feed vte "\x1b[?2031h";
+  equal ~msg:"a change" replies [ Color_scheme `Dark ]
+    (Vte.set_color_scheme vte `Dark);
+  equal ~msg:"no change" replies [] (Vte.set_color_scheme vte `Dark)
+
+let requests () =
+  let vte = Vte.create ~rows:2 ~cols:10 () in
+  let show () =
+    List.map
+      (function
+        | Vte.Bell -> "bell"
+        | Notification { title; body } ->
+            Printf.sprintf "notify %S %S" title body
+        | Clipboard { selection; data } ->
+            Printf.sprintf "clipboard %S %S" selection data)
+      (Vte.requests vte)
+  in
+  feed vte
+    "\x07\x1b]9;done: 3;4\x07\x1b]777;notify;mentat;done; \
+     ok\x1b\\\x1b]52;c;aGk=\x07\x1b]52;c;?\x07\x1b]0;t\x07";
+  equal ~msg:"in order" (list string)
+    [
+      "bell";
+      "notify \"\" \"done: 3;4\"";
+      "notify \"mentat\" \"done; ok\"";
+      "clipboard \"c\" \"hi\"";
+    ]
+    (show ());
+  equal ~msg:"a BEL that ends an OSC rings nothing" string "t" (Vte.title vte);
+  Vte.clear_requests vte;
+  equal ~msg:"cleared" (list string) [] (show ())
+
+let user_tests =
+  [
+    test "the keyboard's state" keyboard_state;
+    test "the mouse's state" mouse_state;
+    test "extensions" extensions;
+    test "identity" identity;
+    test "resize and color scheme reports" reports;
+    test "requests to the host" requests;
+  ]
+
+let () =
+  run "matrix.vte" [ group "vte" tests; group "user and host" user_tests ]
