@@ -440,7 +440,12 @@ let idle s ~until ~stepped =
     false)
   else (
     s.waiting_until <- until;
-    let ready = Effect.perform (Wait s) in
+    let ready =
+      try Effect.perform (Wait s)
+      with Effect.Unhandled _ ->
+        invalid_arg
+          "Matrix_test: the program waits outside Matrix_test.run's program"
+    in
     s.quiesced <- false;
     ready)
 

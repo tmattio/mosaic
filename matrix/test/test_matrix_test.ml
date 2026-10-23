@@ -362,6 +362,18 @@ let test_diff () =
   equal ~msg:"marks" (option string) (Some "01 |abXd\n   |bbXb\n")
     (T.Screen.diff before (T.Terminal.screen term))
 
+(* A program waits through an effect that only run handles: one that waits
+   with Matrix.next outside it is refused, where it would wait forever. *)
+let test_wait_outside_run () =
+  let term = T.Terminal.create ~cols:20 ~rows:2 () in
+  let s = T.create term in
+  raises_match ~msg:"refused" (Exn.invalid_arg ~substring:"outside") (fun () ->
+      Matrix.run ~config:(T.config s) @@ fun app ->
+      let rec loop () =
+        match Matrix.next app with Stopped -> () | _ -> loop ()
+      in
+      loop ())
+
 (* The oracle ---------------------------------------------------------------- *)
 
 (* The terminal shows the frame the run presented, through input, a resize
@@ -462,7 +474,10 @@ let () =
           test "set_time puts a key before a due timer" test_set_time;
         ];
       group "Host and end"
-        [ test "requests, and the end" test_requests_and_end ];
+        [
+          test "requests, and the end" test_requests_and_end;
+          test "a wait outside run" test_wait_outside_run;
+        ];
       group "Goldens"
         [ test "text, styles, find" test_goldens; test "diff" test_diff ];
       group "Oracle"

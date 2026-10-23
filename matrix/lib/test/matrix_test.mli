@@ -315,7 +315,16 @@ val run :
     (default [Matrix.config ()]), [now] as for {!create}, and [quiesce] as for
     {!attach}.
 
-    Raises what [program] raises, at the call that had it go on. *)
+    The program runs on the test's thread, under an effect handler that [run]
+    installs: where the program would wait, the session's device performs an
+    effect that suspends it, and the session's functions resume it. So the
+    program must wait on the thread and in the domain that called [run], inside
+    [program], and not under a handler of its own that catches every effect. A
+    program that waits with an event loop of its own takes its steps through
+    {!attach} instead.
+
+    Raises what [program] raises, at the call that had it go on, and
+    [Invalid_argument] if the program waits from another thread or domain. *)
 
 val create : ?config:Matrix.config -> ?now:int -> Terminal.t -> t
 (** [create term] is a session on [term] whose clock reads [now] (default [0])
