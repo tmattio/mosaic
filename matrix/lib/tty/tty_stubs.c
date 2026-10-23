@@ -566,13 +566,13 @@ CAMLprim value matrix_tty_give_back(value vs) {
   return Val_unit;
 }
 
-/* Whether [s] was received for the holder since the last call. */
+/* Whether [s] was received for the holder since the last call. The record
+   is read and cleared in one exchange: a handler that sets it between a
+   read and a clear would be cleared unseen. */
 CAMLprim value matrix_tty_received(value id, value vs) {
   int s = system_signal(vs);
   struct holder *h = find_holder(id);
-  int p = h->pending[s];
-  h->pending[s] = 0;
-  return Val_bool(p);
+  return Val_bool(__atomic_exchange_n(&h->pending[s], 0, __ATOMIC_SEQ_CST));
 }
 
 static void unblock(int s) {

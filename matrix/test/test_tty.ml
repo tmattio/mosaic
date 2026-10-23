@@ -327,6 +327,39 @@ let test_take_always () =
             Unix.sleepf 0.01;
             equal ~msg:"the handler before was called" int 1 !called))
 
+(* A signal that lands while [received] takes the one before it is kept.
+   One domain takes the signal as fast as it can while the other raises it,
+   each time once the one before has been taken; a signal lost between the
+   read of the record and its clearing would never be taken. *)
+let test_received_keeps_a_signal_that_lands () =
+  if Sys.unix then (
+    with_holder ~controlling:true @@ fun h ->
+    is_true ~msg:"taken" (Signal.take Sys.sigwinch);
+    Fun.protect ~finally:(fun () -> Signal.give_back Sys.sigwinch) @@ fun () ->
+    let taken = Atomic.make 0 and stop = Atomic.make false in
+    let taker =
+      Domain.spawn (fun () ->
+          while not (Atomic.get stop) do
+            if Signal.received h Sys.sigwinch then Atomic.incr taken
+          done)
+    in
+    let lost = ref None in
+    Fun.protect ~finally:(fun () ->
+        Atomic.set stop true;
+        Domain.join taker)
+    @@ fun () ->
+    let i = ref 1 in
+    while !lost = None && !i <= 20_000 do
+      Unix.kill (Unix.getpid ()) Sys.sigwinch;
+      let deadline = Unix.gettimeofday () +. 5. in
+      while Atomic.get taken < !i && Unix.gettimeofday () < deadline do
+        Domain.cpu_relax ()
+      done;
+      if Atomic.get taken < !i then lost := Some !i;
+      incr i
+    done;
+    match !lost with Some i -> failf "signal %d was lost" i | None -> ())
+
 let test_take_outside_the_policy () =
   if Sys.unix then
     match Signal.take Sys.sigusr1 with
@@ -472,6 +505,8 @@ let () =
           test "taken at the default" test_take_at_default;
           test "taken over a handler" test_take_always;
           test "outside the policy" test_take_outside_the_policy;
+          test "a signal that lands while one is taken"
+            test_received_keeps_a_signal_that_lands;
           test "the holders a signal concerns" test_holders_concerned;
           test "wake" test_wake;
           test "a write cut by termination" test_write_cut_by_termination;
