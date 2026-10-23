@@ -96,6 +96,13 @@ type cluster = {
   mutable prev : string;
 }
 
+type palette = {
+  colors : (int * int * int) array;
+  foreground : int * int * int;
+  background : int * int * int;
+  cursor : int * int * int;
+}
+
 (* An OSC is kept only when the VTE performs it: [Osc_number n] while its
    number is read (-1 before the first digit), [Osc_text n] once it is known
    to be kept, and [Osc_skip] otherwise. *)
@@ -128,6 +135,10 @@ type t = {
   default_bg : Ansi.Color.t;
   (* [Some default_bg], made once: an optional argument allocates. *)
   default_bg_opt : Ansi.Color.t option;
+  (* The palette [create] was given, and the one programs set. Neither's
+     colours are ever written: a change makes a new array. *)
+  initial : palette;
+  mutable palette : palette;
   parser : Ansi.Parser.t;
   mutable osc : osc;
   osc_text : Buffer.t;
@@ -1030,6 +1041,9 @@ let ris t =
   t.margins <- full_margins t;
   t.tabs <- default_tabs t.cols;
   t.title <- "";
+  if t.palette != t.initial then (
+    t.palette <- t.initial;
+    t.dirty.cursor <- true);
   touch_rows t 0 (t.rows - 1)
 
 (* A grid is at most [Grid.max_width] wide; the check comes before any
@@ -1038,11 +1052,38 @@ let check_cols fn cols =
   if cols > Grid.max_width then
     invalid_arg (Printf.sprintf "Vte.%s: cols > %d" fn Grid.max_width)
 
+(* The colours of Ansi.Color.indexed, with the default colours. *)
+let default_palette ~default_fg ~default_bg =
+  let foreground = Ansi.Color.to_rgb default_fg in
+  {
+    colors = Array.init 256 (fun i -> Ansi.Color.to_rgb (Ansi.Color.indexed i));
+    foreground;
+    background = Ansi.Color.to_rgb default_bg;
+    cursor = foreground;
+  }
+
+let check_palette p =
+  let channel v = v >= 0 && v <= 255 in
+  let rgb (r, g, b) = channel r && channel g && channel b in
+  if Array.length p.colors <> 256 then
+    invalid_arg "Vte.create: the palette does not have 256 colours";
+  if
+    not
+      (Array.for_all rgb p.colors && rgb p.foreground && rgb p.background
+     && rgb p.cursor)
+  then invalid_arg "Vte.create: a palette channel is outside 0..255";
+  { p with colors = Array.copy p.colors }
+
 (* The structure, which RIS gives its power-up state. *)
 let create ?(scrollback = 10000) ?(width_method = `Unicode)
-    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ~rows
-    ~cols () =
+    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ?palette
+    ~rows ~cols () =
   check_cols "create" cols;
+  let initial =
+    match palette with
+    | Some p -> check_palette p
+    | None -> default_palette ~default_fg ~default_bg
+  in
   let rows = max 1 rows and cols = max 1 cols in
   let screen () =
     let grid = Grid.create ~width:cols ~height:rows ~width_method () in
@@ -1084,6 +1125,8 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
       default_fg;
       default_bg;
       default_bg_opt = Some default_bg;
+      initial;
+      palette = initial;
       parser = Ansi.Parser.create ();
       osc = Osc_skip;
       osc_text = Buffer.create 64;
@@ -1312,8 +1355,8 @@ let csi t (s : Ansi.Parser.sequence) =
    longer one is dropped whole, as xterm drops an over-long string. It is
    performed when it ends with ST or BEL, never when it is cut short. OSC 0 and
    2 set the title; OSC 8 opens a hyperlink, [8 ; params ; URI], or closes it
-   when the URI is empty; OSC 4, 10 and 11 are answered when they ask for a
-   colour. *)
+   when the URI is empty; OSC 4, 10, 11 and 12 set and ask for the palette's
+   colours, and OSC 104 and 110 to 112 reset them. *)
 
 let osc_budget = 65536
 
@@ -1326,6 +1369,11 @@ let osc_keep t s off =
   if Buffer.length t.osc_text + len > osc_budget then osc_drop t
   else Buffer.add_substring t.osc_text s off len
 
+(* The OSCs performed: titles, links, and the palette's colours. *)
+let osc_kept = function
+  | 0 | 2 | 4 | 8 | 10 | 11 | 12 | 104 | 110 | 111 | 112 -> true
+  | _ -> false
+
 (* Ps, the number before the first [;], decides whether the rest is kept. *)
 let rec osc_number t s i n =
   if i >= String.length s then t.osc <- Osc_number n
@@ -1333,7 +1381,7 @@ let rec osc_number t s i n =
     match s.[i] with
     | '0' .. '9' as c ->
         osc_number t s (i + 1) (min 1000 ((max n 0 * 10) + Char.code c - 48))
-    | ';' when n = 0 || n = 2 || n = 4 || n = 8 || n = 10 || n = 11 ->
+    | ';' when osc_kept n ->
         t.osc <- Osc_text n;
         osc_keep t s (i + 1)
     | _ -> osc_drop t
@@ -1350,35 +1398,82 @@ let decimal s =
   then int_of_string_opt s
   else None
 
-(* OSC 4 is pairs [c ; spec]; OSC 10 is specs for the dynamic colours from 10
-   on, the foreground then the background (ctlseqs). A spec [?] asks for the
-   colour, answered as the OSC that would set it, with the query's
-   terminator. Setting a colour has no effect: the cells hold the colours
-   they were given. *)
+(* {2 The palette} *)
+
+let palette t = t.palette
+
+let palette_colour p = function
+  | `Foreground -> p.foreground
+  | `Background -> p.background
+  | `Cursor -> p.cursor
+  | `Palette i -> p.colors.(i)
+
+(* Every cell, and the cursor, may show a colour that changed. *)
+let set_palette t p =
+  if p <> t.palette then (
+    t.palette <- p;
+    t.dirty.cursor <- true;
+    touch_rows t 0 (t.rows - 1))
+
+let set_colour t target rgb =
+  let p = t.palette in
+  set_palette t
+    (match target with
+    | `Foreground -> { p with foreground = rgb }
+    | `Background -> { p with background = rgb }
+    | `Cursor -> { p with cursor = rgb }
+    | `Palette i ->
+        let colors = Array.copy p.colors in
+        colors.(i) <- rgb;
+        { p with colors })
+
+let reset_colour t target =
+  set_colour t target (palette_colour t.initial target)
+
+(* A spec [?] asks for the colour, answered as the OSC that would set it,
+   with the query's terminator; another spec sets it, if it names one. *)
+let colour t terminator target spec =
+  if spec = "?" then
+    reply t
+      (Color { target; rgb = palette_colour t.palette target; terminator })
+  else Option.iter (set_colour t target) (Reply.rgb_of_spec spec)
+
+let index c = match decimal c with Some i when i <= 255 -> Some i | _ -> None
+
+(* OSC 4 is pairs [c ; spec]. OSC 10, 11 and 12 are specs for the dynamic
+   colours from Ps on, the foreground, the background and the cursor; one past
+   them names a colour this terminal does not have. OSC 104 resets the listed
+   colours, all of them with none; OSC 110, 111 and 112 reset one dynamic colour
+   (ctlseqs). An index or spec that names no colour is skipped. *)
 let osc_colours t n terminator text =
-  let answer target colour =
-    reply t (Color { target; rgb = Ansi.Color.to_rgb colour; terminator })
-  in
-  let rec palette = function
-    | c :: "?" :: rest ->
-        (match decimal c with
-        | Some i when i <= 255 -> answer (`Palette i) (Ansi.Color.indexed i)
-        | _ -> ());
-        palette rest
-    | _ :: _ :: rest -> palette rest
+  let rec pairs = function
+    | c :: spec :: rest ->
+        Option.iter (fun i -> colour t terminator (`Palette i) spec) (index c);
+        pairs rest
     | _ -> ()
   in
   let rec dynamic n = function
     | spec :: rest ->
-        (match (n, spec) with
-        | 10, "?" -> answer `Foreground t.default_fg
-        | 11, "?" -> answer `Background t.default_bg
+        (match n with
+        | 10 -> colour t terminator `Foreground spec
+        | 11 -> colour t terminator `Background spec
+        | 12 -> colour t terminator `Cursor spec
         | _ -> ());
         dynamic (n + 1) rest
     | [] -> ()
   in
-  let specs = String.split_on_char ';' text in
-  if n = 4 then palette specs else dynamic n specs
+  match n with
+  | 4 -> pairs (String.split_on_char ';' text)
+  | 104 when text = "" ->
+      set_palette t { t.palette with colors = t.initial.colors }
+  | 104 ->
+      List.iter
+        (fun c -> Option.iter (fun i -> reset_colour t (`Palette i)) (index c))
+        (String.split_on_char ';' text)
+  | 110 -> reset_colour t `Foreground
+  | 111 -> reset_colour t `Background
+  | 112 -> reset_colour t `Cursor
+  | n -> dynamic n (String.split_on_char ';' text)
 
 let open_string t (o : Ansi.Parser.opening) =
   match o with Osc -> t.osc <- Osc_number (-1) | _ -> t.osc <- Osc_skip
@@ -1395,6 +1490,8 @@ let close_string t ending =
   | Osc_text 8, (`St | `Bel) -> osc_hyperlink t (Buffer.contents t.osc_text)
   | Osc_text n, ((`St | `Bel) as ending) ->
       osc_colours t n ending (Buffer.contents t.osc_text)
+  | Osc_number ((104 | 110 | 111 | 112) as n), ((`St | `Bel) as ending) ->
+      osc_colours t n ending ""
   | _ -> ());
   osc_drop t
 

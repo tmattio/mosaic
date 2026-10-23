@@ -187,14 +187,41 @@
       reset, and 0 for a mode this terminal does not recognize (VT320 Programmer
       Information, "Mode Settings"). The modes recognized are those of
       {!type-modes}; modes 47, 1047 and 1049 report the alternate screen;
-    - OSC 10 and OSC 11 with [?], which ask for the default foreground and
-      background, and OSC 4 [; c ; ?], which asks for palette colour [c], each
-      with a [Color], the OSC that would set it, [OSC 11 ; rgb:0000/0000/0000],
-      ended as the query was, by BEL or ST (ctlseqs, "Operating System
-      Commands"). The default colours are those {!create} was given, and the
-      palette colours those {!Ansi.Color.indexed} gives. Setting a colour with
-      these OSCs has no effect, and the other colours they name, such as the
-      cursor's (OSC 12), have no answer.
+    - a colour spec [?] in OSC 4, 10, 11 or 12, which asks for a colour of the
+      palette ({!section-palette}), with a [Color] from the palette as it is,
+      the OSC that would set it, such as [OSC 11 ; rgb:0000/0000/0000], ended as
+      the query was, by BEL or ST: xterm "uses the same terminator used in a
+      query" (ctlseqs, "Operating System Commands").
+
+    {2:palette The palette}
+
+    The {e palette} is the colours the emulated terminal's user configured: the
+    256 indexed colours SGR selects, the default foreground and background, and
+    the cursor's colour. {!create} is given it, as it is given the size, and
+    programs may change it, as xterm lets them (ctlseqs, "Operating System
+    Commands"):
+    - OSC 4 [; c ; spec], any number of pairs, sets indexed colour [c], from 0
+      to 255;
+    - OSC 10, 11 and 12 [; spec] set the default foreground, the default
+      background and the cursor's colour. "Each successive parameter changes the
+      next color in the list": [OSC 10 ; a ; b] sets the foreground to [a] and
+      the background to [b];
+    - a spec [?] asks for the colour instead ({!section-replies});
+    - OSC 104 [; c] resets the indexed colours listed, all of them when none is,
+      and OSC 110, 111 and 112 reset the foreground, the background and the
+      cursor's colour, each to the palette {!create} was given.
+
+    A spec is read by {!Matrix_input.Reply.rgb_of_spec}, the forms [rgb:r/g/b]
+    and [#rrggbb]; a pair or spec that names no colour, such as an X11 colour
+    name or an index above 255, is skipped. A change marks every row and the
+    cursor changed ({!section-dirty}).
+
+    Cells keep the colour the pen gave them, with the [default_fg] and
+    [default_bg] of {!create} for the defaults, so a change of the palette
+    changes no cell. A renderer that shows the palette resolves the default and
+    indexed intents of {!Ansi.Color} through {!val-palette}: it keeps the
+    default intent in the cells with {!Ansi.Color.default_fg} and
+    {!Ansi.Color.default_bg}.
 
     {2:resets Resets}
 
@@ -205,12 +232,26 @@
     DECSC slots to the power-up cursor state. The VT510's table gives "No
     autowrap", its own power-up value; this terminal powers up with autowrap on,
     so DECSTR sets it on. The screen, the cursor position, the active screen,
-    LNM, the cursor style, bracketed paste, the tab stops and the title stay:
-    the table lists neither LNM nor DECSCUSR. xterm, a datapoint, resets the
-    cursor style there too. *)
+    LNM, the cursor style, bracketed paste, the tab stops, the title and the
+    palette stay: the table lists neither LNM, DECSCUSR nor colours. xterm, a
+    datapoint, resets the cursor style and the indexed colours there too. RIS
+    restores the palette {!create} was given: it "replaces all set-up features
+    with their saved settings" (VT510, RIS). *)
 
 type t
 (** The type for terminal emulators. Mutable, not thread-safe. *)
+
+type palette = {
+  colors : (int * int * int) array;
+      (** The 256 indexed colours, from index 0: the eight of SGR 30 to 37, the
+          eight bright ones of SGR 90 to 97, then those only SGR 38 ; 5 selects.
+      *)
+  foreground : int * int * int;  (** The default foreground (OSC 10). *)
+  background : int * int * int;  (** The default background (OSC 11). *)
+  cursor : int * int * int;  (** The cursor's colour (OSC 12). *)
+}
+(** The type for palettes ({!section-palette}): each colour is red, green and
+    blue, from 0 to 255. *)
 
 (** {1:create Creating} *)
 
@@ -219,6 +260,7 @@ val create :
   ?width_method:Matrix_text.width_method ->
   ?default_fg:Ansi.Color.t ->
   ?default_bg:Ansi.Color.t ->
+  ?palette:palette ->
   rows:int ->
   cols:int ->
   unit ->
@@ -231,10 +273,15 @@ val create :
       none or sets the default (SGR 39, 49). Default to {!Ansi.Color.white} and
       {!Ansi.Color.black}; {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}
       keep the terminal default in the cells.
+    - [palette], the palette ({!section-palette}). Defaults to the colours of
+      {!Ansi.Color.indexed}, with the colours of [default_fg] and [default_bg]
+      as the default foreground and background, and the foreground's as the
+      cursor's. [t] keeps a copy.
 
     [rows] and [cols] below [1] are taken as [1].
 
-    Raises [Invalid_argument] if [cols > Matrix_grid.max_width]. *)
+    Raises [Invalid_argument] if [cols > Matrix_grid.max_width], or if [palette]
+    does not have 256 colours or has a channel outside 0..255. *)
 
 (** {1:feeding Feeding output} *)
 
@@ -325,6 +372,10 @@ val modes : t -> modes
 val title : t -> string
 (** [title t] is the title set by OSC 0 or OSC 2. *)
 
+val palette : t -> palette
+(** [palette t] is the palette as programs left it ({!section-palette}). It
+    belongs to [t]: read it, and do not change its [colors]. *)
+
 (** {1:rows Rows and the scrollback}
 
     Rows are numbered from the top of the screen, [0] to [rows t - 1], and on
@@ -365,8 +416,9 @@ val blit_row : t -> int -> Matrix_grid.t -> y:int -> unit
 (** {1:dirty Changes}
 
     A renderer redraws what changed since it last looked. Writing cells, moving
-    the cursor or changing its visibility or style, and changing the rendition
-    mark [t] changed; the title and the other modes do not. *)
+    the cursor or changing its visibility or style, changing the rendition, and
+    changing the palette mark [t] changed; the title and the other modes do not.
+*)
 
 val is_dirty : t -> bool
 (** [is_dirty t] is [true] iff [t] changed since {!clear_dirty}. *)

@@ -1138,13 +1138,13 @@ let mode_and_colour_queries () =
     "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x1b\\"
     (answers vte "\x1b]10;?\x07\x1b]11;?\x1b\\");
   equal ~msg:"successive dynamic colours" string
-    "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x07"
-    (answers vte "\x1b]10;?;?;?\x07");
+    "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x07\x1b]12;rgb:c0c0/c0c0/c0c0\x07"
+    (answers vte "\x1b]10;?;?;?;?\x07");
   equal ~msg:"palette colours" string
     "\x1b]4;1;rgb:8080/0000/0000\x07\x1b]4;196;rgb:ffff/0000/0000\x07"
     (answers vte "\x1b]4;1;?;2;red;196;?;256;?;+1;?\x07");
-  equal ~msg:"no answer: cursor colour, a set, a query cut short" string ""
-    (answers vte "\x1b]12;?\x07\x1b]11;#ffffff\x07\x1b]10;?\x18");
+  equal ~msg:"no answer: a set, a query cut short" string ""
+    (answers vte "\x1b]11;#ffffff\x07\x1b]10;?\x18");
   let vte =
     Vte.create ~default_fg:(Ansi.Color.of_rgb 1 2 3)
       ~default_bg:Ansi.Color.default_bg ~rows:2 ~cols:10 ()
@@ -1152,6 +1152,77 @@ let mode_and_colour_queries () =
   equal ~msg:"the default colours create was given" string
     "\x1b]10;rgb:0101/0202/0303\x07\x1b]11;rgb:0000/0000/0000\x07"
     (answers vte "\x1b]10;?\x07\x1b]11;?\x07")
+
+(* The palette is the one create was given; OSC 4, 10, 11 and 12 set it and
+   ask for it, OSC 104 and 110 to 112 reset it to that one, as RIS does. *)
+let palette_set_query_reset () =
+  let colors = Array.init 256 (fun i -> (i, i, i)) in
+  let given =
+    {
+      Vte.colors;
+      foreground = (1, 2, 3);
+      background = (4, 5, 6);
+      cursor = (7, 8, 9);
+    }
+  in
+  let vte = Vte.create ~palette:given ~rows:2 ~cols:10 () in
+  colors.(1) <- (9, 9, 9);
+  equal ~msg:"the palette create was given, copied" string
+    "\x1b]4;1;rgb:0101/0101/0101\x07\x1b]10;rgb:0101/0202/0303\x07\x1b]11;rgb:0404/0505/0606\x07\x1b]12;rgb:0707/0808/0909\x07"
+    (answers vte "\x1b]4;1;?\x07\x1b]10;?;?;?\x07");
+  colors.(1) <- (1, 1, 1);
+  feed vte
+    "\x1b]4;1;rgb:ff/00/00;2;#00ff00\x1b\\\x1b]10;#abcdef;rgb:1/2/3\x07\x1b]12;rgb:ffff/0000/ffff\x07";
+  equal ~msg:"set, then asked, with the query's terminator" string
+    "\x1b]4;1;rgb:ffff/0000/0000\x1b\\\x1b]4;2;rgb:0000/ffff/0000\x1b\\\x1b]10;rgb:abab/cdcd/efef\x1b\\\x1b]11;rgb:1111/2222/3333\x1b\\\x1b]12;rgb:ffff/0000/ffff\x1b\\"
+    (answers vte "\x1b]4;1;?;2;?\x1b\\\x1b]10;?;?;?\x1b\\");
+  let p = Vte.palette vte in
+  equal ~msg:"the palette as set"
+    (list (triple int int int))
+    [
+      (255, 0, 0); (0, 255, 0); (0xab, 0xcd, 0xef); (17, 34, 51); (255, 0, 255);
+    ]
+    [ p.colors.(1); p.colors.(2); p.foreground; p.background; p.cursor ];
+  equal ~msg:"a set then a query in one OSC, in order" string
+    "\x1b]4;3;rgb:0101/0202/0303\x07"
+    (answers vte "\x1b]4;3;#010203;3;?\x07");
+  feed vte "\x1b]4;5;red;256;#ffffff;6;#060606\x07";
+  equal ~msg:"a name or index that is no colour is skipped"
+    (pair (triple int int int) (triple int int int))
+    ((5, 5, 5), (6, 6, 6))
+    ((Vte.palette vte).colors.(5), (Vte.palette vte).colors.(6));
+  feed vte "\x1b]104;1;x;2\x07";
+  equal ~msg:"OSC 104 resets the colours listed"
+    (list (triple int int int))
+    [ (1, 1, 1); (2, 2, 2); (1, 2, 3) ]
+    (let p = Vte.palette vte in
+     [ p.colors.(1); p.colors.(2); p.colors.(3) ]);
+  feed vte "\x1b]104\x07";
+  equal ~msg:"OSC 104 with none resets all" (triple int int int) (3, 3, 3)
+    (Vte.palette vte).colors.(3);
+  feed vte "\x1b]110\x07\x1b]111;\x1b\\\x1b]112\x07";
+  is_true ~msg:"OSC 110, 111 and 112 reset the dynamic colours"
+    (Vte.palette vte = given);
+  feed vte "\x1b]11;#ffffff\x07\x1b[!p";
+  equal ~msg:"DECSTR keeps the palette" (triple int int int) (255, 255, 255)
+    (Vte.palette vte).background;
+  feed vte "\x1bc";
+  is_true ~msg:"RIS restores the palette create was given"
+    (Vte.palette vte = given);
+  Vte.clear_dirty vte;
+  feed vte "\x1b]11;#000000\x07";
+  equal ~msg:"a change marks every row" (list int) [ 0; 1 ] (Vte.dirty_rows vte);
+  is_true ~msg:"and the cursor" (Vte.is_cursor_dirty vte);
+  Vte.clear_dirty vte;
+  feed vte "\x1b]11;#000000\x07";
+  is_false ~msg:"setting the same colour changes nothing" (Vte.is_dirty vte);
+  raises_match ~msg:"255 colours" (Exn.invalid_arg ~substring:"256") (fun () ->
+      Vte.create
+        ~palette:{ given with colors = Array.make 255 (0, 0, 0) }
+        ~rows:1 ~cols:1 ());
+  raises_match ~msg:"a channel of 256" (Exn.invalid_arg ~substring:"channel")
+    (fun () ->
+      Vte.create ~palette:{ given with cursor = (256, 0, 0) } ~rows:1 ~cols:1 ())
 
 (* An OSC acts only when it ends with ST or BEL; one cut short does nothing.
    Only OSC 0, 2 and 8 are kept, each up to 64 KiB. *)
@@ -2385,6 +2456,7 @@ let tests =
     test "combined mode sequence" combined_mode_sequence;
     test "OSC set title" osc_set_title;
     test "query replies" query_replies;
+    test "palette set, query and reset" palette_set_query_reset;
     test "a rewritten reply reaches the program"
       rewritten_reply_reaches_the_program;
     test "mode and colour queries" mode_and_colour_queries;

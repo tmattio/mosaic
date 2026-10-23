@@ -148,7 +148,25 @@ let control_string =
   let open Gen in
   let* opener = of_list [ "\x1b]"; "\x1bP"; "\x1b_"; "\x1b^"; "\x1bX" ] in
   let* head =
-    of_list [ ""; "0;"; "2;"; "8;;"; "8;;http://x"; "1;2|"; "q"; "$q" ]
+    of_list
+      [
+        "";
+        "0;";
+        "2;";
+        "8;;";
+        "8;;http://x";
+        "1;2|";
+        "q";
+        "$q";
+        (* The palette: set, ask, reset. *)
+        "4;1;?;";
+        "4;3;rgb:1/2/3;3;?";
+        "10;?;?;?;";
+        "11;#123456;";
+        "12;rgb:ffff/0/0";
+        "104;";
+        "110";
+      ]
   in
   let* body = utf8_heavy in
   let+ ending =
