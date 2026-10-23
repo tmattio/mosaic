@@ -797,18 +797,18 @@ val run_on :
      finished writing;
    - the run takes no signal of the process: [resized] is its window signal.
    [wait ~until] says whether input is queued. With none queued and [until]
-   later than [now ()], the terminal is silent until then, and the device
+   later than [read_clock ()], the terminal is silent until then, and the device
    moves its clock there, as a terminal that never answers leaves the run's
-   wait for an answer. [read] returns [-1] when nothing is queued, [size]
+   wait for an answer. [read] returns [-1] when nothing is queued, [window]
    [None] for an output with no window, and [frame] is called as each frame
    begins. *)
 
 type device = {
-  now : unit -> int;
+  read_clock : unit -> int;
   wait : until:int option -> bool;
   read : bytes -> int -> int -> int;
   write : bytes -> int -> int -> unit;
-  size : unit -> (int * int) option;
+  window : unit -> (int * int) option;
   resized : unit -> bool;
   set_raw : bool -> unit;
   flush : unit -> unit;

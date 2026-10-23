@@ -208,11 +208,11 @@ end
    terminal stays silent moves its clock there, as a terminal that never
    answers leaves the wait. *)
 type device = {
-  now : unit -> int;
+  read_clock : unit -> int;
   wait : until:int option -> bool;
   read : bytes -> int -> int -> int;
   write : bytes -> int -> int -> unit;
-  size : unit -> (int * int) option;
+  window : unit -> (int * int) option;
   resized : unit -> bool;
   set_raw : bool -> unit;
   flush : unit -> unit;
@@ -223,14 +223,14 @@ type device = {
 
 let backend_of_device d : Backend.t =
   {
-    now = d.now;
+    now = d.read_clock;
     wait = (fun ~until ~reading -> d.wait ~until && reading);
     wake = ignore;
     fds = (fun ~reading:_ -> []);
     take_signals = (fun () -> if d.resized () then [ Backend.Winch ] else []);
     read_input = d.read;
     write_output = d.write;
-    terminal_size = d.size;
+    terminal_size = d.window;
     set_raw_mode = d.set_raw;
     flush_input = d.flush;
     input_is_tty = d.tty;

@@ -606,7 +606,7 @@ let test_idle_deadline_property =
 let device ?(frames = ref 0) f : Matrix.device =
   let b = backend f in
   {
-    now = (fun () -> f.now);
+    read_clock = (fun () -> f.now);
     wait =
       (fun ~until ->
         if f.input <> [] then true
@@ -618,7 +618,7 @@ let device ?(frames = ref 0) f : Matrix.device =
           false));
     read = b.read_input;
     write = b.write_output;
-    size = (fun () -> Some f.size);
+    window = (fun () -> Some f.size);
     resized =
       (fun () ->
         let w = List.mem Matrix.Backend.Winch f.signals in
