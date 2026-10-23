@@ -97,10 +97,12 @@ val create : ?default_style:Ansi.Style.t -> ?tab_width:int -> unit -> t
 (** [create ()] is an empty buffer with:
     - [default_style]: style applied to plain text set via {!set_text} and
       {!append}. Defaults to {!Ansi.Style.default}.
-    - [tab_width]: constant tab width, clamped to [>= 1]. Defaults to [2].
+    - [tab_width]: constant tab width. Defaults to [2].
 
     A buffer holds no width method: cells are counted by the method each
-    measurement is given, the screen's for a widget's buffer. *)
+    measurement is given, the screen's for a widget's buffer.
+
+    Raises [Invalid_argument] if [tab_width < 1]. *)
 
 (** {1:content Content} *)
 
@@ -199,8 +201,10 @@ val tab_width : t -> int
 (** [tab_width t] is the current constant tab width. Defaults to [2]. *)
 
 val set_tab_width : t -> int -> unit
-(** [set_tab_width t w] changes the constant tab width. [w] is clamped to
-    [>= 1]. Invalidates cached line info if the value changes. *)
+(** [set_tab_width t w] changes the constant tab width. Invalidates cached line
+    info if the value changes.
+
+    Raises [Invalid_argument] if [w < 1]. *)
 
 (** {1:versioning Versioning} *)
 

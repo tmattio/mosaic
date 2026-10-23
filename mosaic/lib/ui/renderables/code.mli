@@ -226,7 +226,9 @@ module Props : sig
         Defaults to [false].
       - [selectable] controls whether text can be selected. Defaults to [true].
       - [selection_bg] is the selection background color.
-      - [selection_fg] is the selection foreground color. *)
+      - [selection_fg] is the selection foreground color.
+
+      Raises [Invalid_argument] if [tab_width < 1]. *)
 
   val default : t
   (** [default] is the default props value. *)
@@ -278,7 +280,9 @@ val create :
     - [selection_bg] is the selection background color.
     - [selection_fg] is the selection foreground color.
 
-    See also {!Props.make} for the code-specific props. *)
+    See also {!Props.make} for the code-specific props.
+
+    Raises [Invalid_argument] if [tab_width < 1]. *)
 
 (** {1:accessors Accessors} *)
 

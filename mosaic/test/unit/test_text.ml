@@ -53,6 +53,13 @@ let props_detects_selection_fg_diff () =
   let b = Text.Props.make () in
   is_false ~msg:"different" (Text.Props.equal a b)
 
+(* A tab width below 1 is a mistake, raised by the call that makes it. *)
+let props_reject_tab_width_below_1 () =
+  raises_match ~msg:"make" (Exn.invalid_arg ~substring:"tab width") (fun () ->
+      ignore (Text.Props.make ~tab_width:0 () : Text.Props.t));
+  raises_match ~msg:"make_rich" (Exn.invalid_arg ~substring:"tab width")
+    (fun () -> ignore (Text.Props.make_rich ~tab_width:(-2) [] : Text.Props.t))
+
 let props_detects_tab_width_diff () =
   let a = Text.Props.make ~tab_width:4 () in
   let b = Text.Props.make ~tab_width:8 () in
@@ -604,6 +611,7 @@ let () =
           test "detects selection_bg diff" props_detects_selection_bg_diff;
           test "detects selection_fg diff" props_detects_selection_fg_diff;
           test "detects tab_width diff" props_detects_tab_width_diff;
+          test "rejects a tab width below 1" props_reject_tab_width_below_1;
           test "equal on identical" props_equal_identical;
         ];
       group "Construction"

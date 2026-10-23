@@ -25,9 +25,9 @@ let create_custom_tab_width () =
   let buf = Text_buffer.create ~tab_width:4 () in
   equal ~msg:"tab_width" int 4 (Text_buffer.tab_width buf)
 
-let create_tab_width_clamps () =
-  let buf = Text_buffer.create ~tab_width:0 () in
-  equal ~msg:"clamped to 1" int 1 (Text_buffer.tab_width buf)
+let create_tab_width_below_1_raises () =
+  raises_match (Exn.invalid_arg ~substring:"tab width") (fun () ->
+      ignore (Text_buffer.create ~tab_width:0 () : Text_buffer.t))
 
 (* ── Content — set_text ── *)
 
@@ -364,10 +364,11 @@ let tab_width_default () =
   let buf = Text_buffer.create () in
   equal ~msg:"default" int 2 (Text_buffer.tab_width buf)
 
-let set_tab_width_clamps () =
+let set_tab_width_below_1_raises () =
   let buf = Text_buffer.create () in
-  Text_buffer.set_tab_width buf 0;
-  equal ~msg:"clamped" int 1 (Text_buffer.tab_width buf)
+  raises_match (Exn.invalid_arg ~substring:"tab width") (fun () ->
+      Text_buffer.set_tab_width buf (-1));
+  equal ~msg:"unchanged" int 2 (Text_buffer.tab_width buf)
 
 let set_tab_width_noop_same () =
   let buf = Text_buffer.create () in
@@ -475,7 +476,7 @@ let () =
         [
           test "defaults" create_defaults;
           test "custom tab_width" create_custom_tab_width;
-          test "tab_width clamps to >= 1" create_tab_width_clamps;
+          test "a tab width below 1 raises" create_tab_width_below_1_raises;
         ];
       group "Content — set_text"
         [
@@ -545,7 +546,7 @@ let () =
       group "Tab width"
         [
           test "default is 2" tab_width_default;
-          test "clamps to >= 1" set_tab_width_clamps;
+          test "a tab width below 1 raises" set_tab_width_below_1_raises;
           test "no-op on same value" set_tab_width_noop_same;
           test "increments version on change" set_tab_width_increments_version;
         ];

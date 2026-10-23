@@ -66,9 +66,13 @@ module Props = struct
         truncate : bool;
       }
 
+  let check_tab_width name w =
+    if w < 1 then invalid_arg ("Text.Props." ^ name ^ ": tab width below 1")
+
   let make ?(content = "") ?(text_style = Ansi.Style.default) ?(wrap = `None)
       ?(selectable = true) ?selection_bg ?selection_fg ?(tab_width = 2)
       ?(truncate = false) () =
+    check_tab_width "make" tab_width;
     Plain
       {
         content;
@@ -84,6 +88,7 @@ module Props = struct
   let make_rich ?(text_style = Ansi.Style.default) ?(wrap = `None)
       ?(selectable = true) ?selection_bg ?selection_fg ?(tab_width = 2)
       ?(truncate = false) fragments =
+    check_tab_width "make_rich" tab_width;
     Rich
       {
         fragments;

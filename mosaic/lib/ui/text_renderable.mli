@@ -35,7 +35,9 @@ val create :
     [text_style] is the default style for plain text, [wrap] is the wrapping
     mode, [tab_width] is the tab stop width in columns, and [truncate] enables
     ellipsis truncation for unwrapped long lines. [selectable] controls whether
-    the renderable participates in text selection. *)
+    the renderable participates in text selection.
+
+    Raises [Invalid_argument] if [tab_width < 1]. *)
 
 (** {1:accessors Accessors} *)
 
@@ -74,7 +76,9 @@ val set_wrap : t -> Text_surface.wrap -> unit
 
 val set_tab_width : t -> int -> unit
 (** [set_tab_width t width] sets the tab width and invalidates the surface if
-    the width changes. *)
+    the width changes.
+
+    Raises [Invalid_argument] if [width < 1]. *)
 
 val set_truncate : t -> bool -> unit
 (** [set_truncate t truncate] enables or disables truncation. *)

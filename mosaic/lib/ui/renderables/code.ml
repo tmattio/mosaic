@@ -26,6 +26,7 @@ module Props = struct
   let make ?(content = "") ?syntax ?(conceal = true)
       ?(text_style = Ansi.Style.default) ?(wrap = `None) ?(tab_width = 4)
       ?(truncate = false) ?(selectable = true) ?selection_bg ?selection_fg () =
+    if tab_width < 1 then invalid_arg "Code.Props.make: tab width below 1";
     {
       content;
       syntax;

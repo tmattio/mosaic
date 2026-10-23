@@ -53,6 +53,11 @@ let complete job outcome =
   job.outcome <- Some (Result.map (fun captures -> (captures, ())) outcome);
   job.notify ()
 
+(* A tab width below 1 is a mistake, raised by the call that makes it. *)
+let props_reject_tab_width_below_1 () =
+  raises_match (Exn.invalid_arg ~substring:"tab width") (fun () ->
+      ignore (Code.Props.make ~tab_width:0 () : Code.Props.t))
+
 let plain_without_syntax () =
   let _ctx, code = make_code ~content:"let x = 1" () in
   equal ~msg:"plain text" string "let x = 1"
@@ -998,6 +1003,7 @@ let () =
             pending_result_uses_latest_theme;
           test "stale async capture falls back" stale_async_capture_falls_back;
           test "plain without syntax" plain_without_syntax;
+          test "props reject a tab width below 1" props_reject_tab_width_below_1;
           test "precomputed highlights apply style"
             precomputed_highlights_apply_style;
           test "sync highlighter applies style" sync_highlighter_applies_style;

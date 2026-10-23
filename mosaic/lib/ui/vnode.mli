@@ -315,7 +315,9 @@ val text :
     - [selection_fg] is the selection foreground color.
     - [tab_width] is the tab-stop width in columns. Defaults to [2].
     - [truncate] controls whether overlong lines are truncated with an ellipsis.
-      Defaults to [false]. *)
+      Defaults to [false].
+
+    Raises [Invalid_argument] if [tab_width < 1]. *)
 
 val rich_text :
   ?key:string ->
@@ -346,7 +348,9 @@ val rich_text :
     Fragment styles inherit from [text_style]; nested colours override inherited
     colours. Wrapping and selection cross fragment boundaries. All labelled
     options have the same meaning as {!text}. Switching between {!text} and
-    [rich_text] retains the text widget. *)
+    [rich_text] retains the text widget.
+
+    Raises [Invalid_argument] if [tab_width < 1]. *)
 
 val slider :
   ?key:string ->
@@ -967,7 +971,9 @@ val code :
       [true].
     - [selection_bg] is the selection background color.
     - [selection_fg] is the selection foreground color.
-    - [on_selection] is called when the current selection changes. *)
+    - [on_selection] is called when the current selection changes.
+
+    Raises [Invalid_argument] if [tab_width < 1]. *)
 
 val line_number :
   ?key:string ->

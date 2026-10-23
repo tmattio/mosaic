@@ -166,13 +166,17 @@ type t = {
   mutable version : int;
 }
 
+let check_tab_width name w =
+  if w < 1 then invalid_arg ("Text_buffer." ^ name ^ ": tab width below 1")
+
 let create ?(default_style = Ansi.Style.default) ?(tab_width = 2) () =
+  check_tab_width "create" tab_width;
   {
     spans = [];
     content_mode = Forward;
     default_style;
     highlights = [];
-    tab_width = max 1 tab_width;
+    tab_width;
     cached_plain_text = None;
     cached_max_line_width = None;
     source = None;
@@ -383,7 +387,7 @@ let highlights_in_range t ~start ~len =
 let tab_width t = t.tab_width
 
 let set_tab_width t w =
-  let w = max 1 w in
+  check_tab_width "set_tab_width" w;
   if t.tab_width <> w then begin
     t.tab_width <- w;
     t.cached_max_line_width <- None;

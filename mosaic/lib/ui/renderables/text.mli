@@ -129,7 +129,9 @@ val create :
     - [on_selection]: selection-change callback used when [selectable = true].
     - [tab_width]: tab stop width. Defaults to [2].
     - [truncate]: whether to truncate with ellipsis when [wrap = `None].
-      Defaults to [false]. *)
+      Defaults to [false].
+
+    Raises [Invalid_argument] if [tab_width < 1]. *)
 
 (** {1:accessors Accessors} *)
 
@@ -159,7 +161,9 @@ module Props : sig
     ?truncate:bool ->
     unit ->
     t
-  (** [make ()] is a property set with the same defaults as {!val-create}. *)
+  (** [make ()] is a property set with the same defaults as {!val-create}.
+
+      Raises [Invalid_argument] if [tab_width < 1]. *)
 
   val make_rich :
     ?text_style:Ansi.Style.t ->
@@ -172,7 +176,9 @@ module Props : sig
     fragment list ->
     t
   (** [make_rich fragments] declares structured text with the same presentation
-      defaults as {!make}. Fragment styles inherit from [text_style]. *)
+      defaults as {!make}. Fragment styles inherit from [text_style].
+
+      Raises [Invalid_argument] if [tab_width < 1]. *)
 
   val default : t
   (** [default] is [make ()]. *)
@@ -247,7 +253,9 @@ val set_wrap : t -> Text_surface.wrap -> unit
 
 val set_tab_width : t -> int -> unit
 (** [set_tab_width t w] changes the tab stop width. Delegates to
-    {!Text_buffer.set_tab_width}. *)
+    {!Text_buffer.set_tab_width}.
+
+    Raises [Invalid_argument] if [w < 1]. *)
 
 (** {1:selection Selection} *)
 
