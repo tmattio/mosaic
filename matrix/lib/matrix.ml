@@ -66,6 +66,7 @@ external abort_tty : Unix.file_descr -> Unix.file_descr -> unit
   = "matrix_abort_tty"
 
 external abort_clear : unit -> unit = "matrix_abort_clear"
+external is_controlling : Unix.file_descr -> bool = "matrix_is_controlling"
 external abort_reset : string -> unit = "matrix_abort_reset"
 
 module Backend = struct
@@ -83,6 +84,7 @@ module Backend = struct
     flush_input : unit -> unit;
     input_is_tty : bool;
     output_is_tty : bool;
+    controlling : bool;
     protect : (unit -> unit) -> unit;
     cleanup : unit -> unit;
     env : Terminal.Caps.env;
@@ -200,6 +202,7 @@ module Backend = struct
       flush_input = (fun () -> if input_is_tty then Terminal.flush_input input);
       input_is_tty;
       output_is_tty;
+      controlling = is_controlling input || is_controlling output;
       protect = (fun f -> f ());
       cleanup = (fun () -> set_raw_mode false);
       env = Terminal.Caps.env Sys.getenv_opt ~win32:Sys.win32;
@@ -406,12 +409,13 @@ type 'msg app = {
   mutable frame_dump_counter : int;
 }
 
-(* The runs that hold the terminal, innermost first. A run started inside
+(* The runs, latest first, under [runs_lock]: runs may start on several
+   domains. A run on the controlling terminal holds it; one started inside
    [release] holds it while the outer one waits. *)
 type held = Held : 'msg app -> held
 
-let holders : held list ref = ref []
-let holder () = match !holders with held :: _ -> Some held | [] -> None
+let runs : held list ref = ref []
+let runs_lock = Mutex.create ()
 let serials = Atomic.make 0
 let thread_id () = Thread.id (Thread.self ())
 
@@ -1439,11 +1443,12 @@ let settle t =
    report that says where the live region went is waited for with the
    replies owed. *)
 let give_back t ~exiting =
-  (try
-     t.size_report <- Read;
-     apply_size t;
-     settle t
-   with _ -> ());
+  t.backend.protect (fun () ->
+      try
+        t.size_report <- Read;
+        apply_size t;
+        settle t
+      with _ -> ());
   run_undos t ~exiting
 
 (* The batch that waited for the ones dropped is sent. *)
@@ -1796,11 +1801,31 @@ let setup t =
   ask_own t Pixel_size;
   t.usable <- size t
 
+(* The innermost run of the calling thread. *)
+let holder () =
+  let self = thread_id () in
+  Mutex.protect runs_lock (fun () ->
+      List.find_opt (fun (Held app) -> app.owner = self) !runs)
+
+(* Registers [t], unless its terminal is the controlling one and another
+   run holds it. *)
+let hold t =
+  Mutex.protect runs_lock (fun () ->
+      if
+        t.backend.controlling
+        && List.exists
+             (fun (Held app) -> app.backend.controlling && not app.released)
+             !runs
+      then false
+      else (
+        runs := Held t :: !runs;
+        true))
+
+let unhold t =
+  Mutex.protect runs_lock (fun () ->
+      runs := List.filter (fun (Held app) -> app.serial <> t.serial) !runs)
+
 let run ?backend ?(config = config ()) f =
-  (match !holders with
-  | Held app :: _ when not app.released ->
-      invalid_arg "Matrix.run: another run holds the terminal"
-  | _ -> ());
   let backend = match backend with Some b -> b | None -> Backend.unix () in
   let t =
     try make backend config
@@ -1809,10 +1834,12 @@ let run ?backend ?(config = config ()) f =
       (try backend.protect backend.cleanup with _ -> ());
       Printexc.raise_with_backtrace exn bt
   in
-  holders := Held t :: !holders;
+  if not (hold t) then (
+    (try backend.protect backend.cleanup with _ -> ());
+    invalid_arg "Matrix.run: another run holds the terminal");
   let finish () =
     Atomic.set t.accepting false;
-    holders := List.filter (fun (Held app) -> app.serial <> t.serial) !holders;
+    unhold t;
     t.backend.protect t.backend.cleanup
   in
   let teardown () =

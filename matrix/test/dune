@@ -74,7 +74,14 @@
  (name test_runtime)
  (package matrix)
  (modules test_runtime)
- (libraries windtrap matrix matrix.vte matrix.input unix threads.posix))
+ (libraries
+  windtrap
+  matrix
+  matrix.vte
+  matrix.input
+  matrix.pty
+  unix
+  threads.posix))
 
 (executable
  (name runtime_child)

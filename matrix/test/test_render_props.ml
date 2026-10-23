@@ -901,6 +901,7 @@ let run_case case =
       read_input;
       input_is_tty = primary;
       output_is_tty = true;
+      controlling = false;
       terminal_size = (fun () -> r.size);
       set_raw_mode = ignore;
       flush_input = ignore;

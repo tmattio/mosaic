@@ -129,6 +129,7 @@ let backend f : Matrix.Backend.t =
     flush_input = (fun () -> f.flushes <- f.flushes + 1);
     input_is_tty = f.tty;
     output_is_tty = f.tty;
+    controlling = f.tty;
     protect = (fun f -> f ());
     cleanup = (fun () -> f.cleanups <- f.cleanups + 1);
     env = no_env;
@@ -819,16 +820,62 @@ let test_setup_rolls_back () =
    where the outer run gave it away. *)
 let test_nested_runs () =
   let f = fake () in
-  run ~config:(quiet ()) f (fun app ->
+  let controlling f = { (backend f) with controlling = true } in
+  Matrix.run ~backend:(controlling f) ~config:(quiet ()) (fun app ->
       raises_match ~msg:"a run inside a run"
         (function Invalid_argument _ -> true | _ -> false)
-        (fun () -> run ~config:(quiet ()) (fake ()) ignore);
+        (fun () ->
+          Matrix.run ~backend:(controlling (fake ())) ~config:(quiet ()) ignore);
+      run ~config:(quiet ()) (fake ()) ignore;
       let inner = fake () in
-      Matrix.release app (fun () -> run ~config:(quiet ()) inner ignore);
+      Matrix.release app (fun () ->
+          Matrix.run ~backend:(controlling inner) ~config:(quiet ()) ignore);
       equal ~msg:"the inner run ran" int 1 inner.cleanups;
       raises_match ~msg:"a release inside a release"
         (function Invalid_argument _ -> true | _ -> false)
         (fun () -> Matrix.release app (fun () -> Matrix.release app ignore)))
+
+(* Runs on terminals other than the controlling one, each on its domain,
+   run side by side. *)
+let test_runs_on_other_terminals () =
+  let session () =
+    Domain.spawn (fun () ->
+        let f = fake () in
+        f.on_wait <- (fun f ~until:_ -> f.eof <- true);
+        run ~config:(quiet ()) f (fun app ->
+            Unix.sleepf 0.05;
+            ignore (drain app : _ list));
+        f.cleanups)
+  in
+  let a = session () and b = session () in
+  equal ~msg:"both ran" (pair int int) (1, 1) (Domain.join a, Domain.join b)
+
+(* Giving the terminal back waits for the replies owed under the backend's
+   protection: an Eio backend's waits raise in a cancelled fiber unless
+   protected, and a run often ends by its fiber's cancellation. *)
+let test_settle_under_protect () =
+  let f = fake ~tty:true () in
+  f.answer <- probe_answer;
+  let protected = ref false and ending = ref false and exposed = ref 0 in
+  let b = backend f in
+  let backend =
+    {
+      b with
+      wait =
+        (fun ~until ~reading ->
+          if !ending && not !protected then incr exposed;
+          b.wait ~until ~reading);
+      protect =
+        (fun g ->
+          protected := true;
+          Fun.protect g ~finally:(fun () -> protected := false));
+    }
+  in
+  Matrix.run ~backend ~config:(quiet ()) (fun app ->
+      Matrix.query app ~owed:{ cursor_reports = 1; string_replies = 0 } "[6n";
+      ending := true);
+  is_true ~msg:"a reply was waited for" (f.now >= ms 500);
+  equal ~msg:"no wait outside the protection" int 0 !exposed
 
 (* A Focus_in after a Focus_out sets the modes again, once. *)
 let test_focus_restore_runs_only_after_blur_once () =
@@ -1879,6 +1926,7 @@ let clocked ?(limit = 10.) ?(rtt = 0.) ?(answer = fun _ -> []) typed =
       flush_input = ignore;
       input_is_tty = true;
       output_is_tty = true;
+      controlling = true;
       protect = (fun f -> f ());
       cleanup = ignore;
       env = no_env;
@@ -2508,6 +2556,20 @@ let test_stop_job_when_tstp_is_ignored () =
 
 (* A post from another thread wakes a loop that waits for input that never
    comes. *)
+(* A pseudo-terminal the process opened is a terminal, not its controlling
+   terminal. *)
+let test_unix_controlling () =
+  let master, slave = Pty.open_pty () in
+  Fun.protect
+    ~finally:(fun () ->
+      Pty.close master;
+      Pty.close slave)
+    (fun () ->
+      let fd = Pty.file_descr slave in
+      let b = Matrix.Backend.unix ~input:fd ~output:fd () in
+      is_true ~msg:"a terminal" b.input_is_tty;
+      is_false ~msg:"not the controlling one" b.controlling)
+
 let test_unix_post_wakes_the_loop () =
   let input_r, input_w = Unix.pipe ~cloexec:true () in
   let devnull = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0 in
@@ -2574,6 +2636,9 @@ let () =
           test "giving back runs every undo" test_give_back_runs_every_undo;
           test "setup rolls back" test_setup_rolls_back;
           test "nested runs" test_nested_runs;
+          test "runs on other terminals" test_runs_on_other_terminals;
+          test "the settle under the backend's protection"
+            test_settle_under_protect;
           test "focus restore runs only after blur once"
             test_focus_restore_runs_only_after_blur_once;
           test "late capability response requests a frame"
@@ -2741,5 +2806,9 @@ let () =
             test_stop_job_when_tstp_is_ignored;
         ];
       group "Unix backend"
-        [ test "a post wakes the loop" test_unix_post_wakes_the_loop ];
+        [
+          test "a post wakes the loop" test_unix_post_wakes_the_loop;
+          test "a pseudo-terminal is not the controlling terminal"
+            test_unix_controlling;
+        ];
     ]

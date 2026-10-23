@@ -178,6 +178,7 @@ let backend t : Matrix.Backend.t =
         t.input_offset <- 0);
     input_is_tty = false;
     output_is_tty = false;
+    controlling = false;
     protect = (fun f -> f ());
     cleanup = ignore;
     env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;

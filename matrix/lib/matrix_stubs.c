@@ -67,8 +67,15 @@ CAMLprim value matrix_abort_tty(value i, value o) {
 }
 CAMLprim value matrix_abort_clear(value u) { (void)u; return Val_unit; }
 CAMLprim value matrix_abort_reset(value s) { (void)s; return Val_unit; }
+CAMLprim value matrix_is_controlling(value fd) { (void)fd; return Val_false; }
 
 #else
+
+/* Whether [fd] is the process's controlling terminal: only that terminal
+   has a foreground process group the process can read. */
+CAMLprim value matrix_is_controlling(value fd) {
+  return Val_bool(tcgetpgrp(Int_val(fd)) != -1);
+}
 
 /* The wake pipe's write end, which the handlers write to. */
 static volatile int wake_w = -1;

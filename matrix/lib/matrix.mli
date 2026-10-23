@@ -173,6 +173,11 @@ module Backend : sig
     input_is_tty : bool;  (** Whether the input device is a terminal. *)
     output_is_tty : bool;
         (** Whether the output device accepts terminal modes. *)
+    controlling : bool;
+        (** Whether the terminal is the process's controlling terminal, the one
+            its job runs in, which one run at a time holds ({!run}). A terminal
+            the process serves, such as a pseudo-terminal it opened or a remote
+            session, is not. *)
     protect : (unit -> unit) -> unit;
         (** [protect f] runs [f ()] with cancellation deferred until it returns
             or raises. Used only for teardown; synchronous backends call [f]
@@ -307,8 +312,10 @@ val run : ?backend:Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
     transcript in [`Primary] mode), cooked mode restored, and input not read
     discarded.
 
-    Raises [Invalid_argument] if another run holds the terminal, unless that run
-    gave it away for {!release}. *)
+    Raises [Invalid_argument] if [backend]'s terminal is the controlling
+    terminal ({!Backend.t}'s [controlling]) and another run holds it, unless
+    that run gave it away for {!release}. Runs on other terminals, such as
+    sessions a server runs, each in its domain, run side by side. *)
 
 (** {1:loop The loop}
 
