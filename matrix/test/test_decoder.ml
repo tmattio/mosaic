@@ -311,8 +311,14 @@ let kitty_keys =
     table "associated text"
       [
         ("\x1b[97;;97u", [ "Key 'a' text \"a\"" ]);
-        ("\x1b[97;2;65u", [ "Key Shift+'a' text \"A\"" ]);
+        ("\x1b[97;2;65u", [ "Key 'A' text \"A\"" ]);
         ("\x1b[97:65;2;65u", [ "Key 'A' text \"A\"" ]);
+        (* With Caps Lock, the text is what was typed. *)
+        ("\x1b[114;65;82u", [ "Key 'R' caps_lock text \"R\"" ]);
+        ("\x1b[114:82;66;114u", [ "Key 'r' caps_lock text \"r\"" ]);
+        (* Shift that does not change the character stays. *)
+        ("\x1b[32;2;32u", [ "Key Shift+U+0020 text \" \"" ]);
+        ("\x1b[97;3;97u", [ "Key Alt+'a'" ]);
         ("\x1b[97;5;97u", [ "Key Ctrl+'a'" ]);
         ("\x1b[97;;1u", [ "Reply Csi CSI 97;;1 u" ]);
       ];
@@ -1216,8 +1222,8 @@ let measured_tests =
 (* Every keystroke of a US layout's 47 text keys under seven sets of modifiers
    and both Caps Lock states, encoded as legacy bytes (xterm with
    metaSendsEscape, whose rules the rows above measure) and as the kitty
-   protocol sends it with flags 1|4 and with flag 1 alone (its specification
-   and source). Each decodes to the keystroke's value, the character typed
+   protocol sends it with flags 1|4, with flag 1 alone, and with every
+   enhancement (its specification and source). Each decodes to the keystroke's value, the character typed
    with Shift consumed, or to the stated loss of its encoding. *)
 
 let unshifted = "abcdefghijklmnopqrstuvwxyz`1234567890-=[]\\;',./"
@@ -1277,6 +1283,21 @@ let kitty ~flag4 k m ~caps =
       else ""
     in
     Some (Printf.sprintf "\x1b[%d%s;%du" code alternate (bits + 1))
+
+(* With every enhancement (flags 1|2|4|8|16), a key that types text is a
+   sequence too, with the text it types, the locks applied: Caps Lock with r
+   is [CSI 114 ; 65 ; 82 u]. A chord is as with flags 1|4. *)
+let kitty_all k m ~caps =
+  if m.alt || m.ctrl then kitty ~flag4:true k m ~caps
+  else
+    let bits = (if m.shift then 1 else 0) lor if caps then 64 else 0 in
+    let alternate =
+      if m.shift then Printf.sprintf ":%d" (Char.code (shift_of k)) else ""
+    in
+    Some
+      (Printf.sprintf "\x1b[%d%s;%s;%du" (Char.code k) alternate
+         (if bits = 0 then "" else string_of_int (bits + 1))
+         (Char.code (typed_char k m ~caps)))
 
 (* The keystroke's value: for a chord, the character typed without the lock;
    for text, the character typed. *)
@@ -1358,10 +1379,12 @@ let key_equivalence () =
                             bytes K.pp got
                           :: !failures;
                       (* Locks are state: the kitty protocol reports them on
-                         chords only, and legacy bytes never. *)
+                         chords, and on every key when all keys are
+                         sequences; legacy bytes never do. *)
                       let caps_reported = got.K.mods.caps_lock in
                       let caps_expected =
-                        caps && (m.alt || m.ctrl) && name <> "legacy"
+                        caps && name <> "legacy"
+                        && (m.alt || m.ctrl || name = "kitty all")
                       in
                       if caps_reported <> caps_expected then
                         failures :=
@@ -1372,6 +1395,7 @@ let key_equivalence () =
                   ("legacy", legacy);
                   ("kitty 1|4", kitty ~flag4:true);
                   ("kitty 1", kitty ~flag4:false);
+                  ("kitty all", kitty_all);
                 ])
             [ false; true ])
         chords)
@@ -1381,7 +1405,7 @@ let key_equivalence () =
       (String.concat "\n" (List.rev !failures));
   (* The count of keystrokes whose encoding loses a fact, pinned so that a
      change to the rules shows here. *)
-  equal int ~msg:"keystrokes checked" 1872 !checked;
+  equal int ~msg:"keystrokes checked" 2530 !checked;
   equal int ~msg:"stated losses" 320 !losses
 
 let equivalence_tests = [ test "one value per keystroke" key_equivalence ]

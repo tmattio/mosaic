@@ -521,6 +521,11 @@ let prefixed pre ev emit =
 
 let reply pre r emit = prefixed pre (Reply r) emit
 
+(* The text of a kitty key, its third parameter, when it is one scalar. *)
+let text_scalar p =
+  if Params.count p < 3 || Params.fields p 2 <> 1 then None
+  else match Params.value p 2 with Some c when is_text c -> Some c | _ -> None
+
 (* The kitty protocol's [CSI code:shifted:base ; m:e ; text u], and
    xterm's [CSI code ; m u] form of modifyOtherKeys. *)
 let kitty (s : P.sequence) pre emit =
@@ -572,10 +577,22 @@ let kitty (s : P.sequence) pre emit =
       match key with
       | None -> reply pre (Csi s) emit
       | Some (key, keypad) ->
-          (* The character typed, when the shifted key says it. *)
+          (* The character typed, when the text or the shifted key says it.
+             The text is the character with the locks applied, and Shift is
+             consumed when it changed the character. A chord types nothing,
+             so its key is the shifted one. *)
+          let typed = if types_nothing bits then None else text_scalar p in
           let key, bits =
-            match (key, shifted) with
-            | Char _, Some sh when bits land shift_bit <> 0 && is_text sh ->
+            match (key, typed, shifted) with
+            | Char _, Some t, _ ->
+                let changed =
+                  t <> code
+                  || match shifted with Some sh -> sh <> code | None -> false
+                in
+                ( K.Char (Uchar.of_int t),
+                  if changed then bits land lnot shift_bit else bits )
+            | Char _, None, Some sh when bits land shift_bit <> 0 && is_text sh
+              ->
                 (K.Char (Uchar.of_int sh), bits land lnot shift_bit)
             | _ -> (key, bits)
           in

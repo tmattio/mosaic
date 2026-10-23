@@ -21,11 +21,13 @@
     [Char c] is a key that types a character, and [c] is the character typed,
     with Shift and the keyboard layout applied: Shift+a is [Char 'A'] and
     Shift+4 on a US layout is [Char '$']. Legacy bytes and modifyOtherKeys carry
-    that character, and so does the kitty protocol's shifted key, which it
-    reports with its "report alternate keys" enhancement. Shift is then
-    consumed: [shift] is set on a [Char] only when Shift did not change the
-    character, as for Shift+Space. A binding for Ctrl+Shift+g matches [Char 'G']
-    with [ctrl], never [Char 'g'] with [shift].
+    that character, and so does the kitty protocol, in the shifted key it
+    reports with its "report alternate keys" enhancement, and in the text it
+    reports with a key that types one character when it sends every key as a
+    sequence ("report associated text"). Shift is then consumed: [shift] is set
+    on a [Char] only when Shift did not change the character, as for
+    Shift+Space. A binding for Ctrl+Shift+g matches [Char 'G'] with [ctrl],
+    never [Char 'g'] with [shift].
 
     The kitty protocol without that enhancement carries less. Its key code is
     "always the lower-case (or more technically, un-shifted) version of the key"
@@ -38,14 +40,15 @@
 
     Lock keys never change a chord's key. A character typed with Caps Lock on
     arrives as text with the lock already applied, so the [Char] is what was
-    typed. A chord is another matter: Ctrl+s is [Char 's'] with [ctrl] whatever
-    Caps Lock's state, as xterm sends it (0x13) and as the kitty protocol does
-    ([CSI 115 ; 69 u]), and [caps_lock] says the lock is on. The kitty protocol
-    reports the lock bits on chords and legacy bytes never do, so a binding
-    ignores [caps_lock] and [num_lock]. Legacy bytes lose this fact under Alt:
-    with Caps Lock on, Alt+a arrives as ESC A, [Char 'A'] with [alt], and
-    Alt+Shift+a as ESC a, because the terminal applies the lock to the character
-    before it adds the ESC.
+    typed: Caps Lock with r is [Char 'R'], from the byte R or from the kitty
+    protocol's [CSI 114 ; 65 ; 82 u], whose text is R. A chord is another
+    matter: Ctrl+s is [Char 's'] with [ctrl] whatever Caps Lock's state, as
+    xterm sends it (0x13) and as the kitty protocol does ([CSI 115 ; 69 u]), and
+    [caps_lock] says the lock is on. The kitty protocol reports the lock bits on
+    chords and legacy bytes never do, so a binding ignores [caps_lock] and
+    [num_lock]. Legacy bytes lose this fact under Alt: with Caps Lock on, Alt+a
+    arrives as ESC A, [Char 'A'] with [alt], and Alt+Shift+a as ESC a, because
+    the terminal applies the lock to the character before it adds the ESC.
 
     {1:controls Controls}
 
