@@ -40,11 +40,11 @@
       is there but rows the terminal itself pushed into its scrollback as it
       shrank.
 
-    The VTE departs from xterm in places (vte.mli, Printing). Two concern
-    printing, and neither applies here: it erases the cells a wide unit skips
-    when it wraps, but a grid holds only units that fit their row; and it joins
-    a unit of no width that follows a control function to the cell before the
-    cursor, but a grid holds no unit of no width.
+    The VTE departs from xterm in places (vte.ml, [place] and [join]). Two
+    concern printing, and neither applies here: it erases the cells a wide unit
+    skips when it wraps, but a grid holds only units that fit their row; and it
+    joins a unit of no width that follows a control function to the cell before
+    the cursor, but a grid holds no unit of no width.
 
     The counts run in about a second. [MATRIX_FUZZ_SCALE=N] multiplies them. *)
 

@@ -538,7 +538,9 @@ let write_cluster t ~row ~col ~width =
 (* Place the cluster from its position, by the four rules of vte.mli. With
    autowrap off it ends at the margin; otherwise, if it does not fit, the rest
    of the line is erased and it moves to the next. In insert mode the line
-   moves right by the cells it gains. *)
+   moves right by the cells it gains. xterm, a datapoint, leaves the skipped
+   cells alone; erasing them leaves the same screen whether a unit arrived
+   whole or was placed narrow and then widened. *)
 let place t =
   let cl = t.cluster and m = t.modes in
   let width = min cl.width t.cols in
@@ -581,8 +583,11 @@ let rewrite_joined t text =
 
 (* A unit of no width that continues nothing joins the grapheme in the cell
    before the cursor, or under it at the last column; with no such cell it
-   is dropped (vte.mli says how xterm differs). It is joined as soon as it is seen, so a reader of
-   the cells finds it, and taken back if it gains a width. *)
+   is dropped. xterm, a datapoint, instead joins the cell it last wrote, or
+   after a cursor motion the cell at the cursor: after [ab], CUB and a
+   combining acute accent it accents [b] where this terminal accents [a]. It
+   is joined as soon as it is seen, so a reader of the cells finds it, and
+   taken back if it gains a width. *)
 let join t =
   let cl = t.cluster and c = t.cursor in
   let x = if c.last_column then c.col else c.col - 1 in
@@ -694,7 +699,10 @@ let print t s =
    same. With autowrap, once every row the prints can reach (the screen, the
    scrollback and the row being written) holds the same [per_row] units, the
    state depends on [n] only modulo [per_row], so the work is bounded by the
-   screen and the scrollback, whatever [n]. *)
+   screen and the scrollback, whatever [n]: a unit [w] cells wide is placed at
+   most about [cols / w * (rows + scrollback)] times. That bound is still
+   large: a REP of a few bytes on an 80-column screen with 10,000 lines of
+   scrollback places about 800,000 units, a tenth of a second. *)
 let repetitions t n width =
   if not t.modes.auto_wrap then min n (t.cols + 1)
   else
@@ -941,7 +949,8 @@ let decsc t =
     }
 
 (* DECRC restores the Last Column Flag with the position, unless autowrap is
-   off, which never leaves the flag set. *)
+   off, which never leaves the flag set. Autowrap stays as it is: DEC's VT220,
+   VT420 and VT510, measured, restore the flag and not the mode. *)
 let decrc t =
   let s = (screen t).saved in
   t.pen <- s.pen;
@@ -1139,7 +1148,8 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
 
 (* DECSTR: the settings, the pen and the character sets to their power-up
    values (VT510 DECSTR, Table 5-9), autowrap on as at power-up. LNM is not
-   in the table, and stays. *)
+   in the table, and stays. xterm, a datapoint, resets the cursor style and
+   the indexed colours there too. *)
 let decstr t =
   set_cursor_visible t true;
   t.modes <-
