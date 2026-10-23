@@ -236,6 +236,142 @@ let setup ~mode ~blocks workload () =
   done;
   driver
 
+(* The loop's own costs, on a small program: the run suspends whenever
+   [pause] says so when the loop goes idle, and a sample resumes it. *)
+
+type loop = {
+  t : Matrix_test.t;
+  suspended : (unit, unit) Effect.Deep.continuation option ref;
+  dispatch : (unit -> unit) ref;
+  views : int ref;
+  paints : int ref;
+}
+
+let loop_resume loop =
+  match !(loop.suspended) with
+  | None -> failwith "runtime benchmark: the loop is not suspended"
+  | Some k ->
+      loop.suspended := None;
+      Effect.Deep.continue k ();
+      if !(loop.suspended) = None then
+        failwith "runtime benchmark: loop ended before it went idle"
+
+let loop_close loop =
+  Matrix_test.stop loop.t;
+  match !(loop.suspended) with
+  | Some k ->
+      loop.suspended := None;
+      Effect.Deep.continue k ()
+  | None -> ()
+
+(* A program that counts keys, over a 40x2 terminal; its messages from
+   elsewhere change nothing. [pause] runs at each idle turn with no deadline
+   left. *)
+let loop_setup ~pause () =
+  let suspended : (unit, unit) Effect.Deep.continuation option ref = ref None in
+  let dispatch = ref ignore in
+  let views = ref 0 and paints = ref 0 in
+  let t =
+    Matrix_test.create ~width:40 ~height:2
+      ~on_idle:(fun t ~until ->
+        match until with
+        | Some until ->
+            Matrix_test.advance t (max 1 (until - Matrix_test.now t))
+        | None -> if pause () then Effect.perform Presented)
+      ()
+  in
+  let backend = Matrix_test.backend t in
+  let backend =
+    {
+      backend with
+      write_output =
+        (fun b off len ->
+          incr paints;
+          backend.write_output b off len);
+    }
+  in
+  let application =
+    {
+      Mosaic.init =
+        (fun () ->
+          (0, Mosaic.Cmd.perform (fun d -> dispatch := fun () -> d `Nothing)));
+      update =
+        (fun msg n ->
+          match msg with `Key -> (n + 1, none) | `Nothing -> (n, none));
+      view =
+        (fun n ->
+          incr views;
+          Mosaic.text (string_of_int n));
+      subscriptions = (fun _ -> Mosaic.Sub.on_key (fun _ -> Some `Key));
+    }
+  in
+  Effect.Deep.match_with
+    (fun () ->
+      Mosaic.run ~backend ~config:(Matrix_test.config t)
+        ~process_perform:(fun work -> work ())
+        application)
+    ()
+    {
+      retc = (fun () -> ());
+      exnc = raise;
+      effc =
+        (fun (type a) (eff : a Effect.t) ->
+          match eff with
+          | Presented ->
+              Some
+                (fun (k : (a, unit) Effect.Deep.continuation) ->
+                  suspended := Some k)
+          | _ -> None);
+    };
+  { t; suspended; dispatch; views; paints }
+
+(* 10,000 idle turns a sample: the loop waits, finds nothing, waits again. *)
+let idle_turns () =
+  let turns = ref 0 in
+  let loop =
+    loop_setup
+      ~pause:(fun () ->
+        incr turns;
+        !turns mod 10_000 = 0)
+      ()
+  in
+  require (!(loop.suspended) <> None) "the loop did not go idle";
+  loop
+
+(* 1,000 keys in one read, applied, viewed and painted once. *)
+let burst () =
+  let loop = loop_setup ~pause:(fun () -> true) () in
+  let views = !(loop.views) and paints = !(loop.paints) in
+  Matrix_test.feed loop.t (String.make 1000 'a');
+  loop_resume loop;
+  require (!(loop.views) - views = 1000) "a burst is not 1,000 views";
+  require (!(loop.paints) - paints = 1) "a burst is not one paint";
+  loop
+
+let burst_sample loop =
+  Matrix_test.feed loop.t (String.make 1000 'a');
+  loop_resume loop
+
+(* 1,000 messages posted from elsewhere, taken and applied: they change
+   nothing, so nothing is viewed or painted. *)
+let posts loop =
+  for _ = 1 to 1000 do
+    !(loop.dispatch) ()
+  done;
+  loop_resume loop
+
+let loop_benches =
+  Thumper.group "loop"
+    [
+      Thumper.bench_with_setup ~setup:idle_turns ~teardown:loop_close
+        "idle-turns-10000" loop_resume;
+      Thumper.bench_with_setup ~setup:burst ~teardown:loop_close
+        "burst-1000-keys" burst_sample;
+      Thumper.bench_with_setup
+        ~setup:(loop_setup ~pause:(fun () -> true))
+        ~teardown:loop_close "posts-1000" posts;
+    ]
+
 let () =
   let metrics =
     if Sys.getenv_opt "RUNTIME_TIMING" = Some "1" then
@@ -251,36 +387,37 @@ let () =
     (* Per-input cost must not grow with mounted content: the 20,000-block
        transcript repeats the input workloads. The primary-mode group runs them
        in an inline region shorter than the terminal. *)
-    (List.map
-       (fun (mode, blocks, workloads) ->
-         Thumper.group
-           (match mode with
-           | `Alt -> Printf.sprintf "transcript-%d" blocks
-           | `Primary -> Printf.sprintf "primary-transcript-%d" blocks)
-           (List.map
-              (fun (name, workload) ->
-                Thumper.bench_with_setup
-                  ~setup:(setup ~mode ~blocks workload)
-                  ~teardown:close name (measure workload))
-              workloads))
-       [
-         ( `Alt,
-           5000,
-           [
-             ("keystroke-to-present", Keystroke);
-             ("wheel-roundtrip-2x8", Wheel_burst);
-             ("resize-250x70", Resize);
-           ] );
-         ( `Alt,
-           20000,
-           [
-             ("keystroke-to-present", Keystroke);
-             ("wheel-roundtrip-2x8", Wheel_burst);
-           ] );
-         ( `Primary,
-           5000,
-           [
-             ("keystroke-to-present", Keystroke);
-             ("wheel-roundtrip-2x8", Wheel_burst);
-           ] );
-       ])
+    (loop_benches
+    :: List.map
+         (fun (mode, blocks, workloads) ->
+           Thumper.group
+             (match mode with
+             | `Alt -> Printf.sprintf "transcript-%d" blocks
+             | `Primary -> Printf.sprintf "primary-transcript-%d" blocks)
+             (List.map
+                (fun (name, workload) ->
+                  Thumper.bench_with_setup
+                    ~setup:(setup ~mode ~blocks workload)
+                    ~teardown:close name (measure workload))
+                workloads))
+         [
+           ( `Alt,
+             5000,
+             [
+               ("keystroke-to-present", Keystroke);
+               ("wheel-roundtrip-2x8", Wheel_burst);
+               ("resize-250x70", Resize);
+             ] );
+           ( `Alt,
+             20000,
+             [
+               ("keystroke-to-present", Keystroke);
+               ("wheel-roundtrip-2x8", Wheel_burst);
+             ] );
+           ( `Primary,
+             5000,
+             [
+               ("keystroke-to-present", Keystroke);
+               ("wheel-roundtrip-2x8", Wheel_burst);
+             ] );
+         ])
