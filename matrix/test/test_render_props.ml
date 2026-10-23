@@ -15,11 +15,11 @@
     Frames mix ASCII, wide CJK, combining marks, emoji sequences, characters of
     no width and characters that join their neighbors; every SGR attribute;
     default, 256-color, truecolor and translucent colors; hyperlinks; background
-    fills and clears; cursor moves, shapes and visibility; terminals with
-    synchronized output or [explicit_cursor_positioning]; resizes between
-    frames, growing and shrinking; and releases of the terminal, during which a
-    program writes rows. While released, the screen must be as {!Matrix.release}
-    leaves it, the cursor shown.
+    fills, clears and empty cells; cursor moves, shapes and visibility;
+    terminals with synchronized output or [explicit_cursor_positioning]; resizes
+    between frames, growing and shrinking; and releases of the terminal, during
+    which a program writes rows. While released, the screen must be as
+    {!Matrix.release} leaves it, the cursor shown.
 
     {b Alternate screen.} The frame is the whole screen, and scroll hints, true
     or not, never change what it shows. The VTE's replies are ignored.
@@ -71,6 +71,8 @@ type op =
   | Text of { x : int; y : int; text : string; style : Ansi.Style.t }
   | Fill of { x : int; y : int; w : int; h : int; color : Color.t }
   | Clear of { x : int; y : int; w : int; h : int }
+  | Empty of { x : int; y : int; style : Ansi.Style.t }
+      (** An empty cell, which shows as a space in its colors. *)
 
 type cursor = {
   pos : (int * int) option;
@@ -257,6 +259,11 @@ let op_gen ~cols ~rows =
         let* w = int_range 0 (cols + 1) in
         let+ h = int_range 0 (rows + 1) in
         Clear { x; y; w; h } );
+      ( 1,
+        let* x = coord (cols - 1) in
+        let* y = coord (rows - 1) in
+        let+ style = style_gen in
+        Empty { x; y; style } );
     ]
 
 let cursor_gen ~cols ~rows =
@@ -417,6 +424,8 @@ let pp_op fmt = function
   | Fill { x; y; w; h; color } ->
       Format.fprintf fmt "fill (%d,%d) %dx%d %a" x y w h Color.pp color
   | Clear { x; y; w; h } -> Format.fprintf fmt "clear (%d,%d) %dx%d" x y w h
+  | Empty { x; y; style } ->
+      Format.fprintf fmt "empty (%d,%d) %a" x y pp_style style
 
 let pp_cursor fmt c =
   Format.fprintf fmt "cursor %s %s %s%s"
@@ -479,6 +488,12 @@ let draw grid = function
   | Fill { x; y; w; h; color } ->
       Grid.fill_rect grid ~x ~y ~width:w ~height:h ~color
   | Clear { x; y; w; h } -> Grid.clear_rect grid ~x ~y ~width:w ~height:h
+  | Empty { x; y; style } ->
+      let color c ~default = Option.value c ~default in
+      Grid.set_uchar grid ~x ~y ~uchar:(Uchar.of_int 0x200B)
+        ~fg:(color style.fg ~default:Color.default_fg)
+        ~bg:(color style.bg ~default:Color.default_bg)
+        ~attrs:style.attrs ?link:style.link ()
 
 (* A static write's rows carry a tag, so the transcript can be followed. *)
 let static_grid ~cols ~tag rows =
@@ -526,9 +541,12 @@ let shown_fg g idx =
   if cell_text g idx = " " && Grid.get_attrs g idx = 0 then `Default
   else shown (Grid.get_fg g idx)
 
+(* An empty cell shows as a space, one cell wide. *)
+let shown_width g idx = if Grid.is_empty g idx then 1 else Grid.cell_width g idx
+
 let same_cell e ei v vi =
   String.equal (cell_text e ei) (cell_text v vi)
-  && Grid.cell_width e ei = Grid.cell_width v vi
+  && shown_width e ei = shown_width v vi
   && shown_fg e ei = shown_fg v vi
   && shown (Grid.get_bg e ei) = shown (Grid.get_bg v vi)
   && Grid.get_attrs e ei = Grid.get_attrs v vi

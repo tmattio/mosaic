@@ -352,6 +352,50 @@ let test_resize_repaints_every_cell () =
   equal ~msg:"the old cells are gone" string "      \n      "
     (Vte.to_string vte)
 
+(* An empty cell shows as a space in its colors, as Matrix_grid.to_text and
+   to_ansi write it. *)
+let empty_at grid x =
+  Grid.set_uchar grid ~x ~y:0 ~uchar:(Uchar.of_int 0x200B) ~fg:Ansi.Color.white
+    ~bg:(Ansi.Color.of_rgb 0 200 0)
+    ~attrs:Ansi.Attr.empty ()
+
+let test_full_render_writes_empty_cells () =
+  let r = create_renderer ~width:3 ~height:1 () in
+  let vte = Vte.create ~rows:1 ~cols:3 () in
+  let show output = ignore (Vte.feed_string vte output : _ list) in
+  show
+    (Screen.render
+       (build_screen r ~width:3 ~height:1 (fun grid _hits ->
+            Grid.draw_text grid ~x:0 ~y:0 ~text:"XYZ")));
+  let frame =
+    build_screen r ~width:3 ~height:1 (fun grid _hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"XYZ";
+        empty_at grid 1)
+  in
+  show (Screen.render ~full:true frame);
+  equal ~msg:"the text under the empty cell is erased" string "X Z"
+    (Vte.to_string vte);
+  equal ~msg:"in the empty cell's background" string "#00c800"
+    (Ansi.Color.to_hex (Grid.get_bg (Vte.grid vte) 1));
+  equal ~msg:"three columns written" int 3 (Screen.last_metrics r).cells
+
+let test_empty_cells_reset_the_rendition () =
+  let r = create_renderer ~width:3 ~height:1 () in
+  ignore
+    (Screen.render
+       (build_screen r ~width:3 ~height:1 (fun grid _hits ->
+            Grid.draw_text grid ~x:0 ~y:0 ~text:"XYZ"))
+      : string);
+  let output =
+    Screen.render
+      (build_screen r ~width:3 ~height:1 (fun grid _hits ->
+           Grid.draw_text grid ~x:0 ~y:0 ~text:"XY";
+           empty_at grid 2))
+  in
+  equal ~msg:"one empty cell written" int 1 (Screen.last_metrics r).cells;
+  is_true ~msg:"the render ends with SGR 0"
+    (String.ends_with ~suffix:"\027[0m" output)
+
 (* The terminal cuts the bytes it receives into display units as the grid's
    width method does. Two cells written one after the other must not make one
    unit there. *)
@@ -1217,6 +1261,10 @@ let () =
           test "Color only change" test_color_only_change;
           test "Attribute only change" test_attribute_only_change;
           test "Adjacent cells stay apart" test_adjacent_cells_stay_apart;
+          test "A full render writes empty cells"
+            test_full_render_writes_empty_cells;
+          test "Empty cells reset the rendition"
+            test_empty_cells_reset_the_rendition;
         ];
       group "Frame Building"
         [

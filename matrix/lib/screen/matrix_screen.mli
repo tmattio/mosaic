@@ -123,12 +123,13 @@ val add_hit_region :
 (** {1:rendering Rendering}
 
     A render compares the next buffer with the diff baseline and writes each run
-    of cells that differ after moving the cursor to its start. A {e full} render
-    writes every cell. The render after a {!resize} is full, since the baseline
-    then no longer says what the terminal shows. A render ends with no hyperlink
-    open, and with the rendition reset (SGR 0) when it wrote a run of cells. It
-    leaves the cursor wherever its last write put it. It then swaps the buffers
-    and counts the frame in the {!section-statistics}.
+    of cells that differ after moving the cursor to its start. It writes an
+    empty cell ({!Matrix_grid.is_empty}) as a space in the cell's colors. A
+    {e full} render writes every cell. The render after a {!resize} is full,
+    since the baseline then no longer says what the terminal shows. A render
+    ends with no hyperlink open, and with the rendition reset (SGR 0) when it
+    wrote a run of cells. It leaves the cursor wherever its last write put it.
+    It then swaps the buffers and counts the frame in the {!section-statistics}.
 
     A render writes the rows of a {e viewport}, a band of the terminal's rows
     given by its first row and its height. Without one, the viewport starts at

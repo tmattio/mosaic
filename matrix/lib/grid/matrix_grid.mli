@@ -559,6 +559,7 @@ module Unsafe : sig
   val cell_text_length : t -> int -> int
   val blit_cell_text : t -> int -> bytes -> pos:int -> int
   val cell_width : t -> int -> int
+  val is_empty : t -> int -> bool
   val cells_equal : t -> int -> t -> int -> bool
 end
 

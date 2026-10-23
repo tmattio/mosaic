@@ -1650,6 +1650,7 @@ module Unsafe = struct
   let cell_text_length = cell_text_length
   let blit_cell_text = blit_cell_text
   let cell_width = cell_width
+  let is_empty = is_empty
   let cells_equal = cells_equal
 end
 

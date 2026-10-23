@@ -108,7 +108,6 @@ type t = {
 
 (* --- Constants & Inline Helpers --- *)
 
-let[@inline] width_step w = if w <= 0 then 1 else w
 let[@inline] clamp_height grid height = max 0 (min (Grid.height grid) height)
 
 (* --- Core Rendering Logic ---
@@ -129,6 +128,13 @@ let[@inline] cell_changed (c : diff_ctx) y x idx curr_width =
         else
           not
             (Grid.Unsafe.cells_equal c.prev ((y * c.prev_width) + x) c.curr idx)
+
+(* The columns cell [idx] takes when written: its grapheme's width, [1] for an
+   empty cell, which shows as a space as [Grid.to_text] writes it, and [0] for
+   a continuation cell, which the run writes with its start cell. *)
+let[@inline] cell_columns (c : diff_ctx) idx =
+  let w = Grid.Unsafe.cell_width c.curr idx in
+  if w > 0 || not (Grid.Unsafe.is_empty c.curr idx) then w else 1
 
 let[@inline] cell_link (c : diff_ctx) idx =
   if c.hyperlinks then Grid.Unsafe.get_link c.curr idx else ""
@@ -215,8 +221,7 @@ let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width ~last =
   if x >= c.width then x
   else
     let idx = (y * c.width) + x in
-    let cell_width = Grid.Unsafe.cell_width c.curr idx in
-    let step = width_step cell_width in
+    let cell_width = cell_columns c idx in
     if cell_width <= 0 then x
     else if not (cell_changed c y x idx cell_width) then x
     else begin
@@ -254,26 +259,8 @@ let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width ~last =
         ~attrs:(Grid.Unsafe.get_attrs c.curr idx)
         ~link:(cell_link c idx);
       write_cell c ~y ~x ~cell_width ~cp ~n;
-      write_run c y (x + step) ~prev:idx ~prev_cp:cp ~prev_width:cell_width
-        ~last:final
-    end
-
-(* Zero-width cell: the run writer never visits it, so defensively clear it in
-   the cell's own colors when it differs from the previous frame. In a
-   well-formed grid the scan steps over the continuation cells of wide spans,
-   so this only fires for null cells (and malformed orphan continuations). *)
-let clear_stale_zero_width (c : diff_ctx) y x idx =
-  if c.mode = `Diff && y < c.prev_height && x < c.prev_width then
-    let prev_idx = (y * c.prev_width) + x in
-    if not (Grid.Unsafe.cells_equal c.prev prev_idx c.curr idx) then begin
-      Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
-      Ansi.Sgr_state.update c.sgr c.out
-        ~fg:(Grid.Unsafe.get_fg c.curr idx)
-        ~bg:(Grid.Unsafe.get_bg c.curr idx)
-        ~attrs:(Grid.Unsafe.get_attrs c.curr idx)
-        ~link:(cell_link c idx);
-      Ansi.Writer.write_char c.out ' ';
-      Ansi.Sgr_state.close_link c.sgr c.out
+      write_run c y (x + cell_width) ~prev:idx ~prev_cp:cp
+        ~prev_width:cell_width ~last:final
     end
 
 (* Process columns in a row, return total cells updated in this row. *)
@@ -281,11 +268,10 @@ let rec process_cols (c : diff_ctx) y x row_cells =
   if x >= c.width then row_cells
   else
     let idx = (y * c.width) + x in
-    let cell_width = Grid.Unsafe.cell_width c.curr idx in
-    if cell_width <= 0 then begin
-      clear_stale_zero_width c y x idx;
-      process_cols c y (x + 1) row_cells
-    end
+    let cell_width = cell_columns c idx in
+    (* A continuation cell outside a run would belong to no start cell, which
+       a grid never holds. *)
+    if cell_width <= 0 then process_cols c y (x + 1) row_cells
     else if cell_changed c y x idx cell_width then begin
       (* Move cursor to start of changed run, then write it. *)
       Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
@@ -298,7 +284,7 @@ let rec process_cols (c : diff_ctx) y x row_cells =
       Ansi.Sgr_state.close_link c.sgr c.out;
       process_cols c y new_x (row_cells + (new_x - start_x))
     end
-    else process_cols c y (x + width_step cell_width) row_cells
+    else process_cols c y (x + cell_width) row_cells
 
 (* Process all rows, accumulate total cells updated. *)
 let rec process_rows (c : diff_ctx) y total_cells =
