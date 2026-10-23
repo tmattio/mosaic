@@ -1,122 +1,115 @@
-(** Pseudo-terminals.
+(** Pseudo-terminals, and programs run on them.
 
-    This module creates and manages pseudo-terminals (PTYs) for terminal
-    emulation. A PTY is a bidirectional channel with a {e master} side (used by
-    the terminal emulator to send input and receive output) and a {e slave} side
-    (connected to a child process as its controlling terminal).
+    A {e pseudo-terminal} is a pair of devices that behaves as a terminal. Its
+    {e slave} is the terminal a program runs on, with the line discipline,
+    window size and signals of a terminal, and serves as the program's standard
+    input, output and error. Its {e master} is the other end, which a terminal
+    emulator holds. What the master writes, the program reads as typed input,
+    and what the program writes, the master reads. A {e handle} ({!t}) holds the
+    descriptor of one side and, when {!spawn} made it, the {e child}, the
+    process that runs the program on the slave. The terminal {e hangs up} once
+    the processes running on it have closed it or exited, and the master then
+    reads the {e end of output} ({!section-io}).
 
-    {b Warning.} This module is POSIX-only (Linux, macOS, BSD). On other
-    platforms — including Windows — every operation raises
-    [Unix.Unix_error (ENOSYS, _, _)]; see {{!platform}platform notes}.
+    The life cycle of a handle from {!spawn} usually goes like this:
+    + {!spawn} opens a pseudo-terminal and starts a program on its slave.
+    + {!read} reads the program's output from the master, {!write} writes its
+      input, and {!set_winsize} tells it the terminal's new size.
+    + {!read} reaches the end of output.
+    + {!close} hangs up the terminal, then ends and reaps the child.
 
-    {1:creating Creating}
+    {!with_spawn} does the first step and the last around a function.
 
-    The simplest way to run a program in a PTY is {!with_spawn}:
+    Unless a value's doc says otherwise, an operation on a handle raises
+    [Unix.Unix_error] with the error of the system call that failed, and
+    [Unix.Unix_error (EBADF, _, _)] once the handle is closed. A handle starts
+    in blocking mode ({!section-nonblock}). A handle is mutable, and two threads
+    must not use one handle without a lock. {!read}, {!write} and {!spawn}
+    release the runtime lock while they block, so other threads run.
+
+    The module works on Linux, macOS, FreeBSD, DragonFly, NetBSD and OpenBSD. On
+    any other platform, Windows included, {!open_pty} and {!spawn} raise
+    [Unix.Unix_error (ENOSYS, _, _)].
+
+    This function runs a program and returns all it writes. It reads until the
+    end of output, which {!read} reports as [0] on some kernels and as [EIO] on
+    others, then {!with_spawn} closes the handle.
     {[
-    Pty.with_spawn ~prog:"/bin/echo" ~args:[ "hello" ] (fun pty ->
-        let buf = Bytes.create 1024 in
-        let n = Pty.read pty buf 0 1024 in
-        Bytes.sub_string buf 0 n)
-    ]}
+    let output prog args =
+      Pty.with_spawn ~prog ~args (fun pty ->
+          let out = Buffer.create 256 and b = Bytes.create 4096 in
+          let rec loop () =
+            match Pty.read pty b 0 (Bytes.length b) with
+            | 0 -> Buffer.contents out
+            | n ->
+                Buffer.add_subbytes out b 0 n;
+                loop ()
+            | exception Unix.Unix_error (Unix.EIO, _, _) -> Buffer.contents out
+          in
+          loop ())
+    ]} *)
 
-    For manual lifetime control use {!spawn} and {!close}:
-    {[
-    let pty = Pty.spawn ~prog:"/bin/bash" ~args:[] () in
-    (* … interact … *)
-    Pty.close pty
-    ]}
-
-    {1:io I/O}
-
-    {!read} and {!write} are blocking by default. Enable non-blocking mode with
-    {!set_nonblock}; I/O then raises [Unix.Unix_error (EAGAIN, _, _)] instead of
-    blocking.
-
-    The file descriptor returned by {!file_descr} works with [Unix.select],
-    [Unix.poll], and async wrappers such as [Lwt_unix.of_unix_file_descr].
-
-    {1:winsize Window size}
-
-    {!set_winsize} (or the convenience {!resize}) updates the PTY dimensions and
-    delivers [SIGWINCH] to the child process group on POSIX systems.
-    {!inherit_size} copies the size from one PTY to another, useful for
-    forwarding resize events.
-
-    {1:platform Platform notes}
-
-    {2 POSIX (Linux, macOS, BSD)}
-
-    Full support via [posix_openpt], [grantpt], [unlockpt]. File descriptors are
-    real Unix file descriptors; [Unix.select] and [Unix.poll] work as expected.
-    [SIGWINCH] is delivered to child processes on resize.
-
-    Kernels differ in how long a terminal keeps the output that its child wrote,
-    once the child has exited, for the master to read. Linux keeps it until it
-    is read. macOS, OpenBSD and NetBSD keep it while some process holds the
-    slave open, which a {!spawn} handle does until {!close}. FreeBSD and
-    DragonFly may discard what the master has not read within about a second of
-    the child's exit.
-
-    {2 Windows and other platforms}
-
-    Not supported: every operation raises [Unix.Unix_error (ENOSYS, _, _)].
-    Windows ConPTY handles cannot be represented as [Unix.file_descr], so a
-    sound implementation needs its own handle type; until one exists the module
-    fails loudly rather than pretending.
-
-    {1:thread_safety Thread safety}
-
-    This module is {b not} thread-safe. The {!t} type contains mutable state
-    that must not be accessed concurrently without external synchronization.
-    However, C stubs release the OCaml runtime lock during blocking I/O so other
-    OCaml threads can run concurrently.
-
-    {1:resources Resource management}
-
-    Each {!t} owns a file descriptor and possibly a child process. Always call
-    {!close} or use {!with_pty}/{!with_spawn} to prevent resource leaks and
-    zombie processes. {!close} is idempotent. *)
-
-(** {1:types Types} *)
+(** {1:types Handles and sizes} *)
 
 type t
-(** The type for pseudo-terminal handles.
-
-    A handle owns a file descriptor and possibly a child process (for PTYs
-    created by {!spawn}). After {!close} the handle is invalidated; further I/O
-    raises [Unix.Unix_error (EBADF, _, _)]. *)
+(** The type for pseudo-terminal handles. *)
 
 type winsize = {
-  rows : int;  (** Row count (lines). *)
-  cols : int;  (** Column count (characters per line). *)
-  xpixel : int;  (** Width in pixels. Often unused; set to [0]. *)
-  ypixel : int;  (** Height in pixels. Often unused; set to [0]. *)
+  rows : int;  (** The number of rows. *)
+  cols : int;  (** The number of columns. *)
+  xpixel : int;  (** The width in pixels, or [0] when it is not known. *)
+  ypixel : int;  (** The height in pixels, or [0] when it is not known. *)
 }
-(** The type for terminal window sizes. All fields are non-negative. *)
+(** The type for terminal sizes. Each field must be in 0..65535, the range of
+    the kernel's [struct winsize]. A field outside it is set modulo 65536. *)
 
-(** {1:creating Creating} *)
+(** {1:creating Opening}
+
+    The descriptors of a new pseudo-terminal are close-on-exec, so no program
+    that the process starts inherits them by accident. While any process holds
+    the slave open, the terminal stays open and the master reads no end of
+    output. [winsize] is the initial size, and the kernel's default size when it
+    is omitted. *)
 
 val open_pty : ?winsize:winsize -> unit -> t * t
-(** [open_pty ()] is [(master, slave)], a fresh PTY pair.
+(** [open_pty ()] is [(master, slave)], the two sides of a new pseudo-terminal,
+    as handles without a child. Both must be closed with {!close}.
 
-    Both handles must be closed with {!close}. On macOS, OpenBSD and NetBSD the
-    slave's last close discards the output the master has not read: a program
-    that runs its own child on the slave keeps that output by holding its slave
-    handle until it has read it, as {!spawn} does (see
-    {{!platform}platform notes}).
+    To give the slave to a child, a program must copy it onto the child's
+    standard descriptors with [Unix.dup2 ~cloexec:false]. A plain [Unix.dup2],
+    like [Unix.create_process], clears the flag on a copy but leaves it set when
+    the slave already is the target descriptor, as when the process runs with
+    its standard descriptors closed.
 
-    Both descriptors are close-on-exec, so no program that the process starts
-    inherits them by accident: while any process holds the slave open, the
-    terminal stays open and the master reads no end of output. To give the slave
-    to a child, copy it onto the child's standard descriptors with
-    [Unix.dup2 ~cloexec:false]. A plain [Unix.dup2], like [Unix.create_process],
-    clears the flag on a copy but leaves it set when the slave already is the
-    target descriptor, as when the process runs with its standard descriptors
-    closed.
+    On macOS, OpenBSD and NetBSD the slave's last close discards the output the
+    master has not read. A program that runs its own child on the slave keeps
+    that output by holding its slave handle until it has read it, as {!spawn}
+    does. *)
 
-    [winsize] sets the initial terminal size. Omit to use the system default.
+val with_pty : ?winsize:winsize -> (t -> t -> 'a) -> 'a
+(** [with_pty f] is [f master slave] on a new pair from [open_pty ?winsize ()].
+    It closes both handles when [f] returns or raises. *)
 
-    Raises [Unix.Unix_error] if PTY creation fails. *)
+(** {1:spawning Running a program}
+
+    {!spawn} starts the program afresh, whatever state the parent is in. Exec
+    passes on every descriptor not marked close-on-exec, the signal mask, and
+    the signals set to be ignored, such as [SIGPIPE] in many programs. So the
+    child closes every descriptor but its standard ones, and holds open no pipe
+    or terminal whose reader waits for its end. It also gives every signal its
+    default action and blocks none. The child leads a new session, whose
+    controlling terminal is the slave, and the slave is its standard input,
+    output and error.
+
+    The child runs no OCaml code between the fork and the exec, only system
+    calls that are safe in the child of a multithreaded process. So [spawn]
+    works while other domains run, and after they have run, where [Unix.fork]
+    fails.
+
+    The program's argument vector is [prog :: args]. As with [execvp], a [prog]
+    without ['/'] is searched for in the directories of the parent's [PATH]
+    ([/bin:/usr/bin] when it is unset), and a file that the kernel cannot
+    execute, a script without [#!], runs under [/bin/sh]. *)
 
 val spawn :
   ?env:string array ->
@@ -126,67 +119,21 @@ val spawn :
   args:string list ->
   unit ->
   t
-(** [spawn ~prog ~args ()] is the master handle of a new PTY with [prog] running
-    in it.
+(** [spawn ~prog ~args ()] is the master handle of a new pseudo-terminal with
+    [prog] running on its slave, in a child whose process id is {!pid}. [env] is
+    the child's environment as ["KEY=value"] strings, and defaults to the
+    parent's. [cwd] is its working directory, and defaults to the parent's.
+    [winsize] is as for {!open_pty}.
 
-    Creates a PTY pair, forks, configures the child with the slave as its
-    controlling terminal ([setsid] + [TIOCSCTTY]), redirects the child's
-    stdin/stdout/stderr to the slave, and executes [prog]. The child's PID is
-    available via {!pid}.
+    [spawn] returns once [prog] runs.
 
-    The program starts afresh, whatever state the parent is in. Exec passes on
-    every descriptor not marked close-on-exec, the signal mask, and the signals
-    set to be ignored, such as [SIGPIPE] in many programs. So the child closes
-    every descriptor but its standard ones, and holds open no pipe or terminal
-    whose reader waits for its end; and it gives every signal its default action
-    and blocks none.
-
-    The child runs no OCaml code between the fork and the exec, only system
-    calls that are safe in the child of a multithreaded process. So, unlike
-    [Unix.fork], [spawn] works while other domains run, and after they have run.
-
-    {b Read before waiting.} What the child writes stays readable from the
-    master until it is read. As with a pipe, the child blocks in a write while
-    the terminal's buffer is full. On macOS, OpenBSD and NetBSD its exit also
-    waits until the master has read all its output, even after {!kill}: the
-    child leads the terminal's session, and these kernels let a session leader
-    finish exiting only once its terminal's output is delivered. A child whose
-    output nobody reads may thus never finish. Read to the end of output, or
-    {!close}, before waiting for the child with [Unix.waitpid] on {!pid}. The
-    end of output is {!read} returning [0] or raising
-    [Unix.Unix_error (EIO, _, _)], once every process that had the terminal open
-    has closed it.
-
-    Optional arguments:
-    - [env] is the child environment as ["KEY=value"] strings. Defaults to the
-      parent environment.
-    - [cwd] is the child working directory. Defaults to the parent's.
-    - [winsize] is the initial terminal size. Defaults to the system default.
-
-    [args] are the command-line arguments {e excluding} [argv[0]] which is set
-    to [prog]. As with [execvp], a [prog] without ['/'] is searched for in the
-    directories of the parent's [PATH] ([/bin:/usr/bin] when it is unset), and a
-    file that the kernel cannot execute, a script without [#!], runs under
-    [/bin/sh].
-
-    [spawn] returns once [prog] runs. The child reports a failure before then on
-    a close-on-exec pipe, which a successful exec closes, so the parent reads
-    either the error or the end of the pipe.
-
-    Raises [Unix.Unix_error] if PTY creation or [fork] fails, or with the
-    child's error if the child cannot be set up or [prog] cannot be run: [chdir]
-    with [cwd] as argument, [execvp] with [prog] (for instance [ENOENT] when no
-    such program is found), or the setup step that failed. The child has then
-    exited and been reaped.
-
-    {b Note.} The child receives [SIGHUP] when the master is closed. *)
-
-val with_pty : ?winsize:winsize -> (t -> t -> 'a) -> 'a
-(** [with_pty f] is [f master slave] on a fresh PTY pair. Both handles are
-    closed via [Fun.protect] when [f] returns or raises.
-
-    [winsize] sets the initial terminal size. Raises [Unix.Unix_error] if PTY
-    creation fails. *)
+    Raises [Unix.Unix_error] if opening the pseudo-terminal or [fork] fails,
+    with [EINVAL] if [prog], an element of [args] or of [env] holds a NUL byte,
+    with [ENOENT] if [cwd] does, or with the child's error if the child cannot
+    be set up or [prog] cannot be run. That error names the step that failed:
+    [setsid], [ioctl(TIOCSCTTY)], [dup2], [chdir] with [cwd] as argument, or
+    [execvp] with [prog], for instance with [ENOENT] when no such program is
+    found. The child has then exited and been reaped. *)
 
 val with_spawn :
   ?env:string array ->
@@ -196,120 +143,138 @@ val with_spawn :
   args:string list ->
   (t -> 'a) ->
   'a
-(** [with_spawn ~prog ~args f] is [f pty] where [pty] is a {!spawn} handle. The
-    PTY is closed and the child reaped via [Fun.protect] when [f] returns or
-    raises.
+(** [with_spawn ~prog ~args f] is [f pty] where [pty] is
+    [spawn ?env ?cwd ?winsize ~prog ~args ()]. It closes [pty] when [f] returns
+    or raises, which ends and reaps the child ({!close}).
 
-    See {!spawn} for the meaning of optional arguments and error conditions. *)
+    Raises as {!spawn} does. *)
 
-(** {1:process Process management} *)
+(** {1:io Reading and writing}
 
-val pid : t -> int option
-(** [pid pty] is [Some pid] for PTYs created by {!spawn} (until {!close} reaps
-    the child), [None] otherwise. *)
+    What the child writes stays readable from the master until it is read. As
+    with a pipe, the child blocks in a write while the terminal's buffer is
+    full. The master reads the end of output once the terminal has hung up, and
+    {!read} then returns [0] or raises [Unix.Unix_error (EIO, _, _)].
 
-val close : ?wait:bool -> t -> unit
-(** [close pty] closes the file descriptor and, for {!spawn} PTYs, ends and
-    reaps the child process, in this order:
-    - Closes the master, and the slave that a {!spawn} handle holds. This hangs
-      up the terminal: output not yet read is lost, the child's session gets
-      [SIGHUP], and a child whose exit waits for its output to be read (see
-      {!spawn}) can finish.
-    - Sends [SIGTERM].
-    - If [wait] is [true] (the default), reaps immediately when the child has
-      already exited; otherwise polls briefly (up to ~100ms) before escalating
-      to [SIGKILL], then reaps it with [waitpid] to prevent a zombie.
+    Kernels differ in what becomes of the output once the child has exited.
+    Linux keeps it until it is read. On macOS, OpenBSD and NetBSD the child
+    leads the terminal's session, and its exit waits until the master has read
+    all its output, even after {!kill}. A child whose output nobody reads may
+    thus never finish exiting. FreeBSD and DragonFly may discard what the master
+    has not read within about a second of the child's exit. A program must
+    therefore read to the end of output, or {!close} the handle, before it waits
+    for the child with [Unix.waitpid] on {!pid}. *)
 
-    [wait] defaults to [true]. Set to [false] for non-blocking close; you must
-    then call [Unix.waitpid] yourself.
+val read : t -> bytes -> int -> int -> int
+(** [read pty b off len] reads at most [len] bytes into [b] from [off] and
+    returns the number read, or [0] at the end of output.
 
-    Idempotent: subsequent calls are no-ops. Never raises. After {!close}, I/O
-    operations raise [Unix.Unix_error (EBADF, _, _)]. *)
+    In blocking mode it blocks until a byte or the end of output is ready. In
+    non-blocking mode it raises [Unix.Unix_error (EAGAIN, _, _)] when none is.
 
-val terminate : t -> unit
-(** [terminate pty] sends [SIGTERM] to the child without closing the PTY. Unix
-    errors from [kill] are silently ignored.
+    Raises [Invalid_argument] if [off] and [len] do not designate a valid range
+    of [b]. *)
 
-    Raises [Invalid_argument] if [pty] has no child (created via {!open_pty} or
-    already closed). *)
+val write : t -> bytes -> int -> int -> int
+(** [write pty b off len] writes the [len] bytes of [b] from [off] and returns
+    [len]. In non-blocking mode it returns the number of bytes written before
+    the terminal's buffer was full, and raises [Unix.Unix_error (EAGAIN, _, _)]
+    when that number is [0].
 
-val kill : t -> unit
-(** [kill pty] sends [SIGKILL] to the child. Unlike {!terminate} this signal
-    cannot be caught. Unix errors from [kill] are silently ignored. A killed
-    child may still not finish exiting until its output is read (see {!spawn});
-    {!close} hangs up the terminal first.
+    In blocking mode it blocks until every byte is written.
 
-    Raises [Invalid_argument] if [pty] has no child. *)
+    Raises [Invalid_argument] if [off] and [len] do not designate a valid range
+    of [b]. *)
 
-(** {1:fd File descriptors} *)
+val write_string : t -> string -> int -> int -> int
+(** [write_string pty s off len] is {!write} on the bytes of [s]. *)
 
-val file_descr : t -> Unix.file_descr
-(** [file_descr pty] is the underlying Unix file descriptor. Invalid after
-    {!close}. *)
+(** {1:nonblock Blocking and non-blocking mode}
 
-val in_fd : t -> Unix.file_descr
-(** [in_fd pty] is {!file_descr}[ pty]. PTYs are bidirectional so the read and
-    write descriptors are the same. *)
+    In blocking mode, which a new handle is in, {!read} and {!write} block until
+    they can proceed. In non-blocking mode they raise
+    [Unix.Unix_error (EAGAIN, _, _)] where they would block. *)
 
-val out_fd : t -> Unix.file_descr
-(** [out_fd pty] is {!file_descr}[ pty]. *)
+val set_nonblock : t -> unit
+(** [set_nonblock pty] puts [pty] in non-blocking mode until {!clear_nonblock}
+    or {!close}. *)
 
-(** {1:winsize_ops Window size} *)
+val clear_nonblock : t -> unit
+(** [clear_nonblock pty] puts [pty] back in blocking mode. *)
+
+(** {1:winsize_ops Window size}
+
+    When the size of the terminal changes, the kernel sends [SIGWINCH] to the
+    terminal's foreground process group (POSIX, [tcsetwinsize]). Setting the
+    size it already has sends nothing. *)
 
 val get_winsize : t -> winsize
-(** [get_winsize pty] is the current terminal size.
-
-    Raises [Unix.Unix_error] on failure. *)
+(** [get_winsize pty] is the terminal's size. *)
 
 val set_winsize : t -> winsize -> unit
-(** [set_winsize pty ws] sets the terminal size to [ws] and delivers [SIGWINCH]
-    to the child process group on POSIX.
-
-    Raises [Unix.Unix_error] on failure. *)
+(** [set_winsize pty ws] sets the terminal's size to [ws]. *)
 
 val resize : t -> rows:int -> cols:int -> unit
 (** [resize pty ~rows ~cols] is
     {!set_winsize}[ pty { rows; cols; xpixel = 0; ypixel = 0 }]. *)
 
 val inherit_size : src:t -> dst:t -> unit
-(** [inherit_size ~src ~dst] copies the window size from [src] to [dst].
-    Equivalent to [set_winsize dst (get_winsize src)].
+(** [inherit_size ~src ~dst] is [set_winsize dst (get_winsize src)]. *)
 
-    Raises [Unix.Unix_error] if reading [src] or writing [dst] fails. *)
+(** {1:fd File descriptors}
 
-(** {1:io I/O} *)
+    A handle's descriptor serves [Unix.select] and event loops. It must not be
+    used after {!close}, since the system may give its number to another
+    descriptor. *)
 
-val read : t -> bytes -> int -> int -> int
-(** [read pty buf off len] reads up to [len] bytes into [buf] starting at [off].
-    Returns the number of bytes read, or [0] on EOF (child exited).
+val file_descr : t -> Unix.file_descr
+(** [file_descr pty] is [pty]'s descriptor. *)
 
-    Blocks unless non-blocking mode is enabled via {!set_nonblock}, in which
-    case raises [Unix.Unix_error (EAGAIN, _, _)] when no data is ready.
+val in_fd : t -> Unix.file_descr
+(** [in_fd pty] is {!file_descr}[ pty]. A side of a pseudo-terminal reads and
+    writes through one descriptor. *)
 
-    Raises [Unix.Unix_error] on error. *)
+val out_fd : t -> Unix.file_descr
+(** [out_fd pty] is {!file_descr}[ pty]. *)
 
-val write : t -> bytes -> int -> int -> int
-(** [write pty buf off len] writes up to [len] bytes from [buf] starting at
-    [off]. Returns the number of bytes written.
+(** {1:process The child}
 
-    Blocks unless non-blocking mode is enabled.
+    Closing the master hangs up the terminal, and the kernel sends [SIGHUP] to
+    the child's session. A handle keeps its child's process id until {!close},
+    even after the program has reaped the child with [Unix.waitpid]. {!close},
+    {!terminate} and {!kill} then signal that process id, which the system may
+    have given to another process. *)
 
-    Raises [Unix.Unix_error] on error (e.g. [EPIPE] if the child closed its
-    end). *)
+val pid : t -> int option
+(** [pid pty] is [Some p] while [pty] is open and has a child, where [p] is the
+    child's process id, and [None] otherwise. *)
 
-val write_string : t -> string -> int -> int -> int
-(** [write_string pty s off len] is like {!write} but reads from a string. *)
+val close : ?wait:bool -> t -> unit
+(** [close pty] closes [pty]'s descriptor and, for a handle from {!spawn}, the
+    slave it holds, which hangs up the terminal. The output not yet read is
+    lost, and a child whose exit waits for its output to be read can finish. For
+    a handle with a child, [close] then sends [SIGTERM] and, when [wait] is
+    [true] (the default), reaps the child. It sends [SIGKILL] to a child that
+    has not exited about 100 ms after the [SIGTERM]. A second [close] does
+    nothing.
 
-(** {1:nonblock Non-blocking mode} *)
+    With [wait], [close] blocks until the child is reaped. With [~wait:false],
+    the program must reap the child with [Unix.waitpid] on the process id it
+    took from {!pid} before the close.
 
-val set_nonblock : t -> unit
-(** [set_nonblock pty] enables non-blocking I/O. {!read} and {!write} raise
-    [Unix.Unix_error (EAGAIN, _, _)] instead of blocking. Persists until
-    {!clear_nonblock} or {!close}.
+    [close] never raises. *)
 
-    Raises [Unix.Unix_error] on failure. *)
+val terminate : t -> unit
+(** [terminate pty] sends [SIGTERM] to the child, and leaves the terminal open.
+    It ignores the errors of [kill], such as [ESRCH].
 
-val clear_nonblock : t -> unit
-(** [clear_nonblock pty] restores blocking I/O.
+    Raises [Invalid_argument] if [pty] has no child, as a handle from
+    {!open_pty} or a closed handle has none. *)
 
-    Raises [Unix.Unix_error] on failure. *)
+val kill : t -> unit
+(** [kill pty] sends [SIGKILL] to the child, which cannot catch it, and leaves
+    the terminal open. It ignores the errors of [kill]. On some kernels a killed
+    child finishes exiting only once its output is read ({!section-io}).
+    {!close} hangs up the terminal first.
+
+    Raises [Invalid_argument] if [pty] has no child. *)
