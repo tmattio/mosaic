@@ -166,7 +166,7 @@ let expected_caps ~decid =
     ("kitty_graphics", "false");
     ("bracketed_paste", "true");
     ("focus_tracking", "true");
-    ("unicode_width", "unicode");
+    ("unicode_width", "wcwidth");
     ("sgr_pixels", "true");
     ("color_scheme_updates", "false");
     ("explicit_width", "false");

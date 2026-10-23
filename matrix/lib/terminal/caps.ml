@@ -28,7 +28,7 @@ let defaults =
     kitty_graphics = false;
     bracketed_paste = false;
     focus_tracking = false;
-    unicode_width = `Unicode;
+    unicode_width = `Wcwidth;
     sgr_pixels = false;
     color_scheme_updates = false;
     explicit_width = false;
@@ -319,9 +319,14 @@ let derive ev =
           | Some (Set | Permanently_set) -> Some `Unicode
           | Some (Reset | Permanently_reset) -> Some `Wcwidth
           | Some Not_recognized | None -> None);
+          (* kitty answers mode 2027 as not recognized, and places grapheme
+             clusters (measured: 0.49.2 as [`Unicode] does; 0.41.1, older than
+             its cell splitting algorithm of 0.42, nearer [`Unicode] than
+             [`Wcwidth]). *)
           when_ (is "kitty") `Unicode;
           when_ (tmux || is "apple_terminal" || is "termux") `Wcwidth;
           when_ (Option.is_some mux) `Wcwidth;
+          when_ (contains env.term "kitty") `Unicode;
         ]
         d.unicode_width;
     sgr_pixels = first [ mode 1016 ] d.sgr_pixels;

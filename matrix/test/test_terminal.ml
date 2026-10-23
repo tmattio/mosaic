@@ -172,7 +172,8 @@ let test_mouse_validation () =
 (* The grapheme mode follows the width method; the capabilities are the
    runtime's to set. *)
 let test_set_unicode_width () =
-  with_tty_terminal @@ fun term buf ->
+  with_tty_terminal ~caps:{ plain with unicode_width = `Unicode }
+  @@ fun term buf ->
   T.set_unicode_width term `Unicode;
   T.set_unicode_width term `Unicode_wide;
   equal ~msg:"set once" string "\027[?2027h" (Buffer.contents buf);
@@ -586,7 +587,7 @@ let mode mode setting = Reply.Mode { dec = true; mode; setting }
 
 let precedence_cases =
   [
-    ("nothing known", [], [], [ Width `Unicode; Sync false; Keyboard None ]);
+    ("nothing known", [], [], [ Width `Wcwidth; Sync false; Keyboard None ]);
     ( "user policy beats an answer",
       [ ("MATRIX_FORCE_WCWIDTH", "1") ],
       [ mode 2027 Set ],
@@ -654,6 +655,64 @@ let precedence_cases =
       [ Paste true; Focus false ] );
   ]
 
+(* The width method from the answer for mode 2027, as DECRPM states it
+   (VT510): 0 not recognized, 1 set, 2 reset, 3 permanently set, 4
+   permanently reset. A terminal without the mode, or with it reset, measures
+   by character, unless its identity says it places clusters. The rows are
+   terminals measured (CPR after each cluster), with the replies they gave
+   to the probe; iTerm2's is read from its source (VT100Terminal.m). *)
+let width_answer_cases =
+  [
+    ( "xterm 398: not recognized",
+      [ ("TERM", "xterm-256color") ],
+      [ mode 2027 Not_recognized; Reply.Version "XTerm(398)" ],
+      `Wcwidth );
+    ( "VTE 0.80.1: not recognized",
+      [ ("TERM", "xterm-256color"); ("VTE_VERSION", "8001") ],
+      [ mode 2027 Not_recognized; Reply.Version "VTE(8001)" ],
+      `Wcwidth );
+    ("st 0.9.2: no answer", [ ("TERM", "st-256color") ], [], `Wcwidth);
+    ("not recognized, no identity", [], [ mode 2027 Not_recognized ], `Wcwidth);
+    ( "kitty 0.49.2: not recognized, clusters",
+      [ ("TERM", "xterm-kitty") ],
+      [ mode 2027 Not_recognized; Reply.Version "kitty(0.49.2)" ],
+      `Unicode );
+    ( "kitty 0.41.1: not recognized, clusters",
+      [],
+      [ mode 2027 Not_recognized; Reply.Version "kitty(0.41.1)" ],
+      `Unicode );
+    ( "kitty from the environment, no answer",
+      [ ("KITTY_WINDOW_ID", "1") ],
+      [],
+      `Unicode );
+    ( "WezTerm 20240203: permanently set",
+      [ ("TERM_PROGRAM", "WezTerm") ],
+      [
+        mode 2027 Permanently_set;
+        Reply.Version "WezTerm 20240203-110809-5046fc22";
+      ],
+      `Unicode );
+    ( "foot 1.21.0: set",
+      [ ("TERM", "foot") ],
+      [ mode 2027 Set; Reply.Version "foot(1.21.0)" ],
+      `Unicode );
+    ( "iTerm2: permanently reset",
+      [ ("TERM_PROGRAM", "iTerm.app") ],
+      [ mode 2027 Permanently_reset ],
+      `Wcwidth );
+    ("reset", [], [ mode 2027 Reset ], `Wcwidth);
+  ]
+
+(* The capabilities once the probe's DA1 is answered after [replies]: what
+   was not answered then never will be. *)
+let test_width_answer (_, vars, replies, expected) =
+  let ev = List.fold_left Caps.add (Caps.evidence (env vars)) replies in
+  let caps = Caps.derive (Caps.answered ev Probe ~attributes:[ 62 ]) in
+  equal ~msg:"width method" width_method expected caps.unicode_width
+
+(* Ghostty widens graphemes from 1.3, whatever it answers. Before 1.3, or
+   when the environment does not name the terminal, its answer for mode 2027
+   decides, and with none the width method is the default. *)
 let ghostty_width_cases =
   let ghostty version extra =
     extra
@@ -669,16 +728,16 @@ let ghostty_width_cases =
     [
       ("release", "1.3.1", [], `Unicode_wide);
       ("release boundary", "1.3.0", [], `Unicode_wide);
-      ("old release", "1.2.3", [], `Unicode);
-      ("prerelease", "1.3.0-dev", [], `Unicode);
+      ("old release", "1.2.3", [], `Wcwidth);
+      ("prerelease", "1.3.0-dev", [], `Wcwidth);
       ("nightly boundary", "0.0.0-20260224.r14762.gc51f0d7", [], `Unicode_wide);
-      ("old nightly", "0.0.0-20260223.r14707.gc61f184", [], `Unicode);
-      ("malformed", "1.3", [], `Unicode);
+      ("old nightly", "0.0.0-20260223.r14707.gc61f184", [], `Wcwidth);
+      ("malformed", "1.3", [], `Wcwidth);
       ("tmux", "1.3.1", [ ("TMUX", "/tmp/tmux") ], `Wcwidth);
       ("screen", "1.3.1", [ ("TERM", "screen-256color") ], `Wcwidth);
       ("screen environment", "1.3.1", [ ("STY", "session") ], `Wcwidth);
-      ("zellij", "1.3.1", [ ("ZELLIJ", "0") ], `Unicode);
-      ("ssh", "1.3.1", [ ("SSH_CONNECTION", "remote") ], `Unicode);
+      ("zellij", "1.3.1", [ ("ZELLIJ", "0") ], `Wcwidth);
+      ("ssh", "1.3.1", [ ("SSH_CONNECTION", "remote") ], `Wcwidth);
       ("forced wcwidth", "1.3.1", [ ("MATRIX_FORCE_WCWIDTH", "1") ], `Wcwidth);
       ("forced unicode", "1.3.1", [ ("MATRIX_FORCE_UNICODE", "1") ], `Unicode);
     ]
@@ -947,6 +1006,9 @@ let () =
           cases "precedence" precedence_cases
             ~name:(fun (name, _, _, _) -> name)
             test_derivation;
+          cases "width answers" width_answer_cases
+            ~name:(fun (name, _, _, _) -> name)
+            test_width_answer;
           cases "Ghostty width" ghostty_width_cases
             ~name:(fun (name, _, _, _) -> name)
             test_derivation;

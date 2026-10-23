@@ -66,8 +66,17 @@ type t = {
   bracketed_paste : bool;  (** Bracketed paste (mode 2004) is supported. *)
   focus_tracking : bool;  (** Focus reports (mode 1004) are supported. *)
   unicode_width : Matrix_text.width_method;
-      (** How the terminal measures text. Mode 2027 set, or permanently set, is
-          [`Unicode]; reset, or permanently reset, is [`Wcwidth]. *)
+      (** How the terminal measures text, which its answer for mode 2027
+          (grapheme cluster mode, "Unicode in Terminals") tells, as a DECRPM
+          setting (VT510): set or permanently set is [`Unicode]; reset or
+          permanently reset is [`Wcwidth], since with the mode off a terminal
+          behaves "as if this specification was not implemented at all". The
+          answer "not recognized", or none, says that the terminal does not have
+          the mode, and such a terminal measures each character by itself, as
+          wcwidth does: [`Wcwidth], unless its identity says otherwise. xterm
+          and VTE answer "not recognized" and st does not answer, and they
+          measure by character; kitty answers "not recognized" and places
+          grapheme clusters, so its identity gives [`Unicode]. *)
   sgr_pixels : bool;  (** SGR pixel mouse reports (mode 1016) are supported. *)
   color_scheme_updates : bool;
       (** Color scheme change reports (mode 2031) are supported. *)
