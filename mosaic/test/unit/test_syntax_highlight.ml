@@ -230,13 +230,20 @@ let annotation_boundaries_match_styled_graphemes () =
             style = Ansi.Style.default;
           };
         ];
-      for grapheme = 0 to Text_buffer.grapheme_count annotated - 1 do
+      let count = Text_buffer.grapheme_count annotated in
+      for grapheme = 0 to count - 1 do
+        let style, next = Text_buffer.style_at annotated grapheme in
         is_true
           ~msg:
             "byte-interior and invalid UTF-8 boundaries preserve span semantics"
-          (Ansi.Style.equal
-             (fst (Text_buffer.style_at annotated grapheme))
-             (fst (Text_buffer.style_at fragmented grapheme)))
+          (Ansi.Style.equal style
+             (fst (Text_buffer.style_at fragmented grapheme)));
+        is_true ~msg:"the next boundary lies ahead" (next > grapheme);
+        for within = grapheme to min next count - 1 do
+          is_true ~msg:"the style holds up to the next boundary"
+            (Ansi.Style.equal style
+               (fst (Text_buffer.style_at annotated within)))
+        done
       done
     done
   done

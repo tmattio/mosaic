@@ -209,5 +209,9 @@ val set_source : t -> Matrix.Text.Layout.Source.t -> unit
 
 val style_at : t -> int -> Ansi.Style.t * int
 (** [style_at t g] is the resolved style at source grapheme [g] and the next
-    style boundary. Overlays follow existing priority order. Preparation is
-    cached until content, base style, or highlights change. *)
+    style boundary. Overlays follow existing priority order.
+
+    Annotations without highlights are looked up by byte at each call, in time
+    logarithmic in their runs, so installing them prepares nothing. Other paint
+    is prepared once and cached until content, base style, or highlights change.
+*)

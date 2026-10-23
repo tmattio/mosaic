@@ -374,23 +374,6 @@ let set_tab_width t w =
 
 let version t = t.version
 
-let annotation_paint source (annotations : Annotations.t) =
-  let count = Array.length annotations.runs in
-  let runs = Array.make count (0, 0, Ansi.Style.default) in
-  let first = ref 0 and used = ref 0 in
-  for i = 0 to count - 1 do
-    let range = annotations.runs.(i) in
-    let last =
-      Source.grapheme_of_byte source ~affinity:Downstream range.end_byte
-    in
-    if last > !first then begin
-      runs.(!used) <- (!first, last, range.style);
-      incr used
-    end;
-    first := last
-  done;
-  if !used = count then runs else Array.sub runs 0 !used
-
 (* Sorting is O(E log E); partial-style resolution is O(E * A), where A is
    simultaneous overlays. This preparation never repeats on unchanged paint. *)
 let paint_runs_with_overlays t =
@@ -465,28 +448,41 @@ let paint_runs_with_overlays t =
   runs
 
 let paint_runs t =
-  match t.paint with
-  | Some runs -> runs
-  | None when t.highlights = [] -> (
-      match t.content_mode with
-      | Annotated annotations ->
-          let runs = annotation_paint (source t) annotations in
-          t.paint <- Some runs;
-          runs
-      | Forward | Reverse -> paint_runs_with_overlays t)
-  | None -> paint_runs_with_overlays t
+  match t.paint with Some runs -> runs | None -> paint_runs_with_overlays t
 
-let style_at t g =
-  let runs = paint_runs t in
-  let n = Array.length runs in
-  if n = 0 then (t.default_style, max_int)
+(* Annotated paint without overlays is looked up where it is painted, so
+   installing it costs nothing per run. A grapheme takes the style of the run
+   holding its first byte: a boundary inside a grapheme resolves downstream. *)
+let annotated_style_at t (annotations : Annotations.t) g =
+  let runs = annotations.runs in
+  if Array.length runs = 0 then (t.default_style, max_int)
   else begin
-    let lo = ref 0 and hi = ref (n - 1) in
+    let src = source t in
+    let byte = Source.byte_offset src (max 0 (min g (Source.length src - 1))) in
+    let lo = ref 0 and hi = ref (Array.length runs - 1) in
     while !lo < !hi do
       let mid = !lo + ((!hi - !lo + 1) / 2) in
-      let first, _, _ = runs.(mid) in
-      if first <= g then lo := mid else hi := mid - 1
+      if runs.(mid).start_byte <= byte then lo := mid else hi := mid - 1
     done;
-    let _, last, style = runs.(!lo) in
-    (style, last)
+    let run = runs.(!lo) in
+    (run.style, Source.grapheme_of_byte src ~affinity:Downstream run.end_byte)
   end
+
+let style_at t g =
+  match t.content_mode with
+  | Annotated annotations when t.highlights = [] ->
+      annotated_style_at t annotations g
+  | Annotated _ | Forward | Reverse ->
+      let runs = paint_runs t in
+      let n = Array.length runs in
+      if n = 0 then (t.default_style, max_int)
+      else begin
+        let lo = ref 0 and hi = ref (n - 1) in
+        while !lo < !hi do
+          let mid = !lo + ((!hi - !lo + 1) / 2) in
+          let first, _, _ = runs.(mid) in
+          if first <= g then lo := mid else hi := mid - 1
+        done;
+        let _, last, style = runs.(!lo) in
+        (style, last)
+      end
