@@ -72,6 +72,34 @@ val enable_vt : Unix.file_descr -> unit
     a line feed takes one row, not two. Nothing happens on other systems, or if
     [fd] is not a console. *)
 
+(** {1:descriptions Terminal descriptions} *)
+
+val terminfo :
+  string -> (Matrix_terminfo.t, [ `Not_found | `Invalid of string ]) result
+(** [terminfo name] is the description the terminfo database has for the
+    terminal type [name], such as [TERM]'s value, found as ncurses finds it
+    (terminfo(5), "Fetching Compiled Descriptions"):
+    + [TERMINFO]: a database, or a description itself, encoded in hexadecimal
+      after [hex:] or in base64 after [b64:] (as [tic -Q] writes them), used
+      only if one of its names is [name];
+    + [$HOME/.terminfo];
+    + each database of [TERMINFO_DIRS], separated by colons, an empty one being
+      [/usr/share/terminfo];
+    + the system's databases: [/etc/terminfo], [/lib/terminfo],
+      [/usr/share/terminfo], [/usr/lib/terminfo], [/usr/share/lib/terminfo] and
+      [/usr/local/share/terminfo].
+
+    In a database, the description is the file [name] in the directory named by
+    [name]'s first character, or by its code in two hexadecimal digits, as a
+    database on a filesystem that ignores case has it. The first description
+    that reads ({!Matrix_terminfo.of_string}) is the one. An empty variable is
+    unset, and a process whose user or group is not its caller's (setuid) reads
+    none of the three variables, so that its caller cannot give it a
+    description. [`Invalid] says why the description found, the first, does not
+    read, when none does; [`Not_found] that there is none, or that [name] is no
+    file name ([""], or with a [/]). A database kept as a hashed file rather
+    than a directory is not read. *)
+
 (** {1:signals Signals} *)
 
 (** The signals a terminal sends the process, shared by everything in it that

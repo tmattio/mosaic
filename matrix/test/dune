@@ -68,7 +68,15 @@
  (name test_tty)
  (package matrix)
  (modules test_tty)
- (libraries windtrap matrix.tty matrix.pty unix threads.posix))
+ (deps
+  (source_tree data/terminfo))
+ (libraries
+  windtrap
+  matrix.tty
+  matrix.terminfo
+  matrix.pty
+  unix
+  threads.posix))
 
 (test
  (name test_screen)

@@ -42,6 +42,154 @@ external enable_vt : Unix.file_descr -> unit = "matrix_tty_enable_vt"
 
 let enable_vt fd = try enable_vt fd with Failure _ -> ()
 
+(* Terminal descriptions *)
+
+(* Where systems keep the database: ncurses' default, then the directories
+   distributions compile in (Debian's /etc and /lib, Solaris', the BSDs' and
+   Homebrew's local trees). *)
+let system_databases =
+  [
+    "/etc/terminfo";
+    "/lib/terminfo";
+    "/usr/share/terminfo";
+    "/usr/lib/terminfo";
+    "/usr/share/lib/terminfo";
+    "/usr/local/share/terminfo";
+  ]
+
+let decode_hex s =
+  let digit c =
+    match c with
+    | '0' .. '9' -> Some (Char.code c - 48)
+    | 'a' .. 'f' -> Some (Char.code c - 87)
+    | 'A' .. 'F' -> Some (Char.code c - 55)
+    | _ -> None
+  in
+  let n = String.length s in
+  if n mod 2 <> 0 then None
+  else
+    let b = Bytes.create (n / 2) in
+    let rec go i =
+      if i >= n then Some (Bytes.to_string b)
+      else
+        match (digit s.[i], digit s.[i + 1]) with
+        | Some h, Some l ->
+            Bytes.set b (i / 2) (Char.chr ((h * 16) + l));
+            go (i + 2)
+        | _ -> None
+    in
+    go 0
+
+(* Base64, in the alphabet tic -Q writes ([-_]) or the standard one
+   ([+/]), padded or not. *)
+let decode_b64 s =
+  let value c =
+    match c with
+    | 'A' .. 'Z' -> Some (Char.code c - 65)
+    | 'a' .. 'z' -> Some (Char.code c - 71)
+    | '0' .. '9' -> Some (Char.code c + 4)
+    | '+' | '-' -> Some 62
+    | '/' | '_' -> Some 63
+    | _ -> None
+  in
+  let s =
+    match String.index_opt s '=' with Some i -> String.sub s 0 i | None -> s
+  in
+  let out = Buffer.create (String.length s * 3 / 4) in
+  let rec go i bits acc =
+    if i >= String.length s then Some (Buffer.contents out)
+    else
+      match value s.[i] with
+      | None -> None
+      | Some v ->
+          let acc = (acc lsl 6) lor v and bits = bits + 6 in
+          if bits >= 8 then (
+            Buffer.add_char out (Char.chr ((acc lsr (bits - 8)) land 0xFF));
+            go (i + 1) (bits - 8) (acc land ((1 lsl (bits - 8)) - 1)))
+          else go (i + 1) bits acc
+  in
+  go 0 0 0
+
+let terminfo name =
+  if name = "" || name = "." || name = ".." || String.contains name '/' then
+    Error `Not_found
+  else
+    (* A program that runs with another user's rights does not read the
+       caller's descriptions, as ncurses does not. *)
+    let trusted =
+      Unix.getuid () = Unix.geteuid () && Unix.getgid () = Unix.getegid ()
+    in
+    let env var =
+      match Sys.getenv_opt var with
+      | Some v when trusted && v <> "" -> Some v
+      | _ -> None
+    in
+    let invalid = ref None in
+    let read data =
+      match Matrix_terminfo.of_string data with
+      | Ok t -> Some t
+      | Error e ->
+          if !invalid = None then invalid := Some e;
+          None
+    in
+    let in_database dir =
+      List.find_map
+        (fun leaf ->
+          let path = Filename.concat (Filename.concat dir leaf) name in
+          match In_channel.with_open_bin path In_channel.input_all with
+          | data -> read data
+          | exception Sys_error _ -> None)
+        [ String.make 1 name.[0]; Printf.sprintf "%02x" (Char.code name.[0]) ]
+    in
+    let encoded decode data =
+      match decode data with
+      | Some bytes -> (
+          match read bytes with
+          | Some t when List.mem name (Matrix_terminfo.names t) -> Some t
+          | _ -> None)
+      | None ->
+          if !invalid = None then invalid := Some "TERMINFO is not encoded";
+          None
+    in
+    let terminfo =
+      match env "TERMINFO" with
+      | Some v when String.starts_with ~prefix:"hex:" v ->
+          [
+            (fun () ->
+              encoded decode_hex (String.sub v 4 (String.length v - 4)));
+          ]
+      | Some v when String.starts_with ~prefix:"b64:" v ->
+          [
+            (fun () ->
+              encoded decode_b64 (String.sub v 4 (String.length v - 4)));
+          ]
+      | Some dir -> [ (fun () -> in_database dir) ]
+      | None -> []
+    in
+    let home =
+      match env "HOME" with
+      | Some home -> [ Filename.concat home ".terminfo" ]
+      | None -> []
+    in
+    let dirs =
+      match env "TERMINFO_DIRS" with
+      | Some v ->
+          List.map
+            (fun d -> if d = "" then "/usr/share/terminfo" else d)
+            (String.split_on_char ':' v)
+      | None -> []
+    in
+    let sources =
+      terminfo
+      @ List.map (fun dir () -> in_database dir) (home @ dirs @ system_databases)
+    in
+    match List.find_map (fun source -> source ()) sources with
+    | Some t -> Ok t
+    | None -> (
+        match !invalid with
+        | Some e -> Error (`Invalid e)
+        | None -> Error `Not_found)
+
 (* Signals *)
 
 module Signal = struct

@@ -73,6 +73,143 @@ let test_raw_not_a_terminal () =
       | _ -> fail "a pipe has no settings"
       | exception Unix.Unix_error _ -> ())
 
+(* Terminal descriptions *)
+
+let fixture name =
+  In_channel.with_open_bin ("data/terminfo/" ^ name) In_channel.input_all
+
+(* The process's environment for [f], each variable set or emptied (an
+   empty variable is unset), then put back. *)
+let with_env vars f =
+  let saved = List.map (fun (v, _) -> (v, Sys.getenv_opt v)) vars in
+  List.iter (fun (v, x) -> Unix.putenv v (Option.value x ~default:"")) vars;
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter (fun (v, x) -> Unix.putenv v (Option.value x ~default:"")) saved)
+    f
+
+let rec remove path =
+  if Sys.is_directory path then (
+    Array.iter (fun e -> remove (Filename.concat path e)) (Sys.readdir path);
+    Sys.rmdir path)
+  else Sys.remove path
+
+(* A database in a fresh directory, with [entries] as (leaf directory,
+   name, bytes). *)
+let with_database entries f =
+  let dir = Filename.temp_dir "matrix-terminfo" "" in
+  List.iter
+    (fun (leaf, name, bytes) ->
+      let d = Filename.concat dir leaf in
+      if not (Sys.file_exists d) then Sys.mkdir d 0o755;
+      Out_channel.with_open_bin (Filename.concat d name) (fun oc ->
+          Out_channel.output_string oc bytes))
+    entries;
+  Fun.protect ~finally:(fun () -> remove dir) (fun () -> f dir)
+
+let found what = function
+  | Ok t -> List.hd (Matrix_terminfo.names t)
+  | Error `Not_found -> failf "%s: not found" what
+  | Error (`Invalid e) -> failf "%s: invalid: %s" what e
+
+let not_found what = function
+  | Error `Not_found -> ()
+  | Ok _ -> failf "%s: found" what
+  | Error (`Invalid e) -> failf "%s: invalid: %s" what e
+
+let name = "matrix-test-terminal"
+
+(* TERMINFO, then ~/.terminfo, then TERMINFO_DIRS, then the system. *)
+let test_terminfo_order () =
+  with_database [ ("m", name, fixture "d/dumb") ] @@ fun terminfo ->
+  with_database [] @@ fun home ->
+  with_database [ ("m", name, fixture "x/xterm") ] @@ fun dirs ->
+  let dot = Filename.concat home ".terminfo" in
+  Sys.mkdir dot 0o755;
+  Sys.mkdir (Filename.concat dot "m") 0o755;
+  Out_channel.with_open_bin
+    (Filename.concat (Filename.concat dot "m") name)
+    (fun oc -> Out_channel.output_string oc (fixture "l/linux"));
+  let look vars = with_env vars (fun () -> Matrix_tty.terminfo name) in
+  let dirs = ("TERMINFO_DIRS", Some ("/nonexistent::" ^ dirs)) in
+  equal ~msg:"TERMINFO first" string "dumb"
+    (found "all"
+       (look [ ("TERMINFO", Some terminfo); ("HOME", Some home); dirs ]));
+  equal ~msg:"then ~/.terminfo" string "linux"
+    (found "home" (look [ ("TERMINFO", None); ("HOME", Some home); dirs ]));
+  equal ~msg:"then TERMINFO_DIRS" string "xterm"
+    (found "dirs" (look [ ("TERMINFO", None); ("HOME", None); dirs ]));
+  not_found "none of them"
+    (look [ ("TERMINFO", None); ("HOME", None); ("TERMINFO_DIRS", None) ])
+
+(* A database on a filesystem that ignores case names its directories by
+   the first character's code. *)
+let test_terminfo_hex_directory () =
+  with_database [ ("6d", name, fixture "d/dumb") ] @@ fun dir ->
+  with_env [ ("TERMINFO", Some dir) ] @@ fun () ->
+  equal ~msg:"6d for m" string "dumb" (found "hex" (Matrix_tty.terminfo name))
+
+let hex s =
+  String.concat ""
+    (List.map
+       (fun c -> Printf.sprintf "%02X" (Char.code c))
+       (List.of_seq (String.to_seq s)))
+
+(* As tic -Q 2 writes it: [-_] for [+/], no padding. *)
+let b64 s =
+  let alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+  in
+  let b = Buffer.create 64 and n = String.length s in
+  let byte i = if i < n then Char.code s.[i] else 0 in
+  let i = ref 0 in
+  while !i < n do
+    let v = (byte !i lsl 16) lor (byte (!i + 1) lsl 8) lor byte (!i + 2) in
+    let chars = if n - !i >= 3 then 4 else n - !i + 1 in
+    for k = 0 to chars - 1 do
+      Buffer.add_char b alphabet.[(v lsr (18 - (6 * k))) land 63]
+    done;
+    i := !i + 3
+  done;
+  Buffer.contents b
+
+(* TERMINFO may hold the description itself, used for a name it has. *)
+let test_terminfo_encoded () =
+  let dumb = fixture "d/dumb" in
+  List.iter
+    (fun (form, value) ->
+      with_env
+        [ ("TERMINFO", Some value); ("HOME", None); ("TERMINFO_DIRS", None) ]
+      @@ fun () ->
+      equal ~msg:form string "dumb" (found form (Matrix_tty.terminfo "dumb"));
+      equal
+        ~msg:(form ^ ", by another of its names")
+        string "dumb"
+        (found form (Matrix_tty.terminfo "80-column dumb tty"));
+      not_found (form ^ " for another name") (Matrix_tty.terminfo name))
+    [ ("hex", "hex:" ^ hex dumb); ("b64", "b64:" ^ b64 dumb) ]
+
+(* The first description that reads; a broken one is skipped. *)
+let test_terminfo_invalid () =
+  with_database [ ("m", name, "not an entry") ] @@ fun broken ->
+  with_database [ ("m", name, fixture "d/dumb") ] @@ fun good ->
+  with_env
+    [ ("TERMINFO", Some broken); ("HOME", None); ("TERMINFO_DIRS", Some good) ]
+    (fun () ->
+      equal ~msg:"the next one" string "dumb"
+        (found "skip" (Matrix_tty.terminfo name)));
+  with_env
+    [ ("TERMINFO", Some broken); ("HOME", None); ("TERMINFO_DIRS", None) ]
+    (fun () ->
+      match Matrix_tty.terminfo name with
+      | Error (`Invalid _) -> ()
+      | _ -> fail "only a broken description: invalid")
+
+let test_terminfo_names () =
+  List.iter
+    (fun n -> not_found n (Matrix_tty.terminfo n))
+    [ ""; "."; ".."; "../x/xterm"; "x/xterm" ]
+
 (* Signals *)
 
 module Signal = Matrix_tty.Signal
@@ -297,6 +434,14 @@ let () =
         [
           test "raw and restore" test_raw_and_restore;
           test "raw on a pipe" test_raw_not_a_terminal;
+        ];
+      group "descriptions"
+        [
+          test "the order of the databases" test_terminfo_order;
+          test "hexadecimal directories" test_terminfo_hex_directory;
+          test "a description in TERMINFO" test_terminfo_encoded;
+          test "a broken description" test_terminfo_invalid;
+          test "names that are no file" test_terminfo_names;
         ];
       group "signals"
         [

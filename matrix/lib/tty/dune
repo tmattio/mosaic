@@ -5,7 +5,7 @@
   (backend ppx_windtrap.mutate))
  (name matrix_tty)
  (public_name matrix.tty)
- (libraries unix)
+ (libraries unix matrix.terminfo)
  (foreign_stubs
   (language c)
   (names tty_stubs)))
