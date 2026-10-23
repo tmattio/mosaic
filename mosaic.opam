@@ -22,6 +22,10 @@ depends: [
   "lwt" {with-test}
   "odoc" {with-doc}
 ]
+depopts: ["eio"]
+conflicts: [
+  "eio" {< "1.0"}
+]
 build: [
   ["dune" "subst"] {dev}
   [

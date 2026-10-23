@@ -1,14 +1,15 @@
 # `24-eio`
 
-Async task runner using Eio fibers: the program runs on a domain of its own
-and waits for its terminal with Eio, while the main domain runs its jobs as
-fibers.
+Async task runner using Eio fibers: the program runs from the main fiber with
+`Mosaic_eio.run`, while the main domain runs its jobs as fibers.
 
 ```bash
 dune exec ./mosaic/examples/24-eio/main.exe
+dune exec ./mosaic/examples/24-eio/main.exe -- --for 5
 ```
 
-It is built only when `eio_main` is installed.
+It is built only when `eio_main` is installed. With `--for SECONDS`,
+`Fiber.first` cancels the program after that long.
 
 ## Controls
 
@@ -17,17 +18,17 @@ It is built only when `eio_main` is installed.
 
 ## Features
 
-- Simulated background jobs running as Eio daemon fibers.
+- Simulated background jobs running as Eio fibers, which sleep on the Eio
+  clock.
 - Live progress percentage updated via tick subscriptions.
 - Multiple concurrent jobs without blocking the UI loop.
 
 ## Highlights
 
-- `Mosaic.start` leaves the waiting to the caller: the loop takes the
-  program's steps with `Mosaic.step`, and between them waits with Eio until
-  one of `Mosaic.fds` is readable or `Mosaic.deadline` comes.
-- `Eio.Domain_manager.run` gives the program its domain, so the main
-  domain's other fibers go on while a step runs, and cancelling the caller
-  cancels the wait.
-- `process_perform` hands the work of `Cmd.perform` to fibers of the main
-  domain through an `Eio.Stream`.
+- `Mosaic_eio.run (Eio.Stdenv.domain_mgr env) app` is the whole glue: the
+  program takes its steps on a domain of its own and waits there with Eio,
+  and the work of `Cmd.perform` runs as fibers of the main domain, where it
+  may call Eio.
+- Cancelling the fiber that runs the program ends it, and the terminal is
+  given back before `Mosaic_eio.run` raises, so the line the example writes
+  after lands on the shell's screen.

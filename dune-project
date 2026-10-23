@@ -79,5 +79,9 @@
   (thumper :with-test)
   (eio_main :with-test)
   (lwt :with-test))
+ (depopts eio)
+ (conflicts
+  (eio
+   (< 1.0)))
  (tags
   (tui terminal tea elm "user-interface")))

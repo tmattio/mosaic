@@ -16,7 +16,10 @@
    (setenv
     TITLE
     "Async Tasks"
-    (run %{exe:test_examples.exe})))))
+    (setenv
+     CANCEL
+     1
+     (run %{exe:test_examples.exe}))))))
 
 (rule
  (alias runtest)

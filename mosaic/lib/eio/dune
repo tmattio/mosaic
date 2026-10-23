@@ -1,0 +1,5 @@
+(library
+ (name mosaic_eio)
+ (public_name mosaic.eio)
+ (optional)
+ (libraries mosaic matrix matrix.terminal eio eio.unix unix))

@@ -1,4 +1,4 @@
 (executable
  (name main)
  (optional)
- (libraries mosaic matrix eio eio.unix eio_main))
+ (libraries mosaic mosaic.eio eio eio_main))
