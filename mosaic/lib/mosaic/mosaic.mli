@@ -878,6 +878,43 @@ end
     Subscriptions are re-evaluated on each cycle, so they may depend on the
     current model. Compose multiple subscriptions with {!Sub.val-batch}. *)
 module Sub : sig
+  (** {1:phases Phases}
+
+      A key, a paste or a mouse event goes from the application down to its
+      target element and back up, as in the DOM: the application's [Capture]
+      listeners, then the target's handlers, then its behavior unless prevented
+      (the character a key types into a focused input, the item a key selects in
+      a focused list), then each ancestor's handlers, then the application's
+      [Bubble] listeners. A key or a paste targets the focused element; a mouse
+      event the element under the pointer. {!Event} says what stopping
+      propagation and preventing the default do along the way. A behavior that
+      acts on an event consumes it: it prevents and stops it. The keys a
+      widget's behavior acts on are part of the widget's interface, listed in
+      its module (for example {!Mosaic_ui.Select}).
+
+      The application is one node: its listeners of a phase all see what reaches
+      the phase, in declaration order, whatever the others did with it. A
+      [Capture] listener sees every event before any element, and can keep it
+      from them. A [Bubble] listener sees an event that nothing used, neither
+      stopped nor prevented: a shortcut on [q] declared there does not fire
+      while [q] is typed into a focused input. A key the application takes
+      whatever is focused, such as Tab moving focus, belongs in [Capture], with
+      {!Event.Key.prevent_default} so the focused element does not act on it
+      too. One [Capture] listener cannot hide an event from another; while a
+      dialog owns the keyboard, stop declaring the listeners it overrides.
+
+      A listener's message goes through [update] at once. The path is taken when
+      the event is dispatched, so a focus change that message makes moves the
+      next event, not this one, with one exception: the behavior runs on the
+      element focused when it runs, so a [Capture] listener that focuses an
+      input on a printable key gets that character inserted into the input. *)
+
+  (** The type for the phase a listener runs in. *)
+  type phase =
+    | Capture  (** Before the elements, for every event. *)
+    | Bubble
+        (** After the elements, for the events nothing stopped or prevented. *)
+
   (** The type for subscriptions. *)
   type 'msg t =
     | None  (** No subscription. Equivalent to [batch []]. *)
@@ -888,21 +925,15 @@ module Sub : sig
     | On_tick of string * (dt:float -> 'msg)
         (** [On_tick (id, f)] fires [f ~dt] on every render frame, where [dt] is
             the elapsed time in seconds since the previous frame. *)
-    | On_key of (Event.key -> 'msg option)
-        (** [On_key f] captures keys before focused widget processing. *)
-    | On_key_all of (Event.key -> 'msg option)
-        (** [On_key_all f] delivers all key events, consumed or not. [f] returns
-            [None] to ignore an event. *)
+    | On_key of phase * (Event.key -> 'msg option)
+        (** [On_key (phase, f)] listens to key presses; see {!val-on_key}. *)
     | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
         (** [On_key_release f] delivers key releases. *)
-    | On_mouse of (Event.mouse -> 'msg option)
-        (** [On_mouse f] delivers mouse events the UI tree did not consume. *)
-    | On_mouse_all of (Event.mouse -> 'msg option)
-        (** [On_mouse_all f] delivers all mouse events, consumed or not. *)
-    | On_paste of (Event.paste -> 'msg option)
-        (** [On_paste f] captures paste before focused widget processing. *)
-    | On_paste_all of (Event.paste -> 'msg option)
-        (** [On_paste_all f] delivers all paste events, consumed or not. *)
+    | On_mouse of phase * (Event.mouse -> 'msg option)
+        (** [On_mouse (phase, f)] listens to mouse events; see {!val-on_mouse}.
+        *)
+    | On_paste of phase * (Event.paste -> 'msg option)
+        (** [On_paste (phase, f)] listens to pastes; see {!val-on_paste}. *)
     | On_paste_stalled of float * 'msg
         (** [On_paste_stalled (seconds, msg)] dispatches [msg] when a paste in
             progress has received nothing for [seconds]. *)
@@ -940,22 +971,16 @@ module Sub : sig
       time in seconds since the previous frame. Use this for animations that
       must advance at the display frame rate. *)
 
-  val on_key : (Event.key -> 'msg option) -> 'msg t
-  (** [on_key f] runs before the focused element's key handler. Returning a
-      message dispatches it synchronously; call {!Event.Key.prevent_default} to
-      suppress the default widget action. Subscriptions run in declaration
-      order. A prior prevent-default skips this subscription; stop-propagation
-      stops subsequent handlers. *)
+  val on_key : ?phase:phase -> (Event.key -> 'msg option) -> 'msg t
+  (** [on_key f] calls [f] on each key press that reaches [phase] (defaults to
+      [Bubble]; see {!section-phases}) and dispatches the message it returns. *)
 
-  val on_keys : (Shortcut.t * 'msg) list -> 'msg t
-  (** [on_keys bindings] dispatches the message bound to the event and prevents
-      its default action. Later equivalent shortcuts override earlier ones.
-      Resolution tries the key, then the base-layout key, as widget bindings do.
-      See {!Shortcut} for how keys and modifiers match. *)
-
-  val on_key_all : (Event.key -> 'msg option) -> 'msg t
-  (** [on_key_all f] is like {!val-on_key} but delivers all key events
-      regardless of which element has focus. *)
+  val on_keys : ?phase:phase -> (Shortcut.t * 'msg) list -> 'msg t
+  (** [on_keys bindings] dispatches the message bound to a key that reaches
+      [phase] (defaults to [Bubble]; see {!section-phases}) with its default not
+      prevented, and prevents it. Later equivalent shortcuts override earlier
+      ones. Resolution tries the key, then the base-layout key, as widget
+      bindings do. See {!Shortcut} for how keys and modifiers match. *)
 
   val on_key_release : (Matrix.Input.Keystroke.release -> 'msg option) -> 'msg t
   (** [on_key_release f] delivers key releases to [f], which no widget sees. A
@@ -963,26 +988,21 @@ module Sub : sig
       runtime asks for them ({!Matrix.create}'s [key_releases], given through
       {!run}'s [matrix]). *)
 
-  val on_mouse : (Event.mouse -> 'msg option) -> 'msg t
-  (** [on_mouse f] delivers mouse events the UI tree did not consume: an event a
-      widget handled (its handler called prevent-default) is not delivered. See
-      also {!val-on_mouse_all}. *)
+  val on_mouse : ?phase:phase -> (Event.mouse -> 'msg option) -> 'msg t
+  (** [on_mouse f] calls [f] on each mouse event that reaches [phase] (defaults
+      to [Bubble]; see {!section-phases}) and dispatches the message it returns.
+  *)
 
-  val on_mouse_all : (Event.mouse -> 'msg option) -> 'msg t
-  (** [on_mouse_all f] is like {!val-on_mouse} but delivers all mouse events,
-      consumed or not. *)
-
-  val on_paste : (Event.paste -> 'msg option) -> 'msg t
-  (** [on_paste f] runs before the focused editor's paste handler. Call
-      {!Event.Paste.prevent_default} to suppress insertion. A bracketed paste is
-      delivered whole once its end marker arrives, and dropped when cut short
+  val on_paste : ?phase:phase -> (Event.paste -> 'msg option) -> 'msg t
+  (** [on_paste f] calls [f] on each paste that reaches [phase] (defaults to
+      [Bubble]; see {!section-phases}) and dispatches the message it returns.
+      The focused editor's behavior inserts a paste, so a [Bubble] listener sees
+      a paste no editor took; a [Capture] listener can prevent the insertion
+      with {!Event.Paste.prevent_default}. A bracketed paste is delivered whole
+      once its end marker arrives, and dropped when cut short
       ({!Cmd.abort_paste}, or the end of the input); see {!val-on_paste_stalled}
       for a paste whose end marker never comes. Text a terminal reports without
       a key, such as an input method's, is delivered as a paste too. *)
-
-  val on_paste_all : (Event.paste -> 'msg option) -> 'msg t
-  (** [on_paste_all f] is like {!val-on_paste} but delivers all paste events,
-      consumed or not. *)
 
   val on_paste_stalled : float -> 'msg -> 'msg t
   (** [on_paste_stalled seconds msg] dispatches [msg] once each time a bracketed
@@ -1422,8 +1442,9 @@ val button :
     styles the label. Focus adds inverse video; disabled adds dim instead.
     Caller-supplied colors and other attributes are preserved.
 
-    Global key capture can prevent activation with {!Event.Key.prevent_default}.
-    The button composes a box and text; it has no separate widget state. *)
+    A [Capture] listener ({!Sub.section-phases}) can prevent activation with
+    {!Event.Key.prevent_default}. The button composes a box and text; it has no
+    separate widget state. *)
 
 val text :
   ?key:string ->

@@ -437,23 +437,19 @@ let subscriptions model =
     | Streaming -> Sub.every ~id:"stream" 0.05 (fun () -> Tick)
     | _ -> Sub.none
   in
-  Sub.batch
-    [
-      tick;
-      Sub.on_key_all (fun ev ->
-          match (Event.Key.data ev).key with
-          | Escape -> Some Quit
-          | Char c when Uchar.equal c (Uchar.of_char 'q') && model.state = Idle
-            ->
-              Some Quit
-          | Char c when model.state <> Idle && Uchar.equal c (Uchar.of_char 'y')
-            ->
-              Some (Confirm true)
-          | Char c when model.state <> Idle && Uchar.equal c (Uchar.of_char 'n')
-            ->
-              Some (Confirm false)
-          | _ -> None);
-    ]
+  (* The prompt is always focused and types every printable key. While a
+     turn runs, y and n answer it instead: they are taken before the prompt
+     sees them. *)
+  let answers =
+    match model.state with
+    | Idle -> Sub.none
+    | Streaming | Waiting_confirmation _ ->
+        Sub.on_keys ~phase:Capture
+          [
+            (Shortcut.char 'y', Confirm true); (Shortcut.char 'n', Confirm false);
+          ]
+  in
+  Sub.batch [ tick; answers; Sub.on_keys [ (Shortcut.escape, Quit) ] ]
 
 (* ── Entry point ── *)
 

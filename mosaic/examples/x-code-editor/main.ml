@@ -440,11 +440,8 @@ let view model =
         ];
     ]
 
-let subscriptions model =
-  Sub.on_key (fun ev ->
-      match (Event.Key.data ev).key with
-      | Char c when Uchar.equal c (Uchar.of_char 'q') -> Some Quit
-      | Escape when not model.popup_open -> Some Quit
-      | _ -> None)
-
+(* The editor is always focused and types every printable key, so the only
+   shortcut is a key it does not act on. An open completion popup takes
+   Escape first (see [editor_on_key]). *)
+let subscriptions _model = Sub.on_keys [ (Shortcut.escape, Quit) ]
 let () = run { init; update; view; subscriptions }

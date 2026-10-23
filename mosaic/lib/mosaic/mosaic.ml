@@ -235,18 +235,17 @@ module Cmd = struct
 end
 
 module Sub = struct
+  type phase = Capture | Bubble
+
   type 'msg t =
     | None
     | Batch of 'msg t list
     | Every of string * float * (unit -> 'msg)
     | On_tick of string * (dt:float -> 'msg)
-    | On_key of (Event.key -> 'msg option)
-    | On_key_all of (Event.key -> 'msg option)
+    | On_key of phase * (Event.key -> 'msg option)
     | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
-    | On_mouse of (Event.mouse -> 'msg option)
-    | On_mouse_all of (Event.mouse -> 'msg option)
-    | On_paste of (Event.paste -> 'msg option)
-    | On_paste_all of (Event.paste -> 'msg option)
+    | On_mouse of phase * (Event.mouse -> 'msg option)
+    | On_paste of phase * (Event.paste -> 'msg option)
     | On_paste_stalled of float * 'msg
     | On_resize of (width:int -> height:int -> 'msg)
     | On_focus of 'msg
@@ -266,21 +265,21 @@ module Sub = struct
     if id = "" then invalid_arg "Mosaic.Sub.on_tick: empty id";
     On_tick (id, f)
 
-  let on_key f = On_key f
+  let on_key ?(phase = Bubble) f = On_key (phase, f)
 
-  let on_keys bindings =
+  let on_keys ?(phase = Bubble) bindings =
     On_key
-      (fun ev ->
-        let message = Shortcut.Private.find bindings ev in
-        if Option.is_some message then Event.Key.prevent_default ev;
-        message)
+      ( phase,
+        fun ev ->
+          if Event.Key.default_prevented ev then None
+          else
+            let message = Shortcut.Private.find bindings ev in
+            if Option.is_some message then Event.Key.prevent_default ev;
+            message )
 
-  let on_key_all f = On_key_all f
   let on_key_release f = On_key_release f
-  let on_mouse f = On_mouse f
-  let on_mouse_all f = On_mouse_all f
-  let on_paste f = On_paste f
-  let on_paste_all f = On_paste_all f
+  let on_mouse ?(phase = Bubble) f = On_mouse (phase, f)
+  let on_paste ?(phase = Bubble) f = On_paste (phase, f)
 
   let on_paste_stalled seconds msg =
     if (not (Float.is_finite seconds)) || seconds <= 0. then
@@ -298,13 +297,10 @@ module Sub = struct
     | Batch subs -> Batch (List.map (map f) subs)
     | Every (id, interval, g) -> Every (id, interval, fun () -> f (g ()))
     | On_tick (id, g) -> On_tick (id, fun ~dt -> f (g ~dt))
-    | On_key g -> On_key (fun ev -> Option.map f (g ev))
-    | On_key_all g -> On_key_all (fun ev -> Option.map f (g ev))
+    | On_key (phase, g) -> On_key (phase, fun ev -> Option.map f (g ev))
     | On_key_release g -> On_key_release (fun ev -> Option.map f (g ev))
-    | On_mouse g -> On_mouse (fun ev -> Option.map f (g ev))
-    | On_mouse_all g -> On_mouse_all (fun ev -> Option.map f (g ev))
-    | On_paste g -> On_paste (fun ev -> Option.map f (g ev))
-    | On_paste_all g -> On_paste_all (fun ev -> Option.map f (g ev))
+    | On_mouse (phase, g) -> On_mouse (phase, fun ev -> Option.map f (g ev))
+    | On_paste (phase, g) -> On_paste (phase, fun ev -> Option.map f (g ev))
     | On_paste_stalled (seconds, msg) -> On_paste_stalled (seconds, f msg)
     | On_resize g -> On_resize (fun ~width ~height -> f (g ~width ~height))
     | On_focus msg -> On_focus (f msg)
@@ -368,11 +364,11 @@ type ('model, 'msg) runtime = {
   process_perform : (unit -> unit) -> unit;
   renderer : Renderer.t;
   reconciler : Reconciler.t;
-  mutable key_subs : (bool * (Event.key -> 'msg option)) list;
+  mutable key_subs : (Sub.phase * (Event.key -> 'msg option)) list;
   mutable key_release_subs :
     (Matrix.Input.Keystroke.release -> 'msg option) list;
-  mutable mouse_subs : (bool * (Event.mouse -> 'msg option)) list;
-  mutable paste_subs : (bool * (Event.paste -> 'msg option)) list;
+  mutable mouse_subs : (Sub.phase * (Event.mouse -> 'msg option)) list;
+  mutable paste_subs : (Sub.phase * (Event.paste -> 'msg option)) list;
   mutable resize_sub : (width:int -> height:int -> 'msg) list;
   mutable tick_sub : (string * (dt:float -> 'msg)) list;
   mutable every_subs : 'msg every_timer list;
@@ -479,14 +475,13 @@ let rec collect_subs runtime (sub : _ Sub.t) =
         { id; interval; origin = Float.nan; fired = 0; callback }
         :: runtime.every_subs
   | Sub.On_tick (id, f) -> runtime.tick_sub <- (id, f) :: runtime.tick_sub
-  | Sub.On_key f -> runtime.key_subs <- (false, f) :: runtime.key_subs
-  | Sub.On_key_all f -> runtime.key_subs <- (true, f) :: runtime.key_subs
+  | Sub.On_key (phase, f) -> runtime.key_subs <- (phase, f) :: runtime.key_subs
   | Sub.On_key_release f ->
       runtime.key_release_subs <- f :: runtime.key_release_subs
-  | Sub.On_mouse f -> runtime.mouse_subs <- (false, f) :: runtime.mouse_subs
-  | Sub.On_mouse_all f -> runtime.mouse_subs <- (true, f) :: runtime.mouse_subs
-  | Sub.On_paste f -> runtime.paste_subs <- (false, f) :: runtime.paste_subs
-  | Sub.On_paste_all f -> runtime.paste_subs <- (true, f) :: runtime.paste_subs
+  | Sub.On_mouse (phase, f) ->
+      runtime.mouse_subs <- (phase, f) :: runtime.mouse_subs
+  | Sub.On_paste (phase, f) ->
+      runtime.paste_subs <- (phase, f) :: runtime.paste_subs
   | Sub.On_paste_stalled (seconds, msg) ->
       runtime.paste_stalled_subs <- (seconds, msg) :: runtime.paste_stalled_subs
   | Sub.On_resize f -> runtime.resize_sub <- f :: runtime.resize_sub
@@ -650,35 +645,28 @@ let deliver runtime msg =
   push_msg runtime msg;
   if not runtime.delivering then synchronize runtime
 
-let handle_key runtime event =
-  let rec loop = function
-    | [] -> ()
-    | (all_events, f) :: rest ->
-        if all_events || not (Event.Key.default_prevented event) then
-          Option.iter (deliver runtime) (f event);
-        if not (Event.Key.propagation_stopped event) then loop rest
+(* An event goes from the application's [Capture] listeners down its path
+   and back up to the application's [Bubble] listeners, which see it only if
+   nothing used it. The application is one node: its listeners of a phase all
+   see what reaches the phase, in declaration order. *)
+let listen runtime ~used listeners dispatch event =
+  let phase p =
+    List.iter
+      (fun (q, f) -> if q = p then Option.iter (deliver runtime) (f event))
+      listeners
   in
-  loop runtime.key_subs
+  phase Sub.Capture;
+  dispatch event;
+  if not (used event) then phase Sub.Bubble
 
-let handle_mouse runtime event =
-  let rec loop = function
-    | [] -> ()
-    | (all_events, f) :: rest ->
-        if all_events || not (Event.Mouse.default_prevented event) then
-          Option.iter (deliver runtime) (f event);
-        if not (Event.Mouse.propagation_stopped event) then loop rest
-  in
-  loop runtime.mouse_subs
+let key_used e =
+  Event.Key.propagation_stopped e || Event.Key.default_prevented e
 
-let handle_paste runtime event =
-  let rec loop = function
-    | [] -> ()
-    | (all_events, f) :: rest ->
-        if all_events || not (Event.Paste.default_prevented event) then
-          Option.iter (deliver runtime) (f event);
-        if not (Event.Paste.propagation_stopped event) then loop rest
-  in
-  loop runtime.paste_subs
+let mouse_used e =
+  Event.Mouse.propagation_stopped e || Event.Mouse.default_prevented e
+
+let paste_used e =
+  Event.Paste.propagation_stopped e || Event.Paste.default_prevented e
 
 let handle_resize runtime ~width ~height =
   runtime.view_dirty <- true;
@@ -717,10 +705,10 @@ let paste_heard runtime =
   if runtime.paste_stalled_subs <> [] then arm_every_wakeup runtime
 
 let dispatch_paste runtime text =
-  let event = Event.Paste.of_text text in
   let path = Renderer.focus_path runtime.renderer in
-  handle_paste runtime event;
-  Renderer.dispatch_paste runtime.renderer path event
+  listen runtime ~used:paste_used runtime.paste_subs
+    (Renderer.dispatch_paste runtime.renderer path)
+    (Event.Paste.of_text text)
 
 (* A paste arrives in pieces and reaches widgets whole, once it completes; a
    cut paste is dropped. Text a terminal reports without a key, such as an
@@ -735,18 +723,19 @@ let handle_input runtime (input : Matrix.event) =
         (fun f -> Option.iter (deliver runtime) (f scheme))
         runtime.color_scheme_sub
   | Key key ->
-      let event = Event.Key.of_input key in
       let path = Renderer.focus_path runtime.renderer in
-      handle_key runtime event;
-      Renderer.dispatch_key runtime.renderer path event
+      listen runtime ~used:key_used runtime.key_subs
+        (Renderer.dispatch_key runtime.renderer path)
+        (Event.Key.of_input key)
   | Key_release release ->
       List.iter
         (fun f -> Option.iter (deliver runtime) (f release))
         runtime.key_release_subs
   | Mouse mouse ->
       let path, event = Renderer.mouse_path runtime.renderer mouse in
-      Renderer.dispatch_mouse runtime.renderer path event;
-      handle_mouse runtime event
+      listen runtime ~used:mouse_used runtime.mouse_subs
+        (Renderer.dispatch_mouse runtime.renderer path)
+        event
   | Paste_start ->
       runtime.paste <- Some (Buffer.create 256);
       paste_heard runtime

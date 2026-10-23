@@ -194,7 +194,7 @@ let shortcut_alt_matches_alt () =
 let sub_on_keys_resolution () =
   let resolve bindings event =
     match Sub.on_keys bindings with
-    | Sub.On_key f -> f event
+    | Sub.On_key (_, f) -> f event
     | _ -> fail "expected On_key"
   in
   let check message expected bindings event =
@@ -239,14 +239,15 @@ let sub_on_keys_does_not_compile_or_allocate_per_override () =
   let measure bindings =
     let dispatch =
       match Sub.on_keys bindings with
-      | Sub.On_key f -> f
+      | Sub.On_key (_, f) -> f
       | _ -> fail "expected key subscription"
     in
-    let event = char 'q' in
+    (* A fresh event each time: a binding prevents the key it takes, and a
+       prevented key is not looked up again. *)
     let before = Gc.allocated_bytes () in
     for i = 1 to 10000 do
       ignore i;
-      ignore (Sys.opaque_identity (dispatch event))
+      ignore (Sys.opaque_identity (dispatch (char 'q')))
     done;
     Gc.allocated_bytes () -. before
   in

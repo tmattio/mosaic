@@ -73,7 +73,8 @@ An application is four functions:
 
 `Sub.t` declares event sources: `Sub.on_keys`, `Sub.on_key`, `Sub.on_mouse`,
 `Sub.on_paste`, `Sub.on_resize`, `Sub.on_tick`, `Sub.every`, `Sub.on_focus`,
-`Sub.on_blur`.
+`Sub.on_blur`. Key, mouse and paste listeners run after the elements, on the
+events no element used, unless declared `~phase:Capture`.
 
 Components compose via `map : ('a -> 'b) -> 'a t -> 'b t`.
 
@@ -199,8 +200,11 @@ the current entries, displays no selection and emits no change. Navigation
 proposes a current item value; activation without a selection does nothing.
 
 `Scroll.t` retains positions and symbolic follow/reveal targets. Timer
-subscriptions require stable IDs. Global key subscriptions run before the
-focused widget; call `Event.Key.prevent_default` to suppress its default action.
+subscriptions require stable IDs. Key subscriptions run after the focused
+widget and see only the keys it did not act on, so `Sub.on_keys [ (Shortcut.char
+'q', Quit) ]` does not quit while `q` is typed into an input. A listener
+declared `~phase:Capture` runs before the focused widget; call
+`Event.Key.prevent_default` there to keep the widget from acting on the key.
 
 ## Paint and caching
 

@@ -24,6 +24,7 @@
 
 #### Changed
 
+- **Listeners have a phase** – `Sub.on_key`, `on_keys`, `on_mouse` and `on_paste` take `?phase`. A `Bubble` listener, the default, runs after the elements and sees only the events nothing stopped or prevented, so `Sub.on_keys [ (Shortcut.char 'q', Quit) ]` no longer quits while `q` is typed into a focused input. A `Capture` listener runs before the elements and sees every event; stopping an event never hides it from another listener of the application. `on_key_all`, `on_mouse_all` and `on_paste_all` are gone (use `~phase:Capture`), and `Sub.On_key`, `On_mouse` and `On_paste` carry the phase
 - **Events go along a path, as in the DOM** – a key or a paste, like a mouse event, goes along a path taken when it is dispatched: the target's handlers, then its behavior (the character a key types, the text a paste inserts), then each ancestor's handlers, where keys and pastes reached the focused node only. The behavior runs on the node focused when it runs. `stop_propagation` keeps an event from the nodes after the current one, never from the current node's other handlers, and cancels no behavior; `prevent_default` cancels the behavior and the renderer's defaults. A behavior that acts stops the event. A press reaches its handlers before its defaults (text selection, the caret, the click), which a handler can now prevent. `Renderer.dispatch_key`, `dispatch_paste` and `dispatch_mouse` lose `?capture` and take a path from `Renderer.focus_path` or `Renderer.mouse_path`; `Renderable.set_default_key_handler` and `set_paste_handler` are `set_key_behavior` and `set_paste_behavior`; `Renderable.Private.emit_mouse` runs one node's handlers
 - Frame deltas are milliseconds everywhere (runtime, widgets, Screen post-processors); widget animation constants were split between units before
 - Selection/value props are controlled when provided and uncontrolled otherwise, uniformly across `slider`, `select`, `tab_select`, `table`, and `tree`
@@ -39,6 +40,7 @@
 
 - `Cmd.perform` messages can no longer be lost to a cross-thread race
 - `Sub.on_mouse` and `Sub.on_paste` now see event consumption (they behaved like the `_all` variants)
+- A mouse event a widget stopped reached only the first `Sub.on_mouse_all` listener; every capture listener now sees it
 - Left-click focuses selectable widgets even when it starts a selection; wheel over dead space reaches the focused scrollable
 - Tree and `select` mouse handling uses widget-local coordinates; `scroll_bar` applies orientation and arrow-color prop updates
 - Reconciler tracks id changes on reused fibers, keys duplicates first-occurrence-wins, and places children in linear time

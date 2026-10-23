@@ -1409,7 +1409,8 @@ let subscriptions (m : model) =
   Sub.batch
     [
       Sub.on_tick ~id:"animation" (fun ~dt -> Tick dt);
-      Sub.on_key (fun ev ->
+      (* Escape and Enter leave a filter input before it can act on them. *)
+      Sub.on_key ~phase:Capture (fun ev ->
           let key = (Event.Key.data ev).key in
           match m.focus with
           | Focus_run_filter | Focus_log_filter -> (

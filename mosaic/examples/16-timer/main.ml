@@ -221,12 +221,14 @@ let subscriptions model =
   Sub.batch
     [
       Sub.on_tick ~id:"animation" (fun ~dt -> Tick dt);
-      Sub.on_key (fun ev ->
+      (* One of the time inputs is always focused, and it would type these
+         keys: the application takes them first. *)
+      Sub.on_key ~phase:Capture (fun ev ->
           if Shortcut.matches Shortcut.space ev then (
             Event.Key.prevent_default ev;
             Some (match model.state with Running -> Stop | _ -> Start))
           else None);
-      Sub.on_keys
+      Sub.on_keys ~phase:Capture
         [
           (Shortcut.char 'r', Reset);
           (Shortcut.char ~shift:true 'r', Reset);

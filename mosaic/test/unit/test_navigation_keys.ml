@@ -188,7 +188,7 @@ let subscriptions_and_widgets_agree build ~mlx =
   in
   let dispatch =
     match Mosaic.Sub.on_keys bindings with
-    | Mosaic.Sub.On_key f -> f
+    | Mosaic.Sub.On_key (_, f) -> f
     | _ -> fail "expected key subscription"
   in
   List.iter

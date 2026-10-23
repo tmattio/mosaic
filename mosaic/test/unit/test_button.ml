@@ -54,7 +54,7 @@ let drive ?(focused = true) ?(disabled = false) ?(accept_focus = true)
       subscriptions =
         (fun _ ->
           if capture then
-            Mosaic.Sub.on_key (fun event ->
+            Mosaic.Sub.on_key ~phase:Capture (fun event ->
                 Mosaic.Event.Key.prevent_default event;
                 None)
           else Mosaic.Sub.none);

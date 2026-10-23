@@ -554,17 +554,17 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
     |}]
 
 let%expect_test "paste capture runs before the focused editor" =
-  (* Paste subscriptions run in declaration order before default insertion.
-     A later editor proposal cannot retroactively consume their delivery. *)
+  (* Capture listeners run in declaration order before the insertion. A later
+     editor proposal cannot retroactively consume their delivery. *)
   let order = ref [] in
   let record step = order := step :: !order in
   let subs _ =
     Mosaic.Sub.batch
       [
-        Mosaic.Sub.on_paste (fun ev ->
+        Mosaic.Sub.on_paste ~phase:Capture (fun ev ->
             record "capture";
             Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev)));
-        Mosaic.Sub.on_paste_all (fun ev ->
+        Mosaic.Sub.on_paste ~phase:Capture (fun ev ->
             record "all";
             Some (Pressed ("P:" ^ Mosaic.Event.Paste.text ev)));
       ]
@@ -607,9 +607,8 @@ let%expect_test "paste capture runs before the focused editor" =
     |}]
 
 let%expect_test "a mouse press consumed by a widget skips on_mouse" =
-  (* Mouse delivery follows widget dispatch. A consuming widget suppresses
-     Sub.on_mouse; on_mouse_all still runs. Unconsumed subscriptions update the
-     model synchronously in their declaration order. *)
+  (* A capture listener sees the press before the widget; a bubble listener
+     after it, and only if the widget did not use it. *)
   let log_downs tag ev =
     match Mosaic.Event.Mouse.kind ev with
     | Mosaic.Event.Mouse.Down _ -> Some (Pressed tag)
@@ -619,7 +618,7 @@ let%expect_test "a mouse press consumed by a widget skips on_mouse" =
     Mosaic.Sub.batch
       [
         Mosaic.Sub.on_mouse (log_downs "m");
-        Mosaic.Sub.on_mouse_all (log_downs "M");
+        Mosaic.Sub.on_mouse ~phase:Capture (log_downs "M");
       ]
   in
   let base = app ~subs () in
@@ -642,7 +641,7 @@ let%expect_test "a mouse press consumed by a widget skips on_mouse" =
     {|
     |keys:[M] ticks:0 size:- note:-
     |
-    |keys:[m,M] ticks:0 size:- note:-
+    |keys:[M,m] ticks:0 size:- note:-
     |
     |}]
 
@@ -1124,7 +1123,7 @@ let%expect_test "global capture updates focus and editor before default editing"
             ]);
       subscriptions =
         (fun _ ->
-          Mosaic.Sub.on_key (fun ev ->
+          Mosaic.Sub.on_key ~phase:Capture (fun ev ->
               if Mosaic.Shortcut.matches (Mosaic.Shortcut.char 'x') ev then
                 Some `Transfer
               else None));
@@ -1544,7 +1543,7 @@ let recording subs =
 let%expect_test "a paste is delivered whole and a cut paste is dropped" =
   let observed, application =
     recording (fun _ ->
-        Mosaic.Sub.on_paste_all (fun ev ->
+        Mosaic.Sub.on_paste (fun ev ->
             Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev))))
   in
   let feed event = `Run (fun t -> Matrix_test.feed_event t event) in
@@ -1586,7 +1585,7 @@ let%expect_test "a stalled paste is reported, and the application aborts it" =
         Mosaic.Sub.batch
           [
             Mosaic.Sub.on_paste_stalled 2. (Pressed "<stalled>");
-            Mosaic.Sub.on_paste_all (fun ev ->
+            Mosaic.Sub.on_paste (fun ev ->
                 Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev)));
             Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)));
           ])
@@ -1627,7 +1626,7 @@ let%expect_test "key releases reach on_key_release, not key handlers" =
     recording (fun _ ->
         Mosaic.Sub.batch
           [
-            Mosaic.Sub.on_key_all (fun key -> Some (Pressed (key_name key)));
+            Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)));
             Mosaic.Sub.on_key_release (fun release ->
                 match release.key with
                 | Char u when Uchar.is_char u ->
@@ -1652,4 +1651,317 @@ let%expect_test "key releases reach on_key_release, not key handlers" =
           equal ~msg:"the press reaches key handlers, the release does not"
             (list string) [ "q"; "r:q" ] !observed.keys);
     ];
+  [%expect {| |}]
+
+(* ── Event delivery ── *)
+
+(* Two inputs, A focused above B, each accepting its proposals and focus
+   requests, under [subs]. Returns the texts accepted after [bytes]. *)
+let two_inputs ?(subs = fun _ -> Mosaic.Sub.none) bytes =
+  let texts = ref ("", "") in
+  let application =
+    {
+      Mosaic.init =
+        (fun () ->
+          ((Mosaic.Editor.empty, Mosaic.Editor.empty, `A), Mosaic.Cmd.none));
+      update =
+        (fun msg (a, b, focus) ->
+          let ((a, b, _) as model) =
+            match msg with
+            | `Edit_a a -> (a, b, focus)
+            | `Edit_b b -> (a, b, focus)
+            | `Focus focus -> (a, b, focus)
+          in
+          texts := (Mosaic.Editor.text a, Mosaic.Editor.text b);
+          (model, Mosaic.Cmd.none));
+      view =
+        (fun (a, b, focus) ->
+          let input state name edit =
+            Mosaic.input
+              ~size:(Mosaic.size ~width:20 ~height:1)
+              ~state ~focused:(focus = name) ~on_focus_request:(`Focus name)
+              ~on_change:edit ()
+          in
+          Mosaic.box ~flex_direction:Column
+            [ input a `A (fun a -> `Edit_a a); input b `B (fun b -> `Edit_b b) ]);
+      subscriptions = subs;
+    }
+  in
+  drive ~width:20 ~height:2 application [ `Feed bytes ];
+  !texts
+
+let pair = pair string string
+
+let%expect_test "K1: a capture listener that moves focus moves the typing too" =
+  (* The elements' handlers keep the path taken; the insertion runs on the
+     element focused when it runs. *)
+  let subs _ =
+    Mosaic.Sub.on_key ~phase:Capture (fun key ->
+        if Mosaic.Shortcut.matches (Mosaic.Shortcut.char 'x') key then
+          Some (`Focus `B)
+        else None)
+  in
+  equal ~msg:"x lands in B" pair ("", "x") (two_inputs ~subs "x");
+  [%expect {| |}]
+
+let%expect_test "K2: a key that moves focus moves the next key of the read" =
+  let subs _ = Mosaic.Sub.on_keys [ (Mosaic.Shortcut.tab, `Focus `B) ] in
+  equal ~msg:"Tab types nothing, bubbles, and focuses B for x" pair ("", "x")
+    (two_inputs ~subs "\tx");
+  [%expect {| |}]
+
+let%expect_test "K3: a click's focus request moves the next key of the read" =
+  equal ~msg:"x goes to B, focused by the click" pair ("", "x")
+    (two_inputs "\027[<0;3;2M\027[<0;3;2mx");
+  [%expect {| |}]
+
+let%expect_test "K4: a keyed reorder keeps focus for the next key of the read" =
+  let final = ref [] in
+  let application =
+    {
+      Mosaic.init =
+        (fun () ->
+          ( [
+              ("k1", Mosaic.Editor.empty);
+              ("k2", Mosaic.Editor.empty);
+              ("k3", Mosaic.Editor.empty);
+            ],
+            Mosaic.Cmd.none ));
+      update =
+        (fun msg items ->
+          let items =
+            match msg with
+            | `Reverse -> List.rev items
+            | `Edit (key, editor) ->
+                List.map
+                  (fun (k, e) -> if k = key then (k, editor) else (k, e))
+                  items
+          in
+          final := List.map (fun (k, e) -> (k, Mosaic.Editor.text e)) items;
+          (items, Mosaic.Cmd.none));
+      view =
+        (fun items ->
+          Mosaic.box ~flex_direction:Column
+            (List.map
+               (fun (key, state) ->
+                 Mosaic.input ~key
+                   ~size:(Mosaic.size ~width:20 ~height:1)
+                   ~state ~focused:(key = "k1")
+                   ~on_change:(fun e -> `Edit (key, e))
+                   ())
+               items));
+      subscriptions =
+        (fun _ -> Mosaic.Sub.on_keys [ (Mosaic.Shortcut.ctrl 'r', `Reverse) ]);
+    }
+  in
+  drive ~width:20 ~height:3 application [ `Feed "\018x" ];
+  equal ~msg:"x goes to k1, wherever it moved" (list pair)
+    [ ("k3", ""); ("k2", ""); ("k1", "x") ]
+    !final;
+  [%expect {| |}]
+
+let%expect_test "K5: a click hits the layout the previous key left" =
+  let clicked = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> ([ "r0"; "r1"; "r2" ], Mosaic.Cmd.none));
+      update =
+        (fun msg rows ->
+          match msg with
+          | `Delete -> (List.tl rows, Mosaic.Cmd.none)
+          | `Click row ->
+              clicked := row :: !clicked;
+              (rows, Mosaic.Cmd.none));
+      view =
+        (fun rows ->
+          Mosaic.box ~flex_direction:Column
+            (List.map
+               (fun row ->
+                 Mosaic.box ~key:row
+                   ~size:(Mosaic.size ~width:10 ~height:1)
+                   ~on_click:(fun _ -> Some (`Click row))
+                   [ Mosaic.text row ])
+               rows));
+      subscriptions =
+        (fun _ -> Mosaic.Sub.on_keys [ (Mosaic.Shortcut.char 'd', `Delete) ]);
+    }
+  in
+  drive ~width:10 ~height:3 application [ `Feed "d\027[<0;2;1M\027[<0;2;1m" ];
+  equal ~msg:"the click hits r1, now on the first row" (list string) [ "r1" ]
+    !clicked;
+  [%expect {| |}]
+
+(* Messages by name, in the order [update] received them. *)
+let names subs view bytes =
+  let seen = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> ((), Mosaic.Cmd.none));
+      update =
+        (fun name () ->
+          seen := name :: !seen;
+          ((), Mosaic.Cmd.none));
+      view = (fun () -> view);
+      subscriptions = (fun () -> subs);
+    }
+  in
+  drive ~width:10 ~height:1 application [ `Feed bytes ];
+  List.rev !seen
+
+let downs name ev =
+  match Mosaic.Event.Mouse.kind ev with Down _ -> Some name | _ -> None
+
+let%expect_test
+    "E1: a widget that stops a press hides it from bubble listeners only" =
+  let view =
+    Mosaic.box
+      ~size:(Mosaic.size ~width:10 ~height:1)
+      ~on_mouse:(fun ev ->
+        Mosaic.Event.Mouse.stop_propagation ev;
+        downs "widget" ev)
+      [ Mosaic.text "w" ]
+  in
+  let subs =
+    Mosaic.Sub.batch
+      [
+        Mosaic.Sub.on_mouse ~phase:Capture (downs "capture-1");
+        Mosaic.Sub.on_mouse (downs "bubble");
+        Mosaic.Sub.on_mouse ~phase:Capture (downs "capture-2");
+      ]
+  in
+  equal ~msg:"both capture listeners, then the widget" (list string)
+    [ "capture-1"; "capture-2"; "widget" ]
+    (names subs view "\027[<0;2;1M");
+  [%expect {| |}]
+
+let%expect_test
+    "E2: a capture listener that stops a key hides it from no other capture \
+     listener" =
+  let subs =
+    Mosaic.Sub.batch
+      [
+        Mosaic.Sub.on_key ~phase:Capture (fun key ->
+            Mosaic.Event.Key.stop_propagation key;
+            Some "stops");
+        Mosaic.Sub.on_key (fun _ -> Some "bubble");
+        Mosaic.Sub.on_key ~phase:Capture (fun _ -> Some "sees");
+      ]
+  in
+  equal ~msg:"the application is one node" (list string) [ "stops"; "sees" ]
+    (names subs (Mosaic.text "e2") "z");
+  [%expect {| |}]
+
+let%expect_test "E3: listeners run by phase, then in declaration order" =
+  let subs =
+    Mosaic.Sub.batch
+      [
+        Mosaic.Sub.on_key (fun _ -> Some "a");
+        Mosaic.Sub.map
+          (fun s -> "map:" ^ s)
+          (Mosaic.Sub.batch
+             [
+               Mosaic.Sub.on_key (fun _ -> Some "b");
+               Mosaic.Sub.on_key ~phase:Capture (fun _ -> Some "c");
+             ]);
+        Mosaic.Sub.on_key (fun _ -> Some "d");
+      ]
+  in
+  equal
+    ~msg:"capture first, each phase in declaration order through batch and map"
+    (list string)
+    [ "map:c"; "a"; "map:b"; "d" ]
+    (names subs (Mosaic.text "e3") "k");
+  [%expect {| |}]
+
+let%expect_test "S1: a shortcut does not take a key typed into an input" =
+  let text = ref "" and quit = ref 0 in
+  let application =
+    {
+      Mosaic.init = (fun () -> (Mosaic.Editor.empty, Mosaic.Cmd.none));
+      update =
+        (fun msg editor ->
+          match msg with
+          | `Quit ->
+              incr quit;
+              (editor, Mosaic.Cmd.none)
+          | `Edit editor ->
+              text := Mosaic.Editor.text editor;
+              (editor, Mosaic.Cmd.none));
+      view =
+        (fun editor ->
+          Mosaic.input
+            ~size:(Mosaic.size ~width:20 ~height:1)
+            ~state:editor ~focused:true
+            ~on_change:(fun e -> `Edit e)
+            ());
+      subscriptions =
+        (fun _ ->
+          Mosaic.Sub.on_keys
+            [
+              (Mosaic.Shortcut.char 'q', `Quit);
+              (Mosaic.Shortcut.ctrl 'q', `Quit);
+            ]);
+    }
+  in
+  drive ~width:20 ~height:1 application [ `Feed "aq" ];
+  equal ~msg:"q is typed" string "aq" !text;
+  equal ~msg:"q does not quit" int 0 !quit;
+  drive ~width:20 ~height:1 application [ `Feed "\017" ];
+  equal ~msg:"Ctrl+Q types nothing, so it bubbles to the shortcut" int 1 !quit;
+  [%expect {| |}]
+
+let%expect_test "removing the focused element leaves nothing focused" =
+  (* The update that removes the focused input does not move focus: keys
+     then reach the application only, until the model declares another. *)
+  let keys = ref [] and inputs = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> (([ "a"; "b" ], Some "a"), Mosaic.Cmd.none));
+      update =
+        (fun msg (rows, focus) ->
+          match msg with
+          | `Remove ->
+              (List.filter (fun r -> Some r <> focus) rows, focus)
+              |> fun model -> (model, Mosaic.Cmd.none)
+          | `Focus row -> ((rows, Some row), Mosaic.Cmd.none)
+          | `Key name ->
+              keys := name :: !keys;
+              ((rows, focus), Mosaic.Cmd.none)
+          | `Edit (row, text) ->
+              inputs := (row, text) :: !inputs;
+              ((rows, focus), Mosaic.Cmd.none));
+      view =
+        (fun (rows, focus) ->
+          Mosaic.box ~flex_direction:Column
+            (List.map
+               (fun row ->
+                 Mosaic.input ~key:row
+                   ~size:(Mosaic.size ~width:20 ~height:1)
+                   ~state:Mosaic.Editor.empty ~focused:(focus = Some row)
+                   ~on_change:(fun e -> `Edit (row, Mosaic.Editor.text e))
+                   ())
+               rows));
+      subscriptions =
+        (fun _ ->
+          Mosaic.Sub.batch
+            [
+              Mosaic.Sub.on_keys
+                [
+                  (Mosaic.Shortcut.f 2, `Remove);
+                  (Mosaic.Shortcut.f 3, `Focus "b");
+                ];
+              Mosaic.Sub.on_key (fun key ->
+                  match key_name key with
+                  | "<other>" -> None
+                  | name -> Some (`Key name));
+            ]);
+    }
+  in
+  drive ~width:20 ~height:2 application [ `Feed "\027OQx\027OR" ];
+  equal ~msg:"x reached the application, no element" (list string) [ "x" ] !keys;
+  equal ~msg:"no input took x" int 0 (List.length !inputs);
+  drive ~width:20 ~height:2 application [ `Feed "\027OQ\027ORy" ];
+  equal ~msg:"declaring b focused gives it the next key" (list pair)
+    [ ("b", "y") ]
+    !inputs;
   [%expect {| |}]

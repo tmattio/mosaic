@@ -195,7 +195,9 @@ let view model =
     ]
 
 let subscriptions _model =
-  Sub.on_keys
+  (* Focus moves and quitting work whatever is focused, so these keys are
+     taken before the focused field sees them. *)
+  Sub.on_keys ~phase:Capture
     [
       (Shortcut.tab, Focus_next);
       (Shortcut.key ~shift:true Tab, Focus_prev);

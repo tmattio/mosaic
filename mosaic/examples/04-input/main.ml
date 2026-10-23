@@ -83,8 +83,10 @@ let view model =
     ]
 
 let subscriptions _model =
-  (* Application shortcuts run before the focused editor; on_keys consumes
-     matching shortcuts so Tab changes the cursor style without editing text. *)
-  Sub.on_keys [ (Shortcut.tab, Cycle_cursor); (Shortcut.escape, Quit) ]
+  (* Tab and Esc belong to the application whatever is focused, so they are
+     taken before the focused input sees them; on_keys prevents what it takes,
+     so the input does not act on them too. *)
+  Sub.on_keys ~phase:Capture
+    [ (Shortcut.tab, Cycle_cursor); (Shortcut.escape, Quit) ]
 
 let () = run { init; update; view; subscriptions }
