@@ -176,10 +176,10 @@ module Backend : sig
     controlling : bool;
         (** Whether the terminal is the process's controlling terminal, the one
             its job runs in. Its window, stop and continue signals are that
-            terminal's, so only a run on it takes the process's signals
-            ({{!signals}Signals}), and one run at a time holds it ({!run}). A
-            terminal the process serves, such as a pseudo-terminal it opened or
-            a remote session, is not: it reports its size itself (mode 2048). *)
+            terminal's, so only a run on it takes them ({{!signals}Signals}),
+            and one run at a time holds it ({!run}). A terminal the process
+            serves, such as a pseudo-terminal it opened or a remote session, is
+            not: it reports its size itself (mode 2048). *)
     on_fatal : string -> unit;
         (** [on_fatal reset] keeps [reset], the bytes that undo what the run
             set, for the backend to write to its terminal itself, with the
@@ -500,20 +500,24 @@ val stop_job : 'msg app -> unit
     process's group, and returns once the job is continued. Raw mode turns the
     suspend character into a key: an application that wants Ctrl+Z to suspend
     calls [stop_job] on it. Nothing happens if SIGTSTP was ignored when the run
-    began, as nothing could continue the job. *)
+    began, as nothing could continue the job, or if the run's terminal is not
+    the controlling terminal ({!Backend.t}'s [controlling]): the job is not that
+    terminal's, and stopping it would stop every other session. *)
 
 (** {1:signals Signals}
 
-    When its terminal is the process's controlling terminal ({!Backend.t}'s
-    [controlling]), a run takes SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGTSTP and
-    SIGABRT if their action is the default when it begins, as X/Open Curses
-    allows; an application that installed its own action keeps it. SIGWINCH and
-    SIGCONT are taken always, and a handler installed before is still called.
-    The handlers record the signal for each run it concerns and wake it
-    ({!Backend.wake_fd}); the loop acts on it in its next turn, and the actions
-    are restored when the run ends. The window and job-control signals
-    (SIGWINCH, SIGCONT, SIGTSTP) concern the runs on the controlling terminal;
-    the others every run of the process, such as the sessions a server runs.
+    Ending the process is the process's affair; the window and job control are
+    its controlling terminal's. So a run on a terminal, whichever, takes SIGINT,
+    SIGTERM, SIGHUP, SIGQUIT and SIGABRT, and a run on the controlling terminal
+    ({!Backend.t}'s [controlling]) also SIGTSTP, if their action is the default
+    when it begins, as X/Open Curses allows; an application that installed its
+    own action keeps it. A run on the controlling terminal takes SIGWINCH and
+    SIGCONT always, and a handler installed before is still called. The handlers
+    record the signal for each run it concerns and wake it ({!Backend.wake_fd}):
+    SIGWINCH, SIGCONT and SIGTSTP concern the runs on the controlling terminal,
+    the others every run of the process, such as the sessions a server runs. The
+    loop acts on it in its next turn. Runs side by side take a signal together,
+    and the action it had comes back when the last of them ends.
 
     - SIGINT, SIGTERM, SIGHUP, SIGQUIT end the process, and every run with it.
       The run whose loop acts on the signal first gives its terminal back, as

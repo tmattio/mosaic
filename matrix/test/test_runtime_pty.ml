@@ -257,7 +257,7 @@ let test_background_continue_stops_again () =
    reset by the path an abort takes, and the process ends by the signal. An
    abort resets both. *)
 
-let served_terminal f =
+let served_terminal ?(mode = "served") f =
   let master, slave = Pty.open_pty () in
   Pty.set_nonblock master;
   let path =
@@ -267,7 +267,7 @@ let served_terminal f =
   in
   let session =
     let pty =
-      Pty.spawn ~prog:child ~args:[ "served"; path ]
+      Pty.spawn ~prog:child ~args:[ mode; path ]
         ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
         ()
     in
@@ -300,6 +300,21 @@ let test_termination_ends_every_run () =
   | _ -> fail "expected the process to end by its signal");
   await ~from s "\027[?1049l";
   is_true ~msg:"the terminal cooked" (cooked s);
+  await ~from:served_from served "\027[?1049l";
+  is_true ~msg:"the served terminal cooked" (served_cooked slave)
+
+(* A process whose only run is a session it serves, as a server's: a
+   termination signal resets that session's terminal before the process
+   ends. *)
+let test_termination_resets_a_served_session () =
+  served_terminal ~mode:"only-served" @@ fun s served slave ->
+  await served "SERVED";
+  is_false ~msg:"the served terminal is raw" (served_cooked slave);
+  let served_from = mark served in
+  Unix.kill s.pid Sys.sigterm;
+  (match wait_exit s with
+  | WSIGNALED n -> equal ~msg:"ends by SIGTERM" int Sys.sigterm n
+  | _ -> fail "expected the process to end by its signal");
   await ~from:served_from served "\027[?1049l";
   is_true ~msg:"the served terminal cooked" (served_cooked slave)
 
@@ -346,6 +361,8 @@ let () =
              test "a termination signal ends every run"
                test_termination_ends_every_run;
              test "an abort resets every run" test_abort_resets_every_run;
+             test "a termination signal resets a served session"
+               test_termination_resets_a_served_session;
            ]);
       group "Handoff"
         (if not supported then []

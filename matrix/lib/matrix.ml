@@ -1315,15 +1315,21 @@ let interrupting_signals = [ Sys.sigint; Sys.sigquit ]
 let take_signal t s ~always ~restart =
   if signal_take s always restart then t.taken <- s :: t.taken
 
+(* The signals that end the process concern every run on a terminal; the
+   window and job-control signals come from the controlling terminal
+   only. *)
 let take_signals t =
   t.tstp_ignored <- signal_ignored Sys.sigtstp;
-  take_signal t Sys.sigwinch ~always:true ~restart:true;
-  take_signal t Sys.sigcont ~always:true ~restart:true;
-  take_signal t Sys.sigtstp ~always:false ~restart:true;
-  take_signal t Sys.sigabrt ~always:false ~restart:true;
-  List.iter
-    (fun s -> take_signal t s ~always:false ~restart:false)
-    [ Sys.sigint; Sys.sigterm; Sys.sighup; Sys.sigquit ];
+  if t.backend.controlling then (
+    take_signal t Sys.sigwinch ~always:true ~restart:true;
+    take_signal t Sys.sigcont ~always:true ~restart:true;
+    take_signal t Sys.sigtstp ~always:false ~restart:true);
+  if t.backend.input_is_tty || t.backend.output_is_tty || t.backend.controlling
+  then (
+    take_signal t Sys.sigabrt ~always:false ~restart:true;
+    List.iter
+      (fun s -> take_signal t s ~always:false ~restart:false)
+      [ Sys.sigint; Sys.sigterm; Sys.sighup; Sys.sigquit ]);
   push_undo t (fun ~exiting ->
       if exiting then (
         List.iter signal_restore t.taken;
@@ -1540,7 +1546,8 @@ let release t f =
 
 let stop_job t =
   check t;
-  if not t.tstp_ignored then release t signal_stop_group
+  if t.backend.controlling && not t.tstp_ignored then
+    release t signal_stop_group
 
 (* The loop *)
 
@@ -1840,11 +1847,8 @@ let probe t =
       await t ~from:b.sent [ b ];
       t.anchor <- None))
 
-(* The signals are the process's, and a terminal's window and job-control
-   signals come from the controlling terminal only: a run takes them when
-   that is its terminal. *)
 let setup t =
-  if t.backend.controlling then take_signals t;
+  take_signals t;
   take_fatal_reset t;
   take_raw_mode t;
   probe t;

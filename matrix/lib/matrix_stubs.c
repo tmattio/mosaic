@@ -315,26 +315,38 @@ static int system_signal(value s) {
 }
 
 /* Takes [s] if its action is the default, or whatever it is when [always].
-   A signal already taken is left as it is. [restart] resumes the system
-   calls the signal interrupts. */
+   [restart] resumes the system calls the signal interrupts. Runs side by
+   side take a signal together: the first installs the handler, and the
+   action it replaced comes back when the last gives it back. */
+static int takers[SIGNALS];
+static pthread_mutex_t takers_lock = PTHREAD_MUTEX_INITIALIZER;
+
 CAMLprim value matrix_signal_take(value vs, value always, value restart) {
   int s = system_signal(vs);
   struct sigaction old, sa;
-  if (ours[s]) return Val_false;
-  if (sigaction(s, NULL, &old) != 0) return Val_false;
-  int is_default = !(old.sa_flags & SA_SIGINFO) && old.sa_handler == SIG_DFL;
-  if (!Bool_val(always) && !is_default) return Val_false;
-  memset(&sa, 0, sizeof sa);
-  sa.sa_sigaction = on_signal;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_SIGINFO | (Bool_val(restart) ? SA_RESTART : 0);
-  previous[s] = old;
-  ours[s] = 1;
-  if (sigaction(s, &sa, NULL) != 0) {
-    ours[s] = 0;
-    return Val_false;
+  int taken = 0;
+  pthread_mutex_lock(&takers_lock);
+  if (ours[s]) {
+    takers[s]++;
+    taken = 1;
+  } else if (sigaction(s, NULL, &old) == 0) {
+    int is_default = !(old.sa_flags & SA_SIGINFO) && old.sa_handler == SIG_DFL;
+    if (Bool_val(always) || is_default) {
+      memset(&sa, 0, sizeof sa);
+      sa.sa_sigaction = on_signal;
+      sigemptyset(&sa.sa_mask);
+      sa.sa_flags = SA_SIGINFO | (Bool_val(restart) ? SA_RESTART : 0);
+      previous[s] = old;
+      ours[s] = 1;
+      if (sigaction(s, &sa, NULL) == 0) {
+        takers[s] = 1;
+        taken = 1;
+      } else
+        ours[s] = 0;
+    }
   }
-  return Val_true;
+  pthread_mutex_unlock(&takers_lock);
+  return Val_bool(taken);
 }
 
 /* Whether the action of [s] is to ignore it. */
@@ -345,13 +357,16 @@ CAMLprim value matrix_signal_ignored(value vs) {
   return Val_bool(!(old.sa_flags & SA_SIGINFO) && old.sa_handler == SIG_IGN);
 }
 
-/* Puts back the action [s] had before it was taken. */
+/* Gives [s] back: the action it had before it was taken comes back once
+   no run holds it. */
 CAMLprim value matrix_signal_restore(value vs) {
   int s = system_signal(vs);
-  if (ours[s]) {
+  pthread_mutex_lock(&takers_lock);
+  if (ours[s] && --takers[s] == 0) {
     ours[s] = 0;
     sigaction(s, &previous[s], NULL);
   }
+  pthread_mutex_unlock(&takers_lock);
   return Val_unit;
 }
 
@@ -380,6 +395,7 @@ CAMLprim value matrix_signal_raise(value vs) {
   sigemptyset(&dfl.sa_mask);
   sigaction(s, &dfl, NULL);
   ours[s] = 0;
+  takers[s] = 0;
   unblock(s);
   raise(s);
   return Val_unit;

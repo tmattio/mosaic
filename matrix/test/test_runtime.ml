@@ -2511,17 +2511,26 @@ let test_release_signal_dispositions () =
     is_false ~msg:"TERM given back" (caught sigterm))
 
 (* A terminal that is not the controlling one, such as a pseudo-terminal the
-   process serves, gets none of the process's signals: its run takes none. *)
-let test_signals_only_on_the_controlling_terminal () =
-  if linux && not (caught sigterm) then (
-    let f = fake ~tty:true () in
-    f.answer <- probe_answer;
-    Matrix.run
-      ~backend:{ (backend f) with controlling = false }
-      (fun _ ->
+   process serves, gets none of the window and job-control signals: its run
+   takes only those that end the process. Two runs take them together, and
+   the action comes back when the last one ends. *)
+let test_signals_of_a_served_terminal () =
+  if linux && (not (caught sigterm)) && not (caught sigwinch) then (
+    let served () =
+      let f = fake ~tty:true () in
+      f.answer <- probe_answer;
+      { (backend f) with controlling = false }
+    in
+    Matrix.run ~backend:(served ()) (fun _ ->
+        List.iter
+          (fun (name, s) -> is_true ~msg:("taken: " ^ name) (caught s))
+          [ ("TERM", sigterm); ("HUP", sighup); ("INT", sigint) ];
         List.iter
           (fun (name, s) -> is_false ~msg:("not taken: " ^ name) (caught s))
-          [ ("TERM", sigterm); ("HUP", sighup); ("WINCH", sigwinch) ]))
+          [ ("WINCH", sigwinch); ("TSTP", sigtstp) ];
+        Matrix.run ~backend:(served ()) ignore;
+        is_true ~msg:"still taken after the other run" (caught sigterm));
+    is_false ~msg:"given back with the last run" (caught sigterm))
 
 let peek_signal number =
   let behavior = Sys.signal number Sys.Signal_ignore in
@@ -2882,8 +2891,7 @@ let () =
       group "Signals"
         [
           test "dispositions while released" test_release_signal_dispositions;
-          test "signals only on the controlling terminal"
-            test_signals_only_on_the_controlling_terminal;
+          test "signals of a served terminal" test_signals_of_a_served_terminal;
           test "signals left to the application"
             test_signals_left_to_the_application;
           test "stop_job when SIGTSTP is ignored"

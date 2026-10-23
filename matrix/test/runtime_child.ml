@@ -2,7 +2,8 @@
    READY, and acts on keys: [e] runs a shell command with the terminal given
    to it, [i] gives the terminal away while it sleeps, [a] aborts, [q]
    quits. With the arguments [served PATH], it also runs a second session on
-   the terminal at [PATH], in a domain of its own, which draws SERVED. *)
+   the terminal at [PATH], in a domain of its own, which draws SERVED; with
+   [only-served PATH], it runs that session alone. *)
 
 let ready app =
   let frames = ref 0 in
@@ -51,6 +52,7 @@ let served path =
 
 let () =
   match Sys.argv with
+  | [| _; "only-served"; path |] -> Domain.join (served path)
   | [| _; "served"; path |] ->
       let session = served path in
       Matrix.run ready;
