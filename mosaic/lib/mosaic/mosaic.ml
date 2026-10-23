@@ -184,11 +184,19 @@ let map (f : 'a -> 'b) (view : 'a t) : 'b t = Vnode.map f view
 let compile ~(dispatch : 'msg -> unit) (view : 'msg t) : unit Vnode.t =
   Vnode.map dispatch view
 
+type 'msg mailbox = { dispatch : 'msg -> unit; send : 'msg -> unit }
+
+let map_mailbox f mailbox =
+  {
+    dispatch = (fun msg -> mailbox.dispatch (f msg));
+    send = (fun msg -> mailbox.send (f msg));
+  }
+
 module Cmd = struct
   type 'msg t =
     | None
     | Batch of 'msg t list
-    | Perform of (('msg -> unit) -> unit)
+    | Perform of ('msg mailbox -> unit)
     | Exec of (unit -> 'msg)
     | Suspend
     | Quit
@@ -224,7 +232,7 @@ module Cmd = struct
     match cmd with
     | None -> None
     | Batch cmds -> Batch (List.map (map f) cmds)
-    | Perform g -> Perform (fun dispatch -> g (fun msg -> dispatch (f msg)))
+    | Perform g -> Perform (fun mailbox -> g (map_mailbox f mailbox))
     | Exec g -> Exec (fun () -> f (g ()))
     | Suspend -> Suspend
     | Quit -> Quit
@@ -271,8 +279,6 @@ module Sub = struct
           callbacks)
       |> List.iter (fun f -> f ())
   end
-
-  type 'msg mailbox = { dispatch : 'msg -> unit; send : 'msg -> unit }
 
   type 'msg t =
     | None
@@ -358,14 +364,7 @@ module Sub = struct
     | On_color_scheme g ->
         On_color_scheme (fun scheme -> Option.map f (g scheme))
     | Worker (id, g) ->
-        Worker
-          ( id,
-            fun stop mailbox ->
-              g stop
-                {
-                  dispatch = (fun msg -> mailbox.dispatch (f msg));
-                  send = (fun msg -> mailbox.send (f msg));
-                } )
+        Worker (id, fun stop mailbox -> g stop (map_mailbox f mailbox))
 end
 
 type ('model, 'msg) app = {
@@ -412,9 +411,8 @@ let nanoseconds seconds = Float.to_int (Float.round (seconds *. 1e9))
    request for a frame, a wake for a driver that waits on quiescence, or the
    exception that work raised, which ends the run. *)
 type 'msg post =
-  | Message of 'msg
-  | From of Sub.Stop.t * 'msg
-  | Sent of Sub.Stop.t * 'msg * latch
+  | Message of Sub.Stop.t option * 'msg
+  | Sent of Sub.Stop.t option * 'msg * latch
   | Redraw
   | Wake
   | Failed of exn * Printexc.raw_backtrace
@@ -447,8 +445,7 @@ type ('model, 'msg) runtime = {
   loop_thread : int;
   (* The workers running, by id, and those the subscriptions declare. *)
   mutable workers : (string * Sub.Stop.t) list;
-  mutable worker_subs :
-    (string * (Sub.Stop.t -> 'msg Sub.mailbox -> unit)) list;
+  mutable worker_subs : (string * (Sub.Stop.t -> 'msg mailbox -> unit)) list;
   (* Senders waiting for the loop to take their message wait on [taken]
      until it has, or the run is [closed]. *)
   sync : Mutex.t;
@@ -525,12 +522,6 @@ let render_static_view runtime (view : _ t) =
   let used_rows = Matrix.Grid.active_height grid in
   (grid, used_rows)
 
-(* Work done off the loop dispatches through it: the message is applied on
-   the loop's thread, in a later turn. *)
-let post_msg runtime msg =
-  Atomic.incr runtime.posted_msgs;
-  Matrix.post runtime.matrix_app (Message msg)
-
 (* Runs [work] off the loop with [executor]. Its exception is the run's: the
    loop raises it, with the backtrace of where [work] raised it. *)
 let off_loop runtime executor work =
@@ -545,20 +536,22 @@ let release_senders runtime latch =
       Option.iter (fun latch -> latch.received <- true) latch;
       Condition.broadcast runtime.taken)
 
-(* A worker's way to the loop. Its messages are dropped once its stop is
-   requested, those already posted included: the loop drops them when it
-   takes them. An exception it raises after that is dropped too. *)
-let start_worker runtime id f =
-  let stop = Sub.Stop.create () in
+let stopped = function Some stop -> Sub.Stop.requested stop | None -> false
+
+(* The way work done off the loop gives it messages, applied on the loop's
+   thread in a later turn. A worker's, with its [stop], gives nothing once
+   its stop is requested, and the loop drops what it gave before and takes
+   after. *)
+let mailbox ?stop runtime =
   let dispatch msg =
-    if not (Sub.Stop.requested stop) then (
+    if not (stopped stop) then (
       Atomic.incr runtime.posted_msgs;
-      Matrix.post runtime.matrix_app (From (stop, msg)))
+      Matrix.post runtime.matrix_app (Message (stop, msg)))
   in
   let send msg =
     if Thread.id (Thread.self ()) = runtime.loop_thread then
-      invalid_arg "Mosaic.Sub.worker: send on the loop's thread";
-    if not (Sub.Stop.requested stop) then (
+      invalid_arg "Mosaic: send on the loop's thread";
+    if not (stopped stop) then (
       let latch = { received = false } in
       Atomic.incr runtime.posted_msgs;
       Matrix.post runtime.matrix_app (Sent (stop, msg, latch));
@@ -567,8 +560,13 @@ let start_worker runtime id f =
             Condition.wait runtime.taken runtime.sync
           done))
   in
+  { dispatch; send }
+
+(* An exception a worker raises after its stop is requested is dropped. *)
+let start_worker runtime id f =
+  let stop = Sub.Stop.create () in
   off_loop runtime runtime.executor (fun () ->
-      try f stop { Sub.dispatch; send }
+      try f stop (mailbox ~stop runtime)
       with exn when Sub.Stop.requested stop -> ignore exn);
   (id, stop)
 
@@ -577,7 +575,7 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
   | Cmd.None -> ()
   | Cmd.Batch cmds -> List.iter (process_cmd runtime) cmds
   | Cmd.Perform f ->
-      off_loop runtime runtime.process_perform (fun () -> f (post_msg runtime))
+      off_loop runtime runtime.process_perform (fun () -> f (mailbox runtime))
   | Cmd.Exec f -> push_msg runtime (Matrix.release runtime.matrix_app f)
   | Cmd.Suspend -> Matrix.stop_job runtime.matrix_app
   | Cmd.Quit -> runtime.quit <- true
@@ -1171,27 +1169,22 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
       | Timer fired ->
           timer fired;
           loop ()
-      | Posted (Message msg) ->
+      | Posted (Message (stop, msg)) ->
           (* Applied now, so the turn's budget counts its update. *)
           Atomic.decr runtime.posted_msgs;
-          push_msg runtime msg;
-          process_pending_msgs runtime;
+          if not (stopped stop) then (
+            push_msg runtime msg;
+            process_pending_msgs runtime);
           loop ()
       | Posted Redraw ->
           redraw ();
-          loop ()
-      | Posted (From (stop, msg)) ->
-          Atomic.decr runtime.posted_msgs;
-          if not (Sub.Stop.requested stop) then (
-            push_msg runtime msg;
-            process_pending_msgs runtime);
           loop ()
       | Posted (Sent (stop, msg, latch)) ->
           Atomic.decr runtime.posted_msgs;
           Fun.protect
             ~finally:(fun () -> release_senders runtime (Some latch))
             (fun () ->
-              if not (Sub.Stop.requested stop) then (
+              if not (stopped stop) then (
                 push_msg runtime msg;
                 process_pending_msgs runtime));
           loop ()

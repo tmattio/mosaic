@@ -759,6 +759,35 @@ val map : ('a -> 'b) -> 'a t -> 'b t
     Use [map] to embed a child component whose message type differs from the
     parent's. *)
 
+(** {1:off_loop Work off the loop} *)
+
+type 'msg mailbox = {
+  dispatch : 'msg -> unit;
+      (** [dispatch msg] queues [msg] for the loop and returns: it never blocks.
+          The queue has no bound, so work that dispatches faster than the loop
+          applies its messages grows memory, and collecting it slows the loop.
+      *)
+  send : 'msg -> unit;
+      (** [send msg] queues [msg] as [dispatch] does and returns once the loop
+          has taken it and [update] applied it, or the run has ended: work that
+          sends keeps pace with the loop. Work that produces values faster than
+          they are shown, such as progress, keeps the latest and sends it when
+          the previous [send] returns.
+
+          [send] waits for the loop, so it deadlocks the loop's thread and
+          anything the loop waits for: it raises [Invalid_argument] on the
+          loop's thread, and must not be called while holding a lock that
+          [update], [view] or a command takes, or from a fiber or a coroutine
+          that shares the loop's thread. *)
+}
+(** The type for the way work done off the loop ({!Cmd.val-perform},
+    {!Sub.val-worker}) gives the program messages, from any thread, any number
+    of times. Each piece of work's messages come in the order it gave them; the
+    loop applies each with [update] when it takes it, a step of a turn as an
+    event is. A worker's give nothing once its stop is requested, and a message
+    it gave before and the loop has not taken is dropped: no message of a worker
+    reaches [update] after the update that removed it. *)
+
 (** {1:commands Commands} *)
 
 (** Side-effects issued by the application.
@@ -772,10 +801,8 @@ module Cmd : sig
     | None  (** No command. Equivalent to [batch []]. *)
     | Batch of 'msg t list
         (** Start the commands in list order. See {!val-batch}. *)
-    | Perform of (('msg -> unit) -> unit)
-        (** Execute an arbitrary side-effecting function. The function receives
-            a {e dispatch} callback and may call it zero or more times, from any
-            thread. See {!val-perform}. *)
+    | Perform of ('msg mailbox -> unit)
+        (** Run a function off the loop. See {!val-perform}. *)
     | Exec of (unit -> 'msg)
         (** Give the terminal to a function and dispatch its result. See
             {!val-exec}. *)
@@ -820,21 +847,19 @@ module Cmd : sig
       the loop ({!val-perform}) starts in that order too, but its messages
       arrive in the order it finishes, which nothing promises. *)
 
-  val perform : (('msg -> unit) -> unit) -> 'msg t
-  (** [perform f] runs [f dispatch] off the loop, by {!val-run}'s
+  val perform : ('msg mailbox -> unit) -> 'msg t
+  (** [perform f] runs [f mailbox] off the loop, by {!val-run}'s
       [process_perform] (by default a thread of a helper domain), so that long
-      work never holds the loop.
-
-      [f] may call [dispatch msg] any number of times, from any thread; each
-      call queues [msg] for the loop, which applies it with [update] when it
-      takes it, a step of a turn as an event is. Each thread's messages come in
-      the order it dispatched them.
+      work never holds the loop. [f] gives the program messages with
+      [mailbox.dispatch], or [mailbox.send] to keep pace with the loop
+      ({!type-mailbox}).
 
       An exception [f] raises ends the run: {!val-run} gives the terminal back
       and raises it, with the backtrace of where [f] raised it (when backtraces
-      are recorded, {!Printexc.record_backtrace}). After the run, [dispatch]
-      does nothing, and an exception from [f] has no run left to end: it is
-      dropped. *)
+      are recorded, {!Printexc.record_backtrace}). After the run, [mailbox] does
+      nothing, and an exception from [f] has no run left to end: it is dropped.
+      [f] cannot be stopped: work the program may stop wanting is a
+      {!Sub.val-worker}. *)
 
   val exec : (unit -> 'msg) -> 'msg t
   (** [exec f] gives the terminal to [f] and dispatches [f ()]'s result once the
@@ -985,31 +1010,6 @@ module Sub : sig
         runs on the loop, so it should only unblock the worker. An exception it
         raises ends the run, or is dropped when the run is ending. *)
   end
-
-  type 'msg mailbox = {
-    dispatch : 'msg -> unit;
-        (** [dispatch msg] queues [msg] for the loop and returns: it never
-            blocks. The queue has no bound, so a worker that dispatches faster
-            than the loop applies its messages grows memory, and collecting it
-            slows the loop. *)
-    send : 'msg -> unit;
-        (** [send msg] queues [msg] as [dispatch] does and returns once the loop
-            has taken it and [update] applied it, or the run has ended: a worker
-            that sends keeps pace with the loop. A worker that produces values
-            faster than they are shown, such as progress, keeps the latest and
-            sends it when the previous [send] returns.
-
-            [send] waits for the loop, so it deadlocks the loop's thread and
-            anything the loop waits for: it raises [Invalid_argument] on the
-            loop's thread, and must not be called while holding a lock that
-            [update], [view] or a command takes, or from a fiber or a coroutine
-            that shares the loop's thread. *)
-  }
-  (** The type for the way a worker gives the program messages. Messages of one
-      worker come in the order it gave them. Once the worker's stop is requested
-      both do nothing, and a message given before but not yet taken by the loop
-      is dropped: no message of a worker reaches [update] after the update that
-      removed it. *)
 
   (** The type for subscriptions. *)
   type 'msg t =
@@ -1170,9 +1170,10 @@ module Sub : sig
   val worker : id:string -> (Stop.t -> 'msg mailbox -> unit) -> 'msg t
   (** [worker ~id f] runs [f stop mailbox] off the loop, on {!val-run}'s
       [process_perform] executor, from the update whose subscriptions first
-      declare [id] (see {{!workers}Workers}). Declaring [id] again, with any
-      function, keeps the worker that runs. [f] returning ends the worker; it
-      starts again only if [id] leaves the subscriptions and returns.
+      declare [id] (see {{!workers}Workers}), and gives the program messages
+      with [mailbox] ({!type-mailbox}). Declaring [id] again, with any function,
+      keeps the worker that runs. [f] returning ends the worker; it starts again
+      only if [id] leaves the subscriptions and returns.
 
       An exception [f] raises ends the run, as one from {!Cmd.val-perform} does,
       unless its stop was requested before: the program no longer waits for

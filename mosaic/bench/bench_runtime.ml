@@ -294,7 +294,9 @@ let loop_setup ~pause () =
     {
       Mosaic.init =
         (fun () ->
-          (0, Mosaic.Cmd.perform (fun d -> dispatch := fun () -> d `Nothing)));
+          ( 0,
+            Mosaic.Cmd.perform (fun m ->
+                dispatch := fun () -> m.dispatch `Nothing) ));
       update =
         (fun msg n ->
           match msg with `Key -> (n + 1, none) | `Nothing -> (n, none));

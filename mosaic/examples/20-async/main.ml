@@ -61,7 +61,7 @@ let launch_task model i =
              (if running_count > 1 then "s" else ""))
       in
       let perform_cmd =
-        Cmd.perform (fun dispatch ->
+        Cmd.perform (fun { dispatch; _ } ->
             let delay = delay_for_task i in
             Unix.sleepf delay;
             if i = 4 then dispatch (Task_failed (i, "connection timeout"))

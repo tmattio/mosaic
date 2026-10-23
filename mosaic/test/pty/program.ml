@@ -115,9 +115,9 @@ let storm () =
       dispatch (`Msg (p, i))
     done
   in
-  let thread p = M.Cmd.perform (produce p) in
+  let thread p = M.Cmd.perform (fun m -> produce p m.dispatch) in
   let domain p =
-    M.Cmd.perform (fun dispatch ->
+    M.Cmd.perform (fun { dispatch; _ } ->
         Domain.join (Domain.spawn (fun () -> produce p dispatch)))
   in
   let writes () =
@@ -152,7 +152,7 @@ let storm () =
    a domain of its own; the view shows the keys and the messages applied. *)
 let flood ~domain () =
   let t0 = now () in
-  let produce stop (mailbox : _ M.Sub.mailbox) =
+  let produce stop (mailbox : _ M.mailbox) =
     let until = now () +. 3. in
     while now () < until && not (M.Sub.Stop.requested stop) do
       mailbox.dispatch `Other

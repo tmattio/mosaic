@@ -379,7 +379,8 @@ let%expect_test "probe reports perform and message quiescence" =
     ~process_perform:(fun thunk -> Queue.push thunk pending)
     ~probe:(fun p -> probe := Some p)
     (app
-       ~init_cmd:(Mosaic.Cmd.perform (fun dispatch -> dispatch (Note "loaded")))
+       ~init_cmd:
+         (Mosaic.Cmd.perform (fun { dispatch; _ } -> dispatch (Note "loaded")))
        ())
     [
       `Snap;
@@ -555,7 +556,7 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
   let hammer =
     Mosaic.Cmd.batch
       (List.init thread_count (fun _ ->
-           Mosaic.Cmd.perform (fun dispatch ->
+           Mosaic.Cmd.perform (fun { dispatch; _ } ->
                for _ = 1 to per_thread do
                  dispatch Tick
                done)))
@@ -2408,7 +2409,7 @@ let%expect_test "frames keep coming while posted messages are applied" =
           match msg with
           | `Go ->
               ( n,
-                Mosaic.Cmd.perform (fun dispatch ->
+                Mosaic.Cmd.perform (fun { dispatch; _ } ->
                     for _ = 1 to 1000 do
                       dispatch `Work
                     done) )
@@ -2542,7 +2543,7 @@ let read log = Mutex.protect locked (fun () -> List.rev !log)
 let%expect_test "a worker runs while declared and stops when dropped" =
   let log = ref [] and received = Atomic.make 0 and late = Atomic.make 0 in
   let ended = Atomic.make false in
-  let worker stop (mailbox : _ Mosaic.Sub.mailbox) =
+  let worker stop (mailbox : _ Mosaic.mailbox) =
     Mosaic.Sub.Stop.on_request stop (fun () -> record log "stop requested");
     while not (Mosaic.Sub.Stop.requested stop) do
       mailbox.dispatch `Tick;
@@ -2593,7 +2594,7 @@ let%expect_test "a worker runs while declared and stops when dropped" =
 
 let%expect_test "send returns once update has applied the message" =
   let log = ref [] in
-  let worker _ (mailbox : _ Mosaic.Sub.mailbox) =
+  let worker _ (mailbox : _ Mosaic.mailbox) =
     for i = 1 to 3 do
       mailbox.send i;
       record log (Printf.sprintf "send %d returned" i)
@@ -2632,7 +2633,7 @@ let%expect_test "send on the loop's thread raises" =
       view = (fun () -> Mosaic.text "send");
       subscriptions =
         (fun () ->
-          Mosaic.Sub.worker ~id:"w" (fun _ (mailbox : _ Mosaic.Sub.mailbox) ->
+          Mosaic.Sub.worker ~id:"w" (fun _ (mailbox : _ Mosaic.mailbox) ->
               mailbox.send ()));
     }
   in
@@ -2641,7 +2642,7 @@ let%expect_test "send on the loop's thread raises" =
    with
   | () -> print_endline "no exception"
   | exception Invalid_argument m -> print_endline m);
-  [%expect {| Mosaic.Sub.worker: send on the loop's thread |}]
+  [%expect {| Mosaic: send on the loop's thread |}]
 
 let%expect_test
     "a worker's exception ends the run, unless its stop was requested" =
@@ -2750,7 +2751,7 @@ let%expect_test "a posted message that changes nothing asks for no frame" =
      loop owes a frame when it next goes idle. *)
   let dispatch = ref ignore and step = ref 0 in
   let application =
-    app ~init_cmd:(Mosaic.Cmd.perform (fun d -> dispatch := d)) ()
+    app ~init_cmd:(Mosaic.Cmd.perform (fun m -> dispatch := m.dispatch)) ()
   in
   let t =
     Matrix_test.create ~width:40 ~height:1
@@ -3054,3 +3055,34 @@ let%expect_test "the driver fails on an animation that never ends" =
   | () -> print_endline "the driver returned"
   | exception Failure m -> print_endline m);
   [%expect {| drive: the view never settles (an endless animation?) |}]
+
+let%expect_test "a perform's send returns once update has applied the message" =
+  let log = ref [] in
+  let application =
+    {
+      Mosaic.init =
+        (fun () ->
+          ( 0,
+            Mosaic.Cmd.perform (fun mailbox ->
+                for i = 1 to 2 do
+                  mailbox.send i;
+                  record log (Printf.sprintf "send %d returned" i)
+                done) ));
+      update =
+        (fun i _ ->
+          Thread.delay 0.005;
+          record log (Printf.sprintf "applied %d" i);
+          (i, Mosaic.Cmd.none));
+      view = (fun _ -> Mosaic.text "send");
+      subscriptions = (fun _ -> Mosaic.Sub.none);
+    }
+  in
+  run_live [ Until (fun () -> List.length (read log) = 4); End ] application;
+  List.iter print_endline (read log);
+  [%expect
+    {|
+    applied 1
+    send 1 returned
+    applied 2
+    send 2 returned
+    |}]
