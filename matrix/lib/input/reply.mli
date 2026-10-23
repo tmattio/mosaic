@@ -108,3 +108,21 @@ type t =
 
 val pp : Format.formatter -> t -> unit
 (** [pp] formats a reply for debugging. *)
+
+(** {1:strings Reading control strings}
+
+    A control string's content is read to the reply its form says, by the rules
+    of the constructors above; content of no known form is kept as it is. *)
+
+val of_osc : string -> t
+(** [of_osc s] is the reply an OSC with content [s] is: {!Color} or {!Clipboard}
+    when [s] has their form, {!Osc} otherwise. *)
+
+val of_dcs : Ansi.Parser.sequence -> string -> t
+(** [of_dcs h s] is the reply a DCS with header [h] and data [s] is: {!Version},
+    {!Unit_id} or {!Termcap} when [h] and [s] have their form, {!Dcs} otherwise.
+*)
+
+val graphics : string -> t
+(** [graphics s] is the kitty graphics protocol's reply whose keys and message
+    are [s], the content of an APC after its [G]: {!Graphics}. *)

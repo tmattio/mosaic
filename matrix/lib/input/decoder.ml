@@ -246,169 +246,6 @@ let mouse cb x y ~released : Mouse_report.t option =
         ctrl = cb land 16 <> 0;
       }
 
-(* Strings *)
-
-let hex_digit c =
-  match c with
-  | '0' .. '9' -> Char.code c - 48
-  | 'a' .. 'f' -> Char.code c - 87
-  | 'A' .. 'F' -> Char.code c - 55
-  | _ -> -1
-
-(* [s] written as two hex digits per byte, as XTGETTCAP writes names and
-   values. *)
-let of_hex s =
-  let n = String.length s in
-  if n mod 2 <> 0 then None
-  else
-    let b = Bytes.create (n / 2) in
-    let rec go i =
-      if i >= n then Some (Bytes.unsafe_to_string b)
-      else
-        let h = hex_digit s.[i] and l = hex_digit s.[i + 1] in
-        if h < 0 || l < 0 then None
-        else (
-          Bytes.unsafe_set b (i / 2) (Char.unsafe_chr ((h lsl 4) lor l));
-          go (i + 2))
-    in
-    go 0
-
-(* A channel of 1 to 4 hex digits, scaled to 0..255 as XParseColor does. *)
-let channel s =
-  let n = String.length s in
-  if n < 1 || n > 4 then None
-  else
-    let rec go i v =
-      if i >= n then
-        let max = (1 lsl (4 * n)) - 1 in
-        Some (((v * 255) + (max / 2)) / max)
-      else
-        let d = hex_digit s.[i] in
-        if d < 0 then None else go (i + 1) ((v lsl 4) lor d)
-    in
-    go 0 0
-
-let rgb spec =
-  match String.split_on_char '/' spec with
-  | [ r; g; b ] when String.length r > 4 && String.sub r 0 4 = "rgb:" -> (
-      match
-        (channel (String.sub r 4 (String.length r - 4)), channel g, channel b)
-      with
-      | Some r, Some g, Some b -> Some (r, g, b)
-      | _ -> None)
-  | _ -> None
-
-let base64_value c =
-  match c with
-  | 'A' .. 'Z' -> Char.code c - 65
-  | 'a' .. 'z' -> Char.code c - 71
-  | '0' .. '9' -> Char.code c + 4
-  | '+' -> 62
-  | '/' -> 63
-  | _ -> -1
-
-(* Base64 (RFC 4648 §4), its padding optional. *)
-let of_base64 s =
-  let n = String.length s in
-  let n = if n > 0 && s.[n - 1] = '=' then n - 1 else n in
-  let n = if n > 0 && s.[n - 1] = '=' then n - 1 else n in
-  if n mod 4 = 1 || (String.length s > n && String.length s mod 4 <> 0) then
-    None
-  else
-    let out = Buffer.create (n * 3 / 4) in
-    let rec go i acc bits =
-      if i >= n then Some (Buffer.contents out)
-      else
-        let v = base64_value s.[i] in
-        if v < 0 then None
-        else
-          let acc = (acc lsl 6) lor v and bits = bits + 6 in
-          if bits >= 8 then (
-            Buffer.add_char out
-              (Char.unsafe_chr ((acc lsr (bits - 8)) land 0xFF));
-            go (i + 1) (acc land ((1 lsl (bits - 8)) - 1)) (bits - 8))
-          else go (i + 1) acc bits
-    in
-    go 0 0 0
-
-let split_at c s =
-  match String.index_opt s c with
-  | None -> (s, None)
-  | Some i ->
-      (String.sub s 0 i, Some (String.sub s (i + 1) (String.length s - i - 1)))
-
-let is_number s = s <> "" && String.for_all (fun c -> c >= '0' && c <= '9') s
-
-let osc_reply content : Reply.t =
-  let number, rest = split_at ';' content in
-  let color target spec =
-    match rgb spec with
-    | Some rgb -> Reply.Color { target; rgb }
-    | None -> Osc content
-  in
-  match (number, rest) with
-  | "10", Some spec -> color `Foreground spec
-  | "11", Some spec -> color `Background spec
-  | "12", Some spec -> color `Cursor spec
-  | "4", Some rest -> (
-      match split_at ';' rest with
-      | index, Some spec when is_number index && String.length index <= 9 ->
-          color (`Palette (int_of_string index)) spec
-      | _ -> Osc content)
-  | "52", Some rest -> (
-      match split_at ';' rest with
-      | selection, Some data -> (
-          match of_base64 data with
-          | Some data -> Clipboard { selection; data }
-          | None -> Osc content)
-      | _ -> Osc content)
-  | _ -> Osc content
-
-let termcap valid data : Reply.t option =
-  let entry s =
-    match split_at '=' s with
-    | name, None -> Option.map (fun n -> (n, None)) (of_hex name)
-    | name, Some value -> (
-        match (of_hex name, of_hex value) with
-        | Some n, Some v -> Some (n, Some v)
-        | _ -> None)
-  in
-  let entries = if data = "" then [] else String.split_on_char ';' data in
-  let rec go acc = function
-    | [] -> Some (Reply.Termcap { valid; entries = List.rev acc })
-    | e :: rest -> (
-        match entry e with Some e -> go (e :: acc) rest | None -> None)
-  in
-  go [] entries
-
-let dcs_reply (h : P.sequence) data : Reply.t =
-  let n = Params.count h.params in
-  let raw = Reply.Dcs { header = h; data } in
-  match (h.marker, h.intermediates, h.final) with
-  | Some '>', "", '|' when n = 0 -> Version data
-  | None, "!", '|' when n = 0 -> Unit_id data
-  | None, "+", 'r' when n = 1 -> (
-      match Params.value h.params 0 with
-      | Some ((0 | 1) as v) -> Option.value (termcap (v = 1) data) ~default:raw
-      | _ -> raw)
-  | _ -> raw
-
-(* A kitty graphics reply, [G keys ; message]. *)
-let apc_reply content : Reply.t =
-  let keys, message =
-    split_at ';' (String.sub content 1 (String.length content - 1))
-  in
-  let id =
-    List.find_map
-      (fun kv ->
-        match split_at '=' kv with
-        | "i", Some v when is_number v && String.length v <= 9 ->
-            Some (int_of_string v)
-        | _ -> None)
-      (String.split_on_char ',' keys)
-  in
-  Graphics { id; message = Option.value message ~default:"" }
-
 (* Decoders *)
 
 type state =
@@ -866,15 +703,23 @@ let string_end d intro ending emit =
   | `St | `Bel -> (
       match intro with
       | ']' ->
-          emit (Reply (if too_long then Too_long `Osc else osc_reply content))
+          emit
+            (Reply (if too_long then Too_long `Osc else Reply.of_osc content))
       | '_' ->
-          emit (Reply (if too_long then Too_long `Apc else apc_reply content))
+          emit
+            (Reply
+               (if too_long then Too_long `Apc
+                else
+                  (* The decoder begins no APC string but G's. *)
+                  Reply.graphics
+                    (String.sub content 1 (String.length content - 1))))
       | _ -> (
           (* A malformed DCS has no effect. *)
           match dcs with
           | Some h ->
               emit
-                (Reply (if too_long then Too_long `Dcs else dcs_reply h content))
+                (Reply
+                   (if too_long then Too_long `Dcs else Reply.of_dcs h content))
           | None -> ()))
 
 (* After a byte forwarded inside a string: the string ended if the parser
