@@ -58,7 +58,7 @@ type 'msg widget_callbacks =
       on_change : (int -> 'msg) option;
       on_activate : (int -> 'msg) option;
     }
-  | Canvas_callbacks of { on_draw : (Canvas.t -> delta:float -> unit) option }
+  | Canvas_callbacks of { on_draw : (Canvas.t -> dt:float -> unit) option }
   | Scroll_bar_callbacks of { on_change : (int -> 'msg) option }
   | Scroll_box_callbacks of { on_scroll : (Scroll.t -> 'msg) option }
   | Textarea_callbacks of {

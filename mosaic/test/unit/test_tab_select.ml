@@ -299,7 +299,7 @@ let render_tab_select ts ~width ~height =
   let node = Tab_select.node ts in
   layout_node node ~x:0 ~y:0 ~width ~height;
   let grid = make_grid ~width ~height () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   grid
 
 let truncation_keeps_cjk_graphemes_intact () =

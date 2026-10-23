@@ -195,7 +195,7 @@ let measure t ~known_dimensions ~available_space ~style:_ =
 
 let underline_char = "\xe2\x96\xac"
 
-let rec render t _self grid ~delta:_ =
+let rec render t _self grid ~dt:_ =
   let w = Renderable.width t.node in
   let h = Renderable.height t.node in
   if w <= 0 || h <= 0 then ()

@@ -525,7 +525,7 @@ let fragment_style_changes_repaint_inherited_components () =
   let grid = make_grid ~width:2 ~height:1 () in
   let blue = Ansi.Style.make ~fg:Ansi.Color.blue () in
   Text.set_text_style txt blue;
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   is_true ~msg:"inherited foreground repaints"
     (Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_fg grid 0));
   is_true ~msg:"explicit foreground remains green"
@@ -608,7 +608,7 @@ let wide_grapheme_cut_by_clip_leaves_border () =
       ~style:(Toffee.Style.default |> Toffee.Style.set_flex_shrink 0.)
       ~content:"\u{65E5}\u{672C}\u{8A9E}" ()
   in
-  Renderer.render_frame r ~width:7 ~height:3 ~delta:0.;
+  Renderer.render_frame r ~width:7 ~height:3 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen r) in
   let cell x = Matrix_grid.get_text grid (7 + x) in
   equal ~msg:"the last inner cell" string " " (cell 5);

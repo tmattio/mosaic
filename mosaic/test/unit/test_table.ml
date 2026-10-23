@@ -55,7 +55,7 @@ let render_with_layout tbl ~width ~height =
   let node = Table.node tbl in
   with_layout tbl ~width ~height;
   let grid = make_grid ~width ~height () in
-  Renderable.Private.render_full node ~grid ~delta:0.
+  Renderable.Private.render_full node ~grid ~dt:0.
 
 (* ── Props ── *)
 
@@ -526,7 +526,7 @@ let selection_can_be_visually_hidden () =
   let node = Table.node tbl in
   with_layout tbl ~width:10 ~height:1;
   let grid = make_grid ~width:10 ~height:1 () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   let background = Matrix_grid.get_bg grid (Matrix_grid.idx grid ~x:0 ~y:0) in
   is_true ~msg:"base background retained"
     (Ansi.Color.equal Ansi.Color.blue background)
@@ -541,9 +541,9 @@ let scroll_indicator_handles_tiny_layouts () =
   let node = Table.node tbl in
   let grid = make_grid ~width:1 ~height:1 () in
   with_layout tbl ~width:0 ~height:0;
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   with_layout tbl ~width:1 ~height:1;
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   equal ~msg:"one-column indicator" string "↓"
     (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:0 ~y:0))
 
@@ -618,7 +618,7 @@ let rich_cell_span_styles_apply () =
   let node = Table.node tbl in
   with_layout tbl ~width:5 ~height:1;
   let grid = make_grid ~width:5 ~height:1 () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   let idx = Matrix_grid.idx grid ~x:0 ~y:0 in
   equal ~msg:"cell text" string "B" (Matrix_grid.get_text grid idx);
   let style = Matrix_grid.get_style grid idx in
@@ -646,7 +646,7 @@ let auto_widths_follow_screen_width_method () =
   let node = Table.node tbl in
   layout_node node ~x:0 ~y:0 ~width:12 ~height:1;
   let grid = make_grid ~width:12 ~height:1 ~width_method:`Wcwidth () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   equal ~msg:"second column follows wcwidth measurement" string "X"
     (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:7 ~y:0))
 
@@ -664,12 +664,12 @@ let auto_widths_recompute_after_set_rows () =
   let node = Table.node tbl in
   layout_node node ~x:0 ~y:0 ~width:12 ~height:1;
   let grid = make_grid ~width:12 ~height:1 () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   equal ~msg:"initial column width" string "X"
     (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:3 ~y:0));
   Table.set_rows tbl [ [| Table.cell "aaaa"; Table.cell "X" |] ];
   let grid = make_grid ~width:12 ~height:1 () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   equal ~msg:"width follows the new data" string "X"
     (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:5 ~y:0))
 
@@ -811,7 +811,7 @@ let absent_selection_is_preserved () =
   equal ~msg:"Enter does not activate an absent row" (list int) [] !activations;
   with_layout tbl ~width:30 ~height:5;
   let grid = make_grid ~width:30 ~height:5 () in
-  Renderable.Private.render_full (Table.node tbl) ~grid ~delta:0.;
+  Renderable.Private.render_full (Table.node tbl) ~grid ~dt:0.;
   for i = 0 to 149 do
     match (Matrix_grid.get_style grid i).bg with
     | Some color ->

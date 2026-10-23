@@ -111,7 +111,7 @@ let border_width_sets_insets_and_lines () =
   is_true ~msg:"a side of width 0 takes nothing" (lp zero_lp b.left);
   layout_node node ~x:0 ~y:0 ~width:6 ~height:5;
   let grid = make_grid ~width:6 ~height:5 () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   let cell x y = Matrix_grid.get_text grid ((y * 6) + x) in
   equal ~msg:"a side of width 0 draws no line" string " " (cell 0 2);
   equal ~msg:"a wide side draws its line outermost" string "\u{2502}" (cell 5 2);

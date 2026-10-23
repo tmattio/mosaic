@@ -61,12 +61,12 @@ let paint_surface content ~height ~scroll_x =
     ~height:(float_of_int height);
   Text_surface.set_scroll_x surface scroll_x;
   let grid = Matrix_grid.create ~width:80 ~height:20 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   (renderer, node, grid)
 
 let paint (renderer, node, grid) =
   ignore (Sys.opaque_identity renderer : Renderer.t);
-  Renderable.Private.render node grid ~delta:0.
+  Renderable.Private.render node grid ~dt:0.
 
 let tall lines = String.concat "" (List.init lines (fun _ -> "one line\n"))
 
@@ -154,7 +154,7 @@ let viewport ?(wrap = `None) ?(rows = 20) ?(scroll = `Top) ?(scroll_x = 0)
       Text_surface.set_scroll_y surface (Text_surface.max_scroll_y surface / 2));
   Text_surface.set_scroll_x surface scroll_x;
   let grid = Matrix_grid.create ~width:80 ~height:rows () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   (renderer, node, grid)
 
 let span text = [ { Text_buffer.text; style = Ansi.Style.default } ]
@@ -191,9 +191,9 @@ let visible_lines =
    it. Equal counts across hidden sizes are therefore the measurement that
    repeated paint does not grow with hidden content. *)
 let paint_words (_, node, grid) =
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   let before = Gc.minor_words () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   int_of_float (Gc.minor_words () -. before)
 
 let paint_check () =

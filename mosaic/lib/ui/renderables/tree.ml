@@ -580,7 +580,7 @@ let handle_mouse t (event : Event.mouse) =
 
 (* ───── Rendering ───── *)
 
-let render t _self grid ~delta:_ =
+let render t _self grid ~dt:_ =
   let width = Renderable.width t.node in
   let height = Renderable.height t.node in
   if width <= 0 || height <= 0 then ()

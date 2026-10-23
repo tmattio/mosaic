@@ -20,7 +20,7 @@ let render_focused_view ?viewport_width renderer reconciler vnode =
   | None -> Renderer.blur renderer
 
 let do_frame ?(width = 40) ?(height = 20) renderer =
-  Renderer.render_frame renderer ~width ~height ~delta:0.
+  Renderer.render_frame renderer ~width ~height ~dt:0.
 
 let children_of renderer = Renderable.children (Renderer.root renderer)
 let child_count renderer = List.length (children_of renderer)

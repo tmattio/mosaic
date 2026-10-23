@@ -253,7 +253,7 @@ let selected_text t =
 
 (* ───── Rendering ───── *)
 
-let render t _self grid ~delta:_ =
+let render t _self grid ~dt:_ =
   let w = Renderable.width t.node and h = Renderable.height t.node in
   let ox = Renderable.x t.node and oy = Renderable.y t.node in
   let clip = Matrix_grid.clip_region grid in

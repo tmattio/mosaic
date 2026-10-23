@@ -333,8 +333,8 @@ let recalc_metrics t =
   Scroll_bar.set_viewport_size t.horizontal_bar vw
 
 (* Resolve accepted symbolic state before viewport culling. *)
-let update_scroll_box t ~delta =
-  let d = if Float.is_nan delta then 0. else Float.max 0. delta in
+let update_scroll_box t ~dt =
+  let d = if Float.is_nan dt then 0. else Float.max 0. dt in
   t.frame_clock <- t.frame_clock +. d;
   if Renderable.width t.node > 0 && Renderable.height t.node > 0 then (
     recalc_metrics t;
@@ -342,7 +342,7 @@ let update_scroll_box t ~delta =
 
 (* ───── Render ───── *)
 
-let render_scroll_box t _self grid ~delta:_ =
+let render_scroll_box t _self grid ~dt:_ =
   match t.props.background with
   | None -> ()
   | Some c ->
@@ -638,10 +638,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
   (* Wire update and render callbacks. The update hook lives on the content
      node so the offset settles right before its children are culled. *)
   Renderable.set_on_update content_node
-    (Some (fun _ ~delta -> update_scroll_box t ~delta));
+    (Some (fun _ ~dt -> update_scroll_box t ~dt));
   Renderable.set_render node (render_scroll_box t);
-  Renderable.set_on_frame node
-    (Some (fun _ ~delta -> handle_auto_scroll t delta));
+  Renderable.set_on_frame node (Some (fun _ ~dt -> handle_auto_scroll t dt));
   (* Wire resize notifications *)
   Renderable.set_on_resize viewport_node
     (Some (fun _ -> Renderable.request_render node));

@@ -90,7 +90,7 @@ let render_textarea ta ~width ~height =
   let node = Textarea.node ta in
   layout_node node ~x:0 ~y:0 ~width ~height;
   let grid = make_grid ~width ~height () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   grid
 
 let no_mod = Matrix_input.Keystroke.no_mods
@@ -139,7 +139,7 @@ let sized_style ~width ~height =
        (Toffee.Style.Dimension.length (Float.of_int height))
 
 let render_frame r ~width ~height =
-  Renderer.render_frame r ~width ~height ~delta:0.;
+  Renderer.render_frame r ~width ~height ~dt:0.;
   ignore (Renderer.render ~full:true r : string)
 
 let mouse kind : Matrix_input.Mouse_report.t =
@@ -1142,7 +1142,7 @@ let render_zero_size_no_crash () =
   let node = Textarea.node ta in
   layout_node node ~x:0 ~y:0 ~width:0 ~height:0;
   let grid = make_grid ~width:10 ~height:10 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   is_true ~msg:"render completed" true
 
 (* ── Edge Cases ── *)

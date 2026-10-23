@@ -36,7 +36,7 @@ module Arrow = struct
       Renderable.request_render t.node
     end
 
-  let render t _self grid ~delta:_ =
+  let render t _self grid ~dt:_ =
     let x = Renderable.x t.node in
     let y = Renderable.y t.node in
     let text = arrow_char t.direction in
@@ -449,9 +449,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?(position = 0)
   (* Arrow repeat via on_frame *)
   Renderable.set_on_frame node
     (Some
-       (fun _ ~delta ->
+       (fun _ ~dt ->
          if t.repeat_active then
-           let d = if Float.is_nan delta then 0. else max 0. delta in
+           let d = if Float.is_nan dt then 0. else max 0. dt in
            if t.repeat_delay > 0. then (
              let new_delay = t.repeat_delay -. d in
              t.repeat_delay <- new_delay;

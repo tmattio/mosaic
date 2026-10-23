@@ -514,10 +514,10 @@ let render_static_view runtime (view : _ t) =
   let vnode = compile ~dispatch:(fun _ -> ()) view in
   Reconciler.render reconciler ~viewport_width:width vnode;
   let measure_height = max 1 full_height in
-  Renderer.render_frame renderer ~width ~height:measure_height ~delta:0.;
+  Renderer.render_frame renderer ~width ~height:measure_height ~dt:0.;
   let required = Renderable.height (Renderer.root renderer) in
   if required > measure_height then
-    Renderer.render_frame renderer ~width ~height:required ~delta:0.;
+    Renderer.render_frame renderer ~width ~height:required ~dt:0.;
   let grid = Matrix.Screen.next_grid (Renderer.screen renderer) in
   let used_rows = Matrix.Grid.active_height grid in
   (grid, used_rows)
@@ -1126,8 +1126,7 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
     Fun.protect
       ~finally:(fun () -> runtime.delivering <- false)
       (fun () ->
-        Renderer.layout_frame runtime.renderer ~width ~height
-          ~delta:!frame_delta);
+        Renderer.layout_frame runtime.renderer ~width ~height ~dt:!frame_delta);
     max 1 (Renderable.height (Renderer.root runtime.renderer))
   in
   let finish_render () =
@@ -1157,7 +1156,7 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
         Matrix.draw runtime.matrix_app (fun _grid ->
             let width, height = Matrix.size runtime.matrix_app in
             Renderer.render_frame runtime.renderer ~width ~height
-              ~delta:!frame_delta;
+              ~dt:!frame_delta;
             scroll_hint ())
     | `Primary ->
         let rows = primary_required_rows () in

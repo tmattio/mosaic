@@ -84,7 +84,7 @@ type t = {
      when a presentation consumes it. *)
   scroll_hint : scroll_hint_state ref;
   (* Frame callbacks *)
-  mutable frame_callbacks : (float -> unit) list;
+  mutable frame_callbacks : (dt:float -> unit) list;
   (* Size reports of the current frame — shared with the context closure. *)
   size_round : size_round;
 }
@@ -96,7 +96,7 @@ type t = {
    terminate even when an observer's response keeps resizing its own node.
    Refused reports stay pending; the next frame's layout starts a new round
    and delivers them. *)
-and frame = { width : int; height : int; delta : float }
+and frame = { width : int; height : int; dt : float }
 
 and size_round = {
   mutable limit : int;
@@ -659,7 +659,7 @@ let measure_fn (t : t) (known_dimensions : float option Toffee.Geometry.Size.t)
    render commands. [parent_x] and [parent_y] are the absolute position of the
    parent's content box origin. *)
 let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
-    ~(clip : Grid.region) ~frame ~(delta : float) : unit =
+    ~(clip : Grid.region) ~frame ~(dt : float) : unit =
   if not (Renderable.visible node) then ()
   else
     let toffee_node = Renderable.Private.toffee_node node in
@@ -672,7 +672,7 @@ let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
     let abs_h = layout.size.height in
     Renderable.Private.update_layout node ~x:abs_x ~y:abs_y ~width:abs_w
       ~height:abs_h;
-    Renderable.Private.pre_render_update ~frame node ~delta;
+    Renderable.Private.pre_render_update ~frame node ~dt;
     (* Opacity *)
     let opacity = Renderable.opacity node in
     let has_opacity = opacity < 1.0 in
@@ -699,7 +699,7 @@ let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
          rendering, and hit registration entirely. *)
       let recurse child =
         build_commands t child ~parent_x:abs_x ~parent_y:abs_y ~clip:child_clip
-          ~frame ~delta
+          ~frame ~dt
       in
       if Renderable.Private.viewport_cull node then
         Renderable.Private.iter_children_in_viewport ~parent:node
@@ -720,11 +720,11 @@ let rec build_commands (t : t) (node : Renderable.t) ~parent_x ~parent_y
 (* ───── Pass 3: Execute Commands ───── *)
 
 let execute_commands (t : t) ~(grid : Grid.t) ~(hits : Screen.Hit_grid.t)
-    ~(delta : float) : unit =
+    ~(dt : float) : unit =
   for i = 0 to t.cmd_len - 1 do
     match t.commands.(i) with
     | Render node ->
-        Renderable.Private.render_full node ~grid ~delta;
+        Renderable.Private.render_full node ~grid ~dt;
         let bounds = Renderable.bounds node in
         Screen.Hit_grid.add hits ~x:bounds.x ~y:bounds.y ~width:bounds.width
           ~height:bounds.height
@@ -787,29 +787,29 @@ let compute_layout t ~width ~height =
 (* A layout callback may resize a sibling (for example, reveal a scrollbar).
    Resolve those dependencies before hit testing or painting. Animations run
    only on the first pass of a frame, never while preparing input geometry. *)
-let prepare_commands t ~width ~height ~frame ~delta =
+let prepare_commands t ~width ~height ~frame ~dt =
   let clip : Grid.region = { x = 0; y = 0; width; height } in
-  let rec settle remaining frame delta =
+  let rec settle remaining frame dt =
     compute_layout t ~width ~height;
     t.cmd_len <- 0;
-    build_commands t t.root ~parent_x:0. ~parent_y:0. ~clip ~frame ~delta;
+    build_commands t t.root ~parent_x:0. ~parent_y:0. ~clip ~frame ~dt;
     if layout_dirty t then begin
       if remaining = 0 then
         invalid_arg "Mosaic.Renderer: layout callbacks did not converge";
       settle (remaining - 1) false 0.
     end
   in
-  settle 16 frame delta
+  settle 16 frame dt
 
 let prepare_layout t ~width ~height =
   t.frame <- None;
   t.size_round.shallowest <- max_int;
-  prepare_commands t ~width ~height ~frame:false ~delta:0.;
+  prepare_commands t ~width ~height ~frame:false ~dt:0.;
   if t.size_round.shallowest < max_int then
     t.size_round.limit <- t.size_round.shallowest;
   t.input_geometry <- Some (width, height)
 
-let layout_frame t ~width ~height ~delta =
+let layout_frame t ~width ~height ~dt =
   t.input_geometry <- None;
   (* A frame starts a new round of size reports and admits every pending one,
      including those its layout passes refused. *)
@@ -824,9 +824,9 @@ let layout_frame t ~width ~height ~delta =
     (fun _num node -> Renderable.Private.run_lifecycle_pass node)
     t.lifecycle_set;
   (* Frame callbacks *)
-  List.iter (fun f -> f delta) t.frame_callbacks;
-  prepare_commands t ~width ~height ~frame:true ~delta;
-  t.frame <- Some { width; height; delta }
+  List.iter (fun f -> f ~dt) t.frame_callbacks;
+  prepare_commands t ~width ~height ~frame:true ~dt;
+  t.frame <- Some { width; height; dt }
 
 let paint_frame t ~height =
   let frame =
@@ -841,18 +841,18 @@ let paint_frame t ~height =
      settlement performs another pass before presenting the first one,
      transparent text blanks do not preserve glyphs drawn by that superseded
      pass. *)
-  let rec paint remaining delta =
+  let rec paint remaining dt =
     Screen.build t.screen ~width ~height (fun grid hits ->
         Screen.Hit_grid.clear_clip hits;
-        execute_commands t ~grid ~hits ~delta);
+        execute_commands t ~grid ~hits ~dt);
     if layout_dirty t then begin
       if remaining = 0 then
         invalid_arg "Mosaic.Renderer: rendering repeatedly invalidated layout";
-      prepare_commands t ~width ~height:frame.height ~frame:false ~delta:0.;
+      prepare_commands t ~width ~height:frame.height ~frame:false ~dt:0.;
       paint (remaining - 1) 0.
     end
   in
-  paint 16 frame.delta;
+  paint 16 frame.dt;
   (* Update cursor from focused node. Visibility is derived from renderable
      intent — a cursor is visible iff a focused renderable exposes one — so
      the state is authoritative regardless of the screen's previous policy
@@ -880,8 +880,8 @@ let paint_frame t ~height =
         { cursor with position = None; visible = false });
   recheck_hover t
 
-let render_frame t ~width ~height ~delta =
-  layout_frame t ~width ~height ~delta;
+let render_frame t ~width ~height ~dt =
+  layout_frame t ~width ~height ~dt;
   paint_frame t ~height
 
 (* A hint is only forwarded when the scrolled region owns the full grid
@@ -913,10 +913,10 @@ let render ?full t =
 let needs_render t =
   Atomic.get t.dirty || Renderable.Private.live_count t.root > 0
 
-let render_frame_until_settled ?(max_passes = 4) t ~width ~height ~delta =
+let render_frame_until_settled ?(max_passes = 4) t ~width ~height ~dt =
   let max_passes = max 1 max_passes in
   let rec loop remaining =
-    render_frame t ~width ~height ~delta;
+    render_frame t ~width ~height ~dt;
     if is_settled t then `Settled
     else if remaining = 1 then `Pending (pending_work t)
     else loop (remaining - 1)

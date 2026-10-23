@@ -17,7 +17,7 @@ let cell_text =
 
 let render_frame renderer =
   Renderer.render_frame renderer ~width:viewport_width ~height:viewport_height
-    ~delta:16.;
+    ~dt:16.;
   ignore (Renderer.render renderer : string)
 
 let make_table () =

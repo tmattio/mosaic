@@ -115,7 +115,7 @@ let selection_callback_reports_rendered_text () =
       ~on_selection:(fun text -> selected := text)
       ()
   in
-  Renderer.render_frame renderer ~width:40 ~height:5 ~delta:0.;
+  Renderer.render_frame renderer ~width:40 ~height:5 ~dt:0.;
   ignore (Renderer.render ~full:true renderer : string);
   let mouse kind = Test_harness.mouse_report ~x:0 ~y:0 kind in
   dispatch_mouse renderer (mouse (Press Left));
@@ -131,7 +131,7 @@ let selection_callback_clears () =
       ~on_selection:(fun text -> selected := text)
       ()
   in
-  Renderer.render_frame renderer ~width:40 ~height:5 ~delta:0.;
+  Renderer.render_frame renderer ~width:40 ~height:5 ~dt:0.;
   ignore (Renderer.render ~full:true renderer : string);
   Markdown.set_on_selection md None;
   Markdown.set_on_selection md (Some (fun text -> selected := text));
@@ -267,7 +267,7 @@ let element_style_change_rerenders () =
       ~style:(heading Ansi.Color.red) ()
   in
   let fg () =
-    Renderer.render_frame renderer ~width:20 ~height:2 ~delta:0.;
+    Renderer.render_frame renderer ~width:20 ~height:2 ~dt:0.;
     ignore (Renderer.render ~full:true renderer : string);
     let grid = Matrix_screen.current_grid (Renderer.screen renderer) in
     Matrix_grid.get_fg grid (Matrix_grid.idx grid ~x:0 ~y:0)

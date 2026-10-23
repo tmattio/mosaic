@@ -17,7 +17,7 @@ let render_bar bar ~width ~height =
   let node = Progress_bar.node bar in
   layout_node node ~x:0 ~y:0 ~width ~height;
   let grid = make_grid ~width ~height () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   grid
 
 let left_half = 0x258C

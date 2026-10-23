@@ -331,7 +331,7 @@ let view_per_core_cpu model (cpu_per_core : Sysstat.Cpu.stats array) =
                               (* Progress bar *)
                               canvas
                                 ~size:{ width = pct 100; height = px 1 }
-                                (fun c ~delta:_ ->
+                                (fun c ~dt:_ ->
                                   Canvas.clear c;
                                   draw_progress_bar (Canvas.grid c)
                                     ~width:(Canvas.width c)
@@ -485,7 +485,7 @@ let view_cpu_usage model (cpu : Sysstat.Cpu.stats)
                   text ~style:muted "CPU Load:";
                   canvas
                     ~size:{ width = pct 100; height = px 8 }
-                    (fun c ~delta:_ ->
+                    (fun c ~dt:_ ->
                       Canvas.clear c;
                       Charts.Sparkline.draw sparkline_cpu ~kind:`Braille
                         (Canvas.grid c) ~width:(Canvas.width c)
@@ -736,7 +736,7 @@ let view_memory_usage (memory : Sysstat.Mem.t)
               text ~style:muted "Memory Load:";
               canvas
                 ~size:{ width = pct 100; height = px 4 }
-                (fun c ~delta:_ ->
+                (fun c ~dt:_ ->
                   Canvas.clear c;
                   Charts.Sparkline.draw sparkline_memory ~kind:`Braille
                     (Canvas.grid c) ~width:(Canvas.width c)

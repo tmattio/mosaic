@@ -5,8 +5,8 @@ open Mosaic_ui
 
 let make_renderer () = Renderer.create ()
 
-let do_frame ?(width = 80) ?(height = 24) ?(delta = 16.0) t =
-  Renderer.render_frame t ~width ~height ~delta;
+let do_frame ?(width = 80) ?(height = 24) ?(dt = 16.0) t =
+  Renderer.render_frame t ~width ~height ~dt;
   ignore (Renderer.render ~full:true t : string)
 
 let make_child ~parent ~x ~y ~w ~h ?focusable () =
@@ -108,7 +108,7 @@ let adopted_screen_render_is_guarded () =
   let host = Matrix_screen.create () in
   let t = Renderer.create ~screen:host () in
   let _child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:4 ~h:2 () in
-  Renderer.render_frame t ~width:10 ~height:4 ~delta:0.;
+  Renderer.render_frame t ~width:10 ~height:4 ~dt:0.;
   is_true ~msg:"renderer adopted the host screen" (Renderer.screen t == host);
   satisfies ~claim:"frame built into the host's hit grid (hit id > 0)" int
     (fun id -> id > 0)
@@ -165,7 +165,7 @@ let render_request_during_frame_survives () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:10 ~h:5 () in
   let requested = ref false in
-  Renderer.add_frame_callback t (fun _delta ->
+  Renderer.add_frame_callback t (fun ~dt:_ ->
       if not !requested then begin
         requested := true;
         Renderable.request_render child
@@ -180,7 +180,7 @@ let render_request_during_frame_survives () =
 let callback_runs_each_frame () =
   let t = make_renderer () in
   let count = ref 0 in
-  Renderer.add_frame_callback t (fun _delta -> incr count);
+  Renderer.add_frame_callback t (fun ~dt:_ -> incr count);
   do_frame t;
   equal ~msg:"one frame" int 1 !count;
   do_frame t;
@@ -189,15 +189,15 @@ let callback_runs_each_frame () =
 let callback_receives_delta () =
   let t = make_renderer () in
   let received = ref 0.0 in
-  Renderer.add_frame_callback t (fun delta -> received := delta);
-  do_frame ~delta:42.0 t;
+  Renderer.add_frame_callback t (fun ~dt -> received := dt);
+  do_frame ~dt:42.0 t;
   is_true ~msg:"delta" (Float.equal !received 42.0)
 
 let remove_callback_stops_it () =
   let t = make_renderer () in
   let count = ref 0 in
-  let f delta =
-    ignore (delta : float);
+  let f ~dt =
+    ignore (dt : float);
     incr count
   in
   Renderer.add_frame_callback t f;
@@ -211,8 +211,8 @@ let clear_removes_all_callbacks () =
   let t = make_renderer () in
   let c1 = ref 0 in
   let c2 = ref 0 in
-  Renderer.add_frame_callback t (fun _ -> incr c1);
-  Renderer.add_frame_callback t (fun _ -> incr c2);
+  Renderer.add_frame_callback t (fun ~dt:_ -> incr c1);
+  Renderer.add_frame_callback t (fun ~dt:_ -> incr c2);
   do_frame t;
   equal ~msg:"c1 ran" int 1 !c1;
   equal ~msg:"c2 ran" int 1 !c2;
@@ -276,7 +276,7 @@ let render_frame_until_settled_reports_pending_code () =
   in
   match
     Renderer.render_frame_until_settled ~max_passes:1 t ~width:40 ~height:5
-      ~delta:0.
+      ~dt:0.
   with
   | `Settled -> fail "expected pending highlighting"
   | `Pending [ pending ] ->
@@ -299,7 +299,7 @@ let render_frame_until_settled_completes_code () =
     Code.create ~parent:(Renderer.root t) ~content:"let x" ~syntax ()
   in
   complete_highlight (List.hd !jobs) (Ok highlights);
-  match Renderer.render_frame_until_settled t ~width:40 ~height:5 ~delta:0. with
+  match Renderer.render_frame_until_settled t ~width:40 ~height:5 ~dt:0. with
   | `Pending pending ->
       fail
         (Printf.sprintf "expected settlement, got %d pending item(s)"
@@ -312,13 +312,13 @@ let settlement_replaces_superseded_frame_cells () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:1 ~h:1 () in
   let passes = ref 0 in
-  Renderable.set_render child (fun self grid ~delta:_ ->
+  Renderable.set_render child (fun self grid ~dt:_ ->
       incr passes;
       if !passes = 1 then begin
         Matrix_grid.draw_text grid ~x:0 ~y:0 ~text:"X";
         Renderable.request_render self
       end);
-  (match Renderer.render_frame_until_settled t ~width:1 ~height:1 ~delta:0. with
+  (match Renderer.render_frame_until_settled t ~width:1 ~height:1 ~dt:0. with
   | `Settled -> ()
   | `Pending pending ->
       fail
@@ -335,15 +335,15 @@ let presented_cells_cleared_before_next_frame () =
   let t = make_renderer () in
   let child = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:1 ~h:1 () in
   let draw = ref true in
-  Renderable.set_render child (fun _ grid ~delta:_ ->
+  Renderable.set_render child (fun _ grid ~dt:_ ->
       if !draw then Matrix_grid.draw_text grid ~x:0 ~y:0 ~text:"X");
-  Renderer.render_frame t ~width:1 ~height:1 ~delta:0.;
+  Renderer.render_frame t ~width:1 ~height:1 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen t) in
   equal ~msg:"first frame drew" string "X" (Matrix_grid.get_text grid 0);
   ignore (Renderer.render ~full:true t : string);
   draw := false;
   Renderable.request_render child;
-  Renderer.render_frame t ~width:1 ~height:1 ~delta:0.;
+  Renderer.render_frame t ~width:1 ~height:1 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen t) in
   equal ~msg:"stale glyph cleared" string " " (Matrix_grid.get_text grid 0)
 
@@ -354,7 +354,7 @@ let overflow_visible_descendant_reaching_viewport_renders () =
   let parent = make_child ~parent:(Renderer.root t) ~x:80 ~y:0 ~w:10 ~h:5 () in
   let child = make_child ~parent ~x:(-80) ~y:0 ~w:10 ~h:5 () in
   let renders = ref 0 in
-  Renderable.set_render child (fun _ _ ~delta:_ -> incr renders);
+  Renderable.set_render child (fun _ _ ~dt:_ -> incr renders);
   do_frame ~width:20 ~height:10 t;
   equal ~msg:"overflow-visible descendant callback" int 1 !renders
 
@@ -380,7 +380,7 @@ let clipped_offscreen_subtree_is_not_traversed_for_rendering () =
   in
   let child = make_child ~parent ~x:(-80) ~y:0 ~w:10 ~h:5 () in
   let renders = ref 0 in
-  Renderable.set_render child (fun _ _ ~delta:_ -> incr renders);
+  Renderable.set_render child (fun _ _ ~dt:_ -> incr renders);
   do_frame ~width:20 ~height:10 t;
   equal ~msg:"clipped descendant callback" int 0 !renders
 
@@ -409,7 +409,7 @@ let make_culled_transcript ?(rows = 40) ?(vw = 20) ?(vh = 5) t =
         let row =
           Renderable.create ~parent:(Scroll_box.node sb) ~style:row_style ()
         in
-        Renderable.set_render row (fun _ _ ~delta:_ ->
+        Renderable.set_render row (fun _ _ ~dt:_ ->
             renders.(i) <- renders.(i) + 1);
         row)
   in
@@ -463,9 +463,9 @@ let culled_live_child_does_not_tick () =
   let sb, _renders, rows = make_culled_transcript t in
   let visible_ticks = ref 0 and hidden_ticks = ref 0 in
   Renderable.set_live rows.(1) true;
-  Renderable.set_on_frame rows.(1) (Some (fun _ ~delta:_ -> incr visible_ticks));
+  Renderable.set_on_frame rows.(1) (Some (fun _ ~dt:_ -> incr visible_ticks));
   Renderable.set_live rows.(30) true;
-  Renderable.set_on_frame rows.(30) (Some (fun _ ~delta:_ -> incr hidden_ticks));
+  Renderable.set_on_frame rows.(30) (Some (fun _ ~dt:_ -> incr hidden_ticks));
   do_frame ~width:20 ~height:5 t;
   equal ~msg:"visible live row ticked" int 1 !visible_ticks;
   equal ~msg:"culled live row did not tick" int 0 !hidden_ticks;
@@ -617,7 +617,7 @@ let culling_matches_a_scan =
 (* One frame's rows. The grid is read before presentation swaps the screen's
    buffers, so this renders rather than reusing [do_frame]. *)
 let frame_rows t ~width ~height =
-  Renderer.render_frame t ~width ~height ~delta:0.;
+  Renderer.render_frame t ~width ~height ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen t) in
   String.concat "\n"
     (List.init height (fun y ->
@@ -628,7 +628,7 @@ let frame_rows t ~width ~height =
                 | s -> s))))
 
 let label node text =
-  Renderable.set_render node (fun self grid ~delta:_ ->
+  Renderable.set_render node (fun self grid ~dt:_ ->
       Matrix_grid.draw_text grid ~x:(Renderable.x self) ~y:(Renderable.y self)
         ~text)
 
@@ -746,7 +746,7 @@ let make_hint_transcript ?(rows = 20) ?(vw = 20) ?(vh = 6) t =
          ~selectable:false ()
         : Text.t)
   done;
-  Renderer.render_frame t ~width:vw ~height:vh ~delta:0.;
+  Renderer.render_frame t ~width:vw ~height:vh ~dt:0.;
   ignore (Renderer.render t : string);
   sb
 
@@ -754,7 +754,7 @@ let scroll_produces_hint () =
   let t = make_renderer () in
   let sb = make_hint_transcript t in
   Scroll_box.scroll_by sb ~y:1 ();
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   (match Renderer.take_scroll_hint t with
   | Some { Matrix_screen.top; bottom; delta } ->
       equal ~msg:"top" int 0 top;
@@ -768,7 +768,7 @@ let opposing_scrolls_cancel () =
   let sb = make_hint_transcript t in
   Scroll_box.scroll_by sb ~y:2 ();
   Scroll_box.scroll_by sb ~y:(-2) ();
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   is_none ~msg:"net-zero scroll has no hint" (Renderer.take_scroll_hint t)
 
 let two_scrollers_disqualify () =
@@ -781,12 +781,12 @@ let two_scrollers_disqualify () =
   let t = Renderer.create ~style:root_style () in
   let sb1 = make_hint_transcript ~vh:3 t in
   let sb2 = make_hint_transcript ~vh:3 t in
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   ignore (Renderer.render t : string);
   ignore (Renderer.take_scroll_hint t : Matrix_screen.scroll_hint option);
   Scroll_box.scroll_by sb1 ~y:1 ();
   Scroll_box.scroll_by sb2 ~y:1 ();
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   is_none ~msg:"two movers disqualify" (Renderer.take_scroll_hint t)
 
 let horizontal_scroll_disqualifies () =
@@ -809,29 +809,29 @@ let horizontal_scroll_disqualifies () =
   ignore
     (Renderable.create ~parent:(Scroll_box.node sb) ~style:content_style ()
       : Renderable.t);
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   ignore (Renderer.render t : string);
   Scroll_box.scroll_by sb ~x:1 ();
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   is_none ~msg:"horizontal scroll has no hint" (Renderer.take_scroll_hint t)
 
 let narrow_box_disqualifies () =
   let t = make_renderer () in
   let sb = make_hint_transcript ~vw:10 t in
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   ignore (Renderer.render t : string);
   Scroll_box.scroll_by sb ~y:1 ();
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   is_none ~msg:"narrow box has no hint" (Renderer.take_scroll_hint t)
 
 let hinted_scroll_emits_decstbm_and_correct_rows () =
   let t = make_renderer () in
   let sb = make_hint_transcript t in
   let vte = Vte.create ~rows:6 ~cols:20 () in
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   ignore (Vte.feed_string vte (Renderer.render ~full:true t) : _ list);
   Scroll_box.scroll_by sb ~y:1 ();
-  Renderer.render_frame t ~width:20 ~height:6 ~delta:0.;
+  Renderer.render_frame t ~width:20 ~height:6 ~dt:0.;
   let out = Renderer.render t in
   contains ~msg:"output contains DECSTBM" ~sub:"\x1b[1;6r" out;
   ignore (Vte.feed_string vte out : _ list);
@@ -1776,7 +1776,7 @@ let selection_drag_auto_scrolls_scroll_box () =
   do_frame ~width:20 ~height:8 t;
   dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
   dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:7 ());
-  do_frame ~width:20 ~height:8 ~delta:1. t;
+  do_frame ~width:20 ~height:8 ~dt:1. t;
   satisfies ~claim:"scroll box moved down (scroll_top > 0)" int
     (fun top -> top > 0)
     (Scroll_box.scroll_top sb);
@@ -1809,7 +1809,7 @@ let selection_drag_auto_scrolls_scroll_box_when_pointer_leaves_it () =
   do_frame ~width:20 ~height:12 t;
   dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
   dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:10 ());
-  do_frame ~width:20 ~height:12 ~delta:1. t;
+  do_frame ~width:20 ~height:12 ~dt:1. t;
   satisfies ~claim:"scroll box moved down (scroll_top > 0)" int
     (fun top -> top > 0)
     (Scroll_box.scroll_top sb)
@@ -1993,20 +1993,20 @@ let layout_updates_settle_before_first_paint () =
   in
   let resized = ref false and frames = ref 0 and painted_widths = ref [] in
   Renderable.set_live child true;
-  Renderable.set_on_frame child (Some (fun _ ~delta:_ -> incr frames));
+  Renderable.set_on_frame child (Some (fun _ ~dt:_ -> incr frames));
   Renderable.set_on_update child
     (Some
-       (fun node ~delta:_ ->
+       (fun node ~dt:_ ->
          if not !resized then begin
            resized := true;
            Renderable.set_style node
              (Renderable.style node
              |> Toffee.Style.set_width (Toffee.Style.Dimension.length 5.))
          end));
-  Renderable.set_render child (fun node grid ~delta:_ ->
+  Renderable.set_render child (fun node grid ~dt:_ ->
       painted_widths := Renderable.width node :: !painted_widths;
       Matrix_grid.draw_text grid ~x:0 ~y:0 ~text:"ready");
-  Renderer.render_frame renderer ~width:8 ~height:3 ~delta:16.;
+  Renderer.render_frame renderer ~width:8 ~height:3 ~dt:16.;
   equal ~msg:"first paint uses settled geometry" (list int) [ 5 ]
     !painted_widths;
   equal ~msg:"layout retries do not advance live animation twice" int 1 !frames;
@@ -2021,13 +2021,12 @@ let layout_preparation_does_not_advance_live_widgets () =
   in
   let deltas = ref [] in
   Renderable.set_live child true;
-  Renderable.set_on_frame child
-    (Some (fun _ ~delta -> deltas := delta :: !deltas));
+  Renderable.set_on_frame child (Some (fun _ ~dt -> deltas := dt :: !deltas));
   Renderer.prepare_layout renderer ~width:8 ~height:3;
   Renderer.prepare_layout renderer ~width:10 ~height:4;
   equal ~msg:"layout-only synchronization does not tick animation"
     (list float_exact) [] !deltas;
-  Renderer.render_frame renderer ~width:10 ~height:4 ~delta:16.;
+  Renderer.render_frame renderer ~width:10 ~height:4 ~dt:16.;
   equal ~msg:"one actual frame delivers one animation delta" (list float_exact)
     [ 16. ] !deltas
 

@@ -13,9 +13,9 @@
 type t
 (** The type for mutable nodes in the UI tree. *)
 
-type render = t -> Matrix_grid.t -> delta:float -> unit
-(** The type for render callbacks. [render self grid ~delta] draws [self] into
-    [grid]. [delta] is the elapsed time in seconds since the last frame. *)
+type render = t -> Matrix_grid.t -> dt:float -> unit
+(** The type for render callbacks. [render self grid ~dt] draws [self] into
+    [grid]. [dt] is the elapsed time in seconds since the last frame. *)
 
 type measure =
   known_dimensions:float option Toffee.Geometry.Size.t ->
@@ -383,21 +383,21 @@ val set_pending_provider : t -> (unit -> Pending.t option) option -> unit
 
 (** {1:lifecycle Lifecycle} *)
 
-val set_on_update : t -> (t -> delta:float -> unit) option -> unit
+val set_on_update : t -> (t -> dt:float -> unit) option -> unit
 (** [set_on_update t callback] registers a per-frame state-update hook.
-    [callback t ~delta] runs during frame traversal, after [t]'s layout is
+    [callback t ~dt] runs during frame traversal, after [t]'s layout is
     refreshed and before its children are traversed, culled, or rendered. Unlike
     {!set_on_frame} it is not gated on {!set_live}. Use it for state that must
     settle before descendants are processed — for example a scroll container
     maintaining its scroll offset — and keep drawing in the render callback.
     [None] clears the hook. *)
 
-val set_on_frame : t -> (t -> delta:float -> unit) option -> unit
+val set_on_frame : t -> (t -> dt:float -> unit) option -> unit
 (** [set_on_frame t callback] registers a per-frame update hook.
-    [callback t ~delta] is called every frame with [delta] as the elapsed
-    seconds, but only while [t] is live: pair the hook with {!set_live} to start
-    and stop the animation it drives. The hook runs only when [t] is part of the
-    frame: a child culled by a scroll container's viewport (see
+    [callback t ~dt] is called every frame with [dt] as the elapsed seconds, but
+    only while [t] is live: pair the hook with {!set_live} to start and stop the
+    animation it drives. The hook runs only when [t] is part of the frame: a
+    child culled by a scroll container's viewport (see
     {!Private.set_viewport_cull}) receives no ticks until it scrolls back into
     view. [None] clears the hook. *)
 
@@ -517,13 +517,12 @@ module Private : sig
 
   (** {2:render_pipeline Render pipeline} *)
 
-  val pre_render_update : ?frame:bool -> t -> delta:float -> unit
-  (** [pre_render_update t ~delta] runs update and resize hooks. [frame]
-      defaults to [true]; [false] skips animation hooks during layout
-      settlement. *)
+  val pre_render_update : ?frame:bool -> t -> dt:float -> unit
+  (** [pre_render_update t ~dt] runs update and resize hooks. [frame] defaults
+      to [true]; [false] skips animation hooks during layout settlement. *)
 
-  val render : t -> Matrix_grid.t -> delta:float -> unit
-  (** [render t grid ~delta] invokes [t]'s render callback. *)
+  val render : t -> Matrix_grid.t -> dt:float -> unit
+  (** [render t grid ~dt] invokes [t]'s render callback. *)
 
   val render_before : t -> render option
   (** [render_before t] is [t]'s pre-render hook, if any. *)
@@ -538,10 +537,10 @@ module Private : sig
   val blit_frame_buffer : t -> dst:Matrix_grid.t -> unit
   (** [blit_frame_buffer t ~dst] copies [t]'s frame buffer into [dst]. *)
 
-  val render_full : t -> grid:Matrix_grid.t -> delta:float -> unit
-  (** [render_full t ~grid ~delta] runs the complete render sequence for [t]:
-      frame buffer selection, pre-render hook, render callback, post-render
-      hook, and frame buffer blit. *)
+  val render_full : t -> grid:Matrix_grid.t -> dt:float -> unit
+  (** [render_full t ~grid ~dt] runs the complete render sequence for [t]: frame
+      buffer selection, pre-render hook, render callback, post-render hook, and
+      frame buffer blit. *)
 
   val pending_work : t -> Pending.t option
   (** [pending_work t] is [Some work] when [t] reports pending render work. *)

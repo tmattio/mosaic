@@ -141,7 +141,7 @@ let grid_of_vnode ~width ~height vnode =
   let app = make_app () in
   reconcile app vnode;
   set_viewport app.renderer ~width ~height;
-  Renderer.render_frame app.renderer ~width ~height ~delta:0.;
+  Renderer.render_frame app.renderer ~width ~height ~dt:0.;
   Matrix_screen.next_grid (Renderer.screen app.renderer)
 
 let color_to_string color = Format.asprintf "%a" Ansi.Color.pp color
@@ -308,12 +308,12 @@ let%expect_test "set source line highlights rebuilds colors" =
       (parse simple_diff)
   in
   fill_node (Diff.node diff);
-  Renderer.render_frame renderer ~width:60 ~height:5 ~delta:0.;
+  Renderer.render_frame renderer ~width:60 ~height:5 ~dt:0.;
   let initial = Matrix_screen.next_grid (Renderer.screen renderer) in
   assert_not_background ~msg:"initial line is not selected" initial ~x:8 ~y:2
     selected;
   Diff.set_line_highlights diff [ line_highlight Diff.New 2 2 ];
-  Renderer.render_frame renderer ~width:60 ~height:5 ~delta:0.;
+  Renderer.render_frame renderer ~width:60 ~height:5 ~dt:0.;
   let highlighted = Matrix_screen.next_grid (Renderer.screen renderer) in
   assert_background ~msg:"updated selected content" highlighted ~x:8 ~y:2
     selected;
@@ -366,9 +366,9 @@ let%expect_test "line spans follow wrapped rows and clamp byte ranges" =
       (parse asymmetric_wrap_diff)
   in
   fill_node (Diff.node diff);
-  Renderer.render_frame renderer ~width:44 ~height:7 ~delta:0.;
+  Renderer.render_frame renderer ~width:44 ~height:7 ~dt:0.;
   ignore (Renderer.render renderer : string);
-  Renderer.render_frame renderer ~width:44 ~height:7 ~delta:0.;
+  Renderer.render_frame renderer ~width:44 ~height:7 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   (* The 36-byte added content wraps into three rows on the right (content
      column 27); the end byte clamps to the line length. Emphasis lands on the
@@ -401,7 +401,7 @@ let%expect_test "hit test rendered diff rows" =
       (parse simple_diff)
   in
   fill_node (Diff.node diff);
-  Renderer.render_frame renderer ~width:80 ~height:5 ~delta:0.;
+  Renderer.render_frame renderer ~width:80 ~height:5 ~dt:0.;
   print_hit (Diff.hit_test diff ~x:1 ~y:1);
   print_hit (Diff.hit_test diff ~x:3 ~y:1);
   print_hit (Diff.hit_test diff ~x:4 ~y:1);
@@ -427,9 +427,9 @@ let%expect_test "hit test uses aligned split rows after wrapping" =
       (parse asymmetric_wrap_diff)
   in
   fill_node (Diff.node diff);
-  Renderer.render_frame renderer ~width:44 ~height:7 ~delta:0.;
+  Renderer.render_frame renderer ~width:44 ~height:7 ~dt:0.;
   ignore (Renderer.render renderer : string);
-  Renderer.render_frame renderer ~width:44 ~height:7 ~delta:0.;
+  Renderer.render_frame renderer ~width:44 ~height:7 ~dt:0.;
   print_hit (Diff.hit_test diff ~x:8 ~y:2);
   print_hit (Diff.hit_test diff ~x:8 ~y:4);
   print_hit (Diff.hit_test diff ~x:30 ~y:4);
@@ -447,7 +447,7 @@ let%expect_test "diff line click callback reports hit" =
        ~on_line_click:(fun hit -> Some (clicked := Some hit))
        (parse simple_diff));
   set_viewport app.renderer ~width:60 ~height:5;
-  Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
+  Renderer.render_frame app.renderer ~width:60 ~height:5 ~dt:0.;
   ignore (Renderer.render app.renderer : string);
   dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
   dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
@@ -463,7 +463,7 @@ let%expect_test "diff line click callback ignores drags" =
        ~on_line_click:(fun _ -> Some (clicked := true))
        (parse simple_diff));
   set_viewport app.renderer ~width:60 ~height:5;
-  Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
+  Renderer.render_frame app.renderer ~width:60 ~height:5 ~dt:0.;
   ignore (Renderer.render app.renderer : string);
   dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
   dispatch_mouse app.renderer (mouse_drag ~x:20 ~y:2);
@@ -486,7 +486,7 @@ let%expect_test "diff without line click callback lets mouse up bubble" =
                ()))
        [ Vnode.diff ~style:full_style ~layout:Diff.Unified (parse simple_diff) ]);
   set_viewport app.renderer ~width:60 ~height:5;
-  Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
+  Renderer.render_frame app.renderer ~width:60 ~height:5 ~dt:0.;
   ignore (Renderer.render app.renderer : string);
   dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
   dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
@@ -515,14 +515,14 @@ let%expect_test "diff line click callback can be removed" =
           ~on_line_click:(fun _ -> Some (incr clicked))
           (parse simple_diff)));
   set_viewport app.renderer ~width:60 ~height:5;
-  Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
+  Renderer.render_frame app.renderer ~width:60 ~height:5 ~dt:0.;
   ignore (Renderer.render app.renderer : string);
   dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
   dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
   reconcile app
     (parent
        (Vnode.diff ~style:full_style ~layout:Diff.Unified (parse simple_diff)));
-  Renderer.render_frame app.renderer ~width:60 ~height:5 ~delta:0.;
+  Renderer.render_frame app.renderer ~width:60 ~height:5 ~dt:0.;
   ignore (Renderer.render app.renderer : string);
   dispatch_mouse app.renderer (mouse_down ~x:8 ~y:2);
   dispatch_mouse app.renderer (mouse_up ~x:8 ~y:2);
@@ -535,7 +535,7 @@ let%expect_test "split view aligns asymmetric wrapped lines" =
   reconcile app
     (Vnode.diff ~layout:Diff.Split ~wrap:`Char (parse asymmetric_wrap_diff));
   set_viewport app.renderer ~width:44 ~height:7;
-  Renderer.render_frame app.renderer ~width:44 ~height:7 ~delta:0.;
+  Renderer.render_frame app.renderer ~width:44 ~height:7 ~dt:0.;
   ignore (Renderer.render app.renderer : string);
   frame app ~width:44 ~height:7;
   [%expect_exact
@@ -554,7 +554,7 @@ let%expect_test "split view aligns highlighted asymmetric wrapped lines" =
     (Vnode.diff ~layout:Diff.Split ~wrap:`Char ~highlight:plain_highlight
        (parse asymmetric_wrap_diff));
   set_viewport app.renderer ~width:44 ~height:7;
-  Renderer.render_frame app.renderer ~width:44 ~height:7 ~delta:0.;
+  Renderer.render_frame app.renderer ~width:44 ~height:7 ~dt:0.;
   ignore (Renderer.render app.renderer : string);
   frame app ~width:44 ~height:7;
   [%expect_exact

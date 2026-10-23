@@ -850,7 +850,7 @@ let sys_metric_card ~title ~value ~unit_ ~color ~spark =
             (Printf.sprintf "%5.1f%s" value unit_);
           canvas
             ~size:{ width = pct 100; height = px 4 }
-            (fun c ~delta:_ ->
+            (fun c ~dt:_ ->
               Canvas.clear c;
               Charts.Sparkline.draw spark ~kind:`Bars (Canvas.grid c)
                 ~width:(Canvas.width c) ~height:(Canvas.height c));
@@ -966,7 +966,7 @@ let scalars_tab (m : model) (r : run) =
                 [
                   canvas
                     ~size:{ width = pct 100; height = pct 100 }
-                    (fun c ~delta:_ ->
+                    (fun c ~dt:_ ->
                       Canvas.clear c;
                       draw_loss_plot m r (Canvas.grid c) ~width:(Canvas.width c)
                         ~height:(Canvas.height c));
@@ -977,7 +977,7 @@ let scalars_tab (m : model) (r : run) =
                 [
                   canvas
                     ~size:{ width = pct 100; height = pct 100 }
-                    (fun c ~delta:_ ->
+                    (fun c ~dt:_ ->
                       Canvas.clear c;
                       draw_acc_lr_plot m r (Canvas.grid c)
                         ~width:(Canvas.width c) ~height:(Canvas.height c));
@@ -1109,7 +1109,7 @@ let heatmap_tab (m : model) (r : run) =
             [
               canvas
                 ~size:{ width = pct 100; height = pct 100 }
-                (fun c ~delta:_ ->
+                (fun c ~dt:_ ->
                   Canvas.clear c;
                   draw_confusion_heatmap m r (Canvas.grid c)
                     ~width:(Canvas.width c) ~height:(Canvas.height c));
@@ -1142,7 +1142,7 @@ let embeddings_tab (_m : model) (r : run) =
         [
           canvas
             ~size:{ width = pct 100; height = pct 100 }
-            (fun c ~delta:_ ->
+            (fun c ~dt:_ ->
               Canvas.clear c;
               draw_embeddings_plot _m r (Canvas.grid c) ~width:(Canvas.width c)
                 ~height:(Canvas.height c));

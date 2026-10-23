@@ -75,7 +75,7 @@ let render ~width ~height vnode =
   set_viewport renderer ~width ~height;
   let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
   Reconciler.render reconciler ~viewport_width:width (fill vnode);
-  Renderer.render_frame renderer ~width ~height ~delta:0.;
+  Renderer.render_frame renderer ~width ~height ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_text grid)
@@ -85,7 +85,7 @@ let render_ansi ~width ~height vnode =
   set_viewport renderer ~width ~height;
   let reconciler = Reconciler.create ~container:(Renderer.root renderer) in
   Reconciler.render reconciler ~viewport_width:width (fill vnode);
-  Renderer.render_frame renderer ~width ~height ~delta:0.;
+  Renderer.render_frame renderer ~width ~height ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_ansi grid)
@@ -113,7 +113,7 @@ let reconcile ?viewport_width app vnode =
 let frame app ~width ~height =
   app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
-  Renderer.render_frame app.renderer ~width ~height ~delta:0.;
+  Renderer.render_frame app.renderer ~width ~height ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen app.renderer) in
   print_newline ();
   print_string (grid_to_text grid)
@@ -156,10 +156,9 @@ let pending_lines renderer =
 let settled_frame app ~width ~height =
   app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
-  Renderer.render_frame app.renderer ~width ~height ~delta:0.;
+  Renderer.render_frame app.renderer ~width ~height ~dt:0.;
   eventually ~msg:"renderer settles within its pass budget" ~attempts:4
-    ~step:(fun () ->
-      Renderer.render_frame app.renderer ~width ~height ~delta:0.)
+    ~step:(fun () -> Renderer.render_frame app.renderer ~width ~height ~dt:0.)
     ~diagnose:(fun () -> pending_lines app.renderer)
     (fun () -> if Renderer.is_settled app.renderer then Some () else None);
   let grid = Matrix_screen.next_grid (Renderer.screen app.renderer) in
@@ -169,7 +168,7 @@ let settled_frame app ~width ~height =
 let frame_ansi app ~width ~height =
   app.viewport_width <- width;
   set_viewport app.renderer ~width ~height;
-  Renderer.render_frame app.renderer ~width ~height ~delta:0.;
+  Renderer.render_frame app.renderer ~width ~height ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen app.renderer) in
   print_newline ();
   print_string (grid_to_ansi grid)
@@ -210,9 +209,9 @@ let print_canvas ?(width = 20) ?(height = 6) draw () =
   set_viewport renderer ~width ~height;
   let canvas = Canvas.create ~parent:(Renderer.root renderer) () in
   fill_node (Canvas.node canvas);
-  Renderer.render_frame renderer ~width ~height ~delta:0.;
+  Renderer.render_frame renderer ~width ~height ~dt:0.;
   draw canvas;
-  Renderer.render_frame renderer ~width ~height ~delta:0.;
+  Renderer.render_frame renderer ~width ~height ~dt:0.;
   let grid = Canvas.grid canvas in
   print_newline ();
   print_string (grid_to_text grid)
@@ -222,9 +221,9 @@ let print_canvas_ansi ?(width = 20) ?(height = 6) draw () =
   set_viewport renderer ~width ~height;
   let canvas = Canvas.create ~parent:(Renderer.root renderer) () in
   fill_node (Canvas.node canvas);
-  Renderer.render_frame renderer ~width ~height ~delta:0.;
+  Renderer.render_frame renderer ~width ~height ~dt:0.;
   draw canvas;
-  Renderer.render_frame renderer ~width ~height ~delta:0.;
+  Renderer.render_frame renderer ~width ~height ~dt:0.;
   let grid = Canvas.grid canvas in
   print_newline ();
   print_string (grid_to_ansi grid)
@@ -242,7 +241,7 @@ let render_markdown ?(width = 60) ?(height = 20) ?style ?conceal ?streaming
       ?render_node ?render_code ?highlighter ?syntax_style ~content ()
   in
   fill_node (Markdown.node md);
-  Renderer.render_frame renderer ~width ~height ~delta:0.;
+  Renderer.render_frame renderer ~width ~height ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_text grid)
@@ -260,7 +259,7 @@ let make_markdown_app ?(width = 60) ?(height = 20) ?style ?conceal ?streaming
 
 let markdown_frame app ~width ~height =
   set_viewport app.md_renderer ~width ~height;
-  Renderer.render_frame app.md_renderer ~width ~height ~delta:0.;
+  Renderer.render_frame app.md_renderer ~width ~height ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen app.md_renderer) in
   print_newline ();
   print_string (grid_to_text grid)

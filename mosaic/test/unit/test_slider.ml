@@ -23,7 +23,7 @@ let render_slider slider ~width ~height =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width ~height;
   let grid = make_grid ~width ~height () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   grid
 
 let full_block = 0x2588
@@ -379,7 +379,7 @@ let click_on_track_jumps_value () =
   layout_node node ~x:0 ~y:0 ~width:20 ~height:1;
   (* Render once so the virtual coordinate system has real dimensions *)
   let grid = make_grid ~width:20 ~height:1 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   (* Click at 75% of the track *)
   Renderable.Private.emit_mouse node (mouse_down ~x:15 ~y:0);
   is_true ~msg:"value near 75" (float_close (Slider.value slider) 75.)
@@ -401,7 +401,7 @@ let click_on_track_vertical () =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width:1 ~height:20;
   let grid = make_grid ~width:1 ~height:20 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   (* Click at 50% of the track *)
   Renderable.Private.emit_mouse node (mouse_down ~x:0 ~y:10);
   is_true ~msg:"value near 50" (float_close (Slider.value slider) 50.)
@@ -411,7 +411,7 @@ let drag_updates_value () =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width:20 ~height:1;
   let grid = make_grid ~width:20 ~height:1 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   (* Press down then drag to midpoint *)
   Renderable.Private.emit_mouse node (mouse_down ~x:0 ~y:0);
   Renderable.Private.emit_mouse node (mouse_drag ~x:10 ~y:0);
@@ -427,7 +427,7 @@ let drag_fires_on_change () =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width:20 ~height:1;
   let grid = make_grid ~width:20 ~height:1 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   Renderable.Private.emit_mouse node (mouse_down ~x:0 ~y:0);
   Renderable.Private.emit_mouse node (mouse_drag ~x:10 ~y:0);
   gt ~msg:"on_change fired" ~than:0 (List.length !changes)
@@ -437,7 +437,7 @@ let drag_beyond_bounds_clamps () =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width:20 ~height:1;
   let grid = make_grid ~width:20 ~height:1 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   (* Drag way past the right edge *)
   Renderable.Private.emit_mouse node (mouse_down ~x:10 ~y:0);
   Renderable.Private.emit_mouse node (mouse_drag ~x:100 ~y:0);
@@ -455,7 +455,7 @@ let mouse_up_ends_drag () =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width:20 ~height:1;
   let grid = make_grid ~width:20 ~height:1 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   (* Start drag *)
   Renderable.Private.emit_mouse node (mouse_down ~x:0 ~y:0);
   Renderable.Private.emit_mouse node (mouse_drag ~x:10 ~y:0);
@@ -476,7 +476,7 @@ let drag_vertical () =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width:1 ~height:20;
   let grid = make_grid ~width:1 ~height:20 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   Renderable.Private.emit_mouse node (mouse_down ~x:0 ~y:0);
   Renderable.Private.emit_mouse node (mouse_drag ~x:0 ~y:10);
   let v = Slider.value slider in
@@ -490,7 +490,7 @@ let mouse_down_stops_propagation () =
   let node = Slider.node slider in
   layout_node node ~x:0 ~y:0 ~width:20 ~height:1;
   let grid = make_grid ~width:20 ~height:1 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   let ev = mouse_down ~x:10 ~y:0 in
   Renderable.Private.emit_mouse node ev;
   is_true ~msg:"propagation stopped" (Event.Mouse.propagation_stopped ev)

@@ -99,7 +99,7 @@ let render_vertical t grid =
         ~attrs:Ansi.Attr.empty ()
     done
 
-let render t _self grid ~delta:_ =
+let render t _self grid ~dt:_ =
   let w = Renderable.width t.node in
   let h = Renderable.height t.node in
   if w > 0 && h > 0 then

@@ -89,7 +89,7 @@ let fixture build ~mlx =
     (match Mosaic.Reconciler.focused reconciler with
     | Some node -> ignore (Renderer.focus renderer node : bool)
     | None -> failwith "navigation fixture has no focused widget");
-    Renderer.render_frame renderer ~width:30 ~height:6 ~delta:0.
+    Renderer.render_frame renderer ~width:30 ~height:6 ~dt:0.
   in
   let send ?mods ?repeat ?base ?keypad key =
     let event = Event.Key.of_input (Key.make ?mods ?repeat ?base ?keypad key) in
@@ -203,7 +203,7 @@ let consumes view ~acts ~passes () =
   (match Mosaic.Reconciler.focused reconciler with
   | Some node -> ignore (Renderer.focus renderer node : bool)
   | None -> failwith "consumption fixture has no focused widget");
-  Renderer.render_frame renderer ~width:30 ~height:6 ~delta:0.;
+  Renderer.render_frame renderer ~width:30 ~height:6 ~dt:0.;
   let consumed (mods, key) =
     let event = Event.Key.of_input (Key.make ~mods key) in
     Renderer.dispatch_key renderer (Renderer.focus_path renderer) event;

@@ -482,7 +482,7 @@ let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
 
 (* Rendering *)
 
-let render_before t _self grid ~delta:_ =
+let render_before t _self grid ~dt:_ =
   if Syntax_session.poll t.session then sync_content t;
   show_viewport t;
   let w = Renderable.width t.node in
@@ -512,7 +512,7 @@ let render_before t _self grid ~delta:_ =
     | None -> Text_surface.reset_selection t.surface
   end
 
-let render_after t _self grid ~delta:_ =
+let render_after t _self grid ~dt:_ =
   if not (Renderable.focused t.node) then ()
   else
     match t.props.ghost_text with

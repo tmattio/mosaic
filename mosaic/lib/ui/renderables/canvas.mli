@@ -177,13 +177,13 @@ val grid : t -> Matrix_grid.t
 
 (** {1:callbacks Callbacks} *)
 
-val set_on_draw : t -> (t -> delta:float -> unit) option -> unit
+val set_on_draw : t -> (t -> dt:float -> unit) option -> unit
 (** [set_on_draw t cb] registers [cb] as the render-time drawing callback for
     [t], replacing any previously registered callback. [None] clears the
     callback.
 
-    [cb] fires each render pass, after the grid has been auto-resized. [~delta]
-    is the elapsed time in seconds since the last frame. {!width} and {!height}
+    [cb] fires each render pass, after the grid has been auto-resized. [~dt] is
+    the elapsed time in seconds since the last frame. {!width} and {!height}
     reflect the current layout dimensions inside [cb]. Content from previous
     frames persists in the grid; call {!clear} first for full redraws.
 

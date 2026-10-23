@@ -93,8 +93,8 @@ val prepare_layout : t -> width:int -> height:int -> unit
     ({{:https://www.w3.org/TR/resize-observer/#gather-active-observations-h}
       §3.4.1}). *)
 
-val render_frame : t -> width:int -> height:int -> delta:float -> unit
-(** [render_frame t ~width ~height ~delta] builds the next frame: it is
+val render_frame : t -> width:int -> height:int -> dt:float -> unit
+(** [render_frame t ~width ~height ~dt] builds the next frame: it is
     {!layout_frame} followed by {!paint_frame} at the same [height].
 
     Each call replaces the complete unpresented frame. Blank cells therefore
@@ -102,12 +102,12 @@ val render_frame : t -> width:int -> height:int -> delta:float -> unit
     pass, including when {!render_frame_until_settled} renders multiple passes
     before presentation.
 
-    [width] and [height] are the frame dimensions in terminal cells. [delta] is
+    [width] and [height] are the frame dimensions in terminal cells. [dt] is
     elapsed seconds since the last frame. *)
 
-val layout_frame : t -> width:int -> height:int -> delta:float -> unit
-(** [layout_frame t ~width ~height ~delta] lays out the next frame against
-    [width] by [height] cells, for {!paint_frame} to draw. In order, it:
+val layout_frame : t -> width:int -> height:int -> dt:float -> unit
+(** [layout_frame t ~width ~height ~dt] lays out the next frame against [width]
+    by [height] cells, for {!paint_frame} to draw. In order, it:
     - Runs lifecycle passes ([on_frame] and resize hooks).
     - Runs frame callbacks (see {!add_frame_callback}).
     - Computes layout via Toffee — skipped when no layout-affecting mutation
@@ -169,13 +169,8 @@ val needs_render : t -> bool
     live nodes are active. *)
 
 val render_frame_until_settled :
-  ?max_passes:int ->
-  t ->
-  width:int ->
-  height:int ->
-  delta:float ->
-  settle_result
-(** [render_frame_until_settled t ~width ~height ~delta] renders bounded frame
+  ?max_passes:int -> t -> width:int -> height:int -> dt:float -> settle_result
+(** [render_frame_until_settled t ~width ~height ~dt] renders bounded frame
     passes until visible nodes report no pending render work and no renderable
     requests a follow-up pass.
 
@@ -303,14 +298,14 @@ val hover : t -> Renderable.t option
 
 (** {1:frame_callbacks Frame callbacks} *)
 
-val add_frame_callback : t -> (float -> unit) -> unit
-(** [add_frame_callback t f] registers [f] to run at the start of each frame
-    with delta time in seconds. Callbacks run after lifecycle passes and before
-    layout computation.
+val add_frame_callback : t -> (dt:float -> unit) -> unit
+(** [add_frame_callback t f] registers [f] to run at the start of each frame, as
+    [f ~dt] with [dt] the frame's delta time in seconds. Callbacks run after
+    lifecycle passes and before layout computation.
 
     See also {!remove_frame_callback} and {!clear_frame_callbacks}. *)
 
-val remove_frame_callback : t -> (float -> unit) -> unit
+val remove_frame_callback : t -> (dt:float -> unit) -> unit
 (** [remove_frame_callback t f] unregisters [f] using physical equality.
 
     See also {!add_frame_callback}. *)

@@ -981,7 +981,7 @@ let view (m : model) =
                   Some (Scroll_zoom (px, py, `Out))
               | _ -> None)
             ~size:{ width = pct 100; height = pct 100 }
-            (fun c ~delta:_ ->
+            (fun c ~dt:_ ->
               let w = Canvas.width c in
               let h = Canvas.height c in
               canvas_size_ref := (w, h);

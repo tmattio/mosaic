@@ -86,7 +86,7 @@ let measure t ~known_dimensions ~available_space:_ ~style:_ =
 
 (* ───── Rendering ───── *)
 
-let render t _self grid ~delta:_ =
+let render t _self grid ~dt:_ =
   let w = Renderable.width t.node in
   let h = Renderable.height t.node in
   if w > 0 && h > 0 then
@@ -109,10 +109,10 @@ let animates t =
 
 let update_live t = Renderable.set_live t.node (animates t)
 
-let on_frame t _node ~delta =
+let on_frame t _node ~dt =
   let period = t.props.frame_set.period in
   if period > 0. then (
-    t.elapsed <- t.elapsed +. delta;
+    t.elapsed <- t.elapsed +. dt;
     if t.elapsed >= period then
       let n = Array.length t.props.frame_set.frames in
       if n > 0 then (

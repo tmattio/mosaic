@@ -1286,7 +1286,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?layout ?theme
   Renderable.on_mouse node (handle_mouse t);
   Renderable.set_on_frame node
     (Some
-       (fun _ ~delta:_ ->
+       (fun _ ~dt:_ ->
          if t.pending_rebuild then begin
            t.pending_rebuild <- false;
            rebuild t;

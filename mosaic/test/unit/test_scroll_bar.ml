@@ -321,7 +321,7 @@ let arrow_hold_repeats_in_seconds () =
       ()
   in
   bar := Some b;
-  let frame delta = Renderer.render_frame renderer ~width:1 ~height:10 ~delta in
+  let frame dt = Renderer.render_frame renderer ~width:1 ~height:10 ~dt in
   frame 0.;
   ignore (Renderer.render ~full:true renderer : string);
   ignore

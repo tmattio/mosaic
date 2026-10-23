@@ -19,7 +19,7 @@ let make_code ?content ?syntax ?text_style () =
 
 let render_code code =
   let grid = make_grid ~width:40 ~height:5 () in
-  Renderable.Private.render_full (Code.node code) ~grid ~delta:0.
+  Renderable.Private.render_full (Code.node code) ~grid ~dt:0.
 
 let styled_text code = Text_buffer.styled_text (Code.buffer code)
 let span_text span = (span : Text_buffer.span).text

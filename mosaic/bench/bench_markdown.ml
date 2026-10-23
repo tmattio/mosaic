@@ -5,7 +5,7 @@ let viewport_height = 24
 
 let render_frame renderer =
   Renderer.render_frame renderer ~width:viewport_width ~height:viewport_height
-    ~delta:16.;
+    ~dt:16.;
   ignore (Renderer.render renderer : string)
 
 (* A highlighter that keeps code blocks on the Code-widget path without

@@ -88,7 +88,7 @@ let render_input input ~width ~height =
   let node = Text_input.node input in
   layout_node node ~x:0 ~y:0 ~width ~height;
   let grid = make_grid ~width ~height () in
-  Renderable.Private.render_full node ~grid ~delta:0.;
+  Renderable.Private.render_full node ~grid ~dt:0.;
   grid
 
 let no_mod = Matrix_input.Keystroke.no_mods
@@ -746,7 +746,7 @@ let render_zero_size_no_crash () =
   let node = Text_input.node input in
   layout_node node ~x:0 ~y:0 ~width:0 ~height:0;
   let grid = make_grid ~width:10 ~height:10 () in
-  Renderable.Private.render node grid ~delta:0.;
+  Renderable.Private.render node grid ~dt:0.;
   is_true ~msg:"render completed" true
 
 (* ── Cursor Provider ── *)

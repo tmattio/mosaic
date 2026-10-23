@@ -518,7 +518,7 @@ let absent_selection_is_preserved () =
     !activations;
   with_layout sel ~width:30 ~height:10;
   let grid = make_grid ~width:30 ~height:10 () in
-  Renderable.Private.render_full (Select.node sel) ~grid ~delta:0.;
+  Renderable.Private.render_full (Select.node sel) ~grid ~dt:0.;
   is_false ~msg:"no selection marker"
     (String.contains (Matrix_grid.to_text grid) '\226');
   emit_key sel (make_key ~shift:true Down);
@@ -643,7 +643,7 @@ let intrinsic_spacing_paints_last_item () =
   let width, height = measure_select sel in
   with_layout sel ~width ~height;
   let grid = make_grid ~width ~height () in
-  Renderable.Private.render_full (Select.node sel) ~grid ~delta:0.;
+  Renderable.Private.render_full (Select.node sel) ~grid ~dt:0.;
   equal ~msg:"last item does not need a trailing spacing row" string "B"
     (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:3 ~y:3))
 

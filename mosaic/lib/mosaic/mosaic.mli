@@ -157,11 +157,11 @@ module Canvas : sig
 
   (** {1:callbacks Callbacks} *)
 
-  val set_on_draw : t -> (t -> delta:float -> unit) option -> unit
+  val set_on_draw : t -> (t -> dt:float -> unit) option -> unit
   (** [set_on_draw t cb] registers [cb] as the render-time drawing callback for
       [t]. [cb] fires each render pass after the grid has been auto-resized;
-      [~delta] is the elapsed time in seconds since the last frame. Pass [None]
-      to clear the callback. *)
+      [~dt] is the elapsed time in seconds since the last frame. Pass [None] to
+      clear the callback. *)
 
   val set_on_resize : t -> (t -> unit) option -> unit
   (** [set_on_resize t cb] registers [cb] as the resize callback for [t]. [cb]
@@ -2198,7 +2198,7 @@ val canvas :
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?focused:bool ->
-  (Canvas.t -> delta:float -> unit) ->
+  (Canvas.t -> dt:float -> unit) ->
   'msg t
 (** [canvas draw] is a custom drawing surface. Widget-specific visual options
     follow {!Mosaic_ui.Canvas}; layout and paint use the labelled arguments

@@ -72,15 +72,15 @@ let%expect_test "auto resize reflected" =
   let canvas = Canvas.create ~parent:(Renderer.root renderer) () in
   fill_node (Canvas.node canvas);
   set_viewport renderer ~width:10 ~height:3;
-  Renderer.render_frame renderer ~width:10 ~height:3 ~delta:0.;
+  Renderer.render_frame renderer ~width:10 ~height:3 ~dt:0.;
   Grid.draw_text (Canvas.grid canvas) ~x:0 ~y:0 ~text:"Small";
-  Renderer.render_frame renderer ~width:10 ~height:3 ~delta:0.;
+  Renderer.render_frame renderer ~width:10 ~height:3 ~dt:0.;
   print_newline ();
   print_string (grid_to_text (Canvas.grid canvas));
   set_viewport renderer ~width:15 ~height:5;
-  Renderer.render_frame renderer ~width:15 ~height:5 ~delta:0.;
+  Renderer.render_frame renderer ~width:15 ~height:5 ~dt:0.;
   Grid.draw_text (Canvas.grid canvas) ~x:0 ~y:3 ~text:"Bigger";
-  Renderer.render_frame renderer ~width:15 ~height:5 ~delta:0.;
+  Renderer.render_frame renderer ~width:15 ~height:5 ~dt:0.;
   print_newline ();
   print_string (grid_to_text (Canvas.grid canvas));
   [%expect_exact {|
@@ -126,9 +126,9 @@ let%expect_test "blit to correct parent position" =
   let canvas = Canvas.create ~parent:(Renderer.root renderer) () in
   fill_node (Canvas.node canvas);
   set_viewport renderer ~width:20 ~height:10;
-  Renderer.render_frame renderer ~width:20 ~height:10 ~delta:0.;
+  Renderer.render_frame renderer ~width:20 ~height:10 ~dt:0.;
   Grid.draw_text (Canvas.grid canvas) ~x:0 ~y:0 ~text:"X";
-  Renderer.render_frame renderer ~width:20 ~height:10 ~delta:0.;
+  Renderer.render_frame renderer ~width:20 ~height:10 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_text grid);

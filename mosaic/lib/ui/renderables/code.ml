@@ -100,7 +100,7 @@ let render_content t (props : Props.t) =
   show t;
   if not (Syntax_session.is_highlighting t.session) then notify_rows_change t
 
-let render_before t _node _grid ~delta:_ =
+let render_before t _node _grid ~dt:_ =
   if Syntax_session.poll t.session then begin
     show t;
     if not (Syntax_session.is_highlighting t.session) then notify_rows_change t;

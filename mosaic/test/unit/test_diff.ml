@@ -41,9 +41,7 @@ let span line start_byte end_byte =
   { Diff.side = New; line; start_byte; end_byte; color = Ansi.Color.red }
 
 let render renderer ~width ~height =
-  (match
-     Renderer.render_frame_until_settled renderer ~width ~height ~delta:0.
-   with
+  (match Renderer.render_frame_until_settled renderer ~width ~height ~dt:0. with
   | `Settled -> ()
   | `Pending _ -> failwith "render did not settle");
   Matrix_screen.next_grid (Renderer.screen renderer)
@@ -111,7 +109,7 @@ let unified_update_reuses_children () =
      survive each chunk. *)
   let renderer = Renderer.create () in
   let d = Diff.create ~parent:(Renderer.root renderer) (parse base_diff) in
-  Renderer.render_frame renderer ~width:60 ~height:10 ~delta:0.;
+  Renderer.render_frame renderer ~width:60 ~height:10 ~dt:0.;
   ignore (Renderer.render ~full:true renderer : string);
   let before = collect_nodes (Diff.node d) in
   Diff.set_patch d (parse grown_diff);
@@ -146,7 +144,7 @@ let span_counts_surface_graphemes () =
     (Diff.create ~parent:(Renderer.root renderer) ~show_line_numbers:false
        ~line_spans:[ span ] patch
       : Diff.t);
-  Renderer.render_frame renderer ~width:20 ~height:3 ~delta:0.;
+  Renderer.render_frame renderer ~width:20 ~height:3 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   let bg_of text =
     let rec find i =
@@ -320,7 +318,7 @@ let async_wrapped_split_settles () =
        (parse asymmetric_wrap_diff)
       : Diff.t);
   let frame () =
-    Renderer.render_frame renderer ~width:30 ~height:8 ~delta:0.;
+    Renderer.render_frame renderer ~width:30 ~height:8 ~dt:0.;
     complete_all ()
   in
   for _ = 1 to 10 do

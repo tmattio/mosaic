@@ -69,7 +69,7 @@ let%expect_test "styled text single color" =
   let red_style = Ansi.Style.fg Ansi.Color.red Ansi.Style.default in
   Text.set_styled_text txt
     [ { Text_buffer.text = "Red text"; style = red_style } ];
-  Renderer.render_frame renderer ~width:20 ~height:1 ~delta:0.;
+  Renderer.render_frame renderer ~width:20 ~height:1 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_ansi grid);
@@ -86,7 +86,7 @@ let%expect_test "styled text multiple spans" =
       { Text_buffer.text = "Red "; style = red_style };
       { Text_buffer.text = "Green"; style = green_style };
     ];
-  Renderer.render_frame renderer ~width:20 ~height:1 ~delta:0.;
+  Renderer.render_frame renderer ~width:20 ~height:1 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen renderer) in
   print_newline ();
   print_string (grid_to_ansi grid);
@@ -200,7 +200,7 @@ let%expect_test "a following text node clears its allocated leading blank" =
   (* A bounded settlement pass can rerender before the first pass is presented.
      Move the following sibling's blank over the old ellipsis to exercise that
      exact complete-frame ownership boundary. *)
-  Renderer.render_frame app.renderer ~width:12 ~height:1 ~delta:0.;
+  Renderer.render_frame app.renderer ~width:12 ~height:1 ~dt:0.;
   reconcile app (row 4);
   frame app ~width:12 ~height:1;
   [%expect_exact {|

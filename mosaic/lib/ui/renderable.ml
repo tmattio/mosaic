@@ -167,8 +167,8 @@ and node = {
   (* Pending render work *)
   mutable pending_provider : (unit -> Pending.t option) option;
   (* Lifecycle *)
-  mutable on_update : (node -> delta:float -> unit) option;
-  mutable on_frame : (node -> delta:float -> unit) option;
+  mutable on_update : (node -> dt:float -> unit) option;
+  mutable on_frame : (node -> dt:float -> unit) option;
   mutable on_resize : (node -> unit) option;
   mutable size_observer : (node -> unit) option;
   mutable on_lifecycle_pass : (node -> unit) option;
@@ -181,7 +181,7 @@ and node = {
   mutable live_count_change : (node -> unit) option;
 }
 
-and render = node -> Grid.t -> delta:float -> unit
+and render = node -> Grid.t -> dt:float -> unit
 
 type t = node
 
@@ -194,7 +194,7 @@ let toffee_exn = function
 let check_alive t =
   if t.destroyed then invalid_arg "Renderable: node is destroyed"
 
-let render_noop _ _ ~delta:_ = ()
+let render_noop _ _ ~dt:_ = ()
 
 (* Auto flex_shrink: terminal layout convention.
 
@@ -1099,9 +1099,9 @@ let children_in_viewport ~(parent : t) ~(viewport : Grid.region) : t list =
 let iter_children_in_viewport ~parent ~viewport f =
   List.iter f (children_in_viewport ~parent ~viewport)
 
-let pre_render_update ?(frame = true) t ~delta =
-  Option.iter (fun f -> f t ~delta) t.on_update;
-  if frame && t.live then Option.iter (fun f -> f t ~delta) t.on_frame;
+let pre_render_update ?(frame = true) t ~dt =
+  Option.iter (fun f -> f t ~dt) t.on_update;
+  if frame && t.live then Option.iter (fun f -> f t ~dt) t.on_frame;
   let lw = width t and lh = height t in
   if lw <> t.last_width || lh <> t.last_height then (
     t.last_width <- lw;
@@ -1118,7 +1118,7 @@ let pre_render_update ?(frame = true) t ~delta =
       f t
   | Some _ | None -> ()
 
-let render_node t grid ~delta = t.render t grid ~delta
+let render_node t grid ~dt = t.render t grid ~dt
 
 let ensure_frame_buffer (t : t) ~(parent : Grid.t) : Grid.t option =
   let w = width t and h = height t in
@@ -1146,7 +1146,7 @@ let blit_frame_buffer (t : t) ~(dst : Grid.t) : unit =
         Grid.draw_region ~src:buf ~dst ~src_x:0 ~src_y:0 ~width:w ~height:h
           ~dst_x:(x t) ~dst_y:(y t)
 
-let render_full (t : t) ~(grid : Grid.t) ~(delta : float) : unit =
+let render_full (t : t) ~(grid : Grid.t) ~(dt : float) : unit =
   let render_target, local_origin =
     if t.buffered then
       match ensure_frame_buffer t ~parent:grid with
@@ -1167,9 +1167,9 @@ let render_full (t : t) ~(grid : Grid.t) ~(delta : float) : unit =
         t.translate_y <- original_ty);
       if t.buffered then blit_frame_buffer t ~dst:grid)
     (fun () ->
-      Option.iter (fun f -> f t render_target ~delta) t.render_before;
-      t.render t render_target ~delta;
-      Option.iter (fun f -> f t render_target ~delta) t.render_after)
+      Option.iter (fun f -> f t render_target ~dt) t.render_before;
+      t.render t render_target ~dt;
+      Option.iter (fun f -> f t render_target ~dt) t.render_after)
 
 (* ───── Pretty-printing ───── *)
 

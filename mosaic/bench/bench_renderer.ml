@@ -24,7 +24,7 @@ let row_text =
 
 let render_frame renderer =
   Renderer.render_frame renderer ~width:viewport_width ~height:viewport_height
-    ~delta:16.;
+    ~dt:16.;
   ignore (Renderer.render renderer : string)
 
 let make_transcript_pair () =
@@ -125,8 +125,7 @@ let idle_text =
      nothing changes."
 
 let render_idle_frame renderer =
-  Renderer.render_frame renderer ~width:idle_width ~height:idle_height
-    ~delta:16.;
+  Renderer.render_frame renderer ~width:idle_width ~height:idle_height ~dt:16.;
   ignore (Renderer.render renderer : string)
 
 let make_idle_screen () =
@@ -173,7 +172,7 @@ let typing_frame st =
   st.flip <- not st.flip;
   Text.set_content st.text (if st.flip then typing_b else typing_a);
   Renderer.render_frame st.renderer ~width:typing_width ~height:typing_height
-    ~delta:16.;
+    ~dt:16.;
   ignore (Renderer.render st.renderer : string)
 
 let make_typing () =
@@ -213,7 +212,7 @@ let primary_frame st =
   Text.set_content st.prompt (if st.typed then "> ab" else "> a");
   let renderer = st.primary_renderer in
   Renderer.layout_frame renderer ~width:viewport_width
-    ~height:primary_terminal_rows ~delta:16.;
+    ~height:primary_terminal_rows ~dt:16.;
   let rows = Renderable.height (Renderer.root renderer) in
   Renderer.paint_frame renderer ~height:rows;
   ignore (Renderer.render renderer : string)

@@ -68,7 +68,7 @@ type 'msg widget_callbacks =
       on_change : (int -> 'msg) option;
       on_activate : (int -> 'msg) option;
     }
-  | Canvas_callbacks of { on_draw : (Canvas.t -> delta:float -> unit) option }
+  | Canvas_callbacks of { on_draw : (Canvas.t -> dt:float -> unit) option }
   | Scroll_bar_callbacks of { on_change : (int -> 'msg) option }
   | Scroll_box_callbacks of { on_scroll : (Scroll.t -> 'msg) option }
   | Textarea_callbacks of {
@@ -617,7 +617,7 @@ val canvas :
   ?on_click:(Event.mouse -> 'msg option) ->
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
-  ?on_draw:(Canvas.t -> delta:float -> unit) ->
+  ?on_draw:(Canvas.t -> dt:float -> unit) ->
   unit ->
   'msg t
 (** [canvas ()] is a canvas leaf element for custom cell-level drawing. Canvas
@@ -629,7 +629,7 @@ val canvas :
     frames persists; call {!Canvas.clear} first when a full redraw is required.
 
     Canvas-specific attributes:
-    - [on_draw] is the render-time drawing callback. The [~delta] argument is
+    - [on_draw] is the render-time drawing callback. The [~dt] argument is
       elapsed time in seconds since the last frame. Combine with [~live:true]
       for per-frame animation. *)
 

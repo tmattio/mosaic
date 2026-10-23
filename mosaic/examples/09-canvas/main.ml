@@ -103,7 +103,7 @@ let view model =
         [
           canvas ~live:true
             ~size:{ width = pct 100; height = pct 100 }
-            (fun c ~delta:_ ->
+            (fun c ~dt:_ ->
               Canvas.clear c;
               draw_canvas model c);
         ];

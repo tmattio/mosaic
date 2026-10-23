@@ -743,8 +743,8 @@ let on_frame_runs () =
   let root = make_root t in
   let child = Renderable.create ~parent:root ~live:true () in
   let fired = ref false in
-  Renderable.set_on_frame child (Some (fun _ ~delta:_ -> fired := true));
-  Renderable.Private.pre_render_update child ~delta:16.0;
+  Renderable.set_on_frame child (Some (fun _ ~dt:_ -> fired := true));
+  Renderable.Private.pre_render_update child ~dt:16.0;
   is_true ~msg:"fired" !fired
 
 let on_resize_fires () =
@@ -754,7 +754,7 @@ let on_resize_fires () =
   let fired = ref false in
   Renderable.set_on_resize child (Some (fun _ -> fired := true));
   layout_node child ~x:0 ~y:0 ~width:10 ~height:5;
-  Renderable.Private.pre_render_update child ~delta:16.0;
+  Renderable.Private.pre_render_update child ~dt:16.0;
   is_true ~msg:"fired" !fired
 
 (* ── Layout ── *)
@@ -967,9 +967,9 @@ let render_before_hook () =
   let child = Renderable.create ~parent:root () in
   layout_node child ~x:0 ~y:0 ~width:10 ~height:5;
   let fired = ref false in
-  Renderable.set_render_before child (Some (fun _ _ ~delta:_ -> fired := true));
+  Renderable.set_render_before child (Some (fun _ _ ~dt:_ -> fired := true));
   let grid = make_grid () in
-  Renderable.Private.render_full child ~grid ~delta:16.0;
+  Renderable.Private.render_full child ~grid ~dt:16.0;
   is_true ~msg:"before hook ran" !fired
 
 let render_after_hook () =
@@ -978,9 +978,9 @@ let render_after_hook () =
   let child = Renderable.create ~parent:root () in
   layout_node child ~x:0 ~y:0 ~width:10 ~height:5;
   let fired = ref false in
-  Renderable.set_render_after child (Some (fun _ _ ~delta:_ -> fired := true));
+  Renderable.set_render_after child (Some (fun _ _ ~dt:_ -> fired := true));
   let grid = make_grid () in
-  Renderable.Private.render_full child ~grid ~delta:16.0;
+  Renderable.Private.render_full child ~grid ~dt:16.0;
   is_true ~msg:"after hook ran" !fired
 
 let render_hook_order () =
@@ -990,12 +990,12 @@ let render_hook_order () =
   layout_node child ~x:0 ~y:0 ~width:10 ~height:5;
   let order = ref [] in
   Renderable.set_render_before child
-    (Some (fun _ _ ~delta:_ -> order := "before" :: !order));
-  Renderable.set_render child (fun _ _ ~delta:_ -> order := "render" :: !order);
+    (Some (fun _ _ ~dt:_ -> order := "before" :: !order));
+  Renderable.set_render child (fun _ _ ~dt:_ -> order := "render" :: !order);
   Renderable.set_render_after child
-    (Some (fun _ _ ~delta:_ -> order := "after" :: !order));
+    (Some (fun _ _ ~dt:_ -> order := "after" :: !order));
   let grid = make_grid () in
-  Renderable.Private.render_full child ~grid ~delta:16.0;
+  Renderable.Private.render_full child ~grid ~dt:16.0;
   equal ~msg:"order" (list string) [ "after"; "render"; "before" ] !order
 
 let set_render_before_schedules () =
@@ -1003,7 +1003,7 @@ let set_render_before_schedules () =
   let root = make_root t in
   let child = Renderable.create ~parent:root () in
   let before = !(t.schedule_count) in
-  Renderable.set_render_before child (Some (fun _ _ ~delta:_ -> ()));
+  Renderable.set_render_before child (Some (fun _ _ ~dt:_ -> ()));
   gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let set_render_after_schedules () =
@@ -1011,7 +1011,7 @@ let set_render_after_schedules () =
   let root = make_root t in
   let child = Renderable.create ~parent:root () in
   let before = !(t.schedule_count) in
-  Renderable.set_render_after child (Some (fun _ _ ~delta:_ -> ()));
+  Renderable.set_render_after child (Some (fun _ _ ~dt:_ -> ()));
   gt ~msg:"scheduled" ~than:before !(t.schedule_count)
 
 let buffered_render_full_uses_local_coordinates () =
@@ -1021,10 +1021,10 @@ let buffered_render_full_uses_local_coordinates () =
   layout_node child ~x:2 ~y:1 ~width:5 ~height:3;
   Renderable.set_buffered child true;
   let seen = ref None in
-  Renderable.set_render child (fun node _ ~delta:_ ->
+  Renderable.set_render child (fun node _ ~dt:_ ->
       seen := Some (Renderable.x node, Renderable.y node));
   let grid = make_grid ~width:12 ~height:6 () in
-  Renderable.Private.render_full child ~grid ~delta:0.;
+  Renderable.Private.render_full child ~grid ~dt:0.;
   equal ~msg:"buffered render sees local coords"
     (option (pair int int))
     (Some (0, 0))

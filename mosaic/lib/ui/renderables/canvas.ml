@@ -3,7 +3,7 @@
 type t = {
   node : Renderable.t;
   grid : Matrix_grid.t;
-  mutable on_draw : (t -> delta:float -> unit) option;
+  mutable on_draw : (t -> dt:float -> unit) option;
   mutable on_resize : (t -> unit) option;
 }
 
@@ -39,7 +39,7 @@ let clear ?color t =
 
 (* ───── Rendering ───── *)
 
-let render t _self parent_grid ~delta =
+let render t _self parent_grid ~dt =
   let w = Renderable.width t.node and h = Renderable.height t.node in
   if w > 0 && h > 0 then begin
     (* Resize lazily during render so the grid always matches layout dimensions
@@ -54,7 +54,7 @@ let render t _self parent_grid ~delta =
        they are drawn again. *)
     Matrix_grid.set_width_method t.grid (Renderable.Private.width_method t.node);
     (* on_draw fires after resize so the callback sees up-to-date dimensions. *)
-    Option.iter (fun f -> f t ~delta) t.on_draw;
+    Option.iter (fun f -> f t ~dt) t.on_draw;
     Matrix_grid.draw_region ~src:t.grid ~dst:parent_grid ~src_x:0 ~src_y:0
       ~width:w ~height:h ~dst_x:(Renderable.x t.node)
       ~dst_y:(Renderable.y t.node)

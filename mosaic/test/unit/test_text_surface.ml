@@ -695,7 +695,7 @@ let styled_cluster_paints_as_one () =
       { Text_buffer.text = "\204\129👩‍💻x"; style = Ansi.Style.default };
     ];
   let grid = make_grid ~width:8 ~height:2 ~width_method:`Wcwidth () in
-  Renderable.Private.render (Text_surface.node s) grid ~delta:0.;
+  Renderable.Private.render (Text_surface.node s) grid ~dt:0.;
   equal string "e\204\129" (Matrix_grid.get_text grid 0);
   is_true (Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_fg grid 0));
   equal string "👩‍💻" (Matrix_grid.get_text grid 1);
@@ -715,7 +715,7 @@ let cjk_wrap_across_styles () =
   equal string "AB 测" (row_text layout 0);
   equal string "试文字" (row_text layout 1);
   let grid = make_grid ~width:6 ~height:2 () in
-  Renderable.Private.render (Text_surface.node s) grid ~delta:0.;
+  Renderable.Private.render (Text_surface.node s) grid ~dt:0.;
   List.iter
     (fun (x, y, text, color) ->
       let cell = Matrix_grid.idx grid ~x ~y in
@@ -736,7 +736,7 @@ let clipped_text_uses_absolute_source_rows () =
   in
   let grid = make_grid ~width:10 ~height:4 () in
   Matrix_grid.push_clip grid { x = 0; y = 2; width = 3; height = 1 };
-  Renderable.Private.render (Text_surface.node s) grid ~delta:0.;
+  Renderable.Private.render (Text_surface.node s) grid ~dt:0.;
   equal string "t" (Matrix_grid.get_text grid (Matrix_grid.idx grid ~x:0 ~y:2));
   equal string " " (Matrix_grid.get_text grid 0)
 
@@ -746,7 +746,7 @@ let clipped_wide_start_stays_inside_node () =
   Text_surface.set_scroll_x s 1;
   let grid = make_grid ~width:6 ~height:1 () in
   Matrix_grid.draw_text grid ~x:1 ~y:0 ~text:"N";
-  Renderable.Private.render (Text_surface.node s) grid ~delta:0.;
+  Renderable.Private.render (Text_surface.node s) grid ~dt:0.;
   equal string "N" (Matrix_grid.get_text grid 1);
   equal string "a" (Matrix_grid.get_text grid 3)
 

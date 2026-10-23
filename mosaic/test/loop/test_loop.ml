@@ -284,7 +284,7 @@ let%expect_test "live animation frames deliver their delta in seconds" =
               [
                 Mosaic.spinner ();
                 Mosaic.canvas ~size:(Mosaic.size ~width:2 ~height:1)
-                  (fun _ ~delta -> last_delta := delta);
+                  (fun _ ~dt -> last_delta := dt);
               ]
           else Mosaic.text "done");
     }

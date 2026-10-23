@@ -589,10 +589,10 @@ let create_callback_refs (instance : instance)
     | Canvas_instance widget ->
         Canvas.set_on_draw widget
           (Some
-             (fun canvas ~delta ->
+             (fun canvas ~dt ->
                match !callbacks with
                | Vnode.Canvas_callbacks c ->
-                   Option.iter (fun f -> f canvas ~delta) c.on_draw
+                   Option.iter (fun f -> f canvas ~dt) c.on_draw
                | _ -> ()));
         Fun.const ()
     | Diff_instance widget -> (

@@ -218,7 +218,7 @@ let compute_gutter_width lk (props : Props.t) line_count =
 
 (* ───── Gutter Rendering ───── *)
 
-let render_gutter t _self grid ~delta:_ =
+let render_gutter t _self grid ~dt:_ =
   let rows = find_text_rows_child t.content in
   let gutter_w = Renderable.width t.gutter in
   let gutter_h = Renderable.height t.gutter in
@@ -307,7 +307,7 @@ let render_gutter t _self grid ~delta:_ =
 
 (* ───── Content Line Color Rendering ───── *)
 
-let render_content_colors t _self grid ~delta:_ =
+let render_content_colors t _self grid ~dt:_ =
   match find_text_rows_child t.content with
   | None -> ()
   | Some rows ->

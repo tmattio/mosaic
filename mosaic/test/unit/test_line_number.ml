@@ -19,7 +19,7 @@ let make_line_number ?line_colors ?line_signs ?line_numbers ?hidden_line_numbers
   (renderer, ln)
 
 let render renderer =
-  Renderer.render_frame renderer ~width:20 ~height:3 ~delta:0.;
+  Renderer.render_frame renderer ~width:20 ~height:3 ~dt:0.;
   ignore (Renderer.render ~full:true renderer : string);
   Matrix_screen.current_grid (Renderer.screen renderer)
 

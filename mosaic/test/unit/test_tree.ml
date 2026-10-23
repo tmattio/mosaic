@@ -513,7 +513,7 @@ let default_background_is_transparent () =
         |> Toffee.Style.set_height (Toffee.Style.Dimension.length 3.))
       ()
   in
-  Renderable.set_render under (fun _ grid ~delta:_ ->
+  Renderable.set_render under (fun _ grid ~dt:_ ->
       Matrix_grid.fill_rect grid ~x:0 ~y:0 ~width:10 ~height:3
         ~color:Ansi.Color.red);
   let _tree =
@@ -525,7 +525,7 @@ let default_background_is_transparent () =
       ~items:[ Tree.item ~id:"a" "a" ]
       ()
   in
-  Renderer.render_frame r ~width:10 ~height:3 ~delta:0.;
+  Renderer.render_frame r ~width:10 ~height:3 ~dt:0.;
   let grid = Matrix_screen.next_grid (Renderer.screen r) in
   is_true ~msg:"a blank cell shows the color beneath"
     (Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_bg grid ((2 * 10) + 5)))

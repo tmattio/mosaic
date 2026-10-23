@@ -83,7 +83,7 @@ let fixture build =
     (match Mosaic.Reconciler.focused reconciler with
     | Some node -> ignore (Renderer.focus renderer node : bool)
     | None -> Renderer.blur renderer);
-    Renderer.render_frame renderer ~width:24 ~height:6 ~delta:0.
+    Renderer.render_frame renderer ~width:24 ~height:6 ~dt:0.
   in
   let key key =
     ignore
@@ -124,7 +124,7 @@ let viewport_fixture build =
       (Vnode.map receive
          (build ?key:(Some key) ~equal:String.equal ~selected:(Some selected)
             values));
-    Renderer.render_frame renderer ~width:24 ~height:6 ~delta:0.;
+    Renderer.render_frame renderer ~width:24 ~height:6 ~dt:0.;
     ignore (Renderer.render ~full:true renderer : string);
     let grid = Matrix_screen.current_grid (Renderer.screen renderer) in
     String.concat ""
@@ -269,7 +269,7 @@ let table_press_reconciliation ~trigger ~replacement expected =
     if String.equal message trigger then render replacement
   in
   render (Some [ "A"; "B" ]);
-  Renderer.render_frame renderer ~width:24 ~height:6 ~delta:0.;
+  Renderer.render_frame renderer ~width:24 ~height:6 ~dt:0.;
   ignore (Renderer.render ~full:true renderer : string);
   let mouse = Test_harness.mouse_report ~x:1 ~y:1 (Press Left) in
   ignore (Test_harness.dispatch_mouse renderer mouse : Event.mouse);
