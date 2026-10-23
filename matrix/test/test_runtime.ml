@@ -1854,7 +1854,7 @@ let test_application_query () =
   equal (list input_event)
     [
       Reply (Version "XTerm(398)");
-      Reply (Cursor { row = 9; col = 0 });
+      Reply (Cursor { row = 9; col = 0; page = None });
       Reply (Primary_attributes [ 64; 1 ]);
     ]
     (events c);

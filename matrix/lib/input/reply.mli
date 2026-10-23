@@ -13,6 +13,11 @@
     values fall outside that form is kept as the sequence it is ({!Csi}, {!Dcs},
     {!Osc}). Sizes and positions saturate at [max_int], as every parameter does.
 
+    An OSC reply ends with the terminator of the query it answers: xterm "uses
+    the same terminator used in a query" (xterm's Control Sequences, "Operating
+    System Commands"), BEL or ST. A program that sent BEL expects BEL back, so
+    each OSC reply keeps its terminator.
+
     {1:budget The memory budget}
 
     The content of a control string is kept until the string ends, so that it
@@ -47,10 +52,17 @@ type t =
   | Mode of { dec : bool; mode : int; setting : setting }
       (** DECRPM, [CSI ? mode ; setting $ y] for a DEC private mode
           ([dec = true]) or [CSI mode ; setting $ y] for an ANSI mode. *)
-  | Cursor of { row : int; col : int }
-      (** CPR, [CSI row ; col R], or DECXCPR, [CSI ? row ; col R], from row 0
-          and column 0. xterm sends a modified F3 as [CSI 1 ; m R], which a CPR
-          can be; see {!Decoder.expect}. *)
+  | Cursor of { row : int; col : int; page : int option }
+      (** CPR, [CSI row ; col R], with no page, or DECXCPR,
+          [CSI ? row ; col ; page R], from row 0 and column 0 and page 1 ("the
+          cursor is currently at line Pl, column Pc, on page Pp", VT510,
+          DECXCPR). xterm omits the page, "the default page, i.e., "1"" (xterm's
+          Control Sequences, "Device Status Report"). xterm sends a modified F3
+          as [CSI 1 ; m R], which a CPR can be; see {!Decoder.expect}. *)
+  | Operating_status of [ `Ok | `Malfunction ]
+      (** DSR, [CSI 0 n] or [CSI 3 n]: the terminal "is in good operating
+          condition" or "has a malfunction", the reply to [CSI 5 n] (VT510,
+          DSR—Operating Status). *)
   | Text_area_pixels of { height : int; width : int }
       (** XTWINOPS, [CSI 4 ; height ; width t], the reply to [CSI 14 t]. *)
   | Cell_pixels of { height : int; width : int }
@@ -77,17 +89,23 @@ type t =
   | Color of {
       target : [ `Foreground | `Background | `Cursor | `Palette of int ];
       rgb : int * int * int;
+      terminator : Ansi.terminator;
     }
-      (** [OSC 10], [OSC 11], [OSC 12] or [OSC 4 ; index] with a color written
-          [rgb:r/g/b], each channel of 1 to 4 hex digits scaled to 0..255, as
-          X11's XParseColor reads them. Other color forms are {!Osc}. *)
-  | Clipboard of { selection : string; data : string }
+      (** [OSC 10], [OSC 11], [OSC 12] or [OSC 4 ; index] with a color in a form
+          {!rgb_of_spec} reads, the OSC that would set that color. Other color
+          forms are {!Osc}. *)
+  | Clipboard of {
+      selection : string;
+      data : string;
+      terminator : Ansi.terminator;
+    }
       (** [OSC 52 ; selection ; data]: a clipboard read, its data decoded from
           base64. Data that is not base64 is {!Osc}. *)
   | Graphics of { id : int option; message : string }
       (** [APC G keys ; message ST]: the kitty graphics protocol's reply, with
           the image id of its [i] key and its message, such as ["OK"]. *)
-  | Osc of string  (** Any other OSC, its content as sent. *)
+  | Osc of { content : string; terminator : Ansi.terminator }
+      (** Any other OSC, its content as sent. *)
   | Dcs of { header : Ansi.Parser.sequence; data : string }
       (** Any other DCS, such as DECRQSS's reply [DCS 1 $ r ... ST]. *)
   | Csi of Ansi.Parser.sequence
@@ -114,9 +132,9 @@ val pp : Format.formatter -> t -> unit
     A control string's content is read to the reply its form says, by the rules
     of the constructors above; content of no known form is kept as it is. *)
 
-val of_osc : string -> t
-(** [of_osc s] is the reply an OSC with content [s] is: {!Color} or {!Clipboard}
-    when [s] has their form, {!Osc} otherwise. *)
+val of_osc : Ansi.terminator -> string -> t
+(** [of_osc e s] is the reply an OSC with content [s], ended by [e], is:
+    {!Color} or {!Clipboard} when [s] has their form, {!Osc} otherwise. *)
 
 val of_dcs : Ansi.Parser.sequence -> string -> t
 (** [of_dcs h s] is the reply a DCS with header [h] and data [s] is: {!Version},
@@ -126,3 +144,37 @@ val of_dcs : Ansi.Parser.sequence -> string -> t
 val graphics : string -> t
 (** [graphics s] is the kitty graphics protocol's reply whose keys and message
     are [s], the content of an APC after its [G]: {!Graphics}. *)
+
+val rgb_of_spec : string -> (int * int * int) option
+(** [rgb_of_spec s] is the color the X11 color string [s] names, in its numeric
+    forms (Xlib, ch. 6, "Color Strings"), each channel from 0 to 255:
+    - [rgb:r/g/b], each channel of 1 to 4 hex digits, "scaled" to its range, so
+      [rgb:f/8/0] is [(255, 136, 0)];
+    - [#rgb], [#rrggbb], [#rrrgggbbb] or [#rrrrggggbbbb], the older form, whose
+      digits "represent the most significant bits of the value", so [#f80] is
+      [(240, 128, 0)].
+
+    It is [None] for any other form: a color name, which needs X's database, or
+    a device-independent form such as [CIEXYZ:]. The OSCs that set a color (4,
+    10, 11 and 12) and their replies take these forms. *)
+
+(** {1:encoding Encoding}
+
+    A terminal writes each reply in the form its constructor gives, with 7-bit
+    controls: CSI is [ESC \[] and ST is [ESC \\ ]. The decoder reads the bytes
+    back: for every reply [r] it can produce, it decodes [encode [r]] to [r]
+    while [r] is owed ({!Decoder.expect}), as a string reply and a CPR of row 0,
+    whose form a modified F3 shares, need. *)
+
+val encode : t list -> string
+(** [encode rs] are the bytes a terminal sends for the replies [rs], in order;
+    [""] for none. A color is written [rgb:rrrr/gggg/bbbb], each channel scaled
+    to 16 bits as xterm writes it; capability names and values in hex; a
+    clipboard's data in base64 with padding (RFC 4648 §4).
+
+    Raises [Invalid_argument] if a reply is {!Cut} or {!Too_long}, which no
+    terminal sends, or holds a value its form cannot carry, which would read
+    back as another reply: a negative number, a position of [max_int], a page
+    below 1, a channel outside 0..255, a palette index or graphics id above
+    999,999,999, an empty capability name, a selection holding [;], or string
+    content that is not UTF-8 or holds a control other than BS to CR. *)

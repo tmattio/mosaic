@@ -124,7 +124,7 @@
  (name test_decoder_props)
  (package matrix)
  (modules test_decoder_props)
- (libraries windtrap matrix.input))
+ (libraries windtrap matrix.input matrix.ansi))
 
 ; The terminal core links no unix, so that a program without it, such as a
 ; MirageOS unikernel, can use it. Linking this test fails, and says through

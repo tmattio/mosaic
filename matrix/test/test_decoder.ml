@@ -528,8 +528,9 @@ let replies =
     table "cursor reports"
       [
         ("\x1b[12;40R", [ "Reply Cursor 11,39" ]);
-        ("\x1b[?12;40R", [ "Reply Cursor 11,39" ]);
-        ("\x1b[?12;40;1R", [ "Reply Cursor 11,39" ]);
+        (* xterm's DECXCPR omits the page: the default page, 1. *)
+        ("\x1b[?12;40R", [ "Reply Cursor 11,39 page 1" ]);
+        ("\x1b[?12;40;2R", [ "Reply Cursor 11,39 page 2" ]);
         ("\x1b[4611686018427387904;1R", [ "Reply Cursor 4611686018427387902,0" ]);
       ];
     table ~owed:cursor "F3 or a cursor report"
@@ -555,11 +556,17 @@ let replies =
         ("\x1b[?997;2n", [ "Reply Color_scheme Light" ]);
         ("\x1b[?997;3n", [ "Reply Csi CSI ?997;3 n" ]);
       ];
+    table "operating status"
+      [
+        ("\x1b[0n", [ "Reply Operating_status Ok" ]);
+        ("\x1b[3n", [ "Reply Operating_status Malfunction" ]);
+        ("\x1b[1n", [ "Reply Csi CSI 1 n" ]);
+      ];
     table "unknown sequences are never keys"
       [
         ("\x1b[?1a", [ "Reply Csi CSI ?1 a" ]);
         ("\x1b[1 q", [ "Reply Csi CSI 1 SP q" ]);
-        ("\x1b[0n", [ "Reply Csi CSI 0 n" ]);
+        ("\x1b[5n", [ "Reply Csi CSI 5 n" ]);
         ( "\x1bOz1",
           [ "Key Alt+'O'"; "Key 'z' text \"z\""; "Key '1' text \"1\"" ] );
         ("\x1bO1z", [ "Reply Ss3 CSI 1 z" ]);
@@ -585,16 +592,23 @@ let string_replies =
       ];
     table ~owed:strings "OSC"
       [
-        ("\x1b]11;rgb:ffff/8080/0000\x07", [ "Reply Color background #ff8000" ]);
+        (* An OSC reply keeps the terminator its query chose. *)
+        ( "\x1b]11;rgb:ffff/8080/0000\x07",
+          [ "Reply Color background #ff8000 BEL" ] );
         ("\x1b]10;rgb:f/8/0\x1b\\", [ "Reply Color foreground #ff8800" ]);
-        ("\x1b]12;rgb:fff/000/800\x07", [ "Reply Color cursor #ff0080" ]);
-        ("\x1b]4;1;rgb:cd/00/00\x07", [ "Reply Color palette 1 #cd0000" ]);
-        ("\x1b]11;#ffffff\x07", [ "Reply Osc \"11;#ffffff\"" ]);
-        ("\x1b]52;c;aGVsbG8=\x07", [ "Reply Clipboard \"c\" \"hello\"" ]);
-        ("\x1b]52;c;aGVsbG8\x07", [ "Reply Clipboard \"c\" \"hello\"" ]);
-        ("\x1b]52;c;\x07", [ "Reply Clipboard \"c\" \"\"" ]);
-        ("\x1b]52;c;a*b\x07", [ "Reply Osc \"52;c;a*b\"" ]);
-        ( "\x1b]1337;ReportCellSize=17.0;8.0\x07",
+        ("\x1b]12;rgb:fff/000/800\x07", [ "Reply Color cursor #ff0080 BEL" ]);
+        ("\x1b]4;1;rgb:cd/00/00\x1b\\", [ "Reply Color palette 1 #cd0000" ]);
+        (* The older form: its digits are the high bits, not scaled. *)
+        ("\x1b]11;#ffffff\x1b\\", [ "Reply Color background #ffffff" ]);
+        ("\x1b]11;#f80\x1b\\", [ "Reply Color background #f08000" ]);
+        ("\x1b]11;#fff800000\x1b\\", [ "Reply Color background #ff8000" ]);
+        ("\x1b]11;#ffff\x1b\\", [ "Reply Osc \"11;#ffff\"" ]);
+        ("\x1b]11;white\x1b\\", [ "Reply Osc \"11;white\"" ]);
+        ("\x1b]52;c;aGVsbG8=\x07", [ "Reply Clipboard \"c\" \"hello\" BEL" ]);
+        ("\x1b]52;c;aGVsbG8\x1b\\", [ "Reply Clipboard \"c\" \"hello\"" ]);
+        ("\x1b]52;c;\x1b\\", [ "Reply Clipboard \"c\" \"\"" ]);
+        ("\x1b]52;c;a*b\x07", [ "Reply Osc \"52;c;a*b\" BEL" ]);
+        ( "\x1b]1337;ReportCellSize=17.0;8.0\x1b\\",
           [ "Reply Osc \"1337;ReportCellSize=17.0;8.0\"" ] );
         ("\x1b]Lterm\x1b\\", [ "Reply Osc \"Lterm\"" ]);
       ];
@@ -620,12 +634,12 @@ let string_replies =
         ("\x1b_a", [ "Key Alt+'_'"; "Key 'a' text \"a\"" ]);
         ( "\x1b\x1b]a",
           [ "Key Alt+Escape"; "Key ']' text \"]\""; "Key 'a' text \"a\"" ] );
-        ("\x1b\x1b]11;?\x07", [ "Key Escape"; "Reply Osc \"11;?\"" ]);
+        ("\x1b\x1b]11;?\x07", [ "Key Escape"; "Reply Osc \"11;?\" BEL" ]);
       ];
     test "silence never cuts a string" (fun () ->
         check_steps ~owed:strings
           [ F "\x1b]11;rgb:1"; Idle; F "/2/3"; Idle; F "\x07" ]
-          [ "Reply Color background #112233" ]);
+          [ "Reply Color background #112233 BEL" ]);
     test "the end of input cuts a string" (fun () ->
         check_steps ~owed:strings
           [ F "\x1b]11;rgb:1"; Finish ]
@@ -732,7 +746,7 @@ let silence =
         D.reset d;
         feed "a\x1b]1;x\x07";
         equal events
-          [ "Key 'a' text \"a\""; "Reply Osc \"1;x\"" ]
+          [ "Key 'a' text \"a\""; "Reply Osc \"1;x\" BEL" ]
           (List.rev !got));
   ]
 
@@ -753,14 +767,14 @@ let owed_tests =
             "Key ';' text \";\"";
             "Key 'x' text \"x\"";
             "Key Ctrl+'g'";
-            "Reply Osc \"1;x\"";
+            "Reply Osc \"1;x\" BEL";
             "Key Alt+']'";
             "Key '1' text \"1\"";
           ]);
     test "a string begun goes on after the count is settled" (fun () ->
         check_steps
           [ Expect strings; F "\x1b]1;x"; Settle strings; F "y\x07" ]
-          [ "Reply Osc \"1;xy\"" ]);
+          [ "Reply Osc \"1;xy\" BEL" ]);
     test "a cursor report is owed until settled, whatever arrives" (fun () ->
         check_steps
           [
@@ -1007,7 +1021,7 @@ let regressions =
           [ "Key Alt+'['"; "Key 'A' text \"A\"" ];
         check_steps ~owed:strings
           [ F "\x1b]11;rgb:1"; Idle; F "/2/3\x07" ]
-          [ "Reply Color background #112233" ];
+          [ "Reply Color background #112233 BEL" ];
         check_steps
           [ F "\x1b[?2026;"; Idle; F "2$y" ]
           [

@@ -732,7 +732,7 @@ let anchored t anchor ~row ~col =
 
 (* A cursor report answers the oldest query still owed one, a given-up one
    first. *)
-let cursor_report t ~row ~col =
+let cursor_report t ~row ~col ~page =
   if t.lost_reports > 0 then t.lost_reports <- t.lost_reports - 1
   else
     match
@@ -758,7 +758,7 @@ let cursor_report t ~row ~col =
                 if not t.released then anchored t anchor ~row ~col;
                 t.dirty <- true
             | _ -> ())
-        | Application -> push t (Reply (Cursor { row; col }))
+        | Application -> push t (Reply (Cursor { row; col; page }))
         | Own -> ())
 
 (* The batch that ends with DA1 in flight, which the replies that are not
@@ -793,7 +793,7 @@ let attributes_report t attributes =
    that are application facts are events. *)
 let reply t (r : Input.Reply.t) =
   (match r with
-  | Cursor { row; col } -> cursor_report t ~row ~col
+  | Cursor { row; col; page } -> cursor_report t ~row ~col ~page
   | Primary_attributes attributes -> attributes_report t attributes
   | Color_scheme scheme -> push t (Color_scheme scheme)
   | Resize { rows; cols; height; width } ->

@@ -530,6 +530,167 @@ let string_memory () =
   if words > base_words + 16 then
     failf "%d words held after a long reply, %d when fresh" words base_words
 
+(* Round trip ---------------------------------------------------------------
+
+   [Reply.encode] writes a reply as a terminal does, and the decoder reads it
+   back: decoding [encode [r]] is [r] for every reply the decoder produces,
+   among them every reply Vte answers with. *)
+
+module R = I.Reply
+
+(* Content a string carries: UTF-8, the command-string set's BS..CR, and the
+   delimiters the decoder splits at. *)
+let content =
+  Gen.map (String.concat "")
+    (Gen.list ~size:(Gen.int_range 0 6)
+       (Gen.of_list
+          [
+            "a";
+            "Z";
+            "0";
+            " ";
+            ";";
+            "=";
+            "/";
+            "|";
+            "\t";
+            "\n";
+            "\xc3\xa9";
+            "\xe6\x97\xa5";
+          ]))
+
+let number =
+  Gen.frequency
+    [ (4, Gen.int_range 0 1000); (1, Gen.nat); (1, Gen.of_list [ max_int ]) ]
+
+let below_max = Gen.map (fun n -> if n = max_int then n - 1 else n) number
+
+(* A header or sequence the decoder keeps as it is, read by Ansi.Parser. *)
+let parsed s =
+  match Ansi.Parser.parse s with
+  | [ Csi seq ] | Open (Dcs seq) :: _ -> seq
+  | _ -> invalid_arg s
+
+let terminator = Gen.of_list [ `St; `Bel ]
+
+let rgb =
+  Gen.triple (Gen.int_range 0 255) (Gen.int_range 0 255) (Gen.int_range 0 255)
+
+let reply : R.t Gen.t =
+  let open Gen in
+  one_of
+    [
+      map (fun l -> R.Primary_attributes l) (list ~size:(int_range 0 4) number);
+      map
+        (fun l -> R.Secondary_attributes l)
+        (list ~size:(int_range 0 4) number);
+      map (fun s -> R.Unit_id s) content;
+      map
+        (fun (dec, mode, setting) -> R.Mode { dec; mode; setting })
+        (triple bool number
+           (of_list
+              R.
+                [
+                  Not_recognized; Set; Reset; Permanently_set; Permanently_reset;
+                ]));
+      map
+        (fun (row, col, page) -> R.Cursor { row; col; page })
+        (triple below_max below_max (option (map (fun n -> max 1 n) number)));
+      map (fun s -> R.Operating_status s) (of_list [ `Ok; `Malfunction ]);
+      map
+        (fun (height, width) -> R.Text_area_pixels { height; width })
+        (pair number number);
+      map
+        (fun (height, width) -> R.Cell_pixels { height; width })
+        (pair number number);
+      map (fun (rows, cols) -> R.Text_area { rows; cols }) (pair number number);
+      map
+        (fun (rows, cols, height, width) ->
+          R.Resize { rows; cols; height; width })
+        (quad number number number number);
+      map (fun f -> R.Keyboard_flags f) number;
+      map (fun s -> R.Color_scheme s) (of_list [ `Dark; `Light ]);
+      map (fun s -> R.Version s) content;
+      map
+        (fun (valid, entries) -> R.Termcap { valid; entries })
+        (pair bool
+           (list ~size:(int_range 0 3)
+              (pair (string_of ~size:(int_range 1 4) char) (option string))));
+      map
+        (fun (target, rgb, terminator) -> R.Color { target; rgb; terminator })
+        (triple
+           (one_of
+              [
+                of_list [ `Foreground; `Background; `Cursor ];
+                map (fun i -> `Palette i) (int_range 0 999_999_999);
+              ])
+           rgb terminator);
+      map
+        (fun (selection, data, terminator) ->
+          R.Clipboard { selection; data; terminator })
+        (triple (of_list [ ""; "c"; "p"; "s0" ]) string terminator);
+      map
+        (fun (id, message) -> R.Graphics { id; message })
+        (pair (option (int_range 0 999_999_999)) content);
+      map
+        (fun (content, terminator) ->
+          R.Osc { content = "1337;" ^ content; terminator })
+        (pair content terminator);
+      map
+        (fun (h, data) -> R.Dcs { header = parsed h; data })
+        (pair (of_list [ "\x1bP1$r"; "\x1bP>1;2|"; "\x1bP=1s" ]) content);
+      map
+        (fun s -> R.Csi (parsed s))
+        (of_list
+           [
+             "\x1b[?1a";
+             "\x1b[1 q";
+             "\x1b[5n";
+             "\x1b[2;3:4x";
+             "\x1b[;5x";
+             "\x1b[>1;2;3x";
+           ]);
+      map (fun s -> R.Ss3 (parsed s)) (of_list [ "\x1b[1z"; "\x1b[1;2;3z" ]);
+    ]
+
+let prop_round_trip r =
+  let d = D.create () in
+  D.expect d (owed ~cursor:1 ~strings:1);
+  let got = ref [] in
+  let emit e = got := e :: !got in
+  let bytes = R.encode [ r ] in
+  D.feed d (Bytes.of_string bytes) ~off:0 ~len:(String.length bytes) emit;
+  D.finish d emit;
+  match List.rev !got with
+  | [ D.Reply r' ] when r' = r -> ()
+  | events ->
+      failf "%S decodes to %s" bytes (String.concat "; " (List.map show events))
+
+(* What no terminal sends, or what would read back as another reply. *)
+let unencodable () =
+  List.iter
+    (fun (msg, r) ->
+      raises_match ~msg (Exn.invalid_arg ~substring:"Reply.encode") (fun () ->
+          R.encode [ r ]))
+    R.
+      [
+        ("a cut sequence", Cut `Sequence);
+        ("a string over the budget", Too_long `Osc);
+        ("a negative number", Primary_attributes [ -1 ]);
+        ("a row of max_int", Cursor { row = max_int; col = 0; page = None });
+        ("page 0", Cursor { row = 0; col = 0; page = Some 0 });
+        ( "a channel above 255",
+          Color { target = `Foreground; rgb = (256, 0, 0); terminator = `St } );
+        ( "an empty capability name",
+          Termcap { valid = true; entries = [ ("", None) ] } );
+        ( "a selection holding ;",
+          Clipboard { selection = "c;p"; data = ""; terminator = `St } );
+        ("ESC in content", Version "a\x1b\\");
+        ("BEL in content", Osc { content = "1\x07"; terminator = `Bel });
+        ("UTF-8 C1 in content", Version "\xc2\x9b");
+      ];
+  equal ~msg:"no replies, no bytes" string "" (R.encode [])
+
 let () =
   run "matrix.input.decoder.props"
     [
@@ -545,5 +706,11 @@ let () =
           prop ~count:(count 5000) "no call order raises, memory stays bounded"
             actions prop_total;
           test "a long reply's memory is released" string_memory;
+        ];
+      group "encode"
+        [
+          prop ~count:(count 5000) "decoding an encoded reply gives it back"
+            (Gen.with_pp R.pp reply) prop_round_trip;
+          test "what has no bytes raises" unencodable;
         ];
     ]

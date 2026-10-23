@@ -531,9 +531,15 @@ let csi d (s : P.sequence) pre emit =
              {
                row = Params.pn p 0 ~default:1 - 1;
                col = Params.pn p 1 ~default:1 - 1;
+               page = None;
              })
           emit
       else reply pre (Csi s) emit
+  | None, "", 'n' when n = 1 -> (
+      match Params.value p 0 with
+      | Some 0 -> reply pre (Operating_status `Ok) emit
+      | Some 3 -> reply pre (Operating_status `Malfunction) emit
+      | _ -> reply pre (Csi s) emit)
   | None, "", '~' -> (
       match Params.value p 0 with
       | Some 27 when n = 3 -> modify_other_keys s pre emit
@@ -626,6 +632,7 @@ let csi d (s : P.sequence) pre emit =
            {
              row = Params.pn p 0 ~default:1 - 1;
              col = Params.pn p 1 ~default:1 - 1;
+             page = Some (Params.pn p 2 ~default:1);
            })
         emit
   | Some '?', "", 'u' when n <= 1 ->
@@ -700,11 +707,12 @@ let string_end d intro ending emit =
   d.dcs <- None;
   match ending with
   | `Aborted -> emit (Reply (Cut `String))
-  | `St | `Bel -> (
+  | (`St | `Bel) as ending -> (
       match intro with
       | ']' ->
           emit
-            (Reply (if too_long then Too_long `Osc else Reply.of_osc content))
+            (Reply
+               (if too_long then Too_long `Osc else Reply.of_osc ending content))
       | '_' ->
           emit
             (Reply
