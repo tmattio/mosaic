@@ -97,6 +97,7 @@
 - The render and submit paths are allocation-free at steady state (retained buffers and writers, unboxed bookkeeping, no per-frame string copies), and each frame leaves the terminal in a single write
 - Strict VT100 semantics in the VTE: LF moves down only, BS is pure movement
 - Raw mode no longer changes `O_NONBLOCK`; readiness is the backend's concern
+- **The VTE reads by row** – rows run from the screen, `0` to `rows - 1`, up into the scrollback, `-1` the newest line; `Vte.text t y` is a row's text and `Vte.blit_row t y dst ~y'` its cells, with rendition, hyperlinks and widths, into a grid, for scrollback lines as for the screen, beside `Vte.wrapped`. `Vte.scrollback_lines` and `Vte.render_with_scrollback` go: `List.init n (fun i -> Vte.text t (i - n))` and a loop of `blit_row` replace them
 - Backtrace recording policy is left to the application; the runtime prints a backtrace on an uncaught exception rather than enabling recording itself
 - `Screen.render_to_bytes` removed (no consumers); `render_to_buffer` is the per-frame eliminator
 - Vendored uuseg stripped to its boundary core; one shared grapheme-width state machine

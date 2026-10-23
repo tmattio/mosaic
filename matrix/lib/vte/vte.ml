@@ -125,6 +125,8 @@ type t = {
   cluster : cluster;
   default_fg : Ansi.Color.t;
   default_bg : Ansi.Color.t;
+  (* [Some default_bg], made once: an optional argument allocates. *)
+  default_bg_opt : Ansi.Color.t option;
   parser : Ansi.Parser.t;
   mutable osc : osc;
   osc_text : Buffer.t;
@@ -276,9 +278,10 @@ let compress_row t (s : screen) row =
   }
 
 (* Write [line] on row [row] of [grid]: each grapheme as it was, at the column
-   it left, as far as the grid is wide. *)
+   it left, as far as the grid is wide. The result is the columns it covers. *)
 let decompress_line line grid row =
-  let cell = ref 0 and x = ref 0 and byte = ref 0 in
+  let cell = ref 0 and x = ref 0 and byte = ref 0 and covered = ref 0 in
+  let width = Grid.width grid in
   let runs = Array.length line.styles in
   for k = 0 to runs - 1 do
     let r = line.styles.(k) in
@@ -289,14 +292,16 @@ let decompress_line line grid row =
     let link = if r.link = "" then None else Some r.link in
     while !byte < stop do
       let len = read_varint line.cells cell in
-      let width = read_varint line.cells cell in
-      if !x + width <= Grid.width grid then
-        Grid.set_grapheme grid ~x:!x ~y:row ~width ~fg:r.fg ~bg:r.bg
+      let w = read_varint line.cells cell in
+      if !x + w <= width then (
+        Grid.set_grapheme grid ~x:!x ~y:row ~width:w ~fg:r.fg ~bg:r.bg
           ~attrs:r.attrs ?link line.text ~pos:!byte ~len;
-      x := !x + width;
+        covered := !x + w);
+      x := !x + w;
       byte := !byte + len
     done
-  done
+  done;
+  !covered
 
 let push_line t s row =
   let h = t.history in
@@ -1076,6 +1081,7 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
         };
       default_fg;
       default_bg;
+      default_bg_opt = Some default_bg;
       parser = Ansi.Parser.create ();
       osc = Osc_skip;
       osc_text = Buffer.create 64;
@@ -1493,7 +1499,7 @@ let resize_screen t s ~row ~rows ~cols =
     Bytes.blit wrapped 0 wrapped down (rows - down);
     for r = down - 1 downto 0 do
       let line = pop_line t.history in
-      decompress_line line s.grid r;
+      ignore (decompress_line line s.grid r : int);
       Bytes.set wrapped r (if line.wrapped then '\001' else '\000')
     done
   end;
@@ -1540,48 +1546,62 @@ let cols t = t.cols
 let cursor_pos t = (t.cursor.row, t.cursor.col)
 let last_column t = t.cursor.last_column
 let cursor_style t = t.cursor_style
-
-let wrapped t y =
-  if y >= 0 then y < t.rows && wrapped_row t y
-  else
-    (not t.modes.alternate_screen)
-    && -y <= t.history.count && (newest t.history (-y - 1)).wrapped
-
 let modes t = t.modes
 let title t = t.title
 let scrollback_capacity t = Array.length t.history.lines
 let scrollback_size t = if t.modes.alternate_screen then 0 else t.history.count
 
-let scrollback_lines t =
-  if t.modes.alternate_screen then []
-  else
-    List.init t.history.count (fun i ->
-        let line = newest t.history (t.history.count - 1 - i) in
-        let stop = ref (String.length line.text) in
-        while !stop > 0 && line.text.[!stop - 1] = ' ' do
-          decr stop
-        done;
-        if !stop = String.length line.text then line.text
-        else String.sub line.text 0 !stop)
+(* Rows: [0] to [rows - 1] on the screen, [-1] the newest scrollback line
+   and [-scrollback_size] the oldest. *)
 
-let render_with_scrollback t ~offset dst =
-  if t.modes.alternate_screen || Array.length t.history.lines = 0 then
-    Grid.blit ~src:(grid t) ~dst
-  else begin
-    let offset = max 0 (min offset t.history.count) in
-    let height = Grid.height dst in
-    Grid.clear ~color:t.default_bg dst;
-    let from_history = min offset height in
-    (* Row [i] shows the line [offset - i] above the screen, so the newest
-       line sits next to the screen. *)
-    for i = 0 to from_history - 1 do
-      decompress_line (newest t.history (offset - 1 - i)) dst i
-    done;
-    if height > from_history then
-      Grid.blit_region ~src:(grid t) ~dst ~src_x:0 ~src_y:0 ~width:t.cols
-        ~height:(min (height - from_history) t.rows)
-        ~dst_x:0 ~dst_y:from_history
-  end
+(* The scrollback line of row [y < 0], the empty line if there is none. *)
+let history_line t y =
+  if y < 0 && y >= -scrollback_size t then newest t.history (-y - 1)
+  else empty_line
+
+let wrapped t y =
+  if y >= 0 then y < t.rows && wrapped_row t y else (history_line t y).wrapped
+
+(* The graphemes of screen row [row], a space for an empty cell. *)
+let screen_text t row =
+  let g = grid t and buf = Buffer.create t.cols in
+  for col = 0 to t.cols - 1 do
+    let idx = (row * t.cols) + col in
+    if not (Grid.is_continuation g idx) then
+      let s = Grid.get_text g idx in
+      Buffer.add_string buf (if s = "" then " " else s)
+  done;
+  Buffer.contents buf
+
+let trim_spaces s =
+  let stop = ref (String.length s) in
+  while !stop > 0 && s.[!stop - 1] = ' ' do
+    decr stop
+  done;
+  if !stop = String.length s then s else String.sub s 0 !stop
+
+let text t y =
+  if y >= 0 then if y < t.rows then trim_spaces (screen_text t y) else ""
+  else trim_spaces (history_line t y).text
+
+(* The cells of the row, then blanks: those past the cells the row has are
+   cleared alone, so that a row costs what it holds. *)
+let blit_row t row dst ~y =
+  if y < 0 || y >= Grid.height dst then
+    invalid_arg
+      (Printf.sprintf "Vte.blit_row: y = %d, not a row of a grid %d high" y
+         (Grid.height dst));
+  let written =
+    if row >= t.rows then 0
+    else if row >= 0 then (
+      Grid.blit_region ~src:(grid t) ~dst ~src_x:0 ~src_y:row ~width:t.cols
+        ~height:1 ~dst_x:0 ~dst_y:y;
+      t.cols)
+    else decompress_line (history_line t row) dst y
+  in
+  Grid.clear_rect ?color:t.default_bg_opt dst ~x:written ~y
+    ~width:(Grid.width dst - written)
+    ~height:1
 
 let is_dirty t = t.dirty.any
 
@@ -1593,17 +1613,4 @@ let dirty_rows t =
   !rows
 
 let is_cursor_dirty t = t.dirty.cursor
-
-let to_string t =
-  let g = grid t in
-  let line row =
-    let buf = Buffer.create t.cols in
-    for col = 0 to t.cols - 1 do
-      let idx = (row * t.cols) + col in
-      if not (Grid.is_continuation g idx) then
-        let s = Grid.get_text g idx in
-        Buffer.add_string buf (if s = "" then " " else s)
-    done;
-    Buffer.contents buf
-  in
-  String.concat "\n" (List.init t.rows line)
+let to_string t = String.concat "\n" (List.init t.rows (screen_text t))

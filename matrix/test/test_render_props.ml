@@ -52,6 +52,11 @@ module Grid = Matrix_grid
 module Color = Ansi.Color
 open Windtrap
 
+(* The scrollback's lines, oldest first. *)
+let scrollback_lines vte =
+  let n = Vte.scrollback_size vte in
+  List.init n (fun i -> Vte.text vte (i - n))
+
 let scale =
   match Sys.getenv_opt "MATRIX_FUZZ_SCALE" with
   | Some s -> (
@@ -689,8 +694,7 @@ let check_transcript r app =
       r.case.min_live;
   let v = Vte.grid r.vte in
   let history =
-    Vte.scrollback_lines r.vte
-    @ List.init offset (fun y -> rtrim (row_text v y))
+    scrollback_lines r.vte @ List.init offset (fun y -> rtrim (row_text v y))
   in
   let expected = List.rev r.transcript in
   let tags = List.filter is_tag history in
@@ -787,7 +791,7 @@ let start_frame r app (frame : frame) =
       | Clear_static ->
           (* The screen goes; the scrollback stays. *)
           Matrix.static_clear app;
-          let history = Vte.scrollback_lines r.vte in
+          let history = scrollback_lines r.vte in
           r.transcript <- List.rev (List.filter is_tag history);
           r.pushed <- List.length history - List.length r.transcript)
     frame.statics;

@@ -14,6 +14,11 @@
 module Grid = Matrix_grid
 open Windtrap
 
+(* The scrollback's lines, oldest first. *)
+let scrollback_lines vte =
+  let n = Vte.scrollback_size vte in
+  List.init n (fun i -> Vte.text vte (i - n))
+
 (* Generators ------------------------------------------------------------- *)
 
 let csi_gen =
@@ -202,8 +207,8 @@ let prop_split_invariance (rows, cols, s, cuts) =
   is_true ~msg:"modes" (Vte.modes whole = Vte.modes split);
   equal ~msg:"title" string (Vte.title whole) (Vte.title split);
   equal ~msg:"scrollback" string
-    (String.concat "\n" (Vte.scrollback_lines whole))
-    (String.concat "\n" (Vte.scrollback_lines split))
+    (String.concat "\n" (scrollback_lines whole))
+    (String.concat "\n" (scrollback_lines split))
 
 (* Split invariance over the text that makes units grow: every generator
    family a terminal meets, interleaved with control functions, margins,
@@ -332,9 +337,8 @@ let check_same ~msg whole split =
   equal ~msg:(msg ^ ": cursor") (pair int int) (Vte.cursor_pos whole)
     (Vte.cursor_pos split);
   is_true ~msg:(msg ^ ": modes") (Vte.modes whole = Vte.modes split);
-  equal ~msg:(msg ^ ": scrollback") (list string)
-    (Vte.scrollback_lines whole)
-    (Vte.scrollback_lines split);
+  equal ~msg:(msg ^ ": scrollback") (list string) (scrollback_lines whole)
+    (scrollback_lines split);
   let marks vte =
     List.init
       (Vte.rows vte + Vte.scrollback_size vte)

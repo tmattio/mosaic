@@ -261,16 +261,14 @@ let check vte =
   let size = Vte.scrollback_size vte in
   if size < 0 || size > Vte.scrollback_capacity vte then
     failf "scrollback size %d, capacity %d" size (Vte.scrollback_capacity vte);
-  if List.length (Vte.scrollback_lines vte) <> size then
-    failf "%d scrollback lines for a size of %d"
-      (List.length (Vte.scrollback_lines vte))
-      size;
-  (* Wrap marks exist only on rows that exist. *)
+  (* Rows that do not exist are blank, with no wrap mark. *)
   List.iter
     (fun y ->
       if Vte.wrapped vte y then
-        failf "row %d, which does not exist, is wrapped" y)
-    [ rows; rows + 1; -size - 1; -size - 2; max_int; min_int + 1 ];
+        failf "row %d, which does not exist, is wrapped" y;
+      if Vte.text vte y <> "" then
+        failf "row %d, which does not exist, has text" y)
+    [ rows; rows + 1; -size - 1; -size - 2; max_int; min_int + 1; min_int ];
   List.iter
     (fun r -> if r < 0 || r >= rows then failf "dirty row %d of %d" r rows)
     (Vte.dirty_rows vte)
@@ -282,9 +280,10 @@ let read_all vte =
   ignore (Vte.modes vte : Vte.modes);
   ignore (Vte.is_dirty vte : bool);
   ignore (Vte.is_cursor_dirty vte : bool);
-  ignore (Vte.scrollback_lines vte : string list);
+  ignore (Vte.cursor_style vte : Ansi.cursor_style * bool);
   for y = -Vte.scrollback_size vte - 1 to Vte.rows vte do
-    ignore (Vte.wrapped vte y : bool)
+    ignore (Vte.wrapped vte y : bool);
+    ignore (Vte.text vte y : string)
   done
 
 let render vte ~offset ~height =
@@ -293,7 +292,9 @@ let render vte ~offset ~height =
       ~width_method:(Grid.width_method (Vte.grid vte))
       ()
   in
-  Vte.render_with_scrollback vte ~offset dst;
+  for y = 0 to height - 1 do
+    Vte.blit_row vte (y - offset) dst ~y
+  done;
   check_grid ~what:"scrollback view" dst
 
 (* Operations --------------------------------------------------------------- *)
@@ -482,7 +483,9 @@ let state vte replies =
     Vte.modes vte,
     Vte.title vte,
     marks,
-    Vte.scrollback_lines vte,
+    List.init
+      (Vte.rows vte + Vte.scrollback_size vte)
+      (fun i -> Vte.text vte (i - Vte.scrollback_size vte)),
     replies )
 
 let fed s chunks =

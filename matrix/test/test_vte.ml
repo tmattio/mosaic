@@ -6,6 +6,17 @@ open Windtrap
 (* Feed output whose replies the test does not read. *)
 let feed vte s = ignore (Vte.feed_string vte s : string)
 
+(* The scrollback's lines, oldest first. *)
+let scrollback_lines vte =
+  let n = Vte.scrollback_size vte in
+  List.init n (fun i -> Vte.text vte (i - n))
+
+(* The view [offset] lines up into the scrollback. *)
+let render_with_scrollback vte ~offset dst =
+  for y = 0 to Grid.height dst - 1 do
+    Vte.blit_row vte (y - offset) dst ~y
+  done
+
 let get_char_at grid row col =
   let idx = (row * Grid.width grid) + col in
   let s = Grid.get_text grid idx in
@@ -776,7 +787,7 @@ let scrollback_accumulates () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
   feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"scrollback has lines" int 2 (Vte.scrollback_size vte);
-  let lines = Vte.scrollback_lines vte in
+  let lines = scrollback_lines vte in
   equal ~msg:"scrollback list length" int 2 (List.length lines)
 
 let one_row_scroll () =
@@ -806,7 +817,7 @@ let scrollback_ring_buffer () =
   let vte = Vte.create ~scrollback:2 ~rows:2 ~cols:5 () in
   feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"scrollback at capacity" int 2 (Vte.scrollback_size vte);
-  let lines = Vte.scrollback_lines vte in
+  let lines = scrollback_lines vte in
   equal ~msg:"oldest in ring" string "L2" (List.nth lines 0);
   equal ~msg:"newest in ring" string "L3" (List.nth lines 1)
 
@@ -815,11 +826,11 @@ let render_with_scrollback_order () =
   feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"two lines in scrollback" int 2 (Vte.scrollback_size vte);
   let dst = Grid.create ~width:10 ~height:3 () in
-  Vte.render_with_scrollback vte ~offset:2 dst;
+  render_with_scrollback vte ~offset:2 dst;
   equal ~msg:"oldest visible line on top" string "L1" (get_line dst 0);
   equal ~msg:"newer line below" string "L2" (get_line dst 1);
   equal ~msg:"screen top adjacent to history" string "L3" (get_line dst 2);
-  Vte.render_with_scrollback vte ~offset:1 dst;
+  render_with_scrollback vte ~offset:1 dst;
   equal ~msg:"offset 1 shows newest history line" string "L2" (get_line dst 0);
   equal ~msg:"offset 1 screen row 0" string "L3" (get_line dst 1);
   equal ~msg:"offset 1 screen row 1" string "L4" (get_line dst 2)
@@ -829,16 +840,70 @@ let render_with_scrollback_wrapped_ring () =
   feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   (* Ring holds L2 (oldest) and L3 (newest); L1 was evicted. *)
   let dst = Grid.create ~width:5 ~height:3 () in
-  Vte.render_with_scrollback vte ~offset:2 dst;
+  render_with_scrollback vte ~offset:2 dst;
   equal ~msg:"wrapped oldest on top" string "L2" (get_line dst 0);
   equal ~msg:"wrapped newest below" string "L3" (get_line dst 1);
   equal ~msg:"wrapped screen top" string "L4" (get_line dst 2)
+
+(* Rows run from the screen up into the scrollback: each has its text, its
+   wrap mark and its cells, the same before and after it scrolls off. Other
+   rows are blank. *)
+let rows_and_scrollback () =
+  let vte = Vte.create ~scrollback:4 ~rows:2 ~cols:4 () in
+  feed vte
+    "\x1b[31;1ma\x1b]8;;http://l.test\x07\xe4\xb8\xad\x1b]8;;\x07\x1b[mxyzw ";
+  let row = Grid.create ~width:6 ~height:1 () in
+  let styles g = List.init 4 (Grid.get_style g) in
+  let screen_styles = styles (Vte.grid vte) in
+  Vte.blit_row vte 0 row ~y:0;
+  equal ~msg:"a screen row's cells" (list string)
+    [ "a"; "\xe4\xb8\xad"; ""; "x" ]
+    (List.init 4 (Grid.get_text row));
+  equal ~msg:"screen texts" (list string)
+    [ "a\xe4\xb8\xadx"; "yzw" ]
+    [ Vte.text vte 0; Vte.text vte 1 ];
+  is_true ~msg:"screen row 0 wrapped" (Vte.wrapped vte 0);
+  feed vte "\r\n\r\n";
+  equal ~msg:"two lines scrolled off" int 2 (Vte.scrollback_size vte);
+  equal ~msg:"scrollback texts" (list string)
+    [ "a\xe4\xb8\xadx"; "yzw" ]
+    [ Vte.text vte (-2); Vte.text vte (-1) ];
+  is_true ~msg:"row -2 keeps its wrap mark" (Vte.wrapped vte (-2));
+  is_false ~msg:"row -1 has none" (Vte.wrapped vte (-1));
+  Vte.blit_row vte (-2) row ~y:0;
+  equal ~msg:"a scrollback row's cells" (list string)
+    [ "a"; "\xe4\xb8\xad"; ""; "x"; " "; " " ]
+    (List.init 6 (Grid.get_text row));
+  equal ~msg:"its widths" (list int) [ 1; 2; 0; 1 ]
+    (List.init 4 (Grid.cell_width row));
+  is_true ~msg:"its rendition"
+    (List.for_all2 Ansi.Style.equal screen_styles (styles row));
+  equal ~msg:"its link" string "http://l.test" (Grid.get_link row 1);
+  is_true ~msg:"blanks past it, on the default background"
+    (Ansi.Color.equal Ansi.Color.black (Grid.get_bg row 5));
+  equal ~msg:"rows outside are blank" (list string) [ ""; "" ]
+    [ Vte.text vte (-3); Vte.text vte 2 ];
+  Vte.blit_row vte (-3) row ~y:0;
+  equal ~msg:"blit of a row outside" string "" (Vte.text vte (-3));
+  is_true ~msg:"blank cells" (Grid.get_text row 0 = " ");
+  let narrow = Grid.create ~width:2 ~height:1 () in
+  Grid.draw_text narrow ~x:0 ~y:0 ~text:"ZZ";
+  Vte.blit_row vte (-2) narrow ~y:0;
+  equal ~msg:"a wide grapheme past a narrow grid is a blank" (list string)
+    [ "a"; " " ]
+    (List.init 2 (Grid.get_text narrow));
+  raises ~msg:"y outside dst"
+    (Invalid_argument "Vte.blit_row: y = 1, not a row of a grid 1 high")
+    (fun () -> Vte.blit_row vte 0 row ~y:1);
+  feed vte "\x1b[?1049h";
+  equal ~msg:"no scrollback rows on the alternate screen" string ""
+    (Vte.text vte (-1))
 
 let scrollback_disabled () =
   let vte = Vte.create ~scrollback:0 ~rows:3 ~cols:10 () in
   feed vte "L1\r\nL2\r\nL3\r\nL4";
   equal ~msg:"no scrollback" int 0 (Vte.scrollback_size vte);
-  equal ~msg:"empty scrollback" (list string) [] (Vte.scrollback_lines vte)
+  equal ~msg:"empty scrollback" (list string) [] (scrollback_lines vte)
 
 (** {1 Terminal Modes} *)
 
@@ -1477,7 +1542,7 @@ let hyperlinks_survive_styles_and_scrollback () =
   check (Vte.grid vte);
   feed vte "\r\n";
   let dst = Grid.create ~width:8 ~height:1 () in
-  Vte.render_with_scrollback vte ~offset:1 dst;
+  render_with_scrollback vte ~offset:1 dst;
   check dst
 
 let scrollback_preserves_decorated_spaces () =
@@ -1489,9 +1554,9 @@ let scrollback_preserves_decorated_spaces () =
   let styles = Array.init 5 (Grid.get_style before) in
   feed vte "\r\n";
   equal ~msg:"plain history remains trimmed" (list string) [ "x" ]
-    (Vte.scrollback_lines vte);
+    (scrollback_lines vte);
   let dst = Grid.create ~width:8 ~height:1 () in
-  Vte.render_with_scrollback vte ~offset:1 dst;
+  render_with_scrollback vte ~offset:1 dst;
   Array.iteri
     (fun i expected ->
       is_true ~msg:"paint, attributes and links survive compression"
@@ -1505,7 +1570,7 @@ let clearing_scrollback_releases_text () =
       let weak = Weak.create 1 in
       let fill () =
         feed vte (String.make 40 'x' ^ "\r\n");
-        Weak.set weak 0 (Some (List.hd (Vte.scrollback_lines vte)))
+        Weak.set weak 0 (Some (List.hd (scrollback_lines vte)))
       in
       fill ();
       Gc.full_major ();
@@ -1561,8 +1626,7 @@ let long_runs_match_fragmented_runs () =
           equal ~msg:"cursor matches separate runs" (pair int int)
             (Vte.cursor_pos split) (Vte.cursor_pos whole);
           equal ~msg:"history matches separate runs" (list string)
-            (Vte.scrollback_lines split)
-            (Vte.scrollback_lines whole))
+            (scrollback_lines split) (scrollback_lines whole))
         [ false; true ])
     [ `Unicode; `Wcwidth ]
 
@@ -1610,8 +1674,7 @@ let state vte =
       (Vte.rows vte + Vte.scrollback_size vte)
       (fun i -> Vte.wrapped vte (i - Vte.scrollback_size vte))
   in
-  ( String.concat " " cells,
-    (Vte.cursor_pos vte, (marks, Vte.scrollback_lines vte)) )
+  (String.concat " " cells, (Vte.cursor_pos vte, (marks, scrollback_lines vte)))
 
 let state_t = pair string (pair (pair int int) (pair (list bool) (list string)))
 
@@ -2041,14 +2104,14 @@ let resize_keeps_text () =
   equal ~msg:"then rows off the top"
     (pair string (list string))
     ("2   \n3   ", [ "1" ])
-    (Vte.to_string vte, Vte.scrollback_lines vte);
+    (Vte.to_string vte, scrollback_lines vte);
   equal ~msg:"the cursor moves with its row" (pair int int) (1, 1)
     (Vte.cursor_pos vte);
   Vte.resize vte ~rows:4 ~cols:4;
   equal ~msg:"growing takes them back"
     (pair string (list string))
     ("1   \n2   \n3   \n    ", [])
-    (Vte.to_string vte, Vte.scrollback_lines vte);
+    (Vte.to_string vte, scrollback_lines vte);
   let vte = Vte.create ~scrollback:10 ~rows:3 ~cols:4 () in
   feed vte "abcdef\x1b[2;2H\x1b7\x1b[3H";
   Vte.resize vte ~rows:2 ~cols:4;
@@ -2109,9 +2172,9 @@ let scrollback_keeps_cells () =
     feed vte "\x1b[m\r\n\r\n";
     equal ~msg:"scrollback_lines" (list string)
       [ String.trim text ]
-      (Vte.scrollback_lines vte);
+      (scrollback_lines vte);
     let dst = Grid.create ~width:cols ~height:2 () in
-    Vte.render_with_scrollback vte ~offset:1 dst;
+    render_with_scrollback vte ~offset:1 dst;
     equal ~msg:"render_with_scrollback" (list string) cells (row dst 0);
     Vte.resize vte ~rows:3 ~cols;
     equal ~msg:"resize grow" (list string) cells (row (Vte.grid vte) 0)
@@ -2138,7 +2201,7 @@ let too_wide () =
   equal ~msg:"resize changed nothing"
     (pair string (list string))
     ("1   \n2   \n3   ", [])
-    (Vte.to_string vte, Vte.scrollback_lines vte);
+    (Vte.to_string vte, scrollback_lines vte);
   Vte.resize vte ~rows:1 ~cols:Grid.max_width;
   equal ~msg:"the widest grid" int Grid.max_width (Vte.cols vte)
 
@@ -2262,6 +2325,7 @@ let tests =
     test "erase scrollback sequence" erase_scrollback_sequence;
     test "scrollback ring buffer" scrollback_ring_buffer;
     test "scrollback disabled" scrollback_disabled;
+    test "rows and the scrollback" rows_and_scrollback;
     test "render with scrollback order" render_with_scrollback_order;
     test "render with scrollback wrapped ring"
       render_with_scrollback_wrapped_ring;

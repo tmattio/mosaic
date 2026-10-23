@@ -1,5 +1,10 @@
 open Windtrap
 
+(* The scrollback's lines, oldest first. *)
+let scrollback_lines vte =
+  let n = Vte.scrollback_size vte in
+  List.init n (fun i -> Vte.text vte (i - n))
+
 exception Injected_startup_failure
 
 let[@inline never] raise_injected_startup_failure () =
@@ -1156,7 +1161,7 @@ let test_static_snapshots_scroll_exactly_once_per_row () =
       equal
         ~msg:(Printf.sprintf "%d rows reach history once" rows)
         (list string) lines
-        (Vte.scrollback_lines terminal))
+        (scrollback_lines terminal))
     [ 1; 3; 4; 8 ]
 
 let test_static_snapshot_clears_suffixes_and_keeps_blank_rows () =
@@ -1167,7 +1172,7 @@ let test_static_snapshot_clears_suffixes_and_keeps_blank_rows () =
   let terminal = Vte.create ~rows:3 ~cols:6 ~scrollback:16 () in
   ignore (Vte.feed_string terminal "STALE!\r\nSTALE!\r\nSTALE!" : string);
   ignore (Vte.feed_string terminal (output f) : string);
-  equal (list string) [ "A"; ""; "B" ] (Vte.scrollback_lines terminal)
+  equal (list string) [ "A"; ""; "B" ] (scrollback_lines terminal)
 
 let test_queued_static_snapshot_keeps_row_count_after_resize () =
   let f = fake ~size:(6, 3) () in
@@ -1183,7 +1188,7 @@ let test_queued_static_snapshot_keeps_row_count_after_resize () =
   let terminal = Vte.create ~rows:3 ~cols:3 ~scrollback:16 () in
   ignore (Vte.feed_string terminal "old\r\nold\r\nold" : string);
   ignore (Vte.feed_string terminal (output f) : string);
-  let history = Vte.scrollback_lines terminal in
+  let history = scrollback_lines terminal in
   equal ~msg:"no extra transcript rows" int 2 (List.length history);
   List.iter (fun row -> not_contains ~sub:"old" row) history
 
@@ -1312,7 +1317,7 @@ let screen_rows term =
    transcript has become. *)
 let transcript app term =
   let _, rows = Matrix.full_size app and _, live = Matrix.size app in
-  Vte.scrollback_lines term.vte
+  scrollback_lines term.vte
   @ List.filteri (fun y _ -> y < rows - live) (screen_rows term)
 
 let live_rows app term =
@@ -1364,7 +1369,7 @@ let test_full_height_static_write_scrolls_into_scrollback () =
       present app [ "live" ];
       equal (list string)
         [ "INSERTED00"; "INSERTED01" ]
-        (Vte.scrollback_lines term.vte);
+        (scrollback_lines term.vte);
       equal (list string) [ "live"; ""; ""; "" ] (live_rows app term))
 
 let test_required_rows_show_in_their_frame () =
@@ -1394,7 +1399,7 @@ let test_preserved_static_write_keeps_live_region () =
       present app [ "live" ];
       equal (list string)
         [ "PRESERVED00"; "PRESERVED01" ]
-        (Vte.scrollback_lines term.vte);
+        (scrollback_lines term.vte);
       equal (pair int int) (12, 4) (Matrix.size app))
 
 let test_preserved_static_write_after_transcript_rows () =
@@ -1427,7 +1432,7 @@ let test_full_height_consecutive_static_writes () =
       Matrix.static_write app (static_grid "first");
       Matrix.static_write app (static_grid "second\n");
       present app [ "live" ];
-      equal (list string) [ "first"; "second" ] (Vte.scrollback_lines term.vte))
+      equal (list string) [ "first"; "second" ] (scrollback_lines term.vte))
 
 let test_alt_default_cursor_is_shown () =
   let term = vte_term ~cols:6 ~rows:3 () in

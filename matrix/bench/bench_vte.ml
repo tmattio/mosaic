@@ -31,7 +31,9 @@ let scrollback_render =
   ignore (Vte.feed_string vte history_text : string);
   let dst = Grid.create ~width:80 ~height:24 () in
   Thumper.bench "scrollback/render-styled" (fun () ->
-      Vte.render_with_scrollback vte ~offset:100 dst)
+      for y = 0 to 23 do
+        Vte.blit_row vte (y - 100) dst ~y
+      done)
 
 (* Exact allocation guards remain stable when host load makes timing noisy. *)
 let () =

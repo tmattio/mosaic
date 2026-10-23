@@ -287,10 +287,6 @@ val cursor_style : t -> Ansi.cursor_style * bool
 (** [cursor_style t] is the cursor's shape and whether it blinks, as DECSCUSR
     last set them ({!section-cursor}): [(`Block, true)] at power-up. *)
 
-val wrapped : t -> int -> bool
-(** [wrapped t y] is the wrap mark of row [y] of the active screen, or for
-    [y < 0] of the [-y]th newest scrollback line. [false] outside them. *)
-
 type modes = {
   insert : bool;  (** IRM (SM 4). *)
   new_line : bool;
@@ -318,7 +314,16 @@ val modes : t -> modes
 val title : t -> string
 (** [title t] is the title set by OSC 0 or OSC 2. *)
 
-(** {1:scrollback Scrollback} *)
+(** {1:rows Rows and the scrollback}
+
+    Rows are numbered from the top of the screen, [0] to [rows t - 1], and on
+    upward into the scrollback: row [-1] is the line that last scrolled off the
+    top, and row [-(scrollback_size t)] the oldest one kept. A scrollback line
+    is the row as it left the screen: each grapheme with its width, column,
+    rendition and hyperlink, and the row's wrap mark; past its last cell that
+    shows something, it is blank. Any other row is blank, with no wrap mark.
+
+    The screen's rows are also the cells of {!grid}. *)
 
 val scrollback_capacity : t -> int
 (** [scrollback_capacity t] is the number of lines the scrollback keeps. *)
@@ -327,17 +332,24 @@ val scrollback_size : t -> int
 (** [scrollback_size t] is the number of lines in the scrollback, [0] while the
     alternate screen is active. *)
 
-val scrollback_lines : t -> string list
-(** [scrollback_lines t] are the scrollback's lines, oldest first, as text
-    without trailing spaces. Empty while the alternate screen is active. *)
+val wrapped : t -> int -> bool
+(** [wrapped t y] is the wrap mark of row [y] ({!section-screens}): its text
+    goes on at the start of row [y + 1]. *)
 
-val render_with_scrollback : t -> offset:int -> Matrix_grid.t -> unit
-(** [render_with_scrollback t ~offset dst] draws into [dst] the view [offset]
-    lines above the live screen: the scrollback lines at the top, oldest first,
-    then the screen. [offset] is clamped to \[[0];{!scrollback_size}\]; [0]
-    shows the live screen. Scrollback lines keep their rendition and hyperlinks.
-    [dst] should be as wide as [t]. On the alternate screen it copies the
-    screen. *)
+val text : t -> int -> string
+(** [text t y] is the text of row [y]: the grapheme of each cell, a space for an
+    empty one, without the spaces that end it. The scrollback's lines, oldest
+    first, are [List.init n (fun i -> text t (i - n))] with
+    [n = scrollback_size t]. *)
+
+val blit_row : t -> int -> Matrix_grid.t -> y:int -> unit
+(** [blit_row t r dst ~y] writes row [r] of [t] on row [y] of [dst]: its cells,
+    with their rendition and hyperlinks, as far as [dst] is wide, then blanks on
+    the default background. A view [offset] lines up into the scrollback is
+    [for y = 0 to h - 1 do blit_row t (y - offset) dst ~y done], for a [dst] [h]
+    rows high.
+
+    Raises [Invalid_argument] if [y] is not a row of [dst]. *)
 
 (** {1:dirty Changes}
 
