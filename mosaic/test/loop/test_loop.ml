@@ -140,14 +140,10 @@ let occurrences ?(from = 0) s sub =
    ends the input. Work off the loop runs on the session's queue unless
    [process_perform] says otherwise, with [quiesce] for it. *)
 let run ?mode ?process_perform ?quiesce t application f =
-  Matrix_test.run ~config:(base ?mode ()) ?quiesce t.term
-    (fun s ->
+  Mosaic_test.run ~config:(base ?mode ()) ?process_perform ?quiesce t.term
+    application (fun s ->
       t.s <- s;
-      let process_perform =
-        Option.value process_perform ~default:(Matrix_test.perform s)
-      in
-      Mosaic.run ~config:(Matrix_test.config s) ~process_perform application)
-    f
+      f s)
 
 let drive ?mode ?(width = 48) ?(height = 2) ?process_perform ?quiesce
     application steps =
@@ -2617,7 +2613,7 @@ let%expect_test "X2: an exception in a perform ends the run" =
 
 (* Workers run as long as the program declares them, so they cannot run on
    the session's queue, whose work must return: they run on the program's
-   own executor, by default threads, and the test waits for what they do,
+   own executor, threads unless a test says otherwise, and the test waits for what they do,
    settling as their messages come. A minute a step guards against what
    never happens; it measures nothing, so a loaded host only makes a test
    slower. *)
@@ -2625,8 +2621,9 @@ type live_step = Until of (unit -> bool) | Type of string | End
 
 let run_live ?process_perform steps application =
   let t = terminal ~width:20 ~height:1 () in
-  Matrix_test.run ~config:(base ()) ~quiesce:ignore t.term (fun s ->
-      Mosaic.run ~config:(Matrix_test.config s) ?process_perform application)
+  let process_perform = Option.value process_perform ~default:threads in
+  Mosaic_test.run ~config:(base ()) ~process_perform ~quiesce:ignore t.term
+    application
   @@ fun s ->
   let rec go = function
     | [] | End :: _ -> ()

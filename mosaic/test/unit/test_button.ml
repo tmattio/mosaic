@@ -53,9 +53,7 @@ let drive ?(focused = true) ?(disabled = false) ?(accept_focus = true)
   (* Key releases have the program ask the kitty protocol for every
      enhancement, so the terminal sends every fact of a keystroke. *)
   let term = Matrix_test.Terminal.create ~cols:20 ~rows:2 () in
-  Matrix_test.run ~config:(Matrix.config ~key_releases:true ()) term (fun s ->
-      Mosaic.run ~config:(Matrix_test.config s)
-        ~process_perform:(Matrix_test.perform s) application)
+  Mosaic_test.run ~config:(Matrix.config ~key_releases:true ()) term application
   @@ fun s ->
   List.iter
     (function

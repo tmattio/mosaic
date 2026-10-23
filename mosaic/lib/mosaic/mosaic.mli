@@ -1295,12 +1295,13 @@ val run :
       dispatches them.
 
     A test settles the program by running its work off the loop where it can
-    tell that the work is done, on a [Matrix_test] session's queue, or on the
-    program's own scheduler, for which the session is given a [quiesce]. Work
-    that runs as long as the program does, such as a worker reading a stream,
-    cannot run on such a queue, whose work must return. The test then gives the
-    worker what it reads and lets it return, or runs it on the program's own
-    executor and settles as its messages come. *)
+    tell that the work is done, on a [Matrix_test] session's queue, as
+    [Mosaic_test.run] (library [mosaic.test]) does, or on the program's own
+    scheduler, for which the session is given a [quiesce]. Work that runs as
+    long as the program does, such as a worker reading a stream, cannot run on
+    such a queue, whose work must return. The test then gives the worker what it
+    reads and lets it return, or runs it on the program's own executor and
+    settles as its messages come. *)
 
 (** {2:event_loops Event loops}
 

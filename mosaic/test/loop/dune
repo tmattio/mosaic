@@ -17,6 +17,7 @@
   mosaic
   matrix
   matrix.test
+  mosaic.test
   matrix.input
   matrix.vte
   threads.posix

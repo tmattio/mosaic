@@ -76,10 +76,11 @@
     Matrix_test.input s (Matrix_test.Terminal.text term "ab");
     print_string (Matrix_test.Screen.text (Matrix_test.Terminal.screen term))
     ]}
-    A Mosaic program is
+    A Mosaic program runs with [Mosaic_test.run term app] (library
+    [mosaic.test]), which is
     [Mosaic.run ~config:(Matrix_test.config s)
-     ~process_perform:(Matrix_test.perform s) app], so that its work off the
-    loop runs on the session's queue. *)
+     ~process_perform:(Matrix_test.perform s) app] under {!run}, so that its
+    work off the loop runs on the session's queue. *)
 
 (** {1:profiles Profiles} *)
 

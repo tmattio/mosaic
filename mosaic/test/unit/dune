@@ -327,6 +327,7 @@
   mosaic.ui
   matrix
   matrix.test
+  mosaic.test
   matrix.input
   matrix.grid
   matrix.screen))

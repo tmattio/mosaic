@@ -22,6 +22,14 @@
  (modules test_flows)
  (inline_tests
   (deps chat_main.exe))
- (libraries windtrap chat mosaic matrix matrix.test matrix.vte unix)
+ (libraries
+  windtrap
+  chat
+  mosaic
+  mosaic.test
+  matrix
+  matrix.test
+  matrix.vte
+  unix)
  (preprocess
   (pps ppx_windtrap)))

@@ -15,10 +15,7 @@ let%expect_test "a streamed turn, its clock, its title and its notification" =
   let stream = ref ignore in
   let provider _prompt send = stream := send in
   let term = T.Terminal.create ~cols:44 ~rows:8 () in
-  T.run term (fun s ->
-      Mosaic.run ~config:(T.config s) ~process_perform:(T.perform s)
-        (Chat.app provider))
-  @@ fun s ->
+  Mosaic_test.run term (Chat.app provider) @@ fun s ->
   let send d =
     !stream d;
     T.settle s
@@ -83,9 +80,7 @@ let%expect_test "a streamed turn, its clock, its title and its notification" =
     ✳ chat
     notification "" "chat: the turn ended"
     |}];
-  (* Once the frames the turn's end asked for are drawn, an idle program
-     draws nothing while the clock moves. *)
-  T.advance s 100_000_000;
+  (* An idle program draws nothing while the clock moves. *)
   let frames = T.frames s in
   T.advance s 900_000_000;
   Printf.printf "frames while idle: %d\n" (T.frames s - frames);

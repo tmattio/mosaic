@@ -1,0 +1,4 @@
+(library
+ (name mosaic_test)
+ (public_name mosaic.test)
+ (libraries mosaic matrix matrix.test))
