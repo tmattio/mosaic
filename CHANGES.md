@@ -79,6 +79,7 @@
 - `Ansi.Parser.at_boundary` tells whether the bytes fed so far end inside a character, a sequence or a string, without ending the stream as `Parser.finish` does
 - `Screen.Hit_grid.draw ~src ~dst ~x ~y` paints one hit grid's regions onto another at an offset, its empty cells leaving the destination unchanged, to embed a surface's hits in a larger one
 - `Matrix_text.grapheme_cluster_break` is the Grapheme_Cluster_Break property of a character (UAX #29), as a variant with the short value aliases uucp uses
+- `Grid.span g idx` is the start index and width of the grapheme that covers a cell, read from that cell alone, so a wide grapheme can be acted on whole from any of its cells
 
 #### Changed
 

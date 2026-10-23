@@ -369,6 +369,12 @@ let is_continuation t idx =
 
 let cell_width t idx = Packed_cell.cell_width (Buf.get_cell t.chars idx)
 
+let span t idx =
+  if idx < 0 || idx >= t.width * t.height then invalid_arg "Matrix_grid.span";
+  let code = Buf.get_cell t.chars idx in
+  let left = span_left code in
+  (idx - left, left + span_right code + 1)
+
 let[@inline] cells_equal t1 idx1 t2 idx2 =
   let same_graphemes = t1.grapheme_store == t2.grapheme_store in
   let c1 = Buf.get_cell t1.chars idx1 and c2 = Buf.get_cell t2.chars idx2 in

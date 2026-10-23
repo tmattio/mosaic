@@ -136,6 +136,36 @@ let combining_mark_stays_with_ascii_base () =
   equal ~msg:"cluster occupies one column" int 1
     (Grid.cell_width grid (Grid.idx grid ~x:0 ~y:0))
 
+(* Every cell of a grapheme gives its span, and the spans tile the row. *)
+let span_of_every_cell () =
+  let grid = Grid.create ~width:12 ~height:2 () in
+  (* a, 中 (one scalar, two cells), a ZWJ sequence of two cells, b *)
+  Grid.draw_text grid ~x:0 ~y:1 ~text:"a\u{4E2D}\u{1F469}\u{200D}\u{1F4BB}b";
+  let spans y =
+    List.init (Grid.width grid) (fun x ->
+        let start, width = Grid.span grid (idx grid x y) in
+        Printf.sprintf "%d+%d" (start - idx grid 0 y) width)
+    |> String.concat " "
+  in
+  equal ~msg:"wide graphemes" string
+    "0+1 1+2 1+2 3+2 3+2 5+1 6+1 7+1 8+1 9+1 10+1 11+1" (spans 1);
+  equal ~msg:"a blank row" string
+    "0+1 1+1 2+1 3+1 4+1 5+1 6+1 7+1 8+1 9+1 10+1 11+1" (spans 0);
+  let start, width = Grid.span grid (idx grid 4 1) in
+  equal ~msg:"the start cell's width" int (Grid.cell_width grid start) width;
+  (* A grapheme as wide as the row. *)
+  let row = Grid.create ~width:3 ~height:1 () in
+  let glyph = "\u{4E2D}" in
+  Grid.set_grapheme row ~x:0 ~y:0 ~width:3 ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty glyph ~pos:0
+    ~len:(String.length glyph);
+  equal ~msg:"three cells"
+    (list (pair int int))
+    [ (0, 3); (0, 3); (0, 3) ]
+    (List.init 3 (Grid.span row));
+  expect_invalid_arg "negative index" (fun () -> ignore (Grid.span row (-1)));
+  expect_invalid_arg "past the end" (fun () -> ignore (Grid.span row 3))
+
 let thai_spacing_mark_cell_placement () =
   List.iter
     (fun width_method ->
@@ -1948,6 +1978,7 @@ let erase_unprotected_keeps_rendition () =
 
 let tests =
   [
+    test "span of every cell" span_of_every_cell;
     test "overwritten hyperlinks are collected"
       overwritten_hyperlinks_are_collected;
     test "collected grids release shared graphemes"

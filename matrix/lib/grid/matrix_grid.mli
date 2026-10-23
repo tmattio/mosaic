@@ -147,6 +147,21 @@ val cell_width : t -> int -> int
 (** [cell_width g idx] is the display width of the grapheme that starts at
     [idx]: [0] for an empty or continuation cell. *)
 
+val span : t -> int -> int * int
+(** [span g idx] is [(start, width)], the cells of the grapheme that covers cell
+    [idx]: it starts at index [start] and covers [width] cells of the same row,
+    [idx] among them. Every cell belongs to exactly one span: a cell that holds
+    a grapheme one cell wide, or none, is a span of its own, [(idx, 1)]; every
+    cell of a wide grapheme, its start cell and its continuations, gives the
+    same span, whose [width] is the start cell's {!cell_width}.
+
+    A wide grapheme is acted on whole (see the module's introduction), so this
+    is the extent to act on from any of its cells: the cells to select, to
+    redraw, or to report under the pointer. Reads one cell.
+
+    Raises [Invalid_argument] if [idx] is not in
+    \[[0];[width g * height g - 1]\]. *)
+
 val cells_equal : t -> int -> t -> int -> bool
 (** [cells_equal g1 idx1 g2 idx2] is [true] iff both cells have identical text,
     span position, colors, attributes, and hyperlink URLs. Protection is not
