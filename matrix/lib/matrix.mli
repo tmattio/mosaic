@@ -449,10 +449,14 @@ val release : 'msg app -> (unit -> 'a) -> 'a
     restored with the cursor shown (in [`Primary] mode the live region is erased
     and the cursor waits at its start, below the transcript; in [`Alt] mode the
     alternate screen is left); cooked mode is set once the output has been sent,
-    so input typed for [f] reaches it. Events decoded and not yet returned by
-    {!next}, and those decoded while waiting for the answer, are dropped, but
-    for {!Reply}: they were typed after the step that gave the terminal away,
-    and [f] cannot have them.
+    so input typed for [f] reaches it. Every event decoded and not yet returned
+    by {!next}, and every event decoded while waiting for the answer, is
+    dropped, but for {!Reply}, and a paste in progress is cut: [f] cannot have
+    them. A turn decodes what it reads before returning any of it, so this
+    includes keys read in the same turn as the step that called [release],
+    whatever that step was: an event, a timer or a post. Keys read in one turn
+    cannot be ordered against a timer or a post of that turn, and those that
+    follow an event were typed after it, for [f].
 
     During [f], SIGTSTP, SIGTERM and SIGHUP have their default actions, so the
     terminal's suspend character stops [f]'s program and the runtime with it;

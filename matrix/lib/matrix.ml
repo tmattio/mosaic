@@ -1400,10 +1400,10 @@ let abort_bytes mode =
 
 (* Waits, when a reply is owed, for the terminal to answer what was sent:
    the replies that come after the terminal is given away would reach the
-   shell, or the program run in the application's place, as typing. Events
-   decoded meanwhile were typed after the terminal was given away, and are
-   dropped, but for replies. Batches still owed are dropped: their answers
-   went to whoever has the terminal. *)
+   shell, or the program run in the application's place, as typing. Every
+   event decoded and not yet returned, meanwhile or before, is dropped, but
+   for replies, and a paste in progress is cut ([release] says why). Batches
+   still owed are dropped: their answers went to whoever has the terminal. *)
 let settle t =
   if t.batches <> [] && can_query t then await t ~from:t.now t.batches;
   let kept = Queue.create () in
