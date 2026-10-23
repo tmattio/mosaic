@@ -500,6 +500,24 @@ let test_single_cell_frame_keeps_hits () =
   equal ~msg:"hit id at (0,0) of a 1x1 frame" int 5
     (Screen.query_hit r ~x:0 ~y:0)
 
+(* Regression: a render read the next buffer without the clear a render
+   leaves pending, so a second render with no build between showed the frame
+   before last again. *)
+let test_render_without_build_is_blank () =
+  let r = Screen.create () in
+  let frame text =
+    Screen.build r ~width:3 ~height:1 (fun grid _ ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text)
+  in
+  frame "X";
+  ignore (Screen.render r : string);
+  frame "Y";
+  ignore (Screen.render r : string);
+  let output = Screen.render r in
+  not_contains ~msg:"the frame before last is not shown" ~sub:"X" output;
+  equal ~msg:"the current frame is blank" string ""
+    (Grid.get_text (Screen.current_grid r) 0 |> String.trim)
+
 (* The ids of a hit grid, row by row, "." for an empty cell. *)
 let show_hits hits ~width ~height =
   String.concat "/"
@@ -1205,6 +1223,8 @@ let () =
           test "handed-out grid is cleared once"
             test_handed_out_grid_is_cleared_once;
           test "Build visual (no hits)" test_build_visual;
+          test "A render without a build is blank"
+            test_render_without_build_is_blank;
           test "Resize repaints every cell" test_resize_repaints_every_cell;
           test "Resize smaller" test_resize_smaller;
           test "Resize clears both buffers" test_resize_clears_both_buffers;

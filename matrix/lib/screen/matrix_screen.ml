@@ -452,6 +452,9 @@ let commit_frame r =
   finalize_frame r
 
 let render_into ?(full = false) ?scroll_hint ?viewport frame writer =
+  (* A render with no build since the last one renders the blank frame the
+     last one left, so the clear the swap deferred happens now. *)
+  ensure_next_fresh frame;
   let mode = if full || not frame.current_valid then `Full else `Diff in
   (try emit_frame frame ~mode ~scroll_hint ~viewport ~writer
    with exn ->
