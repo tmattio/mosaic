@@ -341,10 +341,19 @@ let emit_indexed_sgr ~bg push idx =
   push 5;
   push idx
 
-let emit_sgr_codes ~bg push color =
+(* At 16 and 8 colors an entry is written with the codes of ECMA-48 and
+   aixterm, which every such terminal reads: 30..37 and 90..97 for the
+   foreground, 40..47 and 100..107 for the background. *)
+let emit_sgr_codes ?(depth = `Truecolor) ~bg push color =
+  let color = to_depth depth color in
   match intent color with
   | Default -> push (if bg then 49 else 39)
-  | Indexed idx -> emit_indexed_sgr ~bg push idx
+  | Indexed idx -> (
+      match depth with
+      | `Ansi16 | `Ansi8 ->
+          if idx < 8 then push ((if bg then 40 else 30) + idx)
+          else push ((if bg then 100 else 90) + idx - 8)
+      | `Truecolor | `Ansi256 | `Mono -> emit_indexed_sgr ~bg push idx)
   | Rgb ->
       if Packed.alpha color = 0 then push (if bg then 49 else 39)
       else (
@@ -354,9 +363,9 @@ let emit_sgr_codes ~bg push color =
         push (Packed.green color);
         push (Packed.blue color))
 
-let to_sgr_codes ~bg color =
+let to_sgr_codes ?depth ~bg color =
   let acc = ref [] in
-  emit_sgr_codes ~bg (fun code -> acc := code :: !acc) color;
+  emit_sgr_codes ?depth ~bg (fun code -> acc := code :: !acc) color;
   List.rev !acc
 
 let invert color =

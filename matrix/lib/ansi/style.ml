@@ -135,7 +135,7 @@ let hash t =
 
 (* Common helper for SGR code emission. Emits the minimal set of codes to
    transition from [prev] to [t] by calling [push] for each code. *)
-let emit_sgr_diff ~prev t push =
+let emit_sgr_diff ?depth ~prev t push =
   let prev_attrs = Attr.pack prev.attrs and attrs = Attr.pack t.attrs in
   let attrs_to_disable = prev_attrs land lnot attrs in
   let attrs_to_enable = Sgr_attrs.added ~prev:prev_attrs ~attrs in
@@ -145,43 +145,43 @@ let emit_sgr_diff ~prev t push =
   (if fg_changed then
      match t.fg with
      | None -> push 39
-     | Some color -> Color.emit_sgr_codes ~bg:false push color);
+     | Some color -> Color.emit_sgr_codes ?depth ~bg:false push color);
   (* Handle background color changes *)
   let bg_changed = not (Option.equal Color.equal prev.bg t.bg) in
   (if bg_changed then
      match t.bg with
      | None -> push 49
-     | Some color -> Color.emit_sgr_codes ~bg:true push color);
+     | Some color -> Color.emit_sgr_codes ?depth ~bg:true push color);
   (* Emit enable codes for added attributes *)
   Sgr_attrs.iter_enabled push attrs_to_enable
 
 (* A transition compares colors and attributes alone: links are written by
    the hyperlink layer. *)
-let to_sgr_codes ?prev t =
+let to_sgr_codes ?depth ?prev t =
   let prev = Option.value prev ~default in
   if visual_equal prev t then []
   else if visual_equal t default then [ 0 ]
   else
     let rev_codes = ref [] in
-    emit_sgr_diff ~prev t (fun code -> rev_codes := code :: !rev_codes);
+    emit_sgr_diff ?depth ~prev t (fun code -> rev_codes := code :: !rev_codes);
     List.rev !rev_codes
 
-let emit ?prev t (w : Writer.t) =
+let emit ?depth ?prev t (w : Writer.t) =
   let prev = Option.value prev ~default in
   if visual_equal prev t then ()
   else if visual_equal t default then Escape.sgr [ 0 ] w
-  else Escape.sgr_direct (emit_sgr_diff ~prev t) w
+  else Escape.sgr_direct (emit_sgr_diff ?depth ~prev t) w
 
-let sgr_sequence ?prev t =
-  match to_sgr_codes ?prev t with
+let sgr_sequence ?depth ?prev t =
+  match to_sgr_codes ?depth ?prev t with
   | [] -> ""
   | codes -> Escape.to_string (fun w -> Escape.sgr codes w)
 
-let styled ?(reset = false) t str =
+let styled ?depth ?(reset = false) t str =
   if equal t default then str
   else
     Escape.to_string (fun w ->
-        emit t w;
+        emit ?depth t w;
         Escape.literal str w;
         if reset then Escape.reset w)
 

@@ -6,8 +6,8 @@ module Style = Style
 module Parser = Parser
 module Sgr_state = Sgr_state
 
-let render ?hyperlinks_enabled segments =
-  Segment.render ?hyperlinks_enabled segments
+let render ?depth ?hyperlinks_enabled segments =
+  Segment.render ?depth ?hyperlinks_enabled segments
 
 (* A string without ESC, DEL or a non-ASCII byte has nothing to remove. *)
 let rec is_plain s i =

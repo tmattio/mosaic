@@ -219,13 +219,17 @@ val to_depth : depth -> t -> t
 
 (** {1:sgr SGR codes} *)
 
-val to_sgr_codes : bg:bool -> t -> int list
-(** [to_sgr_codes ~bg c] is the SGR codes of [c]'s intent ({!type-intent}), for
-    the foreground, or for the background if [bg] is [true]. *)
+val to_sgr_codes : ?depth:depth -> bg:bool -> t -> int list
+(** [to_sgr_codes ~depth ~bg c] is the SGR codes of {!to_depth}[ depth c]'s
+    intent ({!type-intent}), for the foreground, or for the background if [bg]
+    is [true]. At [`Ansi16] and [`Ansi8] a palette entry [i] is written as
+    [30 + i] when [i < 8] and as [82 + i] otherwise, or [40 + i] and [92 + i]
+    for the background, and at the other depths as [38;5;i] or [48;5;i]. [depth]
+    defaults to [`Truecolor]. *)
 
-val emit_sgr_codes : bg:bool -> (int -> unit) -> t -> unit
-(** [emit_sgr_codes ~bg push c] calls [push] on each code of
-    {!to_sgr_codes}[ ~bg c], in order, and builds no list. *)
+val emit_sgr_codes : ?depth:depth -> bg:bool -> (int -> unit) -> t -> unit
+(** [emit_sgr_codes ~depth ~bg push c] calls [push] on each code of
+    {!to_sgr_codes}[ ~depth ~bg c], in order, and builds no list. *)
 
 (** {1:packed Packed colors} *)
 

@@ -7,17 +7,32 @@ type t = {
   mutable link : string; (* "" = no link *)
   mutable link_open : bool;
   mutable color_depth : color_depth;
+  (* The writer and the separator state of the codes [push] writes. *)
+  mutable out : Writer.t;
+  mutable first : bool;
+  push : int -> unit;
 }
 
+let emit_sgr_code w first code =
+  if not first then Escape.sgr_sep w;
+  Escape.sgr_code w code;
+  false
+
 let create () =
-  {
-    fg_color = -1;
-    bg_color = -1;
-    attrs = -1;
-    link = "";
-    link_open = false;
-    color_depth = `Truecolor;
-  }
+  let rec t =
+    {
+      fg_color = -1;
+      bg_color = -1;
+      attrs = -1;
+      link = "";
+      link_open = false;
+      color_depth = `Truecolor;
+      out = Writer.create 0;
+      first = true;
+      push = (fun code -> t.first <- emit_sgr_code t.out t.first code);
+    }
+  in
+  t
 
 let set_color_depth t depth =
   if t.color_depth <> depth then (
@@ -44,44 +59,23 @@ let update_link t w link =
       t.link <- "";
       t.link_open <- false))
 
-let emit_sgr_code w first code =
-  if not first then Escape.sgr_sep w;
-  Escape.sgr_code w code;
-  false
-
-let emit_indexed_sgr w first ~bg idx =
-  let first = emit_sgr_code w first (if bg then 48 else 38) in
-  let first = emit_sgr_code w first 5 in
-  emit_sgr_code w first idx
-
-let emit_ansi16_sgr w first ~bg idx =
-  if idx < 8 then emit_sgr_code w first ((if bg then 40 else 30) + idx)
-  else emit_sgr_code w first ((if bg then 100 else 90) + idx - 8)
-
-let emit_rgb_sgr w first ~bg color =
-  let first = emit_sgr_code w first (if bg then 48 else 38) in
-  let first = emit_sgr_code w first 2 in
-  let first = emit_sgr_code w first (Color.Packed.red color) in
-  let first = emit_sgr_code w first (Color.Packed.green color) in
-  emit_sgr_code w first (Color.Packed.blue color)
-
-let emit_default_sgr w first ~bg = emit_sgr_code w first (if bg then 49 else 39)
-
+(* A color's codes are Color.emit_sgr_codes's at the tracker's depth, pushed
+   through [t.push], made once with the tracker, so a write builds no
+   closure. [initial] leaves out a default color after [CSI 0]. *)
 let emit_color_sgr t w first ~bg ~initial color =
-  let color =
-    Color.Packed.encode
-      (Color.to_depth t.color_depth (Color.Packed.decode color))
+  let c = Color.to_depth t.color_depth (Color.Packed.decode color) in
+  let default =
+    match Color.intent c with
+    | Color.Default -> true
+    | Color.Rgb -> Color.alpha c = 0.
+    | Color.Indexed _ -> false
   in
-  match Color.Packed.intent color with
-  | Color.Default -> if initial then first else emit_default_sgr w first ~bg
-  | Color.Indexed idx -> (
-      match t.color_depth with
-      | `Ansi16 | `Ansi8 -> emit_ansi16_sgr w first ~bg idx
-      | `Truecolor | `Ansi256 | `Mono -> emit_indexed_sgr w first ~bg idx)
-  | Color.Rgb ->
-      if Color.Packed.alpha color = 0 then
-        if initial then first else emit_default_sgr w first ~bg
-      else emit_rgb_sgr w first ~bg color
+  if initial && default then first
+  else (
+    t.out <- w;
+    t.first <- first;
+    Color.emit_sgr_codes ~depth:t.color_depth ~bg t.push c;
+    t.first)
 
 let emit_full_update t w ~fg ~bg ~attrs =
   Escape.sgr_open w;

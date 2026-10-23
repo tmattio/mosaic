@@ -175,28 +175,33 @@ val hash : t -> int
     attributes, then those that set the foreground and the background where they
     change, then those that set attributes. An attribute of [s] that shares its
     clearing code with a cleared one is set again. The transition ignores links.
-*)
 
-val to_sgr_codes : ?prev:t -> t -> int list
-(** [to_sgr_codes ~prev s] is the codes of the transition from [prev] to [s]. It
-    is [[]] if [prev] and [s] have the same colors and attributes, and [[0]] if
-    [s] has those of {!default} and [prev] does not. [prev] defaults to
-    {!default}. *)
+    A transition is written for a terminal of a color {e depth}
+    ({!Color.type-depth}), [`Truecolor] unless [depth] says otherwise. Its
+    colors are reduced by {!Color.to_depth} and written by
+    {!Color.emit_sgr_codes} at that depth, as {!Sgr_state} writes them. *)
 
-val sgr_sequence : ?prev:t -> t -> string
-(** [sgr_sequence ~prev s] is the SGR sequence of {!to_sgr_codes}[ ~prev s], and
-    [""] if that is [[]]. *)
+val to_sgr_codes : ?depth:Color.depth -> ?prev:t -> t -> int list
+(** [to_sgr_codes ~depth ~prev s] is the codes of the transition from [prev] to
+    [s] at [depth]. It is [[]] if [prev] and [s] have the same colors and
+    attributes, and [[0]] if [s] has those of {!default} and [prev] does not.
+    [prev] defaults to {!default}. *)
 
-val emit : ?prev:t -> t -> Writer.t -> unit
-(** [emit ~prev s w] writes to [w] the SGR sequence of the transition from
-    [prev] to [s]. It writes nothing if the two have the same colors and
-    attributes, and [CSI 0 m] if [s] has the colors and attributes of
+val sgr_sequence : ?depth:Color.depth -> ?prev:t -> t -> string
+(** [sgr_sequence ~depth ~prev s] is the SGR sequence of
+    {!to_sgr_codes}[ ~depth ~prev s], and [""] if that is [[]]. *)
+
+val emit : ?depth:Color.depth -> ?prev:t -> t -> Writer.t -> unit
+(** [emit ~depth ~prev s w] writes to [w] the SGR sequence of the transition
+    from [prev] to [s] at [depth]. It writes nothing if the two have the same
+    colors and attributes, and [CSI 0 m] if [s] has the colors and attributes of
     {!default}. [prev] defaults to {!default}. *)
 
-val styled : ?reset:bool -> t -> string -> string
-(** [styled ~reset s str] is [str] after the transition from {!default} to [s],
-    followed by [CSI 0 m] if [reset] is [true]. It is [str] itself if [s] is
-    {!default}. It writes no hyperlink. [reset] defaults to [false]. *)
+val styled : ?depth:Color.depth -> ?reset:bool -> t -> string -> string
+(** [styled ~depth ~reset s str] is [str] after the transition from {!default}
+    to [s] at [depth], followed by [CSI 0 m] if [reset] is [true]. It is [str]
+    itself if [s] is {!default}. It writes no hyperlink. [reset] defaults to
+    [false]. *)
 
 (** {1:reading Reading SGR} *)
 

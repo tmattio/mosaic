@@ -26,12 +26,23 @@ val initial_state : state
 (** {1:rendering Rendering} *)
 
 val emit :
-  ?state:state -> ?hyperlinks_enabled:bool -> Writer.t -> segment list -> state
-(** [emit ~state ~hyperlinks_enabled w segs] writes [segs] to [w] from [state]
-    and is the state after them. Where the link changes, it closes the open
-    hyperlink and opens the new one, unless [hyperlinks_enabled] is [false].
-    [state] defaults to {!initial_state} and [hyperlinks_enabled] to [true]. *)
+  ?depth:Color.depth ->
+  ?state:state ->
+  ?hyperlinks_enabled:bool ->
+  Writer.t ->
+  segment list ->
+  state
+(** [emit ~depth ~state ~hyperlinks_enabled w segs] writes [segs] to [w] from
+    [state], with their transitions at [depth] ({!Style.emit}), and is the state
+    after them. Where the link changes, it closes the open hyperlink and opens
+    the new one, unless [hyperlinks_enabled] is [false]. [state] defaults to
+    {!initial_state} and [hyperlinks_enabled] to [true]. *)
 
-val render : ?state:state -> ?hyperlinks_enabled:bool -> segment list -> string
-(** [render ~state ~hyperlinks_enabled segs] is the bytes {!emit} writes,
+val render :
+  ?depth:Color.depth ->
+  ?state:state ->
+  ?hyperlinks_enabled:bool ->
+  segment list ->
+  string
+(** [render ~depth ~state ~hyperlinks_enabled segs] is the bytes {!emit} writes,
     followed by the OSC 8 that closes an open hyperlink and [CSI 0 m]. *)

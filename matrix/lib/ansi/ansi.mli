@@ -427,14 +427,18 @@ val query : query -> t
 
 (** {1:styled Styled text} *)
 
-val render : ?hyperlinks_enabled:bool -> (Style.t * string) list -> string
-(** [render ~hyperlinks_enabled segs] is the bytes that show each
+val render :
+  ?depth:Color.depth ->
+  ?hyperlinks_enabled:bool ->
+  (Style.t * string) list ->
+  string
+(** [render ~depth ~hyperlinks_enabled segs] is the bytes that show each
     [(style, text)] of [segs] in order, from {!Style.default}. Before each
     segment it writes an OSC 8 that closes or opens a hyperlink where the link
-    changes, and the transition of {!Style.emit} from the style before. It ends
-    by closing an open hyperlink and writing {!reset}. With
-    [~hyperlinks_enabled:false] it writes no hyperlink. [hyperlinks_enabled]
-    defaults to [true]. *)
+    changes, and the transition of {!Style.emit} from the style before, at
+    [depth], [`Truecolor] by default. It ends by closing an open hyperlink and
+    writing {!reset}. With [~hyperlinks_enabled:false] it writes no hyperlink.
+    [hyperlinks_enabled] defaults to [true]. *)
 
 (** {1:untrusted Removing control functions}
 

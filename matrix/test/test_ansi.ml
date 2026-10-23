@@ -190,6 +190,29 @@ let style_transition_ignores_links () =
   equal ~msg:"links alone change nothing" (list int) []
     (Style.to_sgr_codes ~prev:linked (Style.make ~link:"http://b" ()))
 
+(* A style is written at the terminal's color depth, as a tracker writes it:
+   reduced by Color.to_depth, with the 16-color codes at 16 and 8 colors. *)
+let style_writes_at_a_depth () =
+  let check msg depth style expected =
+    equal ~msg string expected (Style.sgr_sequence ~depth style);
+    equal ~msg:(msg ^ ", emit") string expected
+      (Ansi.to_string (Style.emit ~depth style))
+  in
+  check "palette red at 16 colors" `Ansi16
+    (Style.make ~fg:(Color.indexed 1) ())
+    "\027[31m";
+  check "bright red background at 16 colors" `Ansi16
+    (Style.make ~bg:(Color.indexed 9) ())
+    "\027[101m";
+  check "RGB red at 256 colors" `Ansi256
+    (Style.make ~fg:(Color.of_rgb 255 0 0) ())
+    "\027[38;5;196m";
+  check "RGB red at true color" `Truecolor
+    (Style.make ~fg:(Color.of_rgb 255 0 0) ())
+    "\027[38;2;255;0;0m";
+  equal ~msg:"Color.to_sgr_codes at 16 colors" (list int) [ 91 ]
+    (Color.to_sgr_codes ~depth:`Ansi16 ~bg:false (Color.indexed 9))
+
 let style_shared_disable_codes () =
   (* Bold and Dim share disable code 22. When transitioning from bold+dim to
      dim-only, we must re-enable dim after disabling bold. *)
@@ -1696,6 +1719,7 @@ let tests =
     group "SGR Engine"
       [
         test "the transition ignores links" style_transition_ignores_links;
+        test "a style is written at a depth" style_writes_at_a_depth;
         test "state diffing" sgr_state_transitions;
         test "foreground-only change does not reset"
           sgr_foreground_only_change_does_not_reset;

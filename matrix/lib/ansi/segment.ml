@@ -3,8 +3,8 @@ type state = { style : Style.t; link_open : bool }
 
 let initial_state = { style = Style.default; link_open = false }
 
-let emit ?(state = initial_state) ?(hyperlinks_enabled = true) (w : Writer.t)
-    (segments : segment list) : state =
+let emit ?depth ?(state = initial_state) ?(hyperlinks_enabled = true)
+    (w : Writer.t) (segments : segment list) : state =
   List.fold_left
     (fun { style = prev_style; link_open } (style, text) ->
       let prev_link = Style.link prev_style in
@@ -23,14 +23,14 @@ let emit ?(state = initial_state) ?(hyperlinks_enabled = true) (w : Writer.t)
         else link_open
       in
       (* Emit style transition and text *)
-      Style.emit ~prev:prev_style style w;
+      Style.emit ?depth ~prev:prev_style style w;
       Escape.literal text w;
       { style; link_open })
     state segments
 
-let render ?(state = initial_state) ?(hyperlinks_enabled = true)
+let render ?depth ?(state = initial_state) ?(hyperlinks_enabled = true)
     (segments : segment list) : string =
   Escape.to_string (fun w ->
-      let final_state = emit ~state ~hyperlinks_enabled w segments in
+      let final_state = emit ?depth ~state ~hyperlinks_enabled w segments in
       if final_state.link_open then Escape.hyperlink_end w;
       Escape.reset w)
