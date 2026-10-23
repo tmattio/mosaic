@@ -72,8 +72,9 @@ module Highlighter : sig
       so that a highlighter may reuse the work it did for it. A tree-sitter
       highlighter, for instance, edits the tree it returned as its state and
       parses [content] again from it, at a cost that grows with the size of the
-      change. A highlighter that keeps nothing ignores [previous] and returns
-      [()] as its state. *)
+      change. A highlighter that keeps nothing between results is made with
+      {!sync} or {!threaded} from a function of the language and the content,
+      and has [()] as its state. *)
 
   type 'state result = (Syntax_highlight.t * 'state, exn) Stdlib.result
   (** The type for highlighter results. [Ok (captures, state)] holds captures
@@ -128,22 +129,35 @@ module Highlighter : sig
       result is never shown as such (see {!with_highlighter}). A live job must
       therefore eventually complete even if its input has become obsolete. *)
 
-  val sync : ('state request -> Syntax_highlight.t * 'state) -> t
-  (** [sync f] is a synchronous highlighter: [f] runs on the rendering thread
-      when content or syntax changes. Exceptions raised by [f] are highlighting
-      failures (see {!type-result}). *)
+  val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
+  (** [sync f] is a synchronous highlighter that keeps nothing between results:
+      [f ~language ~content] runs on the rendering thread when content or syntax
+      changes, and returns the captures of [content]. It is {!sync_incremental}
+      with a function that ignores [previous]. *)
 
-  val threaded : ('state request -> Syntax_highlight.t * 'state) -> t
-  (** [threaded f] runs requests on a worker systhread. Reuse the returned
-      highlighter: it runs at most one call to [f] at a time, queues live
-      requests in order, starts its worker when a request arrives and releases
-      it when the queue empties. Views sharing the highlighter share its worker,
-      so a slow call delays the requests queued behind it. Cancelled queued
-      requests are removed immediately. A running call cannot be interrupted;
-      cancellation discards its result. Polling and cancellation are thread-safe
-      and do not wait for [f] to finish. Exceptions from [f] are highlighting
-      failures of their request (see {!type-result}); the worker goes on with
-      the next one.
+  val threaded : (language:string -> content:string -> Syntax_highlight.t) -> t
+  (** [threaded f] is {!threaded_incremental} with [f ~language ~content] for
+      each request: [f] runs on a worker systhread and keeps nothing between
+      results. *)
+
+  val sync_incremental : ('state request -> Syntax_highlight.t * 'state) -> t
+  (** [sync_incremental f] is a synchronous highlighter that may build on the
+      view's latest result: [f] runs on the rendering thread when content or
+      syntax changes. Exceptions raised by [f] are highlighting failures (see
+      {!type-result}). *)
+
+  val threaded_incremental :
+    ('state request -> Syntax_highlight.t * 'state) -> t
+  (** [threaded_incremental f] runs requests on a worker systhread. Reuse the
+      returned highlighter: it runs at most one call to [f] at a time, queues
+      live requests in order, starts its worker when a request arrives and
+      releases it when the queue empties. Views sharing the highlighter share
+      its worker, so a slow call delays the requests queued behind it. Cancelled
+      queued requests are removed immediately. A running call cannot be
+      interrupted; cancellation discards its result. Polling and cancellation
+      are thread-safe and do not wait for [f] to finish. Exceptions from [f] are
+      highlighting failures of their request (see {!type-result}); the worker
+      goes on with the next one.
 
       The worker publishes the immutable result and schedules a render; the
       result is applied on the rendering thread.

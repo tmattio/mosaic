@@ -75,10 +75,10 @@ let precomputed_highlights_apply_style () =
 
 let sync_highlighter_applies_style () =
   let highlighter =
-    Code.Highlighter.sync (fun { language; content; _ } ->
+    Code.Highlighter.sync (fun ~language ~content ->
         equal ~msg:"request content" string "let x" content;
         equal ~msg:"request language" string "ocaml" language;
-        (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
+        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
   in
   let syntax =
     Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
@@ -438,7 +438,7 @@ let apply_props_updates_syntax_style () =
 let syntax_compares_styles_by_value () =
   let calls = ref 0 in
   let highlighter =
-    Code.Highlighter.sync (fun { content; _ } ->
+    Code.Highlighter.sync_incremental (fun { content; _ } ->
         incr calls;
         (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
   in
@@ -460,7 +460,7 @@ let syntax_compares_styles_by_value () =
        (Code.Props.make ~content:"let x"
           ~syntax:
             (Code.with_highlighter ~language:"ocaml"
-               (Code.Highlighter.sync (fun { content; _ } ->
+               (Code.Highlighter.sync_incremental (fun { content; _ } ->
                     (Syntax_highlight.make ~content [], ()))))
           ()));
   let _ctx, code = make_code () in
@@ -524,11 +524,11 @@ let threaded_requests_are_bounded_and_cancelled () =
   let wait, release = gate () in
   let calls = Atomic.make [] in
   let highlighter =
-    Code.Highlighter.threaded (fun { language; content; _ } ->
+    Code.Highlighter.threaded (fun ~language ~content ->
         if language <> "ocaml" then failwith "wrong request language";
         Atomic.set calls (content :: Atomic.get calls);
         if content = "let old" then wait ();
-        (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
+        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
   in
   let renderer = Renderer.create () in
   let syntax =
@@ -582,7 +582,7 @@ let threaded_requests_are_bounded_and_cancelled () =
 let threaded_failure_and_idle_restart () =
   let worker = Atomic.make None in
   let highlighter =
-    Code.Highlighter.threaded (fun { content; _ } ->
+    Code.Highlighter.threaded_incremental (fun { content; _ } ->
         Atomic.set worker (Some (Thread.self ()));
         if content = "bad" then failwith "highlight failed"
         else (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
@@ -638,7 +638,7 @@ let destroy_cancels_job_once () =
 let theme_changes_reuse_highlighter_captures () =
   let calls = ref 0 in
   let highlighter =
-    Code.Highlighter.sync (fun { content; _ } ->
+    Code.Highlighter.sync_incremental (fun { content; _ } ->
         incr calls;
         (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
   in
@@ -779,7 +779,7 @@ let words_style =
 let previous_carries_state_and_edit () =
   let seen = ref [] in
   let highlighter =
-    Code.Highlighter.sync
+    Code.Highlighter.sync_incremental
       (fun ({ content; previous; _ } : int Code.Highlighter.request) ->
         seen := previous :: !seen;
         (Words.fresh content, String.length content))
@@ -857,7 +857,8 @@ let incremental_requests_hold_on_random_scripts () =
     Code.with_highlighter ~language:!language ~style:words_style !highlighter
   in
   let reference_highlighter =
-    Code.Highlighter.sync (fun { content; _ } -> (Words.fresh content, ()))
+    Code.Highlighter.sync_incremental (fun { content; _ } ->
+        (Words.fresh content, ()))
   in
   let initial = "let x be" in
   let _ctx, code = make_code ~content:initial ~syntax:(syntax ()) () in

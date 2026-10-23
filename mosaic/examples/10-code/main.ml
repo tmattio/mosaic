@@ -52,10 +52,7 @@ let json_sample =
 
 let lang_name = function OCaml -> "OCaml" | JSON -> "JSON"
 let lang_content = function OCaml -> ocaml_sample | JSON -> json_sample
-
-let highlighter =
-  Code.Highlighter.threaded (fun { language; content; _ } ->
-      (Toy_highlighter.highlight ~language ~content, ()))
+let highlighter = Code.Highlighter.threaded Toy_highlighter.highlight
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100

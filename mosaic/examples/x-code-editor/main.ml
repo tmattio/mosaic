@@ -390,10 +390,7 @@ let completion_panel model =
 
 (* The editor highlights each accepted text as a code view does. A highlighter
    is a resource, so it is created once. *)
-let highlighter =
-  Code.Highlighter.sync (fun { language; content; _ } ->
-      (Toy_highlighter.highlight ~language ~content, ()))
-
+let highlighter = Code.Highlighter.sync Toy_highlighter.highlight
 let syntax = Code.with_highlighter ~language:"ocaml" highlighter
 
 let view model =

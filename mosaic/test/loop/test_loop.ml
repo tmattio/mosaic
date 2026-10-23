@@ -1045,7 +1045,7 @@ let%expect_test "threaded highlighting wakes an idle application" =
   let released = Atomic.make false in
   let worker = Atomic.make None in
   let highlighter =
-    Mosaic.Code.Highlighter.threaded (fun { content; _ } ->
+    Mosaic.Code.Highlighter.threaded_incremental (fun { content; _ } ->
         Atomic.set worker (Some (Thread.self ()));
         while not (Atomic.get released) do
           Thread.delay 0.001
@@ -1112,7 +1112,7 @@ let%expect_test "application exit cancels queued highlighting" =
       let worker = Atomic.make None in
       let calls = Atomic.make [] in
       let highlighter =
-        Mosaic.Code.Highlighter.threaded (fun { content; _ } ->
+        Mosaic.Code.Highlighter.threaded_incremental (fun { content; _ } ->
             Atomic.set worker (Some (Thread.self ()));
             Atomic.set calls (content :: Atomic.get calls);
             while not (Atomic.get released) do

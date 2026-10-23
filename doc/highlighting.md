@@ -76,7 +76,7 @@ let highlight { Mosaic.Code.Highlighter.language; content; previous } =
   in
   (Mosaic.Syntax_highlight.of_triples ~content captures, tree)
 
-let highlighter = Mosaic.Code.Highlighter.threaded highlight
+let highlighter = Mosaic.Code.Highlighter.threaded_incremental highlight
 
 let code_view src =
   Mosaic.code
@@ -91,7 +91,27 @@ filename extensions your application uses go there, and unknown languages stay
 plain. Its state is the tree of the view's latest result. A keystroke in a large
 file is parsed again around the edit, and the query covers the whole new tree,
 as the result type of [`Code.Highlighter`](../mosaic/lib/ui/renderables/code.mli)
-requires.
+requires. `threaded_incremental` runs `highlight` on a worker thread and hands
+it each request with the view's latest result.
+
+A highlighter that keeps nothing between results, such as a lexical one, is a
+function of the language and the content, and `threaded` or `sync` takes it as
+it is. This one marks every `let`:
+
+```ocaml
+let lets ~language:_ ~content =
+  let rec find from acc =
+    match String.index_from_opt content from 'l' with
+    | Some i when i + 3 <= String.length content && String.sub content i 3 = "let"
+      ->
+        find (i + 3) ((i, i + 3, "keyword") :: acc)
+    | Some i -> find (i + 1) acc
+    | None -> List.rev acc
+  in
+  Mosaic.Syntax_highlight.of_triples ~content (find 0 [])
+
+let lexical_highlighter = Mosaic.Code.Highlighter.threaded lets
+```
 
 ## Editable text
 
@@ -114,7 +134,7 @@ styles.
 
 - [`Code`](../mosaic/lib/ui/renderables/code.mli): highlighters, their
   requests, states and failures, what a result must hold, the worker of
-  `Highlighter.threaded`, and what a view shows while a result is pending.
+  `Highlighter.threaded_incremental`, and what a view shows while a result is pending.
 - [`Syntax_highlight`](../mosaic/lib/ui/syntax_highlight.mli): byte ranges,
   captures bound to their source, and their resolution into annotations.
 - [`Syntax_style`](../mosaic/lib/ui/syntax_style.mli): the scope vocabulary

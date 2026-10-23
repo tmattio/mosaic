@@ -693,16 +693,30 @@ module Code : sig
     val job :
       poll:(unit -> 'state result option) -> cancel:(unit -> unit) -> 'state job
 
-    val sync : ('state request -> Mosaic_ui.Syntax_highlight.t * 'state) -> t
-    (** [sync f] runs [f] on the rendering thread; errors fall back to plain
-        text. See {!Mosaic_ui.Code.Highlighter} for requests and results. *)
+    val sync :
+      (language:string -> content:string -> Mosaic_ui.Syntax_highlight.t) -> t
+    (** [sync f] runs [f ~language ~content] on the rendering thread and keeps
+        nothing between results; errors fall back to plain text. *)
 
     val threaded :
+      (language:string -> content:string -> Mosaic_ui.Syntax_highlight.t) -> t
+    (** [threaded f] runs [f ~language ~content] on one on-demand worker
+        systhread per highlighter, as {!threaded_incremental} runs its function.
+        Reuse the highlighter across renders. *)
+
+    val sync_incremental :
       ('state request -> Mosaic_ui.Syntax_highlight.t * 'state) -> t
-    (** [threaded f] serializes requests on one on-demand worker systhread per
-        highlighter. Cancellation removes queued requests and discards running
-        results. Reuse the highlighter across renders. See
-        {!Mosaic_ui.Code.Highlighter.threaded} for the threading contract. *)
+    (** [sync_incremental f] runs [f] on the rendering thread with the view's
+        latest result; errors fall back to plain text. See
+        {!Mosaic_ui.Code.Highlighter} for requests and results. *)
+
+    val threaded_incremental :
+      ('state request -> Mosaic_ui.Syntax_highlight.t * 'state) -> t
+    (** [threaded_incremental f] serializes requests on one on-demand worker
+        systhread per highlighter. Cancellation removes queued requests and
+        discards running results. Reuse the highlighter across renders. See
+        {!Mosaic_ui.Code.Highlighter.threaded_incremental} for the threading
+        contract. *)
 
     val async : ('state request -> notify:(unit -> unit) -> 'state job) -> t
   end

@@ -212,16 +212,16 @@ hello
   [%expect {|CUSTOM: hello|}]
 
 let keyword_highlighter =
-  Code.Highlighter.sync (fun { content; _ } ->
-      (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
+  Code.Highlighter.sync (fun ~language:_ ~content ->
+      Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
 
 let%expect_test "highlighter renders a borderless code view" =
   (* An unknown language still routes the block through the [Code] view, so it
      is drawn without the default left border. *)
   render_markdown
     ~highlighter:
-      (Code.Highlighter.sync (fun { content; _ } ->
-           (Syntax_highlight.make ~content [], ())))
+      (Code.Highlighter.sync (fun ~language:_ ~content ->
+           Syntax_highlight.make ~content []))
     {|```ocaml
 let x = 1
 ```|};

@@ -32,10 +32,16 @@ module Highlighter = struct
         result)
       ~cancel:(fun () -> pending := None)
 
-  let sync f =
+  let sync_incremental f =
     Highlighter
       (fun request ~notify:_ ->
         completed (try Ok (f request) with exn -> Error exn))
+
+  (* A highlighter that keeps nothing has [()] as its state. *)
+  let stateless f { language; content; previous = _ } =
+    (f ~language ~content, ())
+
+  let sync f = sync_incremental (stateless f)
 
   let async f =
     Highlighter
@@ -49,7 +55,7 @@ module Highlighter = struct
     mutable outcome : 'state result option;
   }
 
-  let threaded f =
+  let threaded_incremental f =
     let mutex = Mutex.create () in
     let pending = Queue.create () in
     let running = ref false in
@@ -100,6 +106,8 @@ module Highlighter = struct
                   let queued = Queue.take pending in
                   if queued != task then Queue.add queued pending
                 done)))
+
+  let threaded f = threaded_incremental (stateless f)
 end
 
 (* [edit ~source content] is the one span in which [content] differs from

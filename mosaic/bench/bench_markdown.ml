@@ -12,8 +12,8 @@ let render_frame renderer =
    computing highlights. A highlighter is a resource, so create and props share
    one. *)
 let highlighter =
-  Code.Highlighter.sync (fun { content; _ } ->
-      (Syntax_highlight.make ~content [], ()))
+  Code.Highlighter.sync (fun ~language:_ ~content ->
+      Syntax_highlight.make ~content [])
 
 let chunk i =
   Printf.sprintf

@@ -26,8 +26,13 @@ module Highlighter : sig
   val job :
     poll:(unit -> 'state result option) -> cancel:(unit -> unit) -> 'state job
 
-  val sync : ('state request -> Syntax_highlight.t * 'state) -> t
-  val threaded : ('state request -> Syntax_highlight.t * 'state) -> t
+  val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
+  val threaded : (language:string -> content:string -> Syntax_highlight.t) -> t
+  val sync_incremental : ('state request -> Syntax_highlight.t * 'state) -> t
+
+  val threaded_incremental :
+    ('state request -> Syntax_highlight.t * 'state) -> t
+
   val async : ('state request -> notify:(unit -> unit) -> 'state job) -> t
 end
 
