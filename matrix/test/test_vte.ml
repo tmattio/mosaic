@@ -14,12 +14,6 @@ let scrollback_lines vte =
   let n = Vte.scrollback_size vte in
   List.init n (fun i -> Vte.text vte (i - n))
 
-(* The view [offset] lines up into the scrollback. *)
-let render_with_scrollback vte ~offset dst =
-  for y = 0 to Grid.height dst - 1 do
-    Vte.blit_row vte (y - offset) dst ~y
-  done
-
 let get_char_at grid row col =
   let idx = (row * Grid.width grid) + col in
   let s = Grid.get_text grid idx in
@@ -821,29 +815,44 @@ let scrollback_ring_buffer () =
   equal ~msg:"oldest in ring" string "L2" (List.nth lines 0);
   equal ~msg:"newest in ring" string "L3" (List.nth lines 1)
 
-let render_with_scrollback_order () =
+let blit_view_order () =
   let vte = Vte.create ~scrollback:100 ~rows:3 ~cols:10 () in
   feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   equal ~msg:"two lines in scrollback" int 2 (Vte.scrollback_size vte);
   let dst = Grid.create ~width:10 ~height:3 () in
-  render_with_scrollback vte ~offset:2 dst;
+  Vte.blit_view vte ~offset:2 dst;
   equal ~msg:"oldest visible line on top" string "L1" (get_line dst 0);
   equal ~msg:"newer line below" string "L2" (get_line dst 1);
   equal ~msg:"screen top adjacent to history" string "L3" (get_line dst 2);
-  render_with_scrollback vte ~offset:1 dst;
+  Vte.blit_view vte ~offset:1 dst;
   equal ~msg:"offset 1 shows newest history line" string "L2" (get_line dst 0);
   equal ~msg:"offset 1 screen row 0" string "L3" (get_line dst 1);
   equal ~msg:"offset 1 screen row 1" string "L4" (get_line dst 2)
 
-let render_with_scrollback_wrapped_ring () =
+let blit_view_wrapped_ring () =
   let vte = Vte.create ~scrollback:2 ~rows:2 ~cols:5 () in
   feed vte "L1\r\nL2\r\nL3\r\nL4\r\nL5";
   (* Ring holds L2 (oldest) and L3 (newest); L1 was evicted. *)
   let dst = Grid.create ~width:5 ~height:3 () in
-  render_with_scrollback vte ~offset:2 dst;
+  Vte.blit_view vte ~offset:2 dst;
   equal ~msg:"wrapped oldest on top" string "L2" (get_line dst 0);
   equal ~msg:"wrapped newest below" string "L3" (get_line dst 1);
   equal ~msg:"wrapped screen top" string "L4" (get_line dst 2)
+
+(* An offset past the scrollback shows its oldest line on top, a negative
+   one the screen, and the alternate screen has no scrollback to show. *)
+let blit_view_clamps () =
+  let vte = Vte.create ~scrollback:100 ~rows:2 ~cols:5 () in
+  feed vte "L1\r\nL2\r\nL3";
+  let dst = Grid.create ~width:5 ~height:2 () in
+  let view () = [ get_line dst 0; get_line dst 1 ] in
+  Vte.blit_view vte ~offset:10 dst;
+  equal ~msg:"past the scrollback" (list string) [ "L1"; "L2" ] (view ());
+  Vte.blit_view vte ~offset:(-3) dst;
+  equal ~msg:"negative" (list string) [ "L2"; "L3" ] (view ());
+  feed vte "\027[?1049h\027[HA";
+  Vte.blit_view vte ~offset:1 dst;
+  equal ~msg:"alternate screen" (list string) [ "A"; "" ] (view ())
 
 (* Rows run from the screen up into the scrollback: each has its text, its
    wrap mark and its cells, the same before and after it scrolls off. Other
@@ -1681,7 +1690,7 @@ let hyperlinks_survive_styles_and_scrollback () =
   check (Vte.grid vte);
   feed vte "\r\n";
   let dst = Grid.create ~width:8 ~height:1 () in
-  render_with_scrollback vte ~offset:1 dst;
+  Vte.blit_view vte ~offset:1 dst;
   check dst
 
 let scrollback_preserves_decorated_spaces () =
@@ -1695,7 +1704,7 @@ let scrollback_preserves_decorated_spaces () =
   equal ~msg:"plain history remains trimmed" (list string) [ "x" ]
     (scrollback_lines vte);
   let dst = Grid.create ~width:8 ~height:1 () in
-  render_with_scrollback vte ~offset:1 dst;
+  Vte.blit_view vte ~offset:1 dst;
   Array.iteri
     (fun i expected ->
       is_true ~msg:"paint, attributes and links survive compression"
@@ -2313,8 +2322,8 @@ let scrollback_keeps_cells () =
       [ String.trim text ]
       (scrollback_lines vte);
     let dst = Grid.create ~width:cols ~height:2 () in
-    render_with_scrollback vte ~offset:1 dst;
-    equal ~msg:"render_with_scrollback" (list string) cells (row dst 0);
+    Vte.blit_view vte ~offset:1 dst;
+    equal ~msg:"blit_view" (list string) cells (row dst 0);
     Vte.resize vte ~rows:3 ~cols;
     equal ~msg:"resize grow" (list string) cells (row (Vte.grid vte) 0)
   in
@@ -2493,9 +2502,9 @@ let tests =
     test "scrollback ring buffer" scrollback_ring_buffer;
     test "scrollback disabled" scrollback_disabled;
     test "rows and the scrollback" rows_and_scrollback;
-    test "render with scrollback order" render_with_scrollback_order;
-    test "render with scrollback wrapped ring"
-      render_with_scrollback_wrapped_ring;
+    test "blit_view order" blit_view_order;
+    test "blit_view wrapped ring" blit_view_wrapped_ring;
+    test "blit_view clamps" blit_view_clamps;
     test "auto wrap mode" auto_wrap_mode;
     test "reverse wrap" reverse_wrap;
     test "insert mode" insert_mode;

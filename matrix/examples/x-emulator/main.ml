@@ -329,11 +329,6 @@ let handle_key_down state (event : Sdl.event) =
 (* The view [offset] lines up into the scrollback. *)
 
 (** Extract text content from a grid cell. *)
-let render_view vte ~offset dst =
-  for y = 0 to Grid.height dst - 1 do
-    Vte.blit_row vte (y - offset) dst ~y
-  done
-
 let get_cell_text grid x y =
   let idx = (y * Grid.width grid) + x in
   if Grid.is_continuation grid idx then ""
@@ -370,7 +365,8 @@ let handle_event state event =
           if state.display_offset = 0 then Vte.grid state.vte
           else (
             if state.last_rendered_offset <> state.display_offset then (
-              render_view state.vte ~offset:state.display_offset state.view_grid;
+              Vte.blit_view state.vte ~offset:state.display_offset
+                state.view_grid;
               state.last_rendered_offset <- state.display_offset);
             state.view_grid)
         in
@@ -464,7 +460,7 @@ let render state =
       (* Scrollback view: use cached view grid, rebuild only if offset
          changed *)
       if state.last_rendered_offset <> display_offset then (
-        render_view vte ~offset:display_offset view_grid;
+        Vte.blit_view vte ~offset:display_offset view_grid;
         state.last_rendered_offset <- display_offset);
       view_grid)
   in

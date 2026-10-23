@@ -32,7 +32,7 @@
     + {!feed} applies the program's output as it arrives and returns the
       replies, which the caller writes to the program's input.
     + A renderer reads the screen ({!grid}, {!cursor_pos}, {!val-modes}) and the
-      scrollback ({!blit_row}), redraws what changed ({!section-dirty}), and
+      scrollback ({!blit_view}), redraws what changed ({!section-dirty}), and
       calls {!clear_dirty}.
     + {!resize} follows the window's size, and {!reset} returns the terminal to
       its power-up state.
@@ -458,12 +458,16 @@ val text : t -> int -> string
 val blit_row : t -> int -> Matrix_grid.t -> y:int -> unit
 (** [blit_row t r dst ~y] writes row [r] of [t] on row [y] of [dst]. It writes
     the row's cells, with their rendition and hyperlinks, as far as [dst] is
-    wide, then blanks on {!Ansi.Color.default_bg}. A view [offset] lines up into
-    the scrollback is
-    [for y = 0 to h - 1 do blit_row t (y - offset) dst ~y done], for a [dst] [h]
-    rows high.
+    wide, then blanks on {!Ansi.Color.default_bg}.
 
     Raises [Invalid_argument] if [y] is not a row of [dst]. *)
+
+val blit_view : t -> offset:int -> Matrix_grid.t -> unit
+(** [blit_view t ~offset dst] writes on [dst] the view [offset] lines up into
+    the scrollback: each row [y] of [dst] gets row [y - offset] of [t], as
+    {!blit_row} writes it. [offset] is clamped to \[[0];{!scrollback_size}\], so
+    [0] shows the screen, and so does any [offset] while the alternate screen is
+    active. *)
 
 (** {1:dirty Changes}
 

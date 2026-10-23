@@ -1728,6 +1728,12 @@ let blit_row t row dst ~y =
     ~width:(Grid.width dst - written)
     ~height:1
 
+let blit_view t ~offset dst =
+  let offset = Int.max 0 (Int.min offset (scrollback_size t)) in
+  for y = 0 to Grid.height dst - 1 do
+    blit_row t (y - offset) dst ~y
+  done
+
 let is_dirty t = t.dirty.any
 
 let dirty_rows t =
