@@ -431,8 +431,7 @@ let focus_request_accepted requested target =
 
 (* ───── Creation ───── *)
 
-let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
-    () =
+let create ?width_method ?screen ?style ?(request_render = fun () -> ()) () =
   let tree = Toffee.new_tree () in
   let adopted = Option.is_some screen in
   let screen =
@@ -441,7 +440,7 @@ let create ?width_method ?clock ?screen ?style ?(request_render = fun () -> ())
         (* Adopted screens come from a host runtime; the renderer requires
            alpha blending on the grids it paints. *)
         screen
-    | None -> Screen.create ?width_method ?clock ()
+    | None -> Screen.create ?width_method ()
   in
   let node_map = Hashtbl.create 256 in
   let toffee_map = Hashtbl.create 256 in

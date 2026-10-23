@@ -24,7 +24,6 @@ type t
 
 val create :
   ?width_method:Matrix.Text.width_method ->
-  ?clock:(unit -> float) ->
   ?screen:Matrix.Screen.t ->
   ?style:Toffee.Style.t ->
   ?request_render:(unit -> unit) ->
@@ -33,13 +32,11 @@ val create :
 (** [create ()] is a renderer with a root renderable and an empty screen. The
     optional parameters are:
     - [width_method]: the text width computation method. Defaults to [`Unicode].
-    - [clock]: the time source for the underlying {!Matrix.Screen.t}; see
-      {!Matrix.Screen.create}.
     - [screen]: an existing screen to adopt instead of creating one — pass the
       host runtime's {!Matrix.screen} so {!render_frame} builds directly into it
       and the host presents frames with a single diff. Alpha blending is enabled
-      on the adopted screen's grids. [width_method] and [clock] are ignored when
-      [screen] is given.
+      on the adopted screen's grids. [width_method] is ignored when [screen] is
+      given.
     - [request_render]: wakes the host event loop when a node requests a frame.
       Defaults to doing nothing. The callback must be thread-safe and must not
       raise or render synchronously; worker highlighters can call it.
@@ -148,10 +145,10 @@ val render : ?full:bool -> t -> string
     minimal ANSI output string. Call after {!render_frame}.
 
     When [full] is [true], all cells are emitted regardless of changes. [full]
-    defaults to [false]. Frame timestamps come from the [clock] given to
-    {!create}. Consumes the pending scroll hint (see {!take_scroll_hint}), so a
-    lone vertical scroll in a full-width scroll container presents as a DECSTBM
-    hardware scroll plus a diff of the revealed rows.
+    defaults to [false]. Consumes the pending scroll hint (see
+    {!take_scroll_hint}), so a lone vertical scroll in a full-width scroll
+    container presents as a DECSTBM hardware scroll plus a diff of the revealed
+    rows.
 
     Raises [Invalid_argument] when the renderer adopted a host screen —
     presenting there would corrupt the host runtime's diff baseline, so

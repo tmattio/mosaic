@@ -65,7 +65,7 @@
 #### Added
 
 - **Pluggable backends** – `Matrix.Backend` is a record of I/O primitives with a shared `bootstrap` handshake; `matrix-eio` provides an Eio runtime on top of it
-- **Headless test backend (`matrix.test`)** – virtual clock, byte-level input through the real decoder, plain-text frame snapshots; `Screen.create` takes an injectable `?clock`
+- **Headless test backend (`matrix.test`)** – virtual clock, byte-level input through the real decoder, plain-text frame snapshots
 - **Unicode text layer (`matrix.text`)** – grapheme iteration, width measurement, wrap-break and line-break discovery, and position helpers, independent of cell storage
 - **Terminal charts (`matrix.charts`)** – declarative chart composition rendered into grids
 - **Timer wakeups and paced one-shot redraws** – `Matrix.schedule_wakeup`, and `request_redraw` bursts coalesce to `target_fps`; `Matrix.request_immediate_redraw` renders one frame off-cadence
@@ -97,6 +97,7 @@
 - The render and submit paths are allocation-free at steady state (retained buffers and writers, unboxed bookkeeping, no per-frame string copies), and each frame leaves the terminal in a single write
 - Strict VT100 semantics in the VTE: LF moves down only, BS is pure movement
 - Raw mode no longer changes `O_NONBLOCK`; readiness is the backend's concern
+- **The terminal core links no unix** – `matrix.screen` reads no clock: `Screen.create` and `Mosaic_ui.Renderer.create` lose `?clock`, and `Screen.frame_metrics` loses `frame_time_ms`, `interval_ms`, `reset_ms` and `timestamp_s`; the runtime times its renders on its own clock for the debug overlay. `matrix.ansi`, `text`, `grid`, `input`, `screen`, `image`, `charts` and `vte` link no unix, which a test checks, so a unikernel can use them; `matrix.image` reached unix through the screen's default clock
 - **The VTE reads by row** – rows run from the screen, `0` to `rows - 1`, up into the scrollback, `-1` the newest line; `Vte.text t y` is a row's text and `Vte.blit_row t y dst ~y'` its cells, with rendition, hyperlinks and widths, into a grid, for scrollback lines as for the screen, beside `Vte.wrapped`. `Vte.scrollback_lines` and `Vte.render_with_scrollback` go: `List.init n (fun i -> Vte.text t (i - n))` and a loop of `blit_row` replace them
 - Backtrace recording policy is left to the application; the runtime prints a backtrace on an uncaught exception rather than enabling recording itself
 - `Screen.render_to_bytes` removed (no consumers); `render_to_buffer` is the per-frame eliminator

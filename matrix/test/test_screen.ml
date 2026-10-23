@@ -553,10 +553,7 @@ let test_stats_tracking () =
   let metrics = Screen.last_metrics r in
   equal ~msg:"frame count" int 1 stats.frame_count;
   satisfies ~claim:"cells updated (> 0)" int (fun n -> n > 0) metrics.cells;
-  satisfies ~claim:"output bytes (> 0)" int (fun n -> n > 0) metrics.bytes;
-  satisfies ~claim:"non-negative frame time" float_exact
-    (fun t -> t >= 0.)
-    metrics.frame_time_ms
+  satisfies ~claim:"output bytes (> 0)" int (fun n -> n > 0) metrics.bytes
 
 (* 7. Configuration Tests *)
 

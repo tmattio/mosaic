@@ -5,4 +5,4 @@
   (backend ppx_windtrap.mutate))
  (name matrix_screen)
  (public_name matrix.screen)
- (libraries matrix.ansi matrix.grid matrix.text bigarray unix))
+ (libraries matrix.ansi matrix.grid matrix.text bigarray))

@@ -1,8 +1,9 @@
 (** Debug overlay with runtime telemetry.
 
     Paints a semi-transparent box in a screen corner showing frame metrics from
-    {!Matrix_screen.last_metrics}, rolling averages for frame time and interval,
-    and per-frame GC statistics from {!Gc.quick_stat}.
+    {!Matrix_screen.last_metrics}, the render times the runtime measured with
+    rolling averages of them and of the interval between renders, and per-frame
+    GC statistics from {!Gc.quick_stat}.
 
     Internal to the Matrix runtime: reachable through
     {!Matrix.set_debug_overlay} and {!Matrix.toggle_debug_overlay}, not exported
@@ -22,9 +23,12 @@ val on_frame :
   ?capacity:int ->
   unit ->
   Matrix_screen.t ->
+  render_start:int ->
+  render_ns:int ->
   unit
 (** [on_frame ()] is a callback that draws the overlay onto [screen]'s grid.
-    Call once per frame after the UI has painted.
+    Call once per frame after the UI has painted, with the start of the last
+    render on the runtime's clock and its duration, in nanoseconds.
 
     The callback keeps internal state (rolling averages, GC deltas); reuse the
     same callback for the overlay's lifetime.

@@ -49,14 +49,10 @@ type frame_metrics = {
   frame_count : int;  (** One-based frame index. *)
   cells : int;  (** Cells diffed. *)
   bytes : int;  (** ANSI bytes written. *)
-  frame_time_ms : float;  (** Diff/render duration. *)
-  interval_ms : float;  (** Time since previous render. *)
-  reset_ms : float;  (** Buffer swap/reset duration. *)
   cursor_visible : bool;  (** Cursor state at render time. *)
-  timestamp_s : float;  (** Screen-clock time when rendering finished. *)
 }
-(** The type for per-frame metrics. All durations are in milliseconds unless
-    noted otherwise. *)
+(** The type for per-frame metrics. A screen reads no clock: the time a frame
+    takes and the time between frames are its caller's to measure. *)
 
 (** {1:constructors Constructors} *)
 
@@ -64,19 +60,14 @@ val create :
   ?width_method:Matrix_text.width_method ->
   ?cursor_visible:bool ->
   ?explicit_width:bool ->
-  ?clock:(unit -> float) ->
   unit ->
   t
-(** [create ~width_method ~cursor_visible ~explicit_width ~clock ()] is a screen
-    with:
+(** [create ~width_method ~cursor_visible ~explicit_width ()] is a screen with:
     - [width_method] is the character width computation method. Defaults to
       [`Unicode].
     - [cursor_visible] is the initial cursor visibility. Defaults to [true].
     - [explicit_width] enables explicit-width OSC sequences for graphemes.
       Defaults to [false].
-    - [clock] is the time source in seconds used for frame metrics. Defaults to
-      [Unix.gettimeofday]. Runtimes with their own clock inject it here so
-      virtual-time runs stay deterministic.
 
     Grids start at 1x1 and are resized automatically on the first {!build}. *)
 
@@ -137,8 +128,7 @@ val render :
 
     Diffs next against current (or renders all cells when [full] is [true]),
     then swaps buffers. Hit regions registered during this frame become
-    queryable via {!query_hit}. Frame timestamps are read from the [clock] given
-    to {!create}.
+    queryable via {!query_hit}.
     - [full] renders all cells regardless of changes. Defaults to [false].
     - [scroll_hint] when provided, emits DECSTBM hardware scroll before diffing.
       The hint is a rectangular diff optimization; the caller is responsible for
@@ -231,10 +221,10 @@ val resize : t -> width:int -> height:int -> unit
     {b Note.} Normally unnecessary -- {!build} resizes automatically. *)
 
 val reset : t -> unit
-(** [reset t] clears the next buffer, empties hit grids, zeros statistics, and
-    resets frame timing. The current buffer (diff baseline) is left intact so
-    the next render can efficiently clear previously rendered content.
-    Configuration is preserved. *)
+(** [reset t] clears the next buffer, empties hit grids and zeros statistics.
+    The current buffer (diff baseline) is left intact so the next render can
+    efficiently clear previously rendered content. Configuration is preserved.
+*)
 
 (** {1:statistics Statistics} *)
 

@@ -393,7 +393,12 @@ type 'msg app = {
   mutable undo : (exiting:bool -> unit) list;
   (* Diagnostics *)
   mutable debug_overlay_enabled : bool;
-  mutable debug_overlay_cb : Screen.t -> unit;
+  mutable debug_overlay_cb :
+    Screen.t -> render_start:int -> render_ns:int -> unit;
+  (* The last render of the screen: when it started and how long it took,
+     on the backend's clock. The screen reads no clock. *)
+  mutable render_start : int;
+  mutable render_ns : int;
   mutable frame_dump_every : int;
   mutable frame_dump_dir : string option;
   mutable frame_dump_pattern : string option;
@@ -1065,7 +1070,9 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~position =
 (* All frame output is accumulated into a single buffer and flushed as one
    write. Skips the write entirely when nothing changed. *)
 let submit t =
-  if t.debug_overlay_enabled then t.debug_overlay_cb t.screen;
+  if t.debug_overlay_enabled then
+    t.debug_overlay_cb t.screen ~render_start:t.render_start
+      ~render_ns:t.render_ns;
   let cursor = Screen.cursor t.screen in
   let caps = Terminal.capabilities t.terminal in
   let use_sync = Terminal.tty t.terminal && caps.sync in
@@ -1108,7 +1115,10 @@ let submit t =
             if height < live then Some (y + height + 1) else None )
         else (Some { Screen.y; height = live }, None)
   in
+  let start = t.backend.now () in
   Screen.render_into ~full:forced_full ?scroll_hint ?viewport t.screen buf;
+  t.render_start <- start;
+  t.render_ns <- t.backend.now () - start;
   Option.iter
     (fun row ->
       buf_cursor_position buf ~row ~col:1;
@@ -1674,9 +1684,7 @@ let make backend config =
     Option.value config.cursor_visible ~default:(config.mode = `Alt)
   in
   let screen =
-    Screen.create ~cursor_visible ~explicit_width:config.explicit_width
-      ~clock:(fun () -> Float.of_int (backend.now ()) *. 1e-9)
-      ()
+    Screen.create ~cursor_visible ~explicit_width:config.explicit_width ()
   in
   let now = backend.now () in
   {
@@ -1739,6 +1747,8 @@ let make backend config =
     debug_overlay_cb =
       Debug_overlay.on_frame ~corner:config.debug_overlay_corner
         ~capacity:config.debug_overlay_capacity ();
+    render_start = 0;
+    render_ns = 0;
     frame_dump_every = config.frame_dump_every;
     frame_dump_dir = config.frame_dump_dir;
     frame_dump_pattern = config.frame_dump_pattern;

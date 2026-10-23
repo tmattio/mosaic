@@ -199,7 +199,8 @@ let fmt_words_mb words =
   if words <= 0 then "0.00 MB" else fmt_mb (words_to_mb words)
 
 let on_frame ?(corner = `Bottom_right) ?(padding = 1) ?(gap = 1)
-    ?(capacity = 120) () : Screen.t -> unit =
+    ?(capacity = 120) () : Screen.t -> render_start:int -> render_ns:int -> unit
+    =
   let frame_ring = Avg_ring.create capacity in
   let interval_ring = Avg_ring.create capacity in
   let overlay = create ~padding ~gap () in
@@ -207,27 +208,33 @@ let on_frame ?(corner = `Bottom_right) ?(padding = 1) ?(gap = 1)
      since program start" on the first render. *)
   let last_minor_words = ref None in
   let last_major_words = ref None in
-  fun (screen : Screen.t) ->
+  let last_start = ref None in
+  fun (screen : Screen.t) ~render_start ~render_ns ->
     let metrics = Screen.last_metrics screen in
-    Avg_ring.push frame_ring metrics.frame_time_ms;
-    Avg_ring.push interval_ring metrics.interval_ms;
-    let frame_ms =
-      if metrics.interval_ms > 0. then metrics.interval_ms
-      else metrics.frame_time_ms
+    let render_ms = Float.of_int render_ns *. 1e-6 in
+    let interval_ms =
+      match !last_start with
+      | Some start when render_start > start ->
+          Float.of_int (render_start - start) *. 1e-6
+      | _ -> 0.
     in
+    last_start := Some render_start;
+    Avg_ring.push frame_ring render_ms;
+    Avg_ring.push interval_ring interval_ms;
+    let frame_ms = if interval_ms > 0. then interval_ms else render_ms in
     let fps = if frame_ms > 0. then 1000. /. frame_ms else 0. in
     let base_rows =
       [
         ("frames", string_of_int metrics.frame_count);
         ("fps", Printf.sprintf "%.1f" fps);
         ("frame", fmt_ms frame_ms);
-        ("render", fmt_ms metrics.frame_time_ms);
+        ("render", fmt_ms render_ms);
         ("cells", string_of_int metrics.cells);
         ("output", Printf.sprintf "%d bytes" metrics.bytes);
         ("cursor", if metrics.cursor_visible then "visible" else "hidden");
       ]
     in
-    let frame_rows = base_rows @ [ ("reset", fmt_ms metrics.reset_ms) ] in
+    let frame_rows = base_rows in
     let perf_rows =
       List.concat
         [
