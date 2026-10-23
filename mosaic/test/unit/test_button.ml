@@ -84,7 +84,7 @@ let activation_count trace =
   List.length
     (List.filter (function Activate -> true | Focus -> false) trace.messages)
 
-let press ?mods key = Key (Matrix.Key (Test_harness.keystroke ?mods key))
+let press ?mods key = Key (Matrix.Key (Matrix_input.Keystroke.make ?mods key))
 
 let key_presses_only () =
   let keys =
@@ -95,8 +95,9 @@ let key_presses_only () =
     List.concat_map
       (fun (key, keypad) ->
         [
-          Key (Matrix.Key (Test_harness.keystroke ~keypad key));
-          Key (Matrix.Key (Test_harness.keystroke ~keypad ~repeat:true key));
+          Key (Matrix.Key (Matrix_input.Keystroke.make ~keypad key));
+          Key
+            (Matrix.Key (Matrix_input.Keystroke.make ~keypad ~repeat:true key));
           Key
             (Matrix.Key_release
                {

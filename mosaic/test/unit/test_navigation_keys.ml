@@ -2,18 +2,6 @@ open Windtrap
 open Mosaic_ui
 module Key = Matrix_input.Keystroke
 
-let keystroke ?(mods = Key.no_mods) ?(repeat = false) ?base ?(keypad = false)
-    key : Key.t =
-  let text =
-    match key with
-    | Key.Char c when not (mods.ctrl || mods.alt || mods.hyper) ->
-        let b = Buffer.create 4 in
-        Buffer.add_utf_8_uchar b c;
-        Buffer.contents b
-    | _ -> ""
-  in
-  { key; mods; text; base; keypad; repeat }
-
 type bindings = Default | Override | Replace | Precedence
 
 let bindings mode ~key ~forward ~backward =
@@ -104,9 +92,7 @@ let fixture build ~mlx =
     Renderer.render_frame renderer ~width:30 ~height:6 ~delta:0.
   in
   let send ?mods ?repeat ?base ?keypad key =
-    let event =
-      Event.Key.of_input (keystroke ?mods ?repeat ?base ?keypad key)
-    in
+    let event = Event.Key.of_input (Key.make ?mods ?repeat ?base ?keypad key) in
     Renderer.dispatch_key renderer (Renderer.focus_path renderer) event
   in
   let take () =
@@ -193,7 +179,7 @@ let subscriptions_and_widgets_agree build ~mlx =
   in
   List.iter
     (fun (key, base, repeat) ->
-      let data = keystroke ?base ~repeat key in
+      let data = Key.make ?base ~repeat key in
       let expected = dispatch (Event.Key.of_input data) in
       send ?base ~repeat key;
       equal ~msg:"subscription and compiled widget resolve the same binding"
@@ -219,7 +205,7 @@ let consumes view ~acts ~passes () =
   | None -> failwith "consumption fixture has no focused widget");
   Renderer.render_frame renderer ~width:30 ~height:6 ~delta:0.;
   let consumed (mods, key) =
-    let event = Event.Key.of_input (keystroke ~mods key) in
+    let event = Event.Key.of_input (Key.make ~mods key) in
     Renderer.dispatch_key renderer (Renderer.focus_path renderer) event;
     Event.Key.propagation_stopped event
   in

@@ -1513,6 +1513,26 @@ let interrupt () =
 
 let interrupt_tests = [ test "Ctrl+C is the interrupt" interrupt ]
 
+(* A keystroke made with [Keystroke.make] and its defaults is the one the
+   decoder reports for the same key: the text a key types, none for a chord,
+   a control or a key that is not a character. *)
+let made_as_decoded () =
+  let ctrl = { K.no_mods with ctrl = true } in
+  let alt = { K.no_mods with alt = true } in
+  let char c = K.Char (Uchar.of_char c) in
+  List.iter
+    (fun (bytes, made) -> check bytes [ show (D.Key made) ])
+    [
+      ("a", K.make (char 'a'));
+      ("\xc3\xa9", K.make (K.Char (Uchar.of_int 0xE9)));
+      ("\x01", K.make ~mods:ctrl (char 'a'));
+      ("\x1ba", K.make ~mods:alt (char 'a'));
+      ("\x1b[A", K.make K.Up);
+      ("\x1b[97;5u", K.make ~mods:ctrl (char 'a'));
+    ]
+
+let make_tests = [ test "make agrees with the decoder" made_as_decoded ]
+
 let () =
   run "matrix.input.decoder"
     [
@@ -1530,4 +1550,5 @@ let () =
       group "measured" measured_tests;
       group "key equivalence" equivalence_tests;
       group "interrupt" interrupt_tests;
+      group "make" make_tests;
     ]

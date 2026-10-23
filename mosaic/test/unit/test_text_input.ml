@@ -94,11 +94,13 @@ let render_input input ~width ~height =
 let no_mod = Matrix_input.Keystroke.no_mods
 
 let send_key ?keypad input key =
-  let ev = Event.Key.of_input (Test_harness.keystroke ?keypad key) in
+  let ev = Event.Key.of_input (Matrix_input.Keystroke.make ?keypad key) in
   Renderable.Private.run_key_behavior (Text_input.node input) ev
 
 let send_key_with_mod input ~modifier key =
-  let ev = Event.Key.of_input (Test_harness.keystroke ~mods:modifier key) in
+  let ev =
+    Event.Key.of_input (Matrix_input.Keystroke.make ~mods:modifier key)
+  in
   Renderable.Private.run_key_behavior (Text_input.node input) ev
 
 let send_input_event input data =
@@ -108,14 +110,15 @@ let send_input_event input data =
 let send_char input c =
   let text = String.make 1 c in
   let ev =
-    Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char c)))
+    Event.Key.of_input
+      (Matrix_input.Keystroke.make ~text (Char (Uchar.of_char c)))
   in
   Renderable.Private.run_key_behavior (Text_input.node input) ev
 
 let send_char_with_mod input ~modifier c =
   let ev =
     Event.Key.of_input
-      (Test_harness.keystroke ~mods:modifier (Char (Uchar.of_char c)))
+      (Matrix_input.Keystroke.make ~mods:modifier (Char (Uchar.of_char c)))
   in
   Renderable.Private.run_key_behavior (Text_input.node input) ev
 
@@ -476,7 +479,7 @@ let ctrl_a_base_key_moves_to_start () =
   let t, input = make_input ~value:"hello" () in
   focus_input t input;
   let data =
-    Test_harness.keystroke ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
+    Matrix_input.Keystroke.make ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
       (Matrix_input.Keystroke.Char (Uchar.of_int 0x314a))
   in
   send_input_event input data;
@@ -898,7 +901,8 @@ let prevent_default_blocks_input () =
   focus_input t input;
   let text = String.make 1 'a' in
   let ev =
-    Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char 'a')))
+    Event.Key.of_input
+      (Matrix_input.Keystroke.make ~text (Char (Uchar.of_char 'a')))
   in
   Event.Key.prevent_default ev;
   Renderable.Private.run_key_behavior (Text_input.node input) ev;
@@ -1001,7 +1005,8 @@ let multiline_history_is_ignored_by_single_line_input () =
       in
       let event =
         Event.Key.of_input
-          (Test_harness.keystroke ~mods:ctrl_mod (Char (Uchar.of_char action)))
+          (Matrix_input.Keystroke.make ~mods:ctrl_mod
+             (Char (Uchar.of_char action)))
       in
       Renderable.Private.run_key_behavior (Textarea.node textarea) event;
       equal ~msg:"textarea can still restore the shared multiline history"
@@ -1036,7 +1041,7 @@ let typed_bindings_override_defaults_and_recompile () =
   equal ~msg:"last equivalent custom shortcut overrides default" int 3
     (Editor.cursor !proposed);
   send_input_event input
-    (Test_harness.keystroke ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
+    (Matrix_input.Keystroke.make ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
        (Matrix_input.Keystroke.Char (Uchar.of_int 0x0444)));
   equal ~msg:"custom shortcuts use the base-layout fallback" int 3
     (Editor.cursor !proposed);
@@ -1044,7 +1049,7 @@ let typed_bindings_override_defaults_and_recompile () =
   equal ~msg:"explicit Meta shortcut remains distinct from Alt" int 0
     (Editor.cursor !proposed);
   send_input_event input
-    (Test_harness.keystroke ~repeat:true Matrix_input.Keystroke.Left);
+    (Matrix_input.Keystroke.make ~repeat:true Matrix_input.Keystroke.Left);
   equal ~msg:"repeat runs the custom shortcut" int 3 (Editor.cursor !proposed);
   proposed := state;
   send_key_with_mod input

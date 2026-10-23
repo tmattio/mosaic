@@ -96,11 +96,13 @@ let render_textarea ta ~width ~height =
 let no_mod = Matrix_input.Keystroke.no_mods
 
 let send_key ?keypad ta key =
-  let ev = Event.Key.of_input (Test_harness.keystroke ?keypad key) in
+  let ev = Event.Key.of_input (Matrix_input.Keystroke.make ?keypad key) in
   Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
 let send_key_with_mod ta ~modifier key =
-  let ev = Event.Key.of_input (Test_harness.keystroke ~mods:modifier key) in
+  let ev =
+    Event.Key.of_input (Matrix_input.Keystroke.make ~mods:modifier key)
+  in
   Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
 let send_input_event ta data =
@@ -110,14 +112,15 @@ let send_input_event ta data =
 let send_char ta c =
   let text = String.make 1 c in
   let ev =
-    Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char c)))
+    Event.Key.of_input
+      (Matrix_input.Keystroke.make ~text (Char (Uchar.of_char c)))
   in
   Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
 let send_char_with_mod ta ~modifier c =
   let ev =
     Event.Key.of_input
-      (Test_harness.keystroke ~mods:modifier (Char (Uchar.of_char c)))
+      (Matrix_input.Keystroke.make ~mods:modifier (Char (Uchar.of_char c)))
   in
   Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
@@ -592,7 +595,7 @@ let ctrl_a_base_key_moves_to_line_start () =
   focus_textarea t ta;
   update_editor ta (Editor.set_cursor 6);
   let data =
-    Test_harness.keystroke ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
+    Matrix_input.Keystroke.make ~mods:ctrl_mod ~base:(Uchar.of_char 'a')
       (Matrix_input.Keystroke.Char (Uchar.of_int 0x314a))
   in
   send_input_event ta data;

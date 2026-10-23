@@ -4,16 +4,7 @@ open Mosaic_ui
 
 (* ── Helpers ── *)
 
-let key c : Input.Keystroke.t =
-  {
-    key = Char (Uchar.of_char c);
-    mods = Input.Keystroke.no_mods;
-    text = String.make 1 c;
-    base = None;
-    keypad = false;
-    repeat = false;
-  }
-
+let key c = Input.Keystroke.make (Char (Uchar.of_char c))
 let key_ev_a = key 'a'
 let key_ev_b = key 'b'
 let no_mod = Event.Mouse.no_modifier

@@ -17,11 +17,8 @@ let env vars =
   Matrix.Terminal.Caps.env (fun name -> List.assoc_opt name vars) ~win32:false
 
 let no_env = env []
-
-let key ?(mods = Matrix.Input.Keystroke.no_mods) ?(text = "") key =
-  Matrix.Key { key; mods; text; base = None; keypad = false; repeat = false }
-
-let char c = key ~text:(String.make 1 c) (Char (Uchar.of_char c))
+let key ?mods key = Matrix.Key (Matrix.Input.Keystroke.make ?mods key)
+let char c = key (Char (Uchar.of_char c))
 let input_event = Testable.make ~pp:Matrix.pp_event ~equal:( = )
 
 (* A scripted terminal. Input is a list of chunks, read one per read; an
@@ -2083,8 +2080,8 @@ let test_unanswered_batch_is_given_up () =
     [
       key ~mods:shift (F 3);
       key ~mods:alt (Char (Uchar.of_char ']'));
-      key ~text:"1" (Char (Uchar.of_char '1'));
-      key ~text:"x" (Char (Uchar.of_char 'x'));
+      key (Char (Uchar.of_char '1'));
+      key (Char (Uchar.of_char 'x'));
     ]
     (events c)
 

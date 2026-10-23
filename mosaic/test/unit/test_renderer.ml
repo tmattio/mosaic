@@ -72,7 +72,7 @@ let record_keys node =
   Renderable.on_key node (fun ev -> log := ev :: !log);
   log
 
-let key_a = Test_harness.keystroke (Char (Uchar.of_char 'a'))
+let key_a = Matrix_input.Keystroke.make (Char (Uchar.of_char 'a'))
 
 (* ── Lifecycle ── *)
 
@@ -1206,8 +1206,8 @@ let key_tree () =
        (fun ev ->
          log := "behavior" :: !log;
          if
-           Test_harness.(
-             Event.Key.data ev = keystroke (Char (Uchar.of_char 'a')))
+           Event.Key.data ev
+           = Matrix_input.Keystroke.make (Char (Uchar.of_char 'a'))
          then Event.Key.prevent_default ev));
   ignore (Renderer.focus t child : bool);
   (t, parent, child, log)

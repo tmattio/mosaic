@@ -87,7 +87,7 @@ let fixture build =
   in
   let key key =
     ignore
-      (Test_harness.dispatch_key renderer (Test_harness.keystroke key)
+      (Test_harness.dispatch_key renderer (Matrix_input.Keystroke.make key)
         : Event.key)
   in
   let take () =

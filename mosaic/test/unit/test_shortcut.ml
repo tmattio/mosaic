@@ -2,9 +2,8 @@ open Windtrap
 open Mosaic_ui
 module Keystroke = Matrix_input.Keystroke
 
-let event ?(mods = Keystroke.no_mods) ?(repeat = false) ?base ?(keypad = false)
-    key =
-  Event.Key.of_input { Keystroke.key; mods; text = ""; base; keypad; repeat }
+let event ?mods ?repeat ?base ?keypad key =
+  Event.Key.of_input (Keystroke.make ?mods ?repeat ?base ?keypad key)
 
 let char c = Keystroke.Char (Uchar.of_char c)
 

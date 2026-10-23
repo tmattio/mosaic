@@ -362,7 +362,7 @@ let rejected_input_preserves_accepted_state () =
   render_focused_view renderer reconciler (view ());
   ignore
     (Test_harness.dispatch_key renderer
-       (Test_harness.keystroke Matrix_input.Keystroke.Enter)
+       (Matrix_input.Keystroke.make Matrix_input.Keystroke.Enter)
       : Event.key);
   equal ~msg:"rejected edit leaves submitted text unchanged" (list string)
     [ "" ] (List.rev !submissions)
@@ -387,7 +387,7 @@ let rejected_textarea_preserves_accepted_state () =
   let modifier = { Matrix_input.Keystroke.no_mods with ctrl = true } in
   ignore
     (Test_harness.dispatch_key renderer
-       (Test_harness.keystroke ~mods:modifier Matrix_input.Keystroke.Enter)
+       (Matrix_input.Keystroke.make ~mods:modifier Matrix_input.Keystroke.Enter)
       : Event.key);
   equal ~msg:"rejected edit leaves submitted text unchanged" (list string)
     [ "" ] (List.rev !submissions)
@@ -403,7 +403,7 @@ let accepted_editor_state_preserves_cursor () =
   render_focused_view renderer reconciler (view ());
   ignore
     (Test_harness.dispatch_key renderer
-       (Test_harness.keystroke Matrix_input.Keystroke.Left)
+       (Matrix_input.Keystroke.make Matrix_input.Keystroke.Left)
       : Event.key);
   equal ~msg:"cursor proposal accepted by model" int 1 (Editor.cursor !state);
   render_focused_view renderer reconciler (view ());

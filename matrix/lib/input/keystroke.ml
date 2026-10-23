@@ -91,6 +91,23 @@ type t = {
   repeat : bool;
 }
 
+(* What a key types, as the decoder reports it: the character of a [Char]
+   that is not a C0 or C1 control or DEL, unless a chord modifier is held. *)
+let typed mods = function
+  | Char u
+    when (not (mods.ctrl || mods.alt || mods.super || mods.hyper || mods.meta))
+         &&
+         let c = Uchar.to_int u in
+         c >= 0x20 && (c < 0x7F || c > 0x9F) ->
+      let b = Bytes.create (Uchar.utf_8_byte_length u) in
+      ignore (Bytes.set_utf_8_uchar b 0 u : int);
+      Bytes.unsafe_to_string b
+  | _ -> ""
+
+let make ?(mods = no_mods) ?text ?base ?(keypad = false) ?(repeat = false) key =
+  let text = match text with Some text -> text | None -> typed mods key in
+  { key; mods; text; base; keypad; repeat }
+
 (* Formatting *)
 
 let is_interrupt (k : t) =

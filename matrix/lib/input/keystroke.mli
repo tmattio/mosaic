@@ -224,6 +224,19 @@ type t = {
 }
 (** The type for key presses. *)
 
+val make :
+  ?mods:mods ->
+  ?text:string ->
+  ?base:Uchar.t ->
+  ?keypad:bool ->
+  ?repeat:bool ->
+  key ->
+  t
+(** [make key] is a press of [key]. [mods] defaults to {!no_mods}, [base] to
+    [None], [keypad] and [repeat] to [false], and [text] to what the key types
+    as a decoder reports it: the character of a [Char] that is not a control,
+    when no Ctrl, Alt, Super, Hyper or Meta is held, and [""] otherwise. *)
+
 val is_interrupt : t -> bool
 (** [is_interrupt k] is [true] iff [k] is Ctrl+C, the key a terminal in cooked
     mode turns into SIGINT (its VINTR character): Ctrl with c, Shift allowed

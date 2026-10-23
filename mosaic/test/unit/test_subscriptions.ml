@@ -145,10 +145,8 @@ let sub_map_transforms_messages () =
       | _ -> fail "expected Tick")
   | _ -> fail "expected On_tick"
 
-let key ?(mods = Input.Keystroke.no_mods) ?(repeat = false) ?base
-    ?(keypad = false) key =
-  Event.Key.of_input
-    { Input.Keystroke.key; mods; text = ""; base; keypad; repeat }
+let key ?mods ?repeat ?base ?keypad key =
+  Event.Key.of_input (Input.Keystroke.make ?mods ?repeat ?base ?keypad key)
 
 let char ?mods ?base c =
   key ?mods ?base (Input.Keystroke.Char (Uchar.of_char c))

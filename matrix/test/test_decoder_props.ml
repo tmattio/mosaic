@@ -305,12 +305,7 @@ let o_ref = owed ~cursor:0 ~strings:1
 
 (* The events of a byte alone, or of bytes whole, from a fresh decoder. *)
 let alone s = decode o_ref [ Feed s; Idle ]
-
-let key k mods =
-  show
-    (D.Key
-       { key = k; mods; text = ""; base = None; keypad = false; repeat = false })
-
+let key k mods = show (D.Key (K.make ~mods k))
 let escape = key K.Escape K.no_mods
 let alt c = key (K.Char (Uchar.of_char c)) { K.no_mods with alt = true }
 

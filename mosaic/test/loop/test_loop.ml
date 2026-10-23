@@ -3083,14 +3083,7 @@ let%expect_test "timers follow the reference model" =
                 events := `Declare (now, set) :: !events;
                 Matrix_test.feed_event t
                   (Matrix.Key
-                     {
-                       Matrix.Input.Keystroke.key = Char (Uchar.of_char 'x');
-                       mods = Matrix.Input.Keystroke.no_mods;
-                       text = "x";
-                       base = None;
-                       keypad = false;
-                       repeat = false;
-                     });
+                     (Matrix.Input.Keystroke.make (Char (Uchar.of_char 'x'))));
                 declare := set))
       t application;
     let expected = reference_timers (List.rev !events) in
