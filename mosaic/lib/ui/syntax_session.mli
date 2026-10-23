@@ -1,6 +1,6 @@
 (** The highlighting of a view's content.
 
-    A session keeps a view's captures up to date with the content it shows: it
+    A session keeps a view's captures up to date with the content it shows. It
     requests captures from a highlighter, at most one request at a time,
     coalesces the changes made meanwhile, keeps the latest result and the
     highlighter's state for the next request, and says which captures describe
@@ -69,7 +69,7 @@ val poll : t -> bool
 val shown : t -> conceal:bool -> Syntax_highlight.t option
 (** [shown t ~conceal] is the captures that describe the content shown, bound to
     it, or [None] when it shows plain. While a request is pending they are the
-    latest result's, moved onto the content: a capture keeps its bytes the
+    latest result's, moved onto the content. A capture keeps the bytes the
     content shares with the result's source as a common prefix or suffix, and
     the other bytes are plain. When [conceal] holds, a concealing capture that
     the change cuts through is dropped, since its replacement stood for all its

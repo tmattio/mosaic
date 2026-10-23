@@ -211,7 +211,8 @@ val style_at : t -> int -> Ansi.Style.t * int
 (** [style_at t g] is the resolved style at source grapheme [g] and the next
     style boundary. Overlays follow existing priority order.
 
-    Annotations without highlights are looked up by byte at each call, in time
-    logarithmic in their runs, so installing them prepares nothing. Other paint
-    is prepared once and cached until content, base style, or highlights change.
+    With annotations and no highlights, [style_at] finds the run that holds
+    [g]'s first byte by binary search, so a call takes time logarithmic in the
+    runs and installing annotations only stores them. Other paint is prepared on
+    the first call and cached until content, base style, or highlights change.
 *)

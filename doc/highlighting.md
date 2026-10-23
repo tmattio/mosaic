@@ -43,7 +43,8 @@ let grammar language query =
             state = Some tree;
             edit = { start; removed; inserted };
           } ->
-          (* After a failure the view passes the same tree again: edit a copy. *)
+          (* After a failure the view passes the same tree again, so the edit
+             goes to a copy. *)
           let old = Ts.Tree.copy tree in
           Ts.Tree.edit old ~start_byte:start ~old_end_byte:(start + removed)
             ~new_end_byte:(start + inserted) ~start_point:(point content start)
@@ -85,12 +86,12 @@ let code_view src =
 let markdown_view md = Mosaic.markdown ~highlighter md
 ```
 
-`highlight` is the application's resolver: put the language names, aliases and
-filename extensions your application uses there. Unknown languages stay plain.
-Its state is the tree of the view's latest result, so a keystroke in a large
-file parses again only around the edit; the query still covers the whole tree,
-so the captures are the same as from a fresh parse of valid code, whatever the
-query relates.
+`highlight` is the application's resolver. The language names, aliases and
+filename extensions your application uses go there, and unknown languages stay
+plain. Its state is the tree of the view's latest result. A keystroke in a large
+file is parsed again around the edit, and the query covers the whole new tree,
+as the result type of [`Code.Highlighter`](../mosaic/lib/ui/renderables/code.mli)
+requires.
 
 ## Editable text
 

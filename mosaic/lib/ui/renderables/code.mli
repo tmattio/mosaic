@@ -29,19 +29,20 @@ type syntax = Syntax_session.syntax
     value, so a view may rebuild them on every render. Only the {!Highlighter.t}
     inside compares by identity (see {!Highlighter.t}).
 
-    [style] only presents captures: a change of style alone restyles the result
+    [style] only presents captures. A change of style alone restyles the result
     already received for the content without highlighting it again, and a
-    pending result is styled with the settings current when it arrives. *)
+    pending result is styled with the settings current when it arrives. The same
+    holds for the view's [conceal] property (see {!Props.make}). *)
 
 module Highlighter : sig
   (** {1:requests Requests} *)
 
   type edit = { start : int; removed : int; inserted : int }
-  (** The type for the change from one content to the next, in bytes: the
-      [removed] bytes at [start] were replaced by [inserted] bytes, and the
-      bytes before [start] and after the replaced ones are unchanged. In
-      tree-sitter's terms, [start_byte = start],
-      [old_end_byte = start + removed] and [new_end_byte = start + inserted]. *)
+  (** The type for the change from one content to the next, in bytes. The
+      [removed] bytes at [start] are replaced by [inserted] bytes, and the bytes
+      before [start] and after the replaced ones are kept. In tree-sitter's
+      terms, [start_byte = start], [old_end_byte = start + removed] and
+      [new_end_byte = start + inserted]. *)
 
   type 'state previous = {
     content : string;  (** The content of the view's latest result. *)
@@ -49,10 +50,10 @@ module Highlighter : sig
         (** What the highlighter returned with that result (see {!type-result}).
         *)
     edit : edit;
-        (** From [content] to the requested content: the longest common prefix,
-            then the longest common suffix that does not overlap it. Changes
-            made while a request runs reach the next request as the one edit
-            that encloses them. *)
+        (** The change from [content] to the requested content. It keeps the
+            longest common prefix, then the longest common suffix that does not
+            overlap it. Changes made while a request runs reach the next request
+            as the one edit that encloses them. *)
   }
   (** The type for what a view kept from its latest result. *)
 
@@ -65,34 +66,37 @@ module Highlighter : sig
       shows, and [language] is the name given to {!with_highlighter}, passed
       through uninterpreted.
 
-      [previous] is [None] on a view's first request, and on its first after a
-      change of highlighter or language. Otherwise it is the view's latest
-      result, so a highlighter may reuse the work it did for it: a tree-sitter
-      highlighter edits the tree it returned as its state and parses [content]
-      again from it, at a cost that grows with the change rather than the
-      buffer. A highlighter that keeps nothing ignores [previous] and returns
+      [previous] is [None] while the view holds no result of this highlighter
+      for this language, as on its first request and after a change of
+      highlighter or language. Otherwise it describes the view's latest result,
+      so that a highlighter may reuse the work it did for it. A tree-sitter
+      highlighter, for instance, edits the tree it returned as its state and
+      parses [content] again from it, at a cost that grows with the size of the
+      change. A highlighter that keeps nothing ignores [previous] and returns
       [()] as its state. *)
 
   type 'state result = (Syntax_highlight.t * 'state, exn) Stdlib.result
-  (** The type for highlighter results: captures bound to the request's
-      [content] (see {!Syntax_highlight.make}), and the state the view's next
-      request receives in its [previous].
+  (** The type for highlighter results. [Ok (captures, state)] holds captures
+      bound to the request's [content] (see {!Syntax_highlight.make}) and the
+      state that the view's next request receives in its [previous].
 
-      The captures are the whole highlight of [content] by the state returned
-      with them: for tree-sitter, the query of the whole returned tree. They are
-      never pieced together from the previous result's captures, because a
-      capture may depend on bytes far from the edit (a pattern that relates
-      siblings, or a field of a parent), which no span around the edit bounds. A
-      [previous] therefore changes what a result costs, not what it holds,
-      except through the state: a tree parsed again from an edited tree can
-      differ from a fresh parse of the same bytes, but only where the bytes have
-      a syntax error, both being guesses of error recovery.
+      The captures must be the whole highlight of [content] by [state], for
+      tree-sitter the query of the whole returned tree. A highlighter must not
+      piece them together from the previous result's captures, because a capture
+      may depend on bytes far from the edit, such as through a pattern that
+      relates siblings or a field of a parent, and no span around the edit
+      bounds those bytes. A [previous] therefore changes the cost of a result,
+      and changes its captures only through the state. A tree parsed again from
+      an edited tree can differ from a fresh parse of the same bytes only where
+      the bytes have a syntax error, where both trees are guesses of error
+      recovery.
 
-      An [Error], or captures bound to other bytes, is a highlighting failure:
-      the view shows that content as plain text and keeps its latest result and
-      state, so it may pass the same state again. A highlighter therefore treats
-      a state as a value and never changes one it returned: a tree-sitter tree
-      is copied, which is cheap, before it is edited. *)
+      An [Error], or captures bound to other bytes, is a highlighting failure.
+      The view shows that content as plain text and keeps its latest result and
+      state, so it may pass the same state again. A highlighter must therefore
+      treat a state as a value and must not change one it returned. A
+      tree-sitter highlighter copies a tree before it edits it, and the copy is
+      cheap. *)
 
   type 'state job
   (** The type for an in-flight asynchronous highlight job. *)
@@ -112,8 +116,8 @@ module Highlighter : sig
       Each view has at most one request queued or running at a time, even across
       highlighter changes. Content and syntax changes made meanwhile coalesce
       into a single follow-up request, sent when that one completes. A state
-      therefore reaches the highlighter only after the result that carried it
-      was taken by the view. Destroying the view cancels its request. *)
+      therefore reaches the highlighter only after the view has taken the result
+      that carried it. Destroying the view cancels its request. *)
 
   val job :
     poll:(unit -> 'state result option) -> cancel:(unit -> unit) -> 'state job
@@ -176,19 +180,19 @@ val with_highlighter :
     derives highlight ranges from [highlighter], which receives [language] and
     the whole content in each request. Empty content is shown without a request.
 
-    A synchronous highlighter's result is shown at once. While an asynchronous
-    result is pending, the code still shows its current content: bytes it shares
-    with the source of the latest result, as a common prefix or a common suffix,
-    keep that result's styling, also under a capture the change cuts through,
-    and the other bytes are plain. A concealing capture the change cuts through
-    shows its bytes instead, since its replacement stood for all of them (see
-    {!Syntax_highlight.conceals}). A streaming append therefore keeps its
-    highlighted prefix and shows its new tail plain until the result arrives,
-    and content seen for the first time shows plain. A result for content that
-    has since changed is never shown as such, but it becomes the latest result,
-    with its state, so styling keeps up with content that changes faster than it
-    can be highlighted. A different highlighter or language starts again from
-    plain text. *)
+    A synchronous highlighter's result is shown immediately. While an
+    asynchronous result is pending, the code still shows its current content.
+    Bytes it shares with the source of the latest result, as a common prefix or
+    a common suffix, keep that result's styling, also under a capture the change
+    cuts through, and the other bytes are plain. A concealing capture the change
+    cuts through shows its bytes instead, since its replacement stood for all of
+    them (see {!Syntax_highlight.conceals}). A streaming append therefore keeps
+    its highlighted prefix and shows its new tail plain until the result
+    arrives, and content seen for the first time shows plain. A result for
+    content that has since changed is never shown as such, but it becomes the
+    latest result, with its state, so styling keeps up with content that changes
+    faster than it can be highlighted. A different highlighter or language
+    starts again from plain text. *)
 
 (** {1:props Props} *)
 
@@ -213,8 +217,8 @@ module Props : sig
       - [content] is the plain source code text. Defaults to [""].
       - [syntax] is the source-code syntax configuration. Defaults to [None].
       - [conceal] applies the captures' conceal metadata (see
-        {!Syntax_highlight.to_annotations}): read-only code may hide or replace
-        the bytes a capture conceals. Defaults to [true].
+        {!Syntax_highlight.to_annotations}), which may hide or replace the bytes
+        a capture conceals. Defaults to [true].
       - [text_style] is the base text style. Defaults to {!Ansi.Style.default}.
       - [wrap] is the wrapping mode. Defaults to [`None].
       - [tab_width] is the tab stop width in columns. Defaults to [4].

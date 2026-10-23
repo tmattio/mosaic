@@ -73,11 +73,11 @@ val meta : range -> meta
 (** [meta r] is the metadata attached to [r]. *)
 
 val conceals : range -> bool
-(** [conceals r] is [true] iff concealment changes the bytes [r] shows: [r] has
-    a [conceal] replacement, hides the line break after it ([conceal_lines]), or
-    its scope is [conceal] or starts with [conceal.]. Such a scope without a
-    replacement hides the range, except [conceal.with.space], which shows one
-    space. *)
+(** [conceals r] is [true] iff concealment changes the bytes [r] shows. That
+    holds when [r] has a [conceal] replacement, hides the line break after it
+    ([conceal_lines]), or has a scope that is [conceal] or starts with
+    [conceal.]. Such a scope without a replacement hides the range, and
+    [conceal.with.space] shows one space in its place. *)
 
 val to_annotations :
   ?conceal:bool -> style:Syntax_style.t -> t -> Text_buffer.Annotations.t
