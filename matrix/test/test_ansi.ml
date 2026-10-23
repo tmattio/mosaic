@@ -1304,8 +1304,10 @@ let osc_text_is_printable () =
   let s f = Ansi.to_string f in
   equal ~msg:"title" string "\x1b]0;a]0;b\xc3\xa9c\x1b\\"
     (s (Ansi.set_title ~title:"a\x1b]0;\x07b\xc2\x9c\xffé\nc"));
-  equal ~msg:"notify" string "\x1b]9;a;b: c;d\x07\x1b]777;notify;ab;c;d\x07"
-    (s (Ansi.notify ~title:"a;b\x07" ~body:"c;\x1bd"));
+  equal ~msg:"notify" string "\x1b]9;a;b: c;d\x07"
+    (s (Ansi.notify `Osc9 ~title:"a;b\x07" ~body:"c;\x1bd"));
+  equal ~msg:"notify, OSC 777" string "\x1b]777;notify;ab;c;d\x07"
+    (s (Ansi.notify `Osc777 ~title:"a;b\x07" ~body:"c;\x1bd"));
   equal ~msg:"hyperlink" string "\x1b]8;id=1;http://a/\\b\x1b\\"
     (s (Ansi.hyperlink_start ~params:"id=1;" ~url:"http://a/\x1b\\b"));
   equal ~msg:"osc" string "\x1b]2;tt\x1b\\" (s (Ansi.osc ~payload:"2;t\x9ct"));
@@ -1313,9 +1315,10 @@ let osc_text_is_printable () =
     (s (Ansi.explicit_width ~width:2 ~text:"a\x07b"))
 
 let notify_osc9_and_osc777 () =
-  check_seq "OSC 9 then OSC 777"
-    "\x1b]9;Title: Body\x07\x1b]777;notify;Title;Body\x07"
-    (Ansi.to_string (Ansi.notify ~title:"Title" ~body:"Body"))
+  check_seq "OSC 9" "\x1b]9;Title: Body\x07"
+    (Ansi.to_string (Ansi.notify `Osc9 ~title:"Title" ~body:"Body"));
+  check_seq "OSC 777" "\x1b]777;notify;Title;Body\x07"
+    (Ansi.to_string (Ansi.notify `Osc777 ~title:"Title" ~body:"Body"))
 
 let tmux_passthrough_doubles_esc () =
   check_seq "DCS wrap with doubled ESC" "\x1bPtmux;\x1b\x1b]0;t\x1b\x1b\\\x1b\\"
@@ -1805,7 +1808,7 @@ let tests =
         test "utf8 encoding" writer_utf8_encoding;
         test "hyperlink params" writer_hyperlink_params;
         test "clipboard base64 payload" clipboard_base64_payload;
-        test "notify emits OSC 9 then OSC 777" notify_osc9_and_osc777;
+        test "notify in either form" notify_osc9_and_osc777;
         test "OSC text is printable" osc_text_is_printable;
         test "tmux passthrough doubles ESC" tmux_passthrough_doubles_esc;
         test "color scheme report query" color_scheme_report_query;

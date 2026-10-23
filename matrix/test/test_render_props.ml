@@ -594,6 +594,7 @@ let capabilities case : Matrix.Terminal.capabilities =
     sixel = false;
     sync = case.sync;
     hyperlinks = true;
+    notification = `Osc9;
     meta_sends_escape = None;
     multiplexer = None;
     identity = None;

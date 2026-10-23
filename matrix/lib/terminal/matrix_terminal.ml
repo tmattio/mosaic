@@ -434,7 +434,7 @@ let copy_to_clipboard t text =
   | None -> send t (Ansi.to_string seq)
 
 let notify t ~title ~body =
-  let seq = Ansi.notify ~title ~body in
+  let seq = Ansi.notify t.caps.notification ~title ~body in
   let seq =
     if t.caps.multiplexer = Some `Tmux then Ansi.tmux_passthrough seq else seq
   in

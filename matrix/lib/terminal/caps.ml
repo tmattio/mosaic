@@ -17,6 +17,7 @@ type t = {
   sixel : bool;
   sync : bool;
   hyperlinks : bool;
+  notification : [ `Osc9 | `Osc777 ];
   meta_sends_escape : bool option;
   multiplexer : [ `Tmux | `Screen ] option;
   identity : (string * string) option;
@@ -39,6 +40,7 @@ let defaults =
     sixel = false;
     sync = false;
     hyperlinks = false;
+    notification = `Osc9;
     meta_sends_escape = None;
     multiplexer = None;
     identity = None;
@@ -421,6 +423,9 @@ let derive ev =
       first
         [ when_ (tmux || modern) true; when_ (term_modern || truecolor) true ]
         d.hyperlinks;
+    notification =
+      (if String.starts_with ~prefix:"rxvt" env.term then `Osc777
+       else d.notification);
     meta_sends_escape =
       (match List.assoc_opt 1036 ev.modes with
       | Some (Set | Permanently_set) -> Some true

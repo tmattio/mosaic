@@ -329,10 +329,10 @@ val copy_to_clipboard : t -> string -> unit
     outside. *)
 
 val notify : t -> title:string -> body:string -> unit
-(** [notify t ~title ~body] posts a desktop notification as OSC 9, then OSC 777,
-    and a terminal ignores the one it does not know. Inside tmux it wraps both
-    for tmux's passthrough. [title] and [body] must hold no control character
-    and [title] no [;], since they are written as they are. *)
+(** [notify t ~title ~body] posts one desktop notification, in the form the
+    terminal shows ({!Caps.t.notification}). Inside tmux it wraps it for tmux's
+    passthrough. [title] and [body] must hold no control character and [title]
+    no [;], since they are written as they are. *)
 
 val bell : t -> unit
 (** [bell t] rings the terminal's bell (BEL). *)

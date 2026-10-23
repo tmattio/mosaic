@@ -499,8 +499,8 @@ val identity : t -> identity
     order, for its caller to act on:
     - BEL, outside a control string, rings the bell;
     - OSC 9, iTerm2's notification, posts a desktop notification of its text,
-      and OSC 777 [; notify ; title ; body], urxvt's, one with a title. A
-      program that sends both posts two;
+      and OSC 777 [; notify ; title ; body], rxvt's, one with a title, as foot,
+      WezTerm and Ghostty read both;
     - OSC 52 [; selection ; data], with [data] in base64, sets a clipboard ([c]
       the clipboard, [p] the primary selection). A read, whose data is [?], asks
       for a clipboard this terminal does not have, and gets no answer. *)

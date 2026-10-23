@@ -79,11 +79,9 @@ let%expect_test "a streamed turn, its clock, its title and its notification" =
       | Vte.Bell -> print_endline "bell"
       | Vte.Clipboard _ -> print_endline "clipboard")
     (T.Terminal.requests term);
-  [%expect
-    {|
+  [%expect {|
     ✳ chat
     notification "" "chat: the turn ended"
-    notification "chat" "the turn ended"
     |}];
   (* Once the frames the turn's end asked for are drawn, an idle program
      draws nothing while the clock moves. *)

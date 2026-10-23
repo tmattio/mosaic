@@ -332,13 +332,13 @@ val set_clipboard : text:string -> t
 
 (** {2:notifications Notifications} *)
 
-val notify : title:string -> body:string -> t
-(** [notify ~title ~body] posts a desktop notification. It is OSC 9 with the
-    message [title: body], which iTerm2 and kitty read, followed by OSC 777
-    [notify;title;body], which urxvt and others read
+val notify : [ `Osc9 | `Osc777 ] -> title:string -> body:string -> t
+(** [notify form ~title ~body] posts a desktop notification in one of its two
+    forms. [`Osc9] is iTerm2's OSC 9 with the message [title: body]. [`Osc777]
+    is OSC 777 [notify;title;body], the form of an rxvt extension
     ([ESC \] 777;notify;title;msg ESC \\ ] in foot-ctlseqs(7)), whose title
-    leaves out [;]. A terminal ignores the one it does not know. Inside tmux, it
-    must be wrapped with {!tmux_passthrough} to reach the terminal. *)
+    leaves out [;]. Inside tmux, it must be wrapped with {!tmux_passthrough} to
+    reach the terminal. *)
 
 (** {2:passthrough Multiplexer passthrough} *)
 

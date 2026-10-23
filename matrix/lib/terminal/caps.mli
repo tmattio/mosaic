@@ -148,6 +148,14 @@ type t = {
           tmux, Ghostty, kitty, WezTerm, Alacritty or iTerm, a [TERM] that names
           one of the five terminals, a [COLORTERM] of [truecolor] or [24bit], or
           a Windows console. *)
+  notification : [ `Osc9 | `Osc777 ];
+      (** The form of desktop notification the terminal shows. No query tells
+          it. iTerm2's OSC 9 is the one most terminals read: iTerm2, kitty
+          ("kitty also supports the legacy OSC 9 protocol developed by iTerm2",
+          its "Desktop notifications"), WezTerm and foot (their lists of escape
+          sequences). rxvt-unicode reads only OSC 777, an extension of its own,
+          so a [TERM] that starts with [rxvt] gives [`Osc777]. Any other
+          terminal gets [`Osc9]. *)
   meta_sends_escape : bool option;
       (** xterm's metaSendsEscape (mode 1036) as the terminal answered.
           [Some false] says the mode is reset and a program can set it. A

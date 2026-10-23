@@ -1139,6 +1139,21 @@ let test_probe_cursor (_, reports, (explicit, scaled)) =
   equal ~msg:"explicit width" bool explicit caps.explicit_width;
   equal ~msg:"scaled text" bool scaled caps.scaled_text
 
+(* A notification is one sequence, in the form the terminal shows: OSC 777
+   for rxvt-unicode, iTerm2's OSC 9 for every other. *)
+let test_notify_once () =
+  let notified vars =
+    let caps = Caps.derive (Caps.evidence (env vars)) in
+    with_tty_terminal ~caps @@ fun term buf ->
+    T.notify term ~title:"t" ~body:"b";
+    Buffer.contents buf
+  in
+  equal ~msg:"unknown" string "\x1b]9;t: b\x07" (notified []);
+  equal ~msg:"kitty" string "\x1b]9;t: b\x07"
+    (notified [ ("TERM", "xterm-kitty") ]);
+  equal ~msg:"rxvt-unicode" string "\x1b]777;notify;t;b\x07"
+    (notified [ ("TERM", "rxvt-unicode-256color") ])
+
 let () =
   run "Terminal"
     [
@@ -1155,6 +1170,7 @@ let () =
             test_clipboard_route;
           test "Screen chunk boundaries" test_screen_clipboard_chunks;
           test "non-TTY clipboard" test_non_tty_clipboard;
+          test "a notification is one sequence" test_notify_once;
         ];
       group "capabilities"
         [

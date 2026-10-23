@@ -448,20 +448,22 @@ let set_clipboard ~text w =
   write_base64 w text;
   write_terminator w `Bel
 
-(* Desktop notification — OSC 9 (iTerm2, kitty) followed by OSC 777 (urxvt
-   and others). A terminal ignores the sequence it does not understand. *)
+(* Desktop notification, as OSC 9 (iTerm2's) or OSC 777 (rxvt's). *)
 
-let notify ~title ~body w =
-  write_string w "\027]9;";
-  write_osc_string w title;
-  write_string w ": ";
-  write_osc_string w body;
-  write_terminator w `Bel;
-  write_string w "\027]777;notify;";
-  write_osc_string ~sep:(Char.code ';') w title;
-  write_char w ';';
-  write_osc_string w body;
-  write_terminator w `Bel
+let notify form ~title ~body w =
+  match form with
+  | `Osc9 ->
+      write_string w "\027]9;";
+      write_osc_string w title;
+      write_string w ": ";
+      write_osc_string w body;
+      write_terminator w `Bel
+  | `Osc777 ->
+      write_string w "\027]777;notify;";
+      write_osc_string ~sep:(Char.code ';') w title;
+      write_char w ';';
+      write_osc_string w body;
+      write_terminator w `Bel
 
 (* Wrap a sequence for tmux DCS passthrough: every ESC byte in the payload is
    doubled so tmux forwards the sequence to the outer terminal. *)

@@ -303,7 +303,8 @@ let test_requests_and_end () =
     session ~on ~view:(draw (fun () -> "running")) @@ fun s term _ ->
     T.input s (T.Terminal.text term "a");
     equal ~msg:"the title" string "hello" (T.Terminal.title term);
-    equal ~msg:"the requests" int 4 (List.length (T.Terminal.requests term));
+    equal ~msg:"the requests: a bell, one notification, a clipboard write" int 3
+      (List.length (T.Terminal.requests term));
     T.input s (T.Terminal.text term "q");
     is_true ~msg:"ended" (T.ended s);
     raises_match ~msg:"input after the end" (Exn.invalid_arg ~substring:"ended")

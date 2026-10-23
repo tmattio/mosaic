@@ -144,7 +144,7 @@ val set_clipboard : text:string -> t
 
 (** {2:notifications Notifications} *)
 
-val notify : title:string -> body:string -> t
+val notify : [ `Osc9 | `Osc777 ] -> title:string -> body:string -> t
 
 (** {2:passthrough Multiplexer passthrough} *)
 

@@ -96,6 +96,7 @@ let caps : Matrix.Terminal.capabilities =
     sixel = false;
     sync = false;
     hyperlinks = false;
+    notification = `Osc9;
     meta_sends_escape = None;
     multiplexer = None;
     identity = None;

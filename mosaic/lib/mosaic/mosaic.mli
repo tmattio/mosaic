@@ -850,9 +850,9 @@ module Cmd : sig
             {!Sub.on_color_scheme}. *)
     | Bell  (** Ring the terminal bell (BEL), a best-effort attention cue. *)
     | Notify of { title : string; body : string }
-        (** Post a desktop notification via OSC 9 (iTerm2, kitty) and OSC 777
-            (urxvt and others); a terminal ignores the sequence it does not
-            understand. Wrapped for tmux passthrough when inside tmux. *)
+        (** Post a desktop notification, in the one form the terminal shows
+            ({!Matrix.Terminal.Caps.t.notification}). Wrapped for tmux
+            passthrough when inside tmux. *)
     | Clear_selection  (** Clear the active text selection, if any. *)
     | Static_commit of 'msg Vnode.t
         (** Render a vnode snapshot and write it to the static area with ANSI
