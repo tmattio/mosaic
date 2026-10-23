@@ -31,6 +31,26 @@ let rec write_all pty s off len =
         ignore (Unix.select [] [ Pty.out_fd pty ] [] (-1.));
         write_all pty s off len
 
+(* What the watcher tells the loop: the shell wrote. *)
+type message = Output
+
+(* A thread waits for the shell's output and tells the loop, which reads it:
+   the loop owns the state, and waits for nothing. The thread waits again
+   once the loop has read, which the loop says by releasing [read]. *)
+let watch app pty =
+  let read = Semaphore.Binary.make false in
+  let rec go () =
+    match Unix.select [ Pty.in_fd pty ] [] [] (-1.) with
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> go ()
+    | exception Unix.Unix_error _ -> ()
+    | _ ->
+        Matrix.post app Output;
+        Semaphore.Binary.acquire read;
+        go ()
+  in
+  ignore (Thread.create go () : Thread.t);
+  read
+
 let read_pty_output state =
   match state.pty with
   | None -> ()
@@ -158,32 +178,46 @@ let draw_no_pty grid ~cols ~rows =
     ~y:(rows / 2) ~text:msg
 
 let () =
-  let app =
-    Matrix.create ~target_fps:(Some 30.) ~mouse_enabled:false
-      ~debug_overlay:false ()
+  let config = Matrix.config ~mouse:`Off () in
+  let state =
+    Matrix.run ~config @@ fun app ->
+    let cols, rows = Matrix.size app in
+    let state = ref (create_state ~cols ~rows:(max 1 (rows - 2))) in
+    let read = Option.map (watch app) !state.pty in
+    let rec loop () =
+      match Matrix.next app with
+      | Stopped | Event (Key { key = Escape; _ }) -> ()
+      | Event (Key ke) ->
+          send_key !state ke;
+          loop ()
+      | Event (Text text) ->
+          send !state text;
+          loop ()
+      | Event ((Paste_start | Paste_data _ | Paste_end _) as event) ->
+          send_paste !state event;
+          loop ()
+      | Event (Resize (cols, rows)) ->
+          state := resize_state !state ~cols ~rows:(max 1 (rows - 2));
+          loop ()
+      | Posted Output ->
+          (* The shell wrote: its output is read, then the watcher waits
+             again. The run ends with the shell. *)
+          read_pty_output !state;
+          Option.iter Semaphore.Binary.release read;
+          Matrix.request_redraw app;
+          if !state.pty <> None then loop ()
+      | Frame ->
+          Matrix.draw app (fun grid ->
+              let cols, rows = Matrix.size app in
+              Grid.clear ~color:Ansi.Color.black grid;
+              draw_border grid ~cols ~rows;
+              match !state.pty with
+              | Some _ -> draw_vte grid !state ~offset_y:1
+              | None -> draw_no_pty grid ~cols ~rows);
+          loop ()
+      | Event _ | Timer _ -> loop ()
+    in
+    loop ();
+    !state
   in
-  let state = ref (create_state ~cols:1 ~rows:1) in
-  Matrix.run app
-    ~on_frame:(fun app ~dt:_ ->
-      read_pty_output !state;
-      if !state.pty = None then Matrix.stop app)
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key ke -> send_key !state ke
-      | Text text -> send !state text
-      | (Paste_start | Paste_data _ | Paste_end _) as event ->
-          send_paste !state event
-      | _ -> ())
-    ~on_resize:(fun _ ~cols ~rows ->
-      let term_rows = max 1 (rows - 2) in
-      state := resize_state !state ~cols ~rows:term_rows)
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let cols, rows = Matrix.size app in
-      Grid.clear ~color:Ansi.Color.black grid;
-      draw_border grid ~cols ~rows;
-      match !state.pty with
-      | Some _ -> draw_vte grid !state ~offset_y:1
-      | None -> draw_no_pty grid ~cols ~rows);
-  cleanup !state
+  cleanup state

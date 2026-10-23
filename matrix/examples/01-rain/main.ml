@@ -122,29 +122,26 @@ let draw_state grid (state : state) =
   in
   loop 0 columns
 
-let frame_interval = 0.075
-let target_fps = 1. /. frame_interval
+let fps = 1. /. 0.075
 
 let () =
-  let app =
-    Matrix.create ~target_fps:(Some target_fps) ~mouse_enabled:false
-      ~debug_overlay:true ()
+  let config = Matrix.config ~fps ~mouse:`Off ~debug_overlay:true () in
+  Matrix.run ~config @@ fun app ->
+  let rec loop state =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Event (Key { key = Char u; _ }) when Uchar.to_int u = Char.code ' ' ->
+        loop (gen (Matrix.size app))
+    | Event (Resize (cols, rows)) -> loop (gen (cols, rows))
+    | Frame ->
+        (* Each frame steps the rain and asks for the next. *)
+        let state = step state in
+        Matrix.draw app (fun grid -> draw_state grid state);
+        Matrix.request_redraw app;
+        loop state
+    | Event _ | Timer _ | Posted _ -> loop state
   in
-  let state = ref (gen (1, 1)) in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt:_ -> state := step !state)
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Char uchar; mods; _ } ->
-          let code = Uchar.to_int uchar in
-          if mods.ctrl && (code = Char.code 'c' || code = Char.code 'C') then
-            Matrix.stop app
-          else if code = Char.code ' ' then
-            let cols, rows = Matrix.size app in
-            state := gen (cols, rows)
-      | _ -> ())
-    ~on_resize:(fun _ ~cols ~rows -> state := gen (cols, rows))
-    ~on_render:(fun app ->
-      let g = Matrix.grid app in
-      draw_state g !state)
+  loop (gen (Matrix.size app))

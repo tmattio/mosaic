@@ -69,31 +69,34 @@ let render grid state =
 
 let () =
   Random.self_init ();
-  let app =
-    Matrix.create ~mode:`Primary ~target_fps:(Some 30.) ~mouse_enabled:false
-      ~debug_overlay:false ()
+  let config = Matrix.config ~mode:`Primary ~mouse:`Off () in
+  Matrix.run ~config @@ fun app ->
+  let rec loop state =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Event (Key { key = Char u; _ }) -> (
+        Matrix.request_redraw app;
+        match Uchar.to_int u with
+        | c when c = Char.code 'q' || c = Char.code 'Q' -> ()
+        | c when c = Char.code '+' || c = Char.code '=' ->
+            loop { state with counter = state.counter + 1 }
+        | c when c = Char.code '-' ->
+            loop { state with counter = state.counter - 1 }
+        | c when c = Char.code 'r' || c = Char.code 'R' -> loop initial_state
+        | c when c = Char.code 'a' || c = Char.code 'A' ->
+            let new_item = Printf.sprintf "Item %d" (Random.int 1000) in
+            loop { state with items = new_item :: state.items }
+        | _ -> loop state)
+    | Frame ->
+        (* Counter at y=0, help at y=1, and from y=3 a box of items_len + 2
+           rows. *)
+        Matrix.draw app
+          ~primary_required_rows:(5 + List.length state.items)
+          (fun grid -> render grid state);
+        loop state
+    | Event _ | Timer _ | Posted _ -> loop state
   in
-  let state = ref initial_state in
-  Matrix.run app
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Char u; _ } -> (
-          match Uchar.to_int u with
-          | c when c = Char.code 'q' || c = Char.code 'Q' -> Matrix.stop app
-          | c when c = Char.code '+' || c = Char.code '=' ->
-              state := { !state with counter = !state.counter + 1 }
-          | c when c = Char.code '-' ->
-              state := { !state with counter = !state.counter - 1 }
-          | c when c = Char.code 'r' || c = Char.code 'R' ->
-              state := initial_state
-          | c when c = Char.code 'a' || c = Char.code 'A' ->
-              let new_item = Printf.sprintf "Item %d" (Random.int 1000) in
-              state := { !state with items = new_item :: !state.items }
-          | _ -> ())
-      | _ -> ())
-    ~primary_required_rows:(fun _ ->
-      (* Counter at y=0, help at y=1, and from y=3 a box of items_len + 2
-         rows. *)
-      Some (5 + List.length !state.items))
-    ~on_render:(fun app -> render (Matrix.grid app) !state)
+  loop initial_state

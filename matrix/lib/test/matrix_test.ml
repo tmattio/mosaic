@@ -1,14 +1,21 @@
 type entry = Chunk of string | Event of Matrix.event
 
 type t = {
-  mutable now : float;
+  mutable now : int;
   mutable width : int;
   mutable height : int;
+  mode : Matrix.mode;
+  fps : float;
   queue : entry Queue.t;
   mutable input_offset : int;
+  mutable ended : bool;
+  mutable resized : bool;
+  woken : bool Atomic.t;
   output : Buffer.t;
-  on_idle : t -> timeout:float option -> unit;
-  mutable app : Matrix.app option;
+  on_idle : t -> until:int option -> unit;
+  on_wake : unit -> unit;
+  (* The last run seen over [t], read after it ends. *)
+  mutable last : Matrix.held option;
 }
 
 (* A plain modern terminal: truecolor and Unicode width tables, no Kitty
@@ -35,9 +42,34 @@ let capabilities : Matrix.Terminal.capabilities =
   }
 
 let app t =
-  match t.app with
-  | Some app -> app
-  | None -> invalid_arg "Matrix_test.app: backend not initialized"
+  match Matrix.holder () with
+  | Some held ->
+      t.last <- Some held;
+      held
+  | None -> (
+      match t.last with
+      | Some held -> held
+      | None -> invalid_arg "Matrix_test: no run held the terminal")
+
+let grid t =
+  let (Matrix.Held app) = app t in
+  Matrix.current_grid app
+
+let size t =
+  let (Matrix.Held app) = app t in
+  Matrix.size app
+
+let frame_owed _ =
+  match Matrix.holder () with
+  | Some (Held app) -> Matrix.frame_owed app
+  | None -> false
+
+let settle t ~until =
+  match until with
+  | Some until when frame_owed t && until > t.now ->
+      t.now <- until;
+      true
+  | _ -> false
 
 let feed t bytes = if bytes <> "" then Queue.push (Chunk bytes) t.queue
 let feed_event t event = Queue.push (Event event) t.queue
@@ -45,91 +77,107 @@ let feed_event t event = Queue.push (Event event) t.queue
 let resize t ~width ~height =
   t.width <- width;
   t.height <- height;
-  feed_event t (Matrix.Resize (width, height))
+  t.resized <- true
 
 let now t = t.now
-let set_now t time = t.now <- time
-let screen t = Matrix.Grid.to_text (Matrix.current_grid (app t))
-let screen_ansi t = Matrix.Grid.to_ansi (Matrix.current_grid (app t))
-let output t = Buffer.contents t.output
-let stop t = Matrix.stop (app t)
 
-let create ?(mode = `Alt) ?(target_fps = 60.) ?(exit_on_ctrl_c = false)
-    ?(now = 0.) ?(on_wake = fun () -> ()) ~on_idle ~width ~height () =
-  let output = Buffer.create 4096 in
-  let t =
-    {
-      now;
-      width;
-      height;
-      queue = Queue.create ();
-      input_offset = 0;
-      output;
-      on_idle;
-      app = None;
-    }
-  in
-  let rec deliver ~on_event =
-    if Queue.is_empty t.queue then false
-    else
-      match Queue.peek t.queue with
-      | Chunk _ -> true
-      | Event event ->
+let advance t ns =
+  if ns < 0 then invalid_arg "Matrix_test.advance: negative time";
+  t.now <- t.now + ns
+
+let screen t = Matrix.Grid.to_text (grid t)
+let screen_ansi t = Matrix.Grid.to_ansi (grid t)
+let output t = Buffer.contents t.output
+let stop t = t.ended <- true
+let config t = Matrix.config ~mode:t.mode ~fps:t.fps ~caps:capabilities ()
+
+let create ?(mode = `Alt) ?(fps = 60.) ?(now = 0) ?(on_wake = fun () -> ())
+    ~on_idle ~width ~height () =
+  {
+    now;
+    width;
+    height;
+    mode;
+    fps;
+    queue = Queue.create ();
+    input_offset = 0;
+    ended = false;
+    resized = false;
+    woken = Atomic.make false;
+    output = Buffer.create 4096;
+    on_idle;
+    on_wake;
+    last = None;
+  }
+
+(* Events queued ahead of the next bytes are handed to the run as decoded;
+   the input is readable when bytes or its end come next. *)
+let rec deliver t =
+  match Queue.peek_opt t.queue with
+  | Some (Event event) ->
+      ignore (Queue.pop t.queue : entry);
+      let (Matrix.Held app) = app t in
+      Matrix.inject app event;
+      deliver t
+  | Some (Chunk _) -> true
+  | None -> t.ended
+
+let has_input t = (not (Queue.is_empty t.queue)) || t.ended || t.resized
+let due t = function Some until -> t.now >= until | None -> false
+
+let wait t ~until ~reading =
+  if t.last = None then ignore (app t : Matrix.held);
+  if not (has_input t || Atomic.exchange t.woken false || due t until) then
+    t.on_idle t ~until;
+  reading && deliver t
+
+let rec copy_input t buf off len written =
+  if written = len then written
+  else
+    match Queue.peek_opt t.queue with
+    | None | Some (Event _) -> written
+    | Some (Chunk chunk) ->
+        let remaining = String.length chunk - t.input_offset in
+        let count = min (len - written) remaining in
+        Bytes.blit_string chunk t.input_offset buf (off + written) count;
+        if count = remaining then (
           ignore (Queue.pop t.queue : entry);
-          on_event event;
-          deliver ~on_event
-  in
-  let wait ~timeout ~on_event =
-    (if Queue.is_empty t.queue then
-       match timeout with
-       | Some s when s <= 0. -> ()
-       | Some s when Matrix.redraw_requested (app t) ->
-           (* Release a live-animation frame at its pacing deadline. One-shot
-              redraws render immediately with [pace_redraws:false], so this
-              never advances the virtual clock for a one-shot redraw. *)
-           t.now <- t.now +. s
-       | timeout -> t.on_idle t ~timeout);
-    deliver ~on_event
-  in
-  let rec copy_input buf off len written =
-    if written = len || Queue.is_empty t.queue then written
-    else
-      match Queue.peek t.queue with
-      | Event _ -> written
-      | Chunk chunk ->
-          let remaining = String.length chunk - t.input_offset in
-          let count = min (len - written) remaining in
-          Bytes.blit_string chunk t.input_offset buf (off + written) count;
-          if count = remaining then (
-            ignore (Queue.pop t.queue : entry);
-            t.input_offset <- 0)
-          else t.input_offset <- t.input_offset + count;
-          copy_input buf off len (written + count)
-  in
-  let backend : Matrix.Backend.t =
-    {
-      now = (fun () -> t.now);
-      protect = (fun f -> f ());
-      wake = on_wake;
-      write_output = (fun buf off len -> Buffer.add_subbytes output buf off len);
-      read_input = (fun buf off len -> copy_input buf off len 0);
-      wait;
-      input_is_tty = false;
-      output_is_tty = false;
-      terminal_size = (fun () -> (t.width, t.height));
-      set_raw_mode = (fun _ -> ());
-      flush_input =
-        (fun () ->
-          Queue.clear t.queue;
-          t.input_offset <- 0);
-      cleanup = (fun () -> ());
-      env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
-    }
-  in
-  let app =
-    Matrix.attach ~mode ~target_fps:(Some target_fps) ~exit_on_ctrl_c
-      ~input_timeout:None ~resize_debounce:(Some 0.) ~start_idle:true
-      ~pace_redraws:false ~caps:capabilities ~backend ()
-  in
-  t.app <- Some app;
-  t
+          t.input_offset <- 0)
+        else t.input_offset <- t.input_offset + count;
+        copy_input t buf off len (written + count)
+
+let read_input t buf off len =
+  match copy_input t buf off len 0 with
+  | 0 when t.ended && Queue.is_empty t.queue -> 0
+  | 0 -> -1
+  | n -> n
+
+let take_signals t =
+  if t.resized then (
+    t.resized <- false;
+    [ Matrix.Backend.Winch ])
+  else []
+
+let backend t : Matrix.Backend.t =
+  {
+    now = (fun () -> t.now);
+    wait = wait t;
+    wake =
+      (fun () ->
+        Atomic.set t.woken true;
+        t.on_wake ());
+    take_signals = (fun () -> take_signals t);
+    read_input = read_input t;
+    write_output = (fun buf off len -> Buffer.add_subbytes t.output buf off len);
+    terminal_size = (fun () -> (t.width, t.height));
+    set_raw_mode = ignore;
+    flush_input =
+      (fun () ->
+        Queue.clear t.queue;
+        t.input_offset <- 0);
+    input_is_tty = false;
+    output_is_tty = false;
+    protect = (fun f -> f ());
+    cleanup = ignore;
+    env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
+  }

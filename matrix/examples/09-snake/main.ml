@@ -143,53 +143,53 @@ let draw_paused grid ~cols ~rows =
   let y = rows / 2 in
   Grid.draw_text ~style grid ~x ~y ~text:msg
 
+(* The snake moves every tenth of a second, on a timer. *)
+let tick = 100_000_000
+
+let turn state direction =
+  if opposite_dir state.direction direction then state
+  else { state with direction }
+
 let () =
   Random.self_init ();
-  let tick_rate = 0.1 in
-  let app =
-    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:false
-      ~debug_overlay:false ()
+  let config = Matrix.config ~mouse:`Off () in
+  Matrix.run ~config @@ fun app ->
+  let rec loop state timer =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Timer t when t = timer ->
+        Matrix.request_redraw app;
+        loop (move_snake state) (Matrix.at app (Matrix.now app + tick))
+    | Event (Key { key = (Up | Down | Left | Right) as key; _ }) ->
+        let direction =
+          match key with Up -> Up | Down -> Down | Left -> Left | _ -> Right
+        in
+        loop (turn state direction) timer
+    | Event (Key { key = Char u; _ }) -> (
+        Matrix.request_redraw app;
+        match Uchar.to_int u with
+        | c when c = Char.code 'p' || c = Char.code 'P' ->
+            loop { state with paused = not state.paused } timer
+        | c when c = Char.code 'r' || c = Char.code 'R' ->
+            let cols, rows = Matrix.size app in
+            loop (initial_state ~cols ~rows) timer
+        | _ -> loop state timer)
+    | Event (Resize (cols, rows)) -> loop (initial_state ~cols ~rows) timer
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            Grid.clear ~color:Ansi.Color.black grid;
+            draw_border grid ~cols ~rows;
+            draw_food grid state.food;
+            draw_snake grid state.snake;
+            draw_ui grid ~cols state;
+            if state.game_over then draw_game_over grid ~cols ~rows
+            else if state.paused then draw_paused grid ~cols ~rows);
+        loop state timer
+    | Event _ | Timer _ | Posted _ -> loop state timer
   in
-  let state = ref (initial_state ~cols:1 ~rows:1) in
-  let last_tick = ref 0.0 in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt ->
-      last_tick := !last_tick +. dt;
-      if !last_tick >= tick_rate then (
-        last_tick := 0.0;
-        state := move_snake !state))
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Up; _ } ->
-          if not (opposite_dir !state.direction Up) then
-            state := { !state with direction = Up }
-      | Key { key = Down; _ } ->
-          if not (opposite_dir !state.direction Down) then
-            state := { !state with direction = Down }
-      | Key { key = Left; _ } ->
-          if not (opposite_dir !state.direction Left) then
-            state := { !state with direction = Left }
-      | Key { key = Right; _ } ->
-          if not (opposite_dir !state.direction Right) then
-            state := { !state with direction = Right }
-      | Key { key = Char u; _ } -> (
-          match Uchar.to_int u with
-          | c when c = Char.code 'p' || c = Char.code 'P' ->
-              state := { !state with paused = not !state.paused }
-          | c when c = Char.code 'r' || c = Char.code 'R' ->
-              let cols, rows = Matrix.size app in
-              state := initial_state ~cols ~rows
-          | _ -> ())
-      | _ -> ())
-    ~on_resize:(fun _ ~cols ~rows -> state := initial_state ~cols ~rows)
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let cols, rows = Matrix.size app in
-      Grid.clear ~color:Ansi.Color.black grid;
-      draw_border grid ~cols ~rows;
-      draw_food grid !state.food;
-      draw_snake grid !state.snake;
-      draw_ui grid ~cols !state;
-      if !state.game_over then draw_game_over grid ~cols ~rows
-      else if !state.paused then draw_paused grid ~cols ~rows)
+  let cols, rows = Matrix.size app in
+  loop (initial_state ~cols ~rows) (Matrix.at app (Matrix.now app + tick))

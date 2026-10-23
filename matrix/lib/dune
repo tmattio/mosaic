@@ -13,5 +13,8 @@
   matrix.input
   matrix.terminal
   matrix.text
-  mtime.clock.os
-  unix))
+  threads.posix
+  unix)
+ (foreign_stubs
+  (language c)
+  (names matrix_stubs)))

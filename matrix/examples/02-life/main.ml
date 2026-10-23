@@ -152,41 +152,48 @@ let resize_state st ~cols ~rows =
   in
   { st with dim; life }
 
+(* Raw mode makes Ctrl+C a key: this program quits on it, and on Escape. *)
+let quits : event -> bool = function
+  | Key { key = Escape; _ } -> true
+  | Key k -> Input.Keystroke.is_interrupt k
+  | _ -> false
+
 let () =
-  let frame_interval = 0.1 in
-  let target_fps = 1. /. frame_interval in
-  let app = Matrix.create ~target_fps:(Some target_fps) () in
-  let state = ref (initial_state ~cols:1 ~rows:1) in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt:_ ->
-      if not !state.paused then
-        let w, h = !state.dim in
-        let life = step (w, h) !state.life in
-        state := { !state with life; generation = !state.generation + 1 })
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Char uchar; mods; _ } ->
-          let code = Uchar.to_int uchar in
-          let ctrl_c =
-            mods.ctrl && (code = Char.code 'c' || code = Char.code 'C')
-          in
-          if ctrl_c then Matrix.stop app
-          else if code = Char.code ' ' then
-            state := { !state with paused = not !state.paused }
-          else if code = Char.code 'c' || code = Char.code 'C' then
-            state := { !state with life = CSet.empty; generation = 0 }
-      | Mouse { x; y; kind = Press Left | Motion (Some Left); _ } ->
-          let w, h = !state.dim in
-          if y < h then
-            let pt = torus (w, h) (x, y) in
-            let life = CSet.add pt !state.life in
-            state := { !state with life }
-      | _ -> ())
-    ~on_resize:(fun _ ~cols ~rows -> state := resize_state !state ~cols ~rows)
-    ~on_render:(fun app ->
-      let cols, rows = Matrix.size app in
-      let ctx =
-        { grid = Matrix.grid app; hits = Matrix.hits app; cols; rows }
-      in
-      render !state ctx)
+  let config = Matrix.config ~fps:10. () in
+  Matrix.run ~config @@ fun app ->
+  let cols, rows = Matrix.size app in
+  let rec loop state =
+    match Matrix.next app with
+    | Stopped -> ()
+    | Event event when quits event -> ()
+    | Event (Key { key = Char u; _ }) when Uchar.to_int u = Char.code ' ' ->
+        Matrix.request_redraw app;
+        loop { state with paused = not state.paused }
+    | Event (Key { key = Char u; _ })
+      when Uchar.to_int u = Char.code 'c' || Uchar.to_int u = Char.code 'C' ->
+        Matrix.request_redraw app;
+        loop { state with life = CSet.empty; generation = 0 }
+    | Event (Mouse { x; y; kind = Press Left | Motion (Some Left); _ }) ->
+        let w, h = state.dim in
+        if y < h then (
+          Matrix.request_redraw app;
+          loop { state with life = CSet.add (torus (w, h) (x, y)) state.life })
+        else loop state
+    | Event (Resize (cols, rows)) -> loop (resize_state state ~cols ~rows)
+    | Frame ->
+        (* A generation per frame, ten a second, while not paused. *)
+        let state =
+          if state.paused then state
+          else (
+            Matrix.request_redraw app;
+            let w, h = state.dim in
+            let life = step (w, h) state.life in
+            { state with life; generation = state.generation + 1 })
+        in
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            render state { grid; hits = Matrix.hits app; cols; rows });
+        loop state
+    | Event _ | Timer _ | Posted _ -> loop state
+  in
+  loop (resize_state (initial_state ~cols:1 ~rows:1) ~cols ~rows)

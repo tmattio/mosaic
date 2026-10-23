@@ -404,82 +404,95 @@ let draw_box grid ~x ~y ~width ~height ~title =
     ~y:(y + height - 1)
     ~text:"┘"
 
+let handle_key state = function
+  | Key { key = Char u; _ } -> (
+      let c = Uchar.to_int u in
+      match if c < 256 then Char.chr c else '\000' with
+      | ' ' ->
+          let samples =
+            generate_waveform (current_waveform state)
+              ~frequency:state.frequency ~duration:state.duration
+              ~volume:state.volume
+          in
+          play_audio samples;
+          state
+      | 'a' | 'A' ->
+          let freq = min 2000.0 (state.frequency *. 1.1) in
+          regenerate_samples { state with frequency = freq }
+      | 'z' | 'Z' ->
+          let freq = max 55.0 (state.frequency /. 1.1) in
+          regenerate_samples { state with frequency = freq }
+      | 's' | 'S' ->
+          let vol = min 1.0 (state.volume +. 0.1) in
+          regenerate_samples { state with volume = vol }
+      | 'x' | 'X' ->
+          let vol = max 0.1 (state.volume -. 0.1) in
+          regenerate_samples { state with volume = vol }
+      | 'd' | 'D' ->
+          let dur = min 2.0 (state.duration +. 0.1) in
+          regenerate_samples { state with duration = dur }
+      | 'c' | 'C' ->
+          let dur = max 0.1 (state.duration -. 0.1) in
+          regenerate_samples { state with duration = dur }
+      | _ -> state)
+  | Key { key = Tab; _ } ->
+      let idx = (state.waveform_idx + 1) mod Array.length all_waveforms in
+      regenerate_samples { state with waveform_idx = idx }
+  | _ -> state
+
+let draw grid ~cols ~rows state =
+  Grid.clear ~color:Ansi.Color.black grid;
+  draw_header grid ~cols;
+  (* Layout *)
+  let control_width = 35 in
+  let chart_x = control_width + 2 in
+  let chart_width = cols - chart_x - 1 in
+  let harmonics_height = 10 in
+  let controls_height = rows - 2 - harmonics_height in
+  let waveform_height = (rows - 4) * 2 / 3 in
+  let sparkline_height = rows - 4 - waveform_height - 1 in
+  (* Controls panel - top left *)
+  draw_box grid ~x:0 ~y:1 ~width:control_width ~height:controls_height
+    ~title:"Controls";
+  draw_controls grid ~x:2 ~y:3 state;
+  (* Harmonic spectrum - bottom left *)
+  let harmonics_y = 1 + controls_height in
+  draw_box grid ~x:0 ~y:harmonics_y ~width:control_width
+    ~height:harmonics_height ~title:"Harmonics";
+  draw_spectrum grid ~x:2 ~y:(harmonics_y + 1) ~width:(control_width - 4)
+    ~height:(harmonics_height - 3) state;
+  (* Waveform chart - top right *)
+  draw_box grid ~x:chart_x ~y:1 ~width:chart_width ~height:(waveform_height + 2)
+    ~title:"Waveform";
+  draw_waveform_chart grid ~x:(chart_x + 1) ~y:2 ~width:(chart_width - 2)
+    ~height:waveform_height state;
+  (* Amplitude envelope - bottom right *)
+  let spark_y = waveform_height + 3 in
+  draw_box grid ~x:chart_x ~y:spark_y ~width:chart_width
+    ~height:(sparkline_height + 2) ~title:"Amplitude";
+  draw_sparkline grid ~x:(chart_x + 1) ~y:(spark_y + 1) ~width:(chart_width - 2)
+    ~height:sparkline_height state
+
 let () =
-  let app =
-    Matrix.create ~target_fps:(Some 30.) ~mouse_enabled:false
-      ~debug_overlay:false ()
+  let config = Matrix.config ~mouse:`Off () in
+  Matrix.run ~config @@ fun app ->
+  let rec loop state =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Event (Key { key = Char u; _ })
+      when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
+        ()
+    | Event event ->
+        Matrix.request_redraw app;
+        loop (handle_key state event)
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            draw grid ~cols ~rows state);
+        loop state
+    | Timer _ | Posted _ -> loop state
   in
-  let state = ref (initial_state ()) in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt:_ -> ())
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Char u; _ } -> (
-          let c = Uchar.to_int u in
-          match Char.chr c with
-          | 'q' | 'Q' -> Matrix.stop app
-          | ' ' ->
-              let samples =
-                generate_waveform (current_waveform !state)
-                  ~frequency:!state.frequency ~duration:!state.duration
-                  ~volume:!state.volume
-              in
-              play_audio samples
-          | 'a' | 'A' ->
-              let freq = min 2000.0 (!state.frequency *. 1.1) in
-              state := regenerate_samples { !state with frequency = freq }
-          | 'z' | 'Z' ->
-              let freq = max 55.0 (!state.frequency /. 1.1) in
-              state := regenerate_samples { !state with frequency = freq }
-          | 's' | 'S' ->
-              let vol = min 1.0 (!state.volume +. 0.1) in
-              state := regenerate_samples { !state with volume = vol }
-          | 'x' | 'X' ->
-              let vol = max 0.1 (!state.volume -. 0.1) in
-              state := regenerate_samples { !state with volume = vol }
-          | 'd' | 'D' ->
-              let dur = min 2.0 (!state.duration +. 0.1) in
-              state := regenerate_samples { !state with duration = dur }
-          | 'c' | 'C' ->
-              let dur = max 0.1 (!state.duration -. 0.1) in
-              state := regenerate_samples { !state with duration = dur }
-          | _ -> ())
-      | Key { key = Tab; _ } ->
-          let idx = (!state.waveform_idx + 1) mod Array.length all_waveforms in
-          state := regenerate_samples { !state with waveform_idx = idx }
-      | _ -> ())
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let cols, rows = Matrix.size app in
-      Grid.clear ~color:Ansi.Color.black grid;
-      draw_header grid ~cols;
-      (* Layout *)
-      let control_width = 35 in
-      let chart_x = control_width + 2 in
-      let chart_width = cols - chart_x - 1 in
-      let harmonics_height = 10 in
-      let controls_height = rows - 2 - harmonics_height in
-      let waveform_height = (rows - 4) * 2 / 3 in
-      let sparkline_height = rows - 4 - waveform_height - 1 in
-      (* Controls panel - top left *)
-      draw_box grid ~x:0 ~y:1 ~width:control_width ~height:controls_height
-        ~title:"Controls";
-      draw_controls grid ~x:2 ~y:3 !state;
-      (* Harmonic spectrum - bottom left *)
-      let harmonics_y = 1 + controls_height in
-      draw_box grid ~x:0 ~y:harmonics_y ~width:control_width
-        ~height:harmonics_height ~title:"Harmonics";
-      draw_spectrum grid ~x:2 ~y:(harmonics_y + 1) ~width:(control_width - 4)
-        ~height:(harmonics_height - 3) !state;
-      (* Waveform chart - top right *)
-      draw_box grid ~x:chart_x ~y:1 ~width:chart_width
-        ~height:(waveform_height + 2) ~title:"Waveform";
-      draw_waveform_chart grid ~x:(chart_x + 1) ~y:2 ~width:(chart_width - 2)
-        ~height:waveform_height !state;
-      (* Amplitude envelope - bottom right *)
-      let spark_y = waveform_height + 3 in
-      draw_box grid ~x:chart_x ~y:spark_y ~width:chart_width
-        ~height:(sparkline_height + 2) ~title:"Amplitude";
-      draw_sparkline grid ~x:(chart_x + 1) ~y:(spark_y + 1)
-        ~width:(chart_width - 2) ~height:sparkline_height !state)
+  loop (initial_state ())

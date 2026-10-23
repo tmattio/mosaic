@@ -167,36 +167,43 @@ let draw_ui grid ~cols ~rows =
     ~y:(rows - 1) ~text:help
 
 let () =
-  let app =
-    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:false
-      ~debug_overlay:true ()
+  let config = Matrix.config ~mouse:`Off ~debug_overlay:true () in
+  Matrix.run ~config @@ fun app ->
+  let rec loop state last =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Event (Key { key = Char u; _ }) when Uchar.to_int u = Char.code ' ' ->
+        (* Reset ball with random velocity *)
+        loop
+          {
+            state with
+            ball_x = 0.0;
+            ball_y = 0.0;
+            ball_vx = -50.0 +. Random.float 100.0;
+            ball_vy = -50.0 +. Random.float 100.0;
+          }
+          last
+    | Frame ->
+        (* Each frame moves the scene by the time since the last, and asks
+           for the next. *)
+        let now = Matrix.now app in
+        let state = update ~dt:(Float.of_int (now - last) *. 1e-9) state in
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            Grid.clear ~color:Ansi.Color.black grid;
+            let cx = float_of_int cols /. 2.0 in
+            let cy = float_of_int rows /. 2.0 in
+            let scale =
+              Float.min (float_of_int cols /. 25.0) (float_of_int rows /. 12.0)
+            in
+            draw_hexagon grid ~cx ~cy ~scale ~angle:state.hex_angle;
+            draw_ball grid ~cx ~cy ~scale ~x:state.ball_x ~y:state.ball_y;
+            draw_ui grid ~cols ~rows);
+        Matrix.request_redraw app;
+        loop state now
+    | Event _ | Timer _ | Posted _ -> loop state last
   in
-  let state = ref initial_state in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt -> state := update ~dt !state)
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Char u; _ } when Uchar.to_int u = Char.code ' ' ->
-          (* Reset ball with random velocity *)
-          state :=
-            {
-              !state with
-              ball_x = 0.0;
-              ball_y = 0.0;
-              ball_vx = -50.0 +. Random.float 100.0;
-              ball_vy = -50.0 +. Random.float 100.0;
-            }
-      | _ -> ())
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let cols, rows = Matrix.size app in
-      Grid.clear ~color:Ansi.Color.black grid;
-      let cx = float_of_int cols /. 2.0 in
-      let cy = float_of_int rows /. 2.0 in
-      let scale =
-        Float.min (float_of_int cols /. 25.0) (float_of_int rows /. 12.0)
-      in
-      draw_hexagon grid ~cx ~cy ~scale ~angle:!state.hex_angle;
-      draw_ball grid ~cx ~cy ~scale ~x:!state.ball_x ~y:!state.ball_y;
-      draw_ui grid ~cols ~rows)
+  loop initial_state (Matrix.now app)

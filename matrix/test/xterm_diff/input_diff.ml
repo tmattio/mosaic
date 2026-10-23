@@ -85,9 +85,7 @@ let agent_raw path =
   write_file path (escape (Buffer.contents got) ^ "\n")
 
 let agent_caps path =
-  let app = Matrix.create () in
-  let caps = Matrix.capabilities app in
-  Matrix.close app;
+  let caps = Matrix.run Matrix.capabilities in
   write_file path
     (String.concat ""
        (List.map (fun (k, v) -> Printf.sprintf "%s=%s\n" k v) (show_caps caps)))
@@ -95,17 +93,26 @@ let agent_caps path =
 (* Records each event the runtime delivers, with the time, until [duration]
    has passed. *)
 let agent_keys path =
-  let app = Matrix.create ~target_fps:None () in
   let oc = open_out_bin path in
   write_file (path ^ ".ready") "";
-  let stop = Matrix.now app +. !duration in
-  Matrix.schedule_wakeup app (Some stop);
-  Matrix.run app
-    ~on_frame:(fun app ~dt:_ -> if Matrix.now app >= stop then Matrix.stop app)
-    ~on_input:(fun _ event ->
-      Printf.fprintf oc "%.3f\t%s\n%!" (Unix.gettimeofday ())
-        (Format.asprintf "%a" Matrix.pp_event event))
-    ~on_render:ignore;
+  Matrix.run (fun app ->
+      let stop =
+        Matrix.at app (Matrix.now app + Float.to_int (!duration *. 1e9))
+      in
+      let rec loop () =
+        match Matrix.next app with
+        | Stopped -> ()
+        | Timer t when t = stop -> ()
+        | Event event ->
+            Printf.fprintf oc "%.3f\t%s\n%!" (Unix.gettimeofday ())
+              (Format.asprintf "%a" Matrix.pp_event event);
+            loop ()
+        | Frame ->
+            Matrix.draw app ignore;
+            loop ()
+        | Timer _ | Posted _ -> loop ()
+      in
+      loop ());
   close_out oc
 
 (* {1 The parent: starts xterm on the agent} *)

@@ -17,9 +17,9 @@
     default, 256-color, truecolor and translucent colors; hyperlinks; background
     fills and clears; cursor moves, shapes and visibility; terminals with
     synchronized output or [explicit_cursor_positioning]; resizes between
-    frames, growing and shrinking; and suspensions, during which a program
-    writes rows. While suspended, the screen must be as {!Matrix.suspend} leaves
-    it, the cursor shown.
+    frames, growing and shrinking; and releases of the terminal, during which a
+    program writes rows. While released, the screen must be as {!Matrix.release}
+    leaves it, the cursor shown.
 
     {b Alternate screen.} The frame is the whole screen, and scroll hints, true
     or not, never change what it shows. The VTE's replies are ignored.
@@ -36,8 +36,8 @@
     - the transcript is everything above it, the scrollback and then the rows
       above the live region: the shell's output, then each static row, in order,
       each exactly once, as {!Matrix.static_replace} and {!Matrix.static_clear}
-      leave it, and the rows of programs run while suspended. Nothing else is
-      there but rows the terminal itself pushed into its scrollback as it
+      leave it, and the rows of programs run while it is released. Nothing else
+      is there but rows the terminal itself pushed into its scrollback as it
       shrank.
 
     The VTE departs from xterm in places (vte.mli, Printing). Two concern
@@ -80,9 +80,9 @@ type static =
   | Replace of { rows : int; preserve : bool }  (** [Matrix.static_replace] *)
   | Clear_static  (** [Matrix.static_clear] *)
 
-(* The application suspends, and a program run meanwhile writes [child]
-   lines before it resumes. *)
-type suspend = { leave_alt : bool; child : int }
+(* The application releases the terminal, and a program run meanwhile writes
+   [child] lines before it takes the terminal back. *)
+type suspend = { child : int }
 
 type frame = {
   size : (int * int) option;  (** A terminal resize before the frame. *)
@@ -286,11 +286,7 @@ let frame_gen ~mode ~max_cols ~max_rows ~min_cols ~min_rows (cols, rows) =
     frequency
       [
         (6, pure None);
-        ( 1,
-          map2
-            (fun leave_alt child -> Some { leave_alt; child })
-            (match mode with `Alt -> bool | `Primary -> pure false)
-            (int_range 0 (rows + 1)) );
+        (1, map (fun child -> Some { child }) (int_range 0 (rows + 1)));
       ]
   in
   let* statics =
@@ -433,10 +429,7 @@ let pp_frame fmt f =
   Format.fprintf fmt "@[<v 2>frame";
   Option.iter (fun (c, r) -> Format.fprintf fmt "@,resize %dx%d" c r) f.size;
   Option.iter
-    (fun { leave_alt; child } ->
-      Format.fprintf fmt "@,suspend%s, %d child rows"
-        (if leave_alt then " leaving alt" else "")
-        child)
+    (fun { child } -> Format.fprintf fmt "@,release, %d child rows" child)
     f.suspend;
   List.iter
     (function
@@ -590,7 +583,8 @@ type run = {
   frame_bytes : Buffer.t;  (** Bytes written since the last check. *)
   decscusr : Ansi.Parser.t;
   mutable last_shape : int option;
-  mutable app : Matrix.app option;
+  mutable winch : bool;
+      (** The terminal resized since the runtime last looked. *)
   mutable pending : frame list;
   mutable current : frame option;
   mutable drawn : (Grid.t * cursor) option;
@@ -722,61 +716,57 @@ let check r app =
       r.drawn <- None;
       Buffer.clear r.frame_bytes
 
-(* What a program run while the application is suspended finds: in primary
-   mode the transcript, and below it the live region erased, the cursor at its
-   start; in alt mode an erased screen, the cursor at its top left, or the
-   primary screen when the application left the alternate one. The cursor
-   shows. *)
-let check_suspended r app ~leave_alt =
+(* What a program run while the terminal is released finds: in primary mode
+   the transcript, and below it the live region erased, the cursor at its
+   start; in alt mode the primary screen. The cursor shows. *)
+let check_released r app =
   let cols, rows = r.size in
   let modes = Vte.modes r.vte in
-  if not modes.cursor_visible then fail_frame r "suspended with a hidden cursor";
-  let erased_from top =
-    let v = Vte.grid r.vte in
-    for y = top to rows - 1 do
-      for x = 0 to cols - 1 do
-        let vi = (y * cols) + x in
-        if not (same_cell blank 0 v vi) then
-          fail_frame r "suspended: row %d col %d shows %s" y x (cell_desc v vi)
-      done
-    done;
-    if Vte.cursor_pos r.vte <> (top, 0) then
-      fail_frame r "suspended: cursor at %d,%d, expected %d,0"
-        (fst (Vte.cursor_pos r.vte))
-        (snd (Vte.cursor_pos r.vte))
-        top
-  in
+  if not modes.cursor_visible then fail_frame r "released with a hidden cursor";
   match r.case.mode with
-  | `Primary -> erased_from (fst (live_region r app))
+  | `Primary ->
+      let top = fst (live_region r app) in
+      let v = Vte.grid r.vte in
+      for y = top to rows - 1 do
+        for x = 0 to cols - 1 do
+          let vi = (y * cols) + x in
+          if not (same_cell blank 0 v vi) then
+            fail_frame r "released: row %d col %d shows %s" y x (cell_desc v vi)
+        done
+      done;
+      if Vte.cursor_pos r.vte <> (top, 0) then
+        fail_frame r "released: cursor at %d,%d, expected %d,0"
+          (fst (Vte.cursor_pos r.vte))
+          (snd (Vte.cursor_pos r.vte))
+          top
   | `Alt ->
-      if leave_alt then (
-        if modes.alternate_screen then
-          fail_frame r "suspended on the alternate screen")
-      else erased_from 0
+      if modes.alternate_screen then
+        fail_frame r "released on the alternate screen"
 
-let start_frame r app ~on_event (frame : frame) =
+let start_frame r app (frame : frame) =
   (match frame.size with
   | Some (cols, rows) when (cols, rows) <> r.size ->
       let before = Vte.scrollback_size r.vte in
       Vte.resize r.vte ~rows ~cols;
       r.pushed <- r.pushed + max 0 (Vte.scrollback_size r.vte - before);
       r.size <- (cols, rows);
-      on_event (Matrix.Resize (cols, rows))
+      r.winch <- true
   | _ -> ());
   Option.iter
-    (fun { leave_alt; child } ->
-      Matrix.suspend ~leave_alt app;
-      check_suspended r app ~leave_alt;
-      for _ = 1 to child do
-        let line = Printf.sprintf "C%d" r.tag in
-        r.tag <- r.tag + 1;
-        ignore (Vte.feed_string r.vte (line ^ "\r\n") : string);
-        if r.case.mode = `Primary then r.transcript <- line :: r.transcript
-      done;
-      Matrix.resume app)
+    (fun { child } ->
+      Matrix.release app (fun () ->
+          check_released r app;
+          for _ = 1 to child do
+            let line = Printf.sprintf "C%d" r.tag in
+            r.tag <- r.tag + 1;
+            ignore (Vte.feed_string r.vte (line ^ "\r\n") : string);
+            if r.case.mode = `Primary then r.transcript <- line :: r.transcript
+          done))
     frame.suspend;
   let tagged rows =
-    let cols, _ = r.size in
+    (* The runtime applies a resize when it next draws: until then its
+       width is the one static rows are written at. *)
+    let cols, _ = Matrix.full_size app in
     let grid = static_grid ~cols ~tag:r.tag rows in
     let tags = List.init rows (fun y -> Printf.sprintf "S%d" (r.tag + y)) in
     r.tag <- r.tag + rows;
@@ -813,11 +803,10 @@ let start_frame r app ~on_event (frame : frame) =
   end;
   Matrix.request_redraw app
 
-let render r app =
+let render r app grid =
   match r.current with
   | None -> ()
   | Some frame ->
-      let grid = Matrix.grid app in
       List.iter (draw grid) frame.ops;
       let c = frame.cursor in
       let screen = Matrix.screen app in
@@ -846,7 +835,7 @@ let run_case case =
       frame_bytes = Buffer.create 1024;
       decscusr = Ansi.Parser.create ();
       last_shape = None;
-      app = None;
+      winch = false;
       pending = case.frames;
       current = None;
       drawn = None;
@@ -882,30 +871,29 @@ let run_case case =
     Buffer.add_string r.replies rest;
     if n = 0 then -1 else n
   in
-  let now = ref 0. in
-  let wait ~timeout ~on_event =
-    if Buffer.length r.replies > 0 then true
-    else
-      match r.app with
-      | None ->
-          now := !now +. Option.value timeout ~default:0.;
-          false
-      | Some app ->
-          check r app;
-          (match r.pending with
-          | [] -> Matrix.stop app
-          | frame :: rest ->
-              r.pending <- rest;
-              start_frame r app ~on_event frame);
-          Buffer.length r.replies > 0
+  let now = ref 0 in
+  (* The clock moves only to the deadline the loop waits for, a frame's. *)
+  let wait ~until ~reading =
+    if reading && Buffer.length r.replies > 0 then true
+    else (
+      (match until with
+      | Some until -> now := max !now until
+      | None -> failwith "the loop would wait forever");
+      false)
   in
   let backend : Matrix.Backend.t =
     {
       now = (fun () -> !now);
+      wait;
       wake = ignore;
+      take_signals =
+        (fun () ->
+          if r.winch then (
+            r.winch <- false;
+            [ Winch ])
+          else []);
       write_output;
       read_input;
-      wait;
       input_is_tty = primary;
       output_is_tty = true;
       terminal_size = (fun () -> r.size);
@@ -916,17 +904,41 @@ let run_case case =
       env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
     }
   in
-  let app =
-    Matrix.attach ~mode:case.mode ~target_fps:None ~mouse_enabled:false
-      ~bracketed_paste:false ~kitty_keyboard:`Off ~exit_on_ctrl_c:false
-      ~input_timeout:None ~resize_debounce:None ~min_tui_height:case.min_live
-      ~pace_redraws:false ~caps:(capabilities case) ~backend ()
+  let config =
+    Matrix.config ~mode:case.mode ~mouse:`Off ~bracketed_paste:false
+      ~kitty_keyboard:`Off ~min_tui_height:case.min_live
+      ~caps:(capabilities case) ()
   in
-  r.app <- Some app;
-  Matrix.run app
-    ~primary_required_rows:(fun _ ->
-      Option.bind r.current (fun frame -> frame.required))
-    ~on_render:(render r)
+  Matrix.run ~backend ~config (fun app ->
+      (* Each frame of the case is set up, drawn and checked in turn. *)
+      let next_frame () =
+        match r.pending with
+        | [] -> false
+        | frame :: rest ->
+            r.pending <- rest;
+            start_frame r app frame;
+            true
+      in
+      let rec loop () =
+        match Matrix.next app with
+        | Frame ->
+            Matrix.draw app
+              ?primary_required_rows:
+                (Option.bind r.current (fun frame -> frame.required))
+              (render r app);
+            check r app;
+            if next_frame () then loop ()
+        | Stopped -> ()
+        | Event _ | Timer _ | Posted _ -> loop ()
+      in
+      (* The run's first frame is drawn before the case's. *)
+      let rec first () =
+        match Matrix.next app with
+        | Frame -> Matrix.draw app ignore
+        | _ -> first ()
+      in
+      first ();
+      if next_frame () then loop ())
 
 let () =
   run "matrix.render.props"

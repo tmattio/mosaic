@@ -16,6 +16,6 @@ dune exec ./matrix/examples/09-snake/main.exe
 
 ## Highlights
 
-- Fixed-rate game tick implemented via time accumulation in `on_frame`.
+- Fixed-rate game tick on a timer (`Matrix.at`), re-armed at every tick.
 - Demonstrates boundary collision detection and self-collision logic.
 - Dynamic resizing resets the game to fit the new terminal dimensions.

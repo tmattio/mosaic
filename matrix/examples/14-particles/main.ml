@@ -243,6 +243,9 @@ let burst_at state ~x ~y ~count =
 
 let handle_input state event =
   match event with
+  | Key k when Input.Keystroke.is_interrupt k ->
+      (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+      `Quit
   | Key { key = Escape; _ } -> `Quit
   | Key { key = Char u; _ } -> (
       let c = Uchar.to_int u in
@@ -321,31 +324,31 @@ let create_state ~cols ~rows =
 
 let () =
   Random.self_init ();
-  let app =
-    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:true ~debug_overlay:true
-      ()
+  let config = Matrix.config ~debug_overlay:true () in
+  Matrix.run ~config @@ fun app ->
+  let cols, rows = Matrix.size app in
+  let state = create_state ~cols ~rows in
+  let rec loop last =
+    match Matrix.next app with
+    | Stopped -> ()
+    | Event event -> (
+        match handle_input state event with
+        | `Quit -> ()
+        | `Continue -> loop last)
+    | Frame ->
+        (* Each frame moves the particles by the time since the last, at most
+           a tenth of a second, and asks for the next. *)
+        let now = Matrix.now app in
+        let dt = Float.min (Float.of_int (now - last) *. 1e-9) 0.1 in
+        spawn_from_emitters state dt;
+        update_particles state dt;
+        Matrix.draw app (fun grid ->
+            let _, rows = Matrix.size app in
+            Grid.clear ~color:(Color.of_rgb 10 10 20) grid;
+            draw_particles grid state;
+            draw_ui grid state ~rows);
+        Matrix.request_redraw app;
+        loop now
+    | Timer _ | Posted _ -> loop last
   in
-  let state = create_state ~cols:1 ~rows:1 in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt ->
-      let dt = Float.min dt 0.1 in
-      spawn_from_emitters state dt;
-      update_particles state dt)
-    ~on_input:(fun app event ->
-      match handle_input state event with
-      | `Quit -> Matrix.stop app
-      | `Continue -> ())
-    ~on_resize:(fun _ ~cols ~rows ->
-      List.iter
-        (fun e ->
-          let e' =
-            { e with x = Float.of_int (cols / 2); y = Float.of_int (rows / 2) }
-          in
-          ignore e')
-        state.emitters)
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let _, rows = Matrix.size app in
-      Grid.clear ~color:(Color.of_rgb 10 10 20) grid;
-      draw_particles grid state;
-      draw_ui grid state ~rows)
+  loop (Matrix.now app)

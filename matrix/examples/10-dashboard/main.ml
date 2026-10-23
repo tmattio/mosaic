@@ -274,60 +274,57 @@ let draw_logs grid ~x ~y ~width ~height state =
         Grid.draw_text ~style:msg_style grid ~x:(x + 13) ~y:row ~text:msg))
     logs_to_show
 
+let scroll state delta =
+  let max_scroll = max 0 (List.length state.logs - 10) in
+  {
+    state with
+    scroll_offset = max 0 (min max_scroll (state.scroll_offset + delta));
+  }
+
 let () =
   Random.self_init ();
-  let app =
-    Matrix.create ~target_fps:(Some 30.) ~mouse_enabled:false
-      ~debug_overlay:false ()
+  let config = Matrix.config ~fps:30. ~mouse:`Off () in
+  Matrix.run ~config @@ fun app ->
+  let rec loop state last =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Event (Key { key = Char u; _ })
+      when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
+        ()
+    | Event (Key { key = Up; _ }) -> loop (scroll state (-1)) last
+    | Event (Key { key = Down; _ }) -> loop (scroll state 1) last
+    | Event (Key { key = Page_up; _ }) -> loop (scroll state (-10)) last
+    | Event (Key { key = Page_down; _ }) -> loop (scroll state 10) last
+    | Frame ->
+        (* The metrics move on every frame, thirty a second. *)
+        let now = Matrix.now app in
+        let state = update ~dt:(Float.of_int (now - last) *. 1e-9) state in
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            Grid.clear ~color:Ansi.Color.black grid;
+            draw_header grid ~cols;
+            (* Layout: left panel (metrics + logs), right panel (stats) *)
+            let right_panel_width = 26 in
+            let left_width = cols - right_panel_width - 1 in
+            let metrics_height = 6 in
+            (* Left side: Metrics box *)
+            draw_box grid ~x:0 ~y:1 ~width:left_width ~height:metrics_height
+              ~title:"System Metrics";
+            draw_metrics grid ~x:0 ~y:1 ~width:left_width state;
+            (* Left side: Logs box *)
+            let logs_y = 1 + metrics_height in
+            let logs_height = rows - logs_y in
+            draw_logs grid ~x:0 ~y:logs_y ~width:left_width ~height:logs_height
+              state;
+            (* Right side: Stats panel *)
+            let stats_height = 11 in
+            draw_stats_panel grid ~x:left_width ~y:1 ~width:right_panel_width
+              ~height:stats_height state);
+        Matrix.request_redraw app;
+        loop state now
+    | Event _ | Timer _ | Posted _ -> loop state last
   in
-  let state = ref (initial_state ()) in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt -> state := update ~dt !state)
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Char u; _ }
-        when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
-          Matrix.stop app
-      | Key { key = Up; _ } ->
-          state :=
-            { !state with scroll_offset = max 0 (!state.scroll_offset - 1) }
-      | Key { key = Down; _ } ->
-          let max_scroll = max 0 (List.length !state.logs - 10) in
-          state :=
-            {
-              !state with
-              scroll_offset = min max_scroll (!state.scroll_offset + 1);
-            }
-      | Key { key = Page_up; _ } ->
-          state :=
-            { !state with scroll_offset = max 0 (!state.scroll_offset - 10) }
-      | Key { key = Page_down; _ } ->
-          let max_scroll = max 0 (List.length !state.logs - 10) in
-          state :=
-            {
-              !state with
-              scroll_offset = min max_scroll (!state.scroll_offset + 10);
-            }
-      | _ -> ())
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let cols, rows = Matrix.size app in
-      Grid.clear ~color:Ansi.Color.black grid;
-      draw_header grid ~cols;
-      (* Layout: left panel (metrics + logs), right panel (stats) *)
-      let right_panel_width = 26 in
-      let left_width = cols - right_panel_width - 1 in
-      let metrics_height = 6 in
-      (* Left side: Metrics box *)
-      draw_box grid ~x:0 ~y:1 ~width:left_width ~height:metrics_height
-        ~title:"System Metrics";
-      draw_metrics grid ~x:0 ~y:1 ~width:left_width !state;
-      (* Left side: Logs box *)
-      let logs_y = 1 + metrics_height in
-      let logs_height = rows - logs_y in
-      draw_logs grid ~x:0 ~y:logs_y ~width:left_width ~height:logs_height !state;
-      (* Right side: Stats panel *)
-      let stats_height = 11 in
-      draw_stats_panel grid ~x:left_width ~y:1 ~width:right_panel_width
-        ~height:stats_height !state)
+  loop (initial_state ()) (Matrix.now app)

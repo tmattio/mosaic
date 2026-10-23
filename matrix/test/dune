@@ -75,6 +75,18 @@
  (modules test_runtime)
  (libraries windtrap matrix matrix.vte unix threads.posix))
 
+(executable
+ (name runtime_child)
+ (modules runtime_child)
+ (libraries matrix unix))
+
+(test
+ (name test_runtime_pty)
+ (package matrix)
+ (modules test_runtime_pty)
+ (deps runtime_child.exe)
+ (libraries windtrap matrix.pty unix))
+
 (test
  (name test_image)
  (package matrix)

@@ -560,7 +560,7 @@ let set_raw fd =
   { termios; iexten }
 
 let restore fd saved =
-  Unix.tcsetattr fd Unix.TCSANOW saved.termios;
+  Unix.tcsetattr fd Unix.TCSADRAIN saved.termios;
   set_iexten fd saved.iexten
 
 let size fd = try get_size fd with _ -> (80, 24)

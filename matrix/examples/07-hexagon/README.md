@@ -17,4 +17,5 @@ dune exec ./matrix/examples/07-hexagon/main.exe
 
 - Physics simulation with gravity, bounce damping, and rotating reference frame.
 - Bresenham line drawing for the hexagon edges.
-- Demonstrates `on_frame` delta-time updates for smooth animation.
+- Moves the scene by the time since the last frame, and asks for the next
+  frame from each one.

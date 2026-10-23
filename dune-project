@@ -42,7 +42,6 @@
   (ocaml
    (>= 5.4))
   dune
-  mtime
   (windtrap :with-test)
   (thumper :with-test))
  (tags
@@ -66,15 +65,14 @@
 (package
  (name matrix-eio)
  (allow_empty)
- (synopsis "Eio-based runtime for the Matrix terminal library")
+ (synopsis "Eio backend for the Matrix terminal library")
  (description
-  "Provides an Eio-native event loop for Matrix terminal applications, replacing Unix.select with Eio fibers and structured concurrency.")
+  "Provides an Eio backend for Matrix terminal applications: while a run waits for the terminal, the domain runs the program's other fibers.")
  (depends
   (ocaml
    (>= 5.4))
   dune
   matrix
-  mtime
   (eio
    (>= 1.2))
   (eio_main :with-test)

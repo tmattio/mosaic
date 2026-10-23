@@ -169,57 +169,59 @@ let handle_key state (key : Input.Keystroke.key) (mods : Input.Keystroke.mods) =
       | _ -> state)
   | _ -> state
 
+(* The canvas keeps what was drawn, at the terminal's size: a resize keeps
+   the part of it that still fits. *)
+let resize_canvas canvas ~cols ~rows =
+  let grid = Grid.create ~width:cols ~height:rows () in
+  Grid.clear ~color:Ansi.Color.black grid;
+  Option.iter
+    (fun old ->
+      Grid.blit_region ~src:old ~dst:grid ~src_x:0 ~src_y:0
+        ~width:(Grid.width old) ~height:(Grid.height old) ~dst_x:0 ~dst_y:0)
+    canvas;
+  grid
+
 let () =
-  let app =
-    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:true
-      ~debug_overlay:false ()
+  Matrix.run @@ fun app ->
+  let cols, rows = Matrix.size app in
+  let canvas = ref (resize_canvas None ~cols ~rows) in
+  let rec loop state =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Event event ->
+        Matrix.request_redraw app;
+        loop (handle_event state event)
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            Grid.blit ~src:!canvas ~dst:grid;
+            draw_palette grid ~cols ~rows state;
+            draw_help grid ~rows state);
+        loop state
+    | Timer _ | Posted _ -> loop state
+  and handle_event state = function
+    | Key { key = Char u; mods; _ }
+      when (Uchar.to_int u = Char.code 'c' || Uchar.to_int u = Char.code 'C')
+           && not mods.ctrl ->
+        Grid.clear ~color:Ansi.Color.black !canvas;
+        state
+    | Key { key; mods; _ } -> handle_key state key mods
+    | Mouse { x; y; kind = Press Left | Motion (Some Left); _ } ->
+        draw_brush !canvas ~cx:x ~cy:y ~brush:state.brush;
+        state
+    | Mouse { x; y; kind = Press Right | Motion (Some Right); _ } ->
+        (* Erase with right click *)
+        let brush =
+          { state.brush with color = Ansi.Color.black; alpha = 1.0 }
+        in
+        draw_brush !canvas ~cx:x ~cy:y ~brush;
+        state
+    | Resize (cols, rows) ->
+        canvas := resize_canvas (Some !canvas) ~cols ~rows;
+        state
+    | _ -> state
   in
-  let state = ref initial_state in
-  let canvas_grid = ref None in
-  Matrix.run app
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Char u; mods; _ }
-        when (Uchar.to_int u = Char.code 'c' || Uchar.to_int u = Char.code 'C')
-             && not mods.ctrl -> (
-          (* Clear canvas *)
-          match !canvas_grid with
-          | Some cg -> Grid.clear ~color:Ansi.Color.black cg
-          | None -> ())
-      | Key { key; mods; _ } -> state := handle_key !state key mods
-      | Mouse { x; y; kind = Press Left | Motion (Some Left); _ } -> (
-          match !canvas_grid with
-          | Some cg -> draw_brush cg ~cx:x ~cy:y ~brush:!state.brush
-          | None -> ())
-      | Mouse { x; y; kind = Press Right | Motion (Some Right); _ } -> (
-          (* Erase with right click *)
-          match !canvas_grid with
-          | Some cg ->
-              let erase_brush =
-                { !state.brush with color = Ansi.Color.black; alpha = 1.0 }
-              in
-              draw_brush cg ~cx:x ~cy:y ~brush:erase_brush
-          | None -> ())
-      | _ -> ())
-    ~on_resize:(fun _ ~cols ~rows ->
-      (* Preserve canvas content on resize *)
-      let old_grid = !canvas_grid in
-      let new_grid = Grid.create ~width:cols ~height:rows () in
-      Grid.clear ~color:Ansi.Color.black new_grid;
-      (match old_grid with
-      | Some og ->
-          Grid.blit_region ~src:og ~dst:new_grid ~src_x:0 ~src_y:0
-            ~width:(Grid.width og) ~height:(Grid.height og) ~dst_x:0 ~dst_y:0
-      | None -> ());
-      canvas_grid := Some new_grid)
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let cols, rows = Matrix.size app in
-      (* Copy canvas to render grid *)
-      (match !canvas_grid with
-      | Some cg -> Grid.blit ~src:cg ~dst:grid
-      | None -> Grid.clear ~color:Ansi.Color.black grid);
-      (* Draw UI overlays *)
-      draw_palette grid ~cols ~rows !state;
-      draw_help grid ~rows !state)
+  loop initial_state

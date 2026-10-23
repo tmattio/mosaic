@@ -193,30 +193,23 @@ let draw _app ctx () =
   let img = overlay [ bg; content ] in
   draw ~hits:ctx.hits img ctx.grid
 
-let update app event () =
-  match event with
-  | Key { key = Escape; _ } ->
-      stop app;
-      `Stop
-  | Key { key = Char uchar; mods; _ } ->
-      let code = Uchar.to_int uchar in
-      let ctrl_c =
-        mods.ctrl && (code = Char.code 'c' || code = Char.code 'C')
-      in
-      if ctrl_c then (
-        stop app;
-        `Stop)
-      else `Continue ()
-  | _ -> `Continue ()
+(* Raw mode makes Ctrl+C a key: this program quits on it, and on Escape. *)
+let quits : event -> bool = function
+  | Key { key = Escape; _ } -> true
+  | Key k -> Input.Keystroke.is_interrupt k
+  | _ -> false
 
 let () =
-  let app = Matrix.create () in
-  Matrix.run app
-    ~on_input:(fun app event ->
-      match update app event () with `Continue () -> () | `Stop -> ())
-    ~on_render:(fun app ->
-      let cols, rows = Matrix.size app in
-      let ctx =
-        { grid = Matrix.grid app; hits = Matrix.hits app; cols; rows }
-      in
-      draw app ctx ())
+  Matrix.run @@ fun app ->
+  let rec loop () =
+    match Matrix.next app with
+    | Stopped -> ()
+    | Event event when quits event -> ()
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            draw app { grid; hits = Matrix.hits app; cols; rows } ());
+        loop ()
+    | Event _ | Timer _ | Posted _ -> loop ()
+  in
+  loop ()

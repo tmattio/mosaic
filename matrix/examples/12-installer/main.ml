@@ -159,58 +159,51 @@ let render grid state =
   Grid.draw_text ~style:help_style grid ~x:0 ~y:(help_y + 1) ~text:time_text;
   ignore newly_done
 
-let () =
-  let app =
-    Matrix.create ~mode:`Primary ~target_fps:(Some 30.) ~mouse_enabled:false
-      ~debug_overlay:false ()
-  in
-  let state = ref initial_state in
-  let last_completed = ref 0 in
-  let completed_at = ref None in
-  Matrix.run app
-    ~on_frame:(fun app ~dt ->
-      let prev_state = !state in
-      state := update ~dt !state;
-      (* Write static output when a package completes *)
-      let prev_completed =
-        List.length (List.filter (fun (_, s) -> s = Done) prev_state.packages)
-      in
-      let curr_completed =
-        List.length (List.filter (fun (_, s) -> s = Done) !state.packages)
-      in
-      if curr_completed > prev_completed && curr_completed > !last_completed
-      then (
-        let just_completed =
-          List.filter_map
-            (fun ((pkg, s), (_, prev_s)) ->
-              if s = Done && prev_s <> Done then Some pkg else None)
-            (List.combine !state.packages prev_state.packages)
+let completed state =
+  List.filter_map (fun (pkg, s) -> if s = Done then Some pkg else None) state
+
+(* Each package that completes is written above the live region, once. *)
+let commit app ~before ~after =
+  List.iter
+    (fun pkg ->
+      if not (List.memq pkg before) then (
+        let msg =
+          Printf.sprintf "✓ %s %s installed (%dKB)" pkg.name pkg.version
+            pkg.size
         in
-        List.iter
-          (fun pkg ->
-            let msg =
-              Printf.sprintf "✓ %s %s installed (%dKB)" pkg.name pkg.version
-                pkg.size
-            in
-            let width, _ = Matrix.full_size app in
-            let grid = Grid.create ~width ~height:1 () in
-            Grid.draw_text grid ~x:0 ~y:0 ~text:msg;
-            Matrix.static_write app grid)
-          just_completed;
-        last_completed := curr_completed);
-      (* Stop when all done after a brief delay *)
-      if all_done !state then (
-        if Option.is_none !completed_at then completed_at := Some !state.elapsed;
-        match !completed_at with
-        | Some done_at when !state.elapsed -. done_at >= 1.0 -> Matrix.stop app
-        | _ -> ())
-      else completed_at := None)
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | Key { key = Char u; _ }
-        when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
-          Matrix.stop app
-      | _ -> ())
-    ~primary_required_rows:(fun _ -> Some (6 + List.length !state.packages))
-    ~on_render:(fun app -> render (Matrix.grid app) !state)
+        let width, _ = Matrix.full_size app in
+        let grid = Grid.create ~width ~height:1 () in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:msg;
+        Matrix.static_write app grid))
+    after
+
+let () =
+  let config = Matrix.config ~mode:`Primary ~fps:30. ~mouse:`Off () in
+  Matrix.run ~config @@ fun app ->
+  let rec loop state last completed_at =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Event (Key { key = Char u; _ })
+      when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
+        ()
+    | Frame -> (
+        let now = Matrix.now app in
+        let next = update ~dt:(Float.of_int (now - last) *. 1e-9) state in
+        commit app ~before:(completed state.packages)
+          ~after:(completed next.packages);
+        Matrix.draw app
+          ~primary_required_rows:(6 + List.length next.packages)
+          (fun grid -> render grid next);
+        Matrix.request_redraw app;
+        (* Stop a second after everything is installed. *)
+        match (all_done next, completed_at) with
+        | false, _ -> loop next now None
+        | true, None -> loop next now (Some next.elapsed)
+        | true, Some done_at ->
+            if next.elapsed -. done_at < 1.0 then loop next now completed_at)
+    | Event _ | Timer _ | Posted _ -> loop state last completed_at
+  in
+  loop initial_state (Matrix.now app) None

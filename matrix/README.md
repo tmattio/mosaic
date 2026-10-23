@@ -7,7 +7,7 @@ A fast, full-featured, modern terminal UI library for OCaml.
 - **Zero dependencies** – No runtime library dependencies at all; Unicode data tables and UTF-8 handling are built in. No transitive dependency bloat.
 - **High performance** – Double-buffered rendering diffs cell changes to emit minimal ANSI output. Grid-owned grapheme storage minimises allocations on the hot path.
 - **Modular architecture** – Small, focused libraries (`matrix.ansi`, `matrix.grid`, `matrix.pty`, `matrix.vte`, etc.) that you can use independently or combine as needed.
-- **Immediate-mode API** – A simple render loop with `on_render`, `on_input`, and `on_resize` callbacks. No framework overhead—just draw your UI each frame.
+- **Immediate-mode API** – A loop you write: `Matrix.next` returns the next input event, timer, posted function or frame to draw. No framework overhead—just draw your UI each frame.
 - **Native alpha blending** – RGBA colors with proper alpha compositing for translucent overlays and smooth visual effects.
 - **Full Unicode support** – Grapheme clusters, emoji, wide characters, and 24-bit color with correct alignment across terminal width calculation methods.
 - **Modern terminal protocols** – Kitty keyboard (with auto-detection), SGR/X10/URXVT mouse tracking, bracketed paste, and focus reporting—all negotiated automatically.
@@ -41,23 +41,28 @@ dune exec ./examples/01-rain/main.exe
 open Matrix
 
 let () =
-  let app = Matrix.create () in
-  let frames = ref 0 in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt:_ -> incr frames)
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | _ -> ())
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      Grid.clear grid;
-      Grid.draw_text grid ~x:2 ~y:2
-        ~text:(Printf.sprintf "Frames: %d" !frames))
+  Matrix.run @@ fun app ->
+  let rec loop keys =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key _) ->
+        Matrix.request_redraw app;
+        loop (keys + 1)
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            Grid.draw_text grid ~x:2 ~y:2 ~text:(Printf.sprintf "Keys: %d" keys));
+        loop keys
+    | Event _ | Timer _ | Posted _ -> loop keys
+  in
+  loop 0
 ```
 
-`Matrix.run` switches the TTY to raw mode (when configured), negotiates
-terminal features, and restores everything on exit even if a callback raises.
+`Matrix.run` takes the terminal for its scope: it switches the TTY to raw
+mode, negotiates terminal features, and restores everything on every way out,
+an exception included. Inside, `Matrix.next` returns what to do next: an input
+event, a timer that came due (`Matrix.at`), a function another thread posted
+(`Matrix.post`), or a frame to draw, which comes only when asked for
+(`Matrix.request_redraw`). An idle program costs no wakeups.
 
 ### Display Modes
 
@@ -69,8 +74,10 @@ Matrix supports two rendering modes:
 Use `Primary` for CLI tools that should leave output in terminal history:
 
 ```ocaml
-let app = Matrix.create ~mode:`Primary () in
+let config = Matrix.config ~mode:`Primary () in
+Matrix.run ~config @@ fun app ->
 (* Use Matrix.static_write to write persistent output above the TUI *)
+...
 ```
 
 ## API Overview
@@ -79,7 +86,7 @@ Matrix is organized into focused libraries that can be used together or independ
 
 | Library           | Module     | Purpose                                               |
 | ----------------- | ---------- | ----------------------------------------------------- |
-| `matrix`          | `Matrix`   | Immediate-mode runtime with render loop and callbacks |
+| `matrix`          | `Matrix`   | Immediate-mode runtime: a scoped run and its loop     |
 | `matrix.image`    | `Image`    | Declarative Notty-inspired composition DSL            |
 | `matrix.grid`     | `Grid`     | Mutable framebuffer with colors and styles            |
 | `matrix.screen`   | `Screen`   | Double-buffered rendering with ANSI diffing           |

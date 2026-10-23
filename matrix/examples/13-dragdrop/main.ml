@@ -286,6 +286,9 @@ let cancel_drag state =
 
 let handle_input state event =
   match event with
+  | Key k when Input.Keystroke.is_interrupt k ->
+      (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+      `Quit
   | Key { key = Escape; _ } ->
       if Option.is_some state.dragging then (
         cancel_drag state;
@@ -390,21 +393,27 @@ let create_state () =
   }
 
 let () =
-  let app =
-    Matrix.create ~target_fps:(Some 60.) ~mouse_enabled:true ~debug_overlay:true
-      ()
-  in
+  let config = Matrix.config ~debug_overlay:true () in
+  Matrix.run ~config @@ fun app ->
   let state = create_state () in
-  Matrix.run app
-    ~on_input:(fun app event ->
-      match handle_input state event with
-      | `Quit -> Matrix.stop app
-      | `Continue -> ())
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let _, rows = Matrix.size app in
-      Grid.clear ~color:(Color.of_rgb 12 14 22) grid;
-      draw_header grid;
-      draw_instructions grid ~y:1;
-      draw_workspace grid state;
-      draw_status grid state ~y:(rows - 2))
+  let rec loop () =
+    match Matrix.next app with
+    | Stopped -> ()
+    | Event event -> (
+        match handle_input state event with
+        | `Quit -> ()
+        | `Continue ->
+            Matrix.request_redraw app;
+            loop ())
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            let _, rows = Matrix.size app in
+            Grid.clear ~color:(Color.of_rgb 12 14 22) grid;
+            draw_header grid;
+            draw_instructions grid ~y:1;
+            draw_workspace grid state;
+            draw_status grid state ~y:(rows - 2));
+        loop ()
+    | Timer _ | Posted _ -> loop ()
+  in
+  loop ()

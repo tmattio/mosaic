@@ -18,4 +18,5 @@ dune exec ./matrix/examples/08-terminal/main.exe
 
 - Integrates `Pty` and `Vte` modules to spawn and render a real shell.
 - Handles resize events by updating both the VTE state and PTY window size.
-- Demonstrates non-blocking PTY reads inside the `on_frame` callback.
+- A thread waits for the shell's output and posts to the loop
+  (`Matrix.post`), which reads it: the loop owns the state and polls nothing.

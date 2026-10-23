@@ -364,8 +364,9 @@ val set_raw : Unix.file_descr -> raw_saved
     as [O_NONBLOCK] are owned by the I/O backend and are left unchanged. *)
 
 val restore : Unix.file_descr -> raw_saved -> unit
-(** [restore fd saved] restores [fd] to the given saved state without changing
-    its file status flags. *)
+(** [restore fd saved] restores [fd] to the given saved state once the output
+    written to it has been sent, keeping input not yet read for whoever reads
+    next, without changing its file status flags. *)
 
 val size : Unix.file_descr -> int * int
 (** [size fd] is the terminal dimensions as [(cols, rows)]. Falls back to

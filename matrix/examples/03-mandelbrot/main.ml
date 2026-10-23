@@ -299,13 +299,9 @@ let reset st =
     palette_shift = 0;
   }
 
-let handle_char app st uchar (mods : Input.Keystroke.mods) =
+let handle_char app st uchar =
   let code = Uchar.to_int uchar in
-  let ctrl_c = mods.ctrl && (code = Char.code 'c' || code = Char.code 'C') in
-  if ctrl_c then (
-    stop app;
-    `Stop)
-  else if code > 255 then `Continue st
+  if code > 255 then `Continue st
   else
     let focus_x = st.dims.cols / 2 in
     let fractal_rows, _ = layout st in
@@ -359,10 +355,11 @@ let update app event st =
       if pointer_in_fractal st.dims fractal_rows x y then
         `Continue { st with pointer = (x, y) }
       else `Continue st
-  | Key { key = Escape; _ } ->
-      stop app;
+  | Key { key = Escape; _ } -> `Stop
+  | Key k when Input.Keystroke.is_interrupt k ->
+      (* Raw mode makes Ctrl+C a key: this program quits on it. *)
       `Stop
-  | Key { key = Char uchar; mods; _ } -> handle_char app st uchar mods
+  | Key { key = Char uchar; _ } -> handle_char app st uchar
   | Key { key = Left; _ } -> with_redraw app (pan st (-1.) 0.)
   | Key { key = Right; _ } -> with_redraw app (pan st 1. 0.)
   | Key { key = Up; _ } -> with_redraw app (pan st 0. (-1.))
@@ -371,15 +368,20 @@ let update app event st =
   | _ -> `Continue st
 
 let () =
-  let app = Matrix.create ~mouse_enabled:true () in
-  let state = ref (make_state ~cols:1 ~rows:1) in
-  Matrix.run app
-    ~on_input:(fun app event ->
-      match update app event !state with
-      | `Continue st' -> state := st'
-      | `Stop -> ())
-    ~on_resize:(fun _ ~cols ~rows -> state := resize !state ~cols ~rows)
-    ~on_render:(fun app ->
-      let cols, rows = Matrix.size app in
-      let ctx = { grid = Matrix.grid app; cols; rows } in
-      draw app ctx !state)
+  Matrix.run @@ fun app ->
+  let cols, rows = Matrix.size app in
+  let rec loop state =
+    match Matrix.next app with
+    | Stopped -> ()
+    | Event event -> (
+        match update app event state with
+        | `Continue state -> loop state
+        | `Stop -> ())
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            draw app { grid; cols; rows } state);
+        loop state
+    | Timer _ | Posted _ -> loop state
+  in
+  loop (make_state ~cols ~rows)

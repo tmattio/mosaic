@@ -85,20 +85,31 @@ let draw_event_history grid ~y ~rows =
     !history
 
 let () =
-  let app =
-    Matrix.create ~target_fps:(Some 30.) ~debug_overlay:false ~key_releases:true
-      ()
+  let config = Matrix.config ~key_releases:true () in
+  Matrix.run ~config @@ fun app ->
+  let rec loop () =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key k) when Input.Keystroke.is_interrupt k ->
+        (* Raw mode makes Ctrl+C a key: this program quits on it. *)
+        ()
+    | Event event ->
+        add_event event;
+        Matrix.request_redraw app;
+        loop ()
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            let cols, rows = Matrix.size app in
+            Grid.clear ~color:Ansi.Color.black grid;
+            draw_header grid ~cols;
+            draw_modifier_panel grid ~y:5;
+            draw_event_history grid ~y:7 ~rows);
+        (* The newest event fades after half a second. *)
+        (match !history with
+        | { timestamp; _ } :: _ when Unix.gettimeofday () -. timestamp < 0.5 ->
+            Matrix.request_redraw app
+        | _ -> ());
+        loop ()
+    | Timer _ | Posted _ -> loop ()
   in
-  Matrix.run app
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | _ -> add_event event)
-    ~on_resize:(fun _ ~cols ~rows -> add_event (Resize (cols, rows)))
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      let cols, rows = Matrix.size app in
-      Grid.clear ~color:Ansi.Color.black grid;
-      draw_header grid ~cols;
-      draw_modifier_panel grid ~y:5;
-      draw_event_history grid ~y:7 ~rows)
+  loop ()

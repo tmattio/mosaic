@@ -1,11 +1,33 @@
-(** Immediate-mode terminal application runtime.
+(** Terminal application runtime.
 
     [Matrix] owns the terminal while an application runs: it negotiates input
-    protocols, builds frames against a double-buffered {!Grid.t}, and diffs the
-    grid to emit minimal ANSI output.
+    protocols, decodes input, keeps time, builds frames against a
+    double-buffered {!Grid.t}, and diffs the grid to emit minimal ANSI output.
 
-    The module re-exports the lower-level subsystems as submodules and provides
-    an immediate-mode event loop via {!create} and {!run}.
+    An application runs in a scope, {!run}, which takes the terminal and gives
+    it back on every way out. Inside, the application asks for the next thing to
+    do, {!next}, and does it: an input event, a timer that came due, a function
+    another thread posted, or a frame to draw. Matrix decides the order and the
+    timing; the application decides what each step means.
+
+    {[
+    let () =
+      Matrix.run @@ fun app ->
+      let rec loop count =
+        match Matrix.next app with
+        | Stopped | Event (Key { key = Escape; _ }) -> ()
+        | Event (Key _) ->
+            Matrix.request_redraw app;
+            loop (count + 1)
+        | Frame ->
+            Matrix.draw app (fun grid ->
+                Grid.draw_text grid ~x:0 ~y:0
+                  ~text:(Printf.sprintf "%d keys" count));
+            loop count
+        | Event _ | Timer _ | Posted _ -> loop count
+      in
+      loop 0
+    ]}
 
     {1:sub_libraries Sub-libraries}
 
@@ -48,21 +70,21 @@ type mode = [ `Alt | `Primary ]
     - [`Primary] renders an inline live viewport on the primary screen. Rows
       above the viewport are static transcript rows and enter native scrollback.
       When the input is a terminal, the viewport starts at the cursor, and after
-      a resize or a {!resume} the runtime finds it again from a cursor position
+      a resize or a {!release} the runtime finds it again from a cursor position
       report: terminals move their rows as they resize. *)
 
 (** {1:events Events} *)
 
 (** The type for what the terminal says to the application. The input is decoded
     by {!Input.Decoder}; replies to the runtime's queries never reach the
-    application, but those that are application facts do, as {!Resize} and
-    {!Color_scheme}. A batch of queries is owed until the terminal answers it,
-    however late, or, if it never does, for 5 s or four round trips of the
-    startup probe, whichever is longer; a reply after that decodes as input. *)
+    application, but those that are application facts do, as {!Color_scheme}. A
+    batch of queries is owed until the terminal answers it, however late, or, if
+    it never does, for 5 s or four round trips of the startup probe, whichever
+    is longer; a reply after that decodes as input. *)
 type event =
   | Key of Input.Keystroke.t  (** A key pressed or auto-repeated. *)
   | Key_release of Input.Keystroke.release
-      (** A key released, reported only when {!create}'s [key_releases] asks. *)
+      (** A key released, reported only when {!config}'s [key_releases] asks. *)
   | Text of string
       (** Text the terminal reports without a key, such as text an input method
           composed. *)
@@ -80,9 +102,12 @@ type event =
   | Focus_in  (** The terminal window gained focus. *)
   | Focus_out  (** The terminal window lost focus. *)
   | Resize of int * int
-      (** The terminal's size, as [(cols, rows)]: from the backend's window-size
-          signal, each time, or from the terminal's own report (mode 2048) when
-          it differs from the size last reported. *)
+      (** The usable size changed to [(cols, rows)], {!size}: the live region in
+          [`Primary] mode, the whole terminal in [`Alt] mode. The terminal
+          reports its size when it changes, by the backend's window-size signal
+          or its own report (mode 2048); the runtime applies the latest report
+          when it next draws, so a storm of reports is one [Resize], returned by
+          {!next} just before the {!Frame} drawn at that size. *)
   | Color_scheme of [ `Dark | `Light ]
       (** The terminal's color scheme, in reply to a query or on a change. *)
   | Invalid of string
@@ -93,79 +118,110 @@ type event =
 val pp_event : Format.formatter -> event -> unit
 (** [pp_event] formats an event for debugging. *)
 
-(** Backend I/O. Matrix owns input decoding, protocol negotiation, and frame
-    scheduling. Backends provide device operations and a wait that can also
-    deliver native events such as window resizes. *)
+(** {1:backends Backends} *)
+
+(** The device a run drives: a terminal's input and output, a clock, and a way
+    to wait for any of them. Matrix decodes the input, negotiates protocols and
+    schedules frames; a backend only moves bytes and waits. *)
 module Backend : sig
+  (** The type for the signals a run acts on. *)
+  type signal =
+    | Winch  (** The terminal's window changed size. *)
+    | Cont  (** The process was continued after a stop. *)
+    | Tstp
+        (** The terminal's suspend character, or another process, asked the
+            process to stop. *)
+    | Terminate of int
+        (** A signal whose default action ends the process, by its OCaml number
+            ({!Sys.sigterm}, {!Sys.sigint}, {!Sys.sighup}, {!Sys.sigquit}). *)
+
   type t = {
-    now : unit -> float;
-        (** [now ()] is monotonic time in seconds, with an arbitrary origin. *)
+    now : unit -> int;
+        (** [now ()] is monotonic time in nanoseconds, from an arbitrary origin.
+            It never goes back, and setting the system's time does not move it.
+        *)
+    wait : until:int option -> reading:bool -> bool;
+        (** [wait ~until ~reading] returns once the input is readable, when
+            [reading]; once [wake] was called since [wait] last returned; or
+            once [now () >= until]. With [until = None] only the first two end
+            it. Returns [true] iff the input is readable. A backend never moves
+            its own clock to end a wait. *)
     wake : unit -> unit;
-        (** [wake ()] interrupts the current or next [wait]. Wakeups remain
-            pending until consumed by [wait]. It must support calls from other
-            threads or domains when {!request_redraw} is used there, including a
-            wake already in flight when [cleanup] runs. *)
-    write_output : bytes -> int -> int -> unit;
-        (** [write_output buf off len] writes the complete slice before
-            returning. The backend must not retain [buf]. *)
+        (** [wake ()] ends the current or the next [wait]. Any thread, domain or
+            fiber may call it. *)
+    take_signals : unit -> signal list;
+        (** [take_signals ()] is the signals received since the last call,
+            oldest first. *)
     read_input : bytes -> int -> int -> int;
         (** [read_input buf off len] reads at most [len] bytes into [buf] at
             [off]. Called only after [wait] reports readable input. [0] denotes
             permanent end-of-input; [-1] means input is no longer ready.
             Positive results denote bytes read. *)
-    wait : timeout:float option -> on_event:(event -> unit) -> bool;
-        (** [wait ~timeout ~on_event] waits for readable input, a wakeup, native
-            events, or the timeout in seconds. [None] has no timeout; [Some 0.]
-            polls without blocking. Native events, such as {!Resize}, are passed
-            to [on_event]. Returns [true] iff [read_input] can proceed without
-            waiting. Matrix decodes the bytes, and a wait that returns with
-            nothing to read tells it how long the terminal has been silent; the
-            backend never decodes terminal input. *)
-    input_is_tty : bool;  (** Whether the input device is a terminal. *)
-    output_is_tty : bool;
-        (** Whether the output device accepts terminal modes. *)
+    write_output : bytes -> int -> int -> unit;
+        (** [write_output buf off len] writes the complete slice before
+            returning. The backend must not retain [buf]. *)
     terminal_size : unit -> int * int;
         (** [terminal_size ()] is the terminal size as [(cols, rows)]. *)
     set_raw_mode : bool -> unit;
-        (** [set_raw_mode enabled] switches terminal input into raw mode or
-            restores its original state. Repeated requests are idempotent;
-            non-terminal input is a no-op. *)
+        (** [set_raw_mode raw] switches the input into raw mode, saving its
+            settings and discarding input not yet read, or back to the saved
+            settings once the output already written has been sent, keeping
+            input not yet read. A repeated request does nothing; a terminal that
+            is not one ignores it. *)
     flush_input : unit -> unit;
-        (** [flush_input ()] discards pending device input. *)
+        (** [flush_input ()] discards input received and not yet read. *)
+    input_is_tty : bool;  (** Whether the input device is a terminal. *)
+    output_is_tty : bool;
+        (** Whether the output device accepts terminal modes. *)
     protect : (unit -> unit) -> unit;
         (** [protect f] runs [f ()] with cancellation deferred until it returns
-            or raises. Used only for cleanup; synchronous backends call [f]
+            or raises. Used only for teardown; synchronous backends call [f]
             directly. *)
     cleanup : unit -> unit;
-        (** [cleanup ()] releases resources owned by the backend. Matrix calls
-            it once on failed attachment or close. *)
+        (** [cleanup ()] releases what the backend holds. A run calls it once,
+            when it ends. *)
     env : Terminal.Caps.env;
         (** The environment of the session the terminal runs, from which the
             runtime guesses what the terminal can do until it answers. *)
   }
-  (** The I/O operations and device properties supplied to {!attach}. *)
+  (** The type for backends. *)
+
+  val unix : ?input:Unix.file_descr -> ?output:Unix.file_descr -> unit -> t
+  (** [unix ()] is the backend of a terminal on [input] (default {!Unix.stdin})
+      and [output] (default {!Unix.stdout}). Its [wait] blocks in [select(2)] on
+      the input and on {!wake_fd}, its clock is [CLOCK_MONOTONIC], and its
+      signals are those the runtime's handlers record (see {{!signals}Signals}).
+      On Linux the monotonic clock stops while the system sleeps: a deadline is
+      that much later on the wall clock. On macOS it does not stop. *)
+
+  val wake_fd : unit -> Unix.file_descr
+  (** [wake_fd ()] is the read end of the process's wake pipe. {!unix}'s [wake]
+      and the runtime's signal handlers write a byte to it; a backend whose
+      [wait] blocks in the operating system waits for it to be readable too, and
+      reads it empty before returning. The pipe lives as long as the process. *)
 end
+
+(** {1:running Running} *)
+
+type config
+(** The type for what a run sets up. *)
 
 type debug_overlay_corner =
   [ `Top_left | `Top_right | `Bottom_left | `Bottom_right ]
 (** The type for debug overlay anchor corners. *)
 
-type app
-(** The type for live applications. All frame, query, and control functions
-    require this handle. Created by {!create} or {!attach}. *)
-
-(** {1:lifecycle Lifecycle} *)
-
-val create :
+val config :
   ?mode:mode ->
   ?raw_mode:bool ->
-  ?target_fps:float option ->
-  ?mouse_enabled:bool ->
-  ?mouse:Terminal.mouse_mode option ->
+  ?mouse:Terminal.mouse_mode ->
   ?bracketed_paste:bool ->
   ?kitty_keyboard:kitty_keyboard ->
   ?key_releases:bool ->
-  ?exit_on_ctrl_c:bool ->
+  ?fps:float ->
+  ?cursor_visible:bool ->
+  ?explicit_width:bool ->
+  ?min_tui_height:int ->
+  ?caps:Terminal.capabilities ->
   ?debug_overlay:bool ->
   ?debug_overlay_corner:debug_overlay_corner ->
   ?debug_overlay_capacity:int ->
@@ -173,70 +229,39 @@ val create :
   ?frame_dump_dir:string ->
   ?frame_dump_pattern:string ->
   ?frame_dump_hits:bool ->
-  ?cursor_visible:bool ->
-  ?explicit_width:bool ->
-  ?input_timeout:float option ->
-  ?resize_debounce:float option ->
-  ?output:[ `Stdout | `Fd of Unix.file_descr ] ->
-  ?signal_handlers:bool ->
-  ?caps:Terminal.capabilities ->
-  ?min_tui_height:int ->
-  ?start_idle:bool ->
-  ?pace_redraws:bool ->
   unit ->
-  app
-(** [create ()] is a live application with Unix I/O wired in.
-
-    Sets up the terminal, enables raw mode, installs signal handlers, and
-    returns a ready-to-run handle. Construction is transactional: if setup
-    raises, every terminal mode and backend resource acquired so far is released
-    before the original exception is propagated.
+  config
+(** [config ()] is the configuration of a run.
 
     {b Display:}
     - [mode] presentation mode. Defaults to [`Alt].
-    - [raw_mode] whether to switch the TTY into raw mode. Defaults to [true].
-
-    {b Rendering:}
+    - [raw_mode] whether to switch the input into raw mode. Defaults to [true].
+      In raw mode the terminal sends its interrupt and suspend characters as
+      keys: Ctrl+C is a {!Key}, whose meaning is the application's.
     - [cursor_visible] initial cursor visibility. Defaults to [true] in [`Alt]
       mode, [false] in [`Primary].
     - [explicit_width] whether to use built-in wcwidth instead of querying the
       terminal. Defaults to [false].
+    - [min_tui_height] the fewest rows the live region keeps in [`Primary] mode
+      as static rows are written. Defaults to [1].
 
-    {b Frame timing:}
-    - [target_fps] optional FPS cap in Hz. Defaults to [Some 30.]. [None] for
-      uncapped. With [None], construction starts demand-driven: one-shot redraws
-      render immediately, and {!start} or {!request_live} enables continuous
-      uncapped rendering.
-    - [pace_redraws] whether one-shot {!request_redraw}s coalesce to
-      [target_fps]. Defaults to [true]: an event storm renders at most once per
-      frame interval. Set [false] under a virtual clock, where coalescing buys
-      nothing and advancing time to the next frame boundary would move the very
-      clock timers read; one-shot redraws then render immediately. Live
-      animation still paces off [target_fps] either way.
-    - [resize_debounce] debounce window in seconds for resize events. Defaults
-      to [Some 0.1].
-
-    {b Primary mode:}
-    - [min_tui_height] minimum height in rows reserved for the dynamic TUI
-      region. Static content will not grow past this floor. Defaults to [1].
-    - [start_idle] when [true], the render loop starts in idle state even when
-      [target_fps] is set. The loop begins running only when {!request_live} is
-      called. One-shot redraws via {!request_redraw} still work while idle.
-      Defaults to [false].
+    {b Frames:}
+    - [fps] the most frames per second. Defaults to [60.]. A terminal sends no
+      signal when it has shown a frame, so nothing gives the rate: 60 is the
+      refresh rate of most displays, which no emulator draws faster than.
 
     {b Input:}
-    - [mouse_enabled] whether to enable mouse tracking. Defaults to [true].
-    - [mouse] explicit mouse tracking mode. Defaults to [None] (selects
-      [`Sgr_any] when [mouse_enabled] is [true]).
+    - [mouse] mouse tracking. Defaults to [`Sgr_any]; [`Off] leaves the mouse to
+      the terminal.
     - [bracketed_paste] whether to enable bracketed paste. Defaults to [true].
-    - [kitty_keyboard] Kitty keyboard protocol configuration. Defaults to
+    - [kitty_keyboard] kitty keyboard protocol configuration. Defaults to
       [`Auto].
     - [key_releases] whether to ask the kitty keyboard protocol for key releases
       ({!Key_release}), which also has every key reported as a sequence.
       Defaults to [false].
-    - [exit_on_ctrl_c] whether pressing Ctrl+C exits. Defaults to [true].
-    - [input_timeout] timeout in seconds for input polling when no cadence is
-      active. Defaults to [None] (block indefinitely).
+    - [caps] the capabilities to assume where the terminal does not answer, in
+      place of what the environment says ({!Terminal.Caps.assume}). By default
+      the backend's environment is read when the run begins.
 
     Focus reports (mode 1004), color scheme reports (2031) and resize reports
     (2048) are always set, without asking whether the terminal has them: no
@@ -244,18 +269,7 @@ val create :
     kitty, foot and tmux all ignore one (xterm's [dpmodes] in charproc.c,
     kitty's [set_mode_from_const] in screen.c, foot's [decset_decrst] in csi.c
     and tmux's [input_csi_dispatch_sm_private] in input.c only log it), and the
-    runtime resets them on exit.
-
-    {b Unix:}
-    - [output] output target. Defaults to [`Stdout].
-    - [signal_handlers] whether the application owns SIGTERM, SIGINT, SIGQUIT,
-      SIGABRT, and SIGHUP until {!close}. The previous dispositions are restored
-      on close. Defaults to [true]. Signal dispositions are process-global, so
-      simultaneously live applications must be closed in reverse construction
-      order.
-    - [caps] the capabilities to assume where the terminal does not answer, in
-      place of what the environment says ({!Terminal.Caps.assume}). By default
-      the environment is read once, at creation.
+    runtime resets them when it gives the terminal back.
 
     {b Diagnostics:}
     - [debug_overlay] show the debug overlay. Defaults to [false].
@@ -264,186 +278,236 @@ val create :
     - [frame_dump_every] dump every Nth frame. Defaults to [0] (disabled).
     - [frame_dump_dir] directory for frame dumps.
     - [frame_dump_pattern] filename pattern for frame dumps.
-    - [frame_dump_hits] include hit grid in dumps. Defaults to [false]. *)
+    - [frame_dump_hits] include hit grid in dumps. Defaults to [false].
 
-val run :
-  ?on_frame:(app -> dt:float -> unit) ->
-  ?on_input:(app -> event -> unit) ->
-  ?on_resize:(app -> cols:int -> rows:int -> unit) ->
-  ?primary_required_rows:(app -> int option) ->
-  on_render:(app -> unit) ->
-  app ->
-  unit
-(** [run ~on_render app] drives the immediate-mode event loop.
+    Raises [Invalid_argument] if [fps] is not positive and finite. *)
 
-    Each iteration:
-    - Polls for events and invokes [on_input] / [on_resize].
-    - Calls [on_frame] with the elapsed seconds since the last render.
-    - Calls {!prepare} to size and clear the frame, with the rows
-      [primary_required_rows] asks for.
-    - Invokes [on_render] (draw to {!grid} here).
-    - Calls {!submit} to diff and flush output.
+type 'msg app
+(** The type for running applications whose other threads send them messages of
+    type ['msg] ({!post}). An [app] exists only inside {!run}, and belongs to
+    the thread that called {!run}: every function of this module that takes one
+    raises [Invalid_argument] on another thread, except {!post}. *)
 
-    [primary_required_rows] runs before the frame is drawn, so it states the
-    rows of the frame to come, from the application's state.
+val run : ?backend:Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
+(** [run f] takes the terminal, calls [f app], and gives the terminal back when
+    [f] returns or raises, or when the input ends and [f] returns. [backend]
+    defaults to {!Backend.unix}[ ()]; [run] owns it and cleans it up once.
 
-    [on_resize] reports the usable surface as [(cols, rows)] — {!size}, the live
-    viewport in [`Primary] mode and the full terminal in [`Alt] mode. It fires
-    once before the first render and then whenever the applied size changes,
-    including debounced resizes applied after their event; resize reports that
-    do not change the applied size produce no callback. [on_input] still
-    receives raw {!Resize} terminal dimensions.
+    Taking the terminal is a sequence of steps, each of which pushes its undo:
+    the signals ({{!signals}Signals}), raw mode, the capability probe (whose
+    answers are waited for at most max(500 ms, four round trips); input that
+    comes meanwhile is kept and returned first by {!next}), the screen (the
+    alternate screen, or in [`Primary] mode the live region found from a cursor
+    report), and the modes. If a step raises, the undos made so far run in
+    reverse and the exception propagates with its backtrace. Giving the terminal
+    back runs every undo, each even if another raises: when a reply is owed it
+    first waits at most max(500 ms, four round trips) for the terminal to
+    answer, so that no reply reaches the shell as typing; then the modes are
+    reset, the cursor shown, the screen left (the live region erased below the
+    transcript in [`Primary] mode), cooked mode restored, and input not read
+    discarded.
 
-    The loop exits when {!running} becomes [false]. Calling [run] on an already
-    stopped application closes it without restarting; call {!start} first to
-    restart an open application. Closed applications remain closed. Stopping or
-    suspending in [on_frame] skips [on_render]; doing so in [on_render] skips
-    presentation. Pausing permits the current frame to finish. Permanent
-    end-of-input finalizes the input decoder and closes the runtime. Exceptions
-    close the runtime before propagating. *)
+    Raises [Invalid_argument] if another run holds the terminal, unless that run
+    gave it away for {!release}. *)
 
-(** {1:frame Frame building} *)
+(** {1:loop The loop}
 
-val prepare : ?primary_required_rows:int -> app -> unit
-(** [prepare app] starts a new frame: it lays the frame out and clears the
-    {!grid} and {!hits} buffers at its size, {!size}.
+    A run proceeds in turns. A turn:
 
-    In [`Primary] mode the queued static writes go to the transcript, and the
-    live region grows to [primary_required_rows] rows when it has fewer, at most
-    the terminal's height, by scrolling the rows above it into the terminal's
-    scrollback. The frame drawn next is as tall as the live region, so it shows
+    + waits for input, a {!wake}, a {!post}, a signal, or the earliest deadline:
+      a timer ({!at}), the next frame, or a terminal that has gone silent
+      mid-sequence. With nothing to wait for, it waits without a deadline, so an
+      idle application costs no wakeups;
+    + reads the clock once ({!now});
+    + acts on the signals received;
+    + reads the input once and decodes it, unless an event decoded earlier is
+      still waiting, which leaves the rest in the operating system's buffer;
+    + takes the functions posted since the last turn;
+    + returns work, one step per call of {!next}: first one step of each kind
+      that has some (an input {!Event}, a {!Timer} that came due, a {!Posted}
+      function), then the events, then the timers, then the posted functions,
+      until none is left or one frame interval has passed since the clock was
+      read. So a flood of one kind delays the others by at most a frame, and
+      within a kind everything comes in order;
+    + returns a {!Frame} if one was asked for ({!request_redraw}), one frame
+      interval has passed since the last, and the runtime waits for no answer
+      from the terminal (the place of the live region after a resize or a
+      release). Before it, if the terminal's size changed, a {!Resize}.
+
+    Each step is done before the next is asked for, so the application handles
+    one event at a time, and an event sees what the previous one did. Steps are
+    ordered by kind, not by time: a key read in a turn comes before a timer that
+    came due in the same turn, even if the timer's deadline was earlier. The
+    input is never held for an answer from the terminal; only frames are. *)
+
+type timer = private int
+(** The type for timers, set with {!at}. Two timers set in one run differ. *)
+
+(** The type for the steps of a run. *)
+type 'msg step =
+  | Event of event  (** An input event, in the order the terminal sent them. *)
+  | Timer of timer  (** A timer whose deadline the turn's time reached. *)
+  | Posted of 'msg  (** A message another thread sent with {!post}. *)
+  | Frame
+      (** Draw a frame, with {!draw}. A frame not drawn by the next call of
+          {!next} is dropped. *)
+  | Stopped
+      (** The input ended: every event decoded before its end has been returned.
+          Every later call returns [Stopped]. *)
+
+val next : 'msg app -> 'msg step
+(** [next app] is the next step of the run, waiting for one if there is none. *)
+
+(** {1:time Time}
+
+    The runtime keeps one monotonic clock, the backend's: it never goes back,
+    and setting the system's time does not move it. Times are integer
+    nanoseconds from an arbitrary origin, so a deadline computed as
+    [origin + n * interval] is exact and two computations of it are equal. The
+    loop reads the clock once per turn, after waiting; everything in that turn
+    compares with that one value. *)
+
+val now : 'msg app -> int
+(** [now app] is the time of the current turn, in nanoseconds. *)
+
+val at : 'msg app -> int -> timer
+(** [at app time] is a timer that {!next} returns as {!Timer} in the first turn
+    whose time is at least [time]. A deadline is a lower bound: the loop may be
+    late, never early. Timers due in one turn come in deadline order, then in
+    the order they were set. *)
+
+val cancel : 'msg app -> timer -> unit
+(** [cancel app timer] keeps [timer] from being returned. Cancelling a timer
+    that was returned or cancelled does nothing. *)
+
+(** {1:frames Frames} *)
+
+val request_redraw : 'msg app -> unit
+(** [request_redraw app] asks for a frame. Requests until that frame is drawn
+    are one request. Frames are at least [1 / fps] apart ({!config}): the first
+    after a pause is returned in the turn that asked, later ones once their
+    interval has passed. A request made while a frame is drawn, from {!Frame} to
+    the end of {!draw}, asks for the next frame: an animation asks again from
+    each frame, and stops by not asking. A run begins with a frame requested. *)
+
+val draw : 'msg app -> ?primary_required_rows:int -> (Grid.t -> unit) -> unit
+(** [draw app f] draws the frame {!next} returned: it lays the frame out at
+    {!size}, calls [f] with its grid, cleared, and presents it: the frame is
+    diffed against the one presented before and the difference written in one
+    write, after the terminal operations of the layout; nothing when nothing
+    changed.
+
+    In [`Primary] mode the queued static writes go to the transcript first, and
+    the live region grows to [primary_required_rows] rows when it has fewer, at
+    most the terminal's height, by scrolling the rows above it into the
+    terminal's scrollback. The frame is as tall as the live region, so it shows
     the rows it asked for. [primary_required_rows] is ignored in [`Alt] mode.
 
-    {b Note.} Called automatically by {!run}. *)
+    A frame drawn across a {!release} is not presented: the next one is drawn
+    whole.
 
-val grid : app -> Grid.t
-(** [grid app] is the mutable grid for the current frame. *)
+    Raises [Invalid_argument] if no {!Frame} is being drawn. *)
 
-val current_grid : app -> Grid.t
+val current_grid : 'msg app -> Grid.t
 (** [current_grid app] is the presented grid: the committed terminal state as of
     the most recent frame. Blank before the first frame. Do not mutate. *)
 
-val hits : app -> Screen.Hit_grid.t
-(** [hits app] is the hit grid for the current frame. *)
+val hits : 'msg app -> Screen.Hit_grid.t
+(** [hits app] is the hit grid of the frame being drawn. *)
 
-val screen : app -> Screen.t
+val screen : 'msg app -> Screen.t
 (** [screen app] is the runtime's screen. The runtime owns its sizing and
-    presentation: {!prepare} clears and resizes it, {!submit} diffs and swaps
-    it. Embedding renderers build frames into it (via {!Screen.build} or the
-    frame accessors above) during [on_render] so the runtime presents their
-    output with a single diff. Do not call {!Screen.render} on it yourself. *)
+    presentation: {!draw} clears and resizes it before calling its function, and
+    diffs and swaps it after. Embedding renderers build frames into it (via
+    {!Screen.build}) from the function given to {!draw}, so the runtime presents
+    their output with a single diff. Do not call {!Screen.render} on it
+    yourself. *)
 
-val submit : app -> unit
-(** [submit app] diffs the current frame against the previous one and flushes
-    ANSI output, after the terminal operations of the layout {!prepare} chose.
-    Call after drawing into {!grid}. Stopped, suspended and closed applications
-    emit no frame output.
+(** {1:threads Threads} *)
 
-    {b Note.} Called automatically by {!run}. *)
+val post : 'msg app -> 'msg -> unit
+(** [post app msg] has {!next} return [Posted msg] in a later turn. It is the
+    one function of this module that any thread, domain or fiber may call; it
+    never blocks and never fails. Posts come in the order they were made: two
+    made by one thread in program order. The queue has no bound: a producer that
+    posts faster than the loop handles what it posts grows memory, and
+    collecting that memory slows the loop. After the run ends, [post] does
+    nothing. *)
 
-(** {1:control Control} *)
+(** {1:lifecycle Giving the terminal away} *)
 
-val close : app -> unit
-(** [close app] idempotently tears down terminal protocols and raw mode, then
-    releases backend resources. *)
+val release : 'msg app -> (unit -> 'a) -> 'a
+(** [release app f] gives the terminal back for [f ()], as when the run ends,
+    and takes it again when [f] returns or raises, as when the run began: [f]
+    can run another program in the terminal, as POSIX's [system()] does for its
+    caller. The loop does not run during [f]: nothing reads the terminal, and
+    timers and posts wait for [f] to return.
 
-val stop : app -> unit
-(** [stop app] marks the runtime as stopped. The {!run} loop exits on the next
-    tick. *)
+    Before [f]: queued transcript rows are written; the modes are reset; if a
+    reply is owed, the runtime waits at most max(500 ms, four round trips) for
+    the terminal to answer, so that no reply reaches [f]; the primary screen is
+    restored with the cursor shown (in [`Primary] mode the live region is erased
+    and the cursor waits at its start, below the transcript; in [`Alt] mode the
+    alternate screen is left); cooked mode is set once the output has been sent,
+    so input typed for [f] reaches it. Events decoded and not yet returned by
+    {!next}, and those decoded while waiting for the answer, are dropped, but
+    for {!Reply}: they were typed after the step that gave the terminal away,
+    and [f] cannot have them.
 
-val start : app -> unit
-(** [start app] requests continuous rendering and restarts a stopped loop. While
-    suspended it changes demand only; {!resume} must restore terminal ownership
-    before any frame is rendered. Closed applications remain closed. *)
+    During [f], SIGTSTP, SIGTERM and SIGHUP have their default actions, so the
+    terminal's suspend character stops [f]'s program and the runtime with it;
+    SIGINT and SIGQUIT, which the terminal sends to [f]'s program as well, are
+    caught and discarded when [f] returns.
 
-val pause : app -> unit
-(** [pause app] stops continuous rendering without changing terminal ownership.
-    One-shot redraws remain available while the terminal is active. Calling
-    [pause] while suspended preserves this demand after {!resume}; {!start}
-    requests continuous rendering again. *)
+    After [f]: input left unread is discarded, the terminal's settings are kept
+    as the ones to restore, the size is read, the screen and modes are set
+    again, and the next frame is drawn whole, in [`Primary] mode below what [f]
+    wrote, once a cursor report has said where that ends. A frame being drawn
+    when [release] is called is not presented. *)
 
-val suspend : ?leave_alt:bool -> app -> unit
-(** [suspend app] pauses rendering and restores the terminal to cooked mode
-    (mouse, bracketed paste, focus, color scheme and resize reports, kitty
-    keyboard, modify-other-keys and metaSendsEscape off; raw mode off; pending
-    input flushed, and a paste in progress ended with [Paste_end `Cut]). When
-    [leave_alt] is [true] (default [false], preserving existing callers) it also
-    exits the alternate-screen buffer, so a full-screen foreground child owns
-    the primary screen and its scrollback. {!resume} reapplies configuration.
+val stop_job : 'msg app -> unit
+(** [stop_job app] stops the job as the terminal's suspend character does in
+    cooked mode: it {!release}s the terminal around sending SIGTSTP to the
+    process's group, and returns once the job is continued. Raw mode turns the
+    suspend character into a key: an application that wants Ctrl+Z to suspend
+    calls [stop_job] on it. Nothing happens if SIGTSTP was ignored when the run
+    began, as nothing could continue the job. *)
 
-    It leaves the screen to a program run meanwhile, with the cursor shown. In
-    [`Primary] mode the live region is erased, after the static rows already
-    placed by a frame, and the cursor waits at its start: the program's output
-    goes on from the transcript, and {!resume} starts the live region below it.
-    In [`Alt] mode the screen is erased and the cursor waits at its top left,
-    unless [leave_alt].
+(** {1:signals Signals}
 
-    Idempotent: calling [suspend] while already suspended (or after {!close}) is
-    a no-op. Live requests and {!start}/{!pause} can change rendering demand
-    while suspended without reclaiming terminal ownership. *)
+    When its terminal is a terminal, a run takes SIGINT, SIGTERM, SIGHUP,
+    SIGQUIT, SIGTSTP and SIGABRT if their action is the default when it begins,
+    as X/Open Curses allows; an application that installed its own action keeps
+    it. SIGWINCH and SIGCONT are taken always, and a handler installed before is
+    still called. The handlers record the signal and write a byte to
+    {!Backend.wake_fd}; the loop acts on it in its next turn, and the actions
+    are restored when the run ends.
 
-val resume : app -> unit
-(** [resume app] reapplies terminal configuration after {!suspend}: it re-enters
-    the alternate-screen buffer iff the matching {!suspend} left it, discards
-    any input received while suspended (stale keystrokes never reach the app),
-    and requests a full repaint on the next frame. In [`Primary] mode the live
-    region starts again at the cursor, from a cursor position report, below what
-    the program run meanwhile wrote, which joins the transcript. Cadence follows
-    the latest rendering demand and live count; resuming does not restart a
-    stopped loop. *)
+    - SIGINT, SIGTERM, SIGHUP, SIGQUIT end the run: the terminal is given back,
+      then the signal is raised again with its default action, so the process
+      ends with that signal's status and {!run} does not return. An application
+      that wants {!run} to return installs its own handler first. A write the
+      terminal is not taking is interrupted by them, not resumed.
+    - SIGTSTP releases the terminal and stops the process, as {!stop_job} does
+      for the whole job; on continuing, the terminal is taken again.
+    - SIGCONT the run did not cause, as when the shell continued the job after a
+      stop from elsewhere, sets the terminal again: the shell has put back its
+      own settings. The size is read and the next frame drawn whole.
+    - SIGWINCH has the size read when the next frame is drawn.
+    - SIGABRT, from [abort()], returns to no point where OCaml can run, so its
+      handler restores the terminal itself, the saved settings and a reset of
+      the modes, and the process aborts. *)
 
-val request_live : app -> unit
-(** [request_live app] increments live demand. In automatic mode, the first
-    request enables continuous rendering. Requests made while suspended take
-    effect on {!resume}; explicit pause and stop remain in effect. *)
+(** {1:queries Terminal queries} *)
 
-val drop_live : app -> unit
-(** [drop_live app] decrements the live counter. When it reaches zero in auto
-    mode the cadence idles. *)
-
-val running : app -> bool
-(** [running app] is [true] while the app may continue its event loop. It is
-    initially [true] and becomes [false] on {!stop} or {!close}. Suspension and
-    paused rendering do not terminate the loop. *)
-
-val now : app -> float
-(** [now app] is monotonic time in seconds as reported by [app]'s clock. Its
-    origin is arbitrary; use differences for durations and this same clock for
-    {!schedule_wakeup} deadlines. *)
-
-val request_redraw : app -> unit
-(** [request_redraw app] marks the frame dirty for the next iteration. Outside
-    live mode, dirty frames render as soon as the target-fps pacing allows, so a
-    burst of requests coalesces instead of rendering back-to-back.
-
-    Requests may come from other threads or domains when the backend's [wake]
-    supports this. Requests during suspension or after closure are ignored.
-    Other app operations remain owned by the event-loop thread. Requests made
-    during the render callback remain pending for the next frame. *)
-
-val schedule_wakeup : app -> float option -> unit
-(** [schedule_wakeup app deadline] arms (or, with [None], clears) the loop's
-    one-shot wakeup. When the loop reaches [deadline] (a {!now} time), it runs
-    the [on_frame] callback without rendering — the mechanism time-based work
-    (timers) uses to advance off the clock while the loop is otherwise idle. One
-    slot: a new call replaces the previous deadline, and a due deadline clears
-    itself before the callback runs, so the callback re-arms if it still needs
-    waking. Whatever the callback dispatches must {!request_redraw} to be
-    presented. *)
-
-val redraw_requested : app -> bool
-(** [redraw_requested app] is [true] iff a redraw is pending. Lets an alternate
-    backend distinguish a frame gated on the render cadence from a loop with no
-    pending work. *)
-
-val abort_paste : app -> unit
+val abort_paste : 'msg app -> unit
 (** [abort_paste app] ends the bracketed paste in progress, if any, with
     [Paste_end `Cut], for an application that will wait no longer for its end
     marker: a terminal that stalls mid-paste stops the data, and the paste goes
     on until its end marker or the end of the input. The bytes after it are
     decoded as input. *)
 
-val query : app -> owed:Input.Decoder.owed -> string -> unit
+val query : 'msg app -> owed:Input.Decoder.owed -> string -> unit
 (** [query app ~owed q] sends the queries [q] to the terminal, followed by a
     primary device attributes query (DA1), and delivers their replies as
     {!Reply} events, ending with the DA1 reply. [owed] says which of the replies
@@ -463,42 +527,36 @@ val query : app -> owed:Input.Decoder.owed -> string -> unit
     delivered are those the terminal sends after it has answered the queries
     sent before [q], so they may include the answer to a query the runtime
     itself sent just before; a report the terminal sends on its own that is an
-    application fact is its event ({!Color_scheme}, {!Resize}). Nothing is sent
-    when no reply could come: when the input is not a terminal in raw mode, or
-    the application is not running in the terminal ({!suspend}, {!close}). *)
+    application fact is its event ({!Color_scheme}). Nothing is sent when no
+    reply could come: when the input is not a terminal in raw mode, or it has
+    ended. *)
 
-val request_immediate_redraw : app -> unit
-(** [request_immediate_redraw app] requests a one-shot frame without waiting for
-    the configured frame cadence. Subsequent frames continue at the configured
-    cadence. *)
+val mode : 'msg app -> mode
+(** [mode app] is the presentation mode of the run. *)
 
-(** {1:queries Terminal queries} *)
-
-val mode : app -> mode
-(** [mode app] is the presentation mode set at creation time. *)
-
-val size : app -> int * int
+val size : 'msg app -> int * int
 (** [size app] is the current dynamic-region dimensions as [(cols, rows)]. In
     [`Primary] mode this is the live viewport, not the full terminal. *)
 
-val full_size : app -> int * int
+val full_size : 'msg app -> int * int
 (** [full_size app] is the full terminal dimensions [(cols, rows)], ignoring the
     primary-mode render offset. In [`Alt] mode this is identical to {!size}. *)
 
-val effective_size : app -> int * int
+val effective_size : 'msg app -> int * int
 (** [effective_size app] is the dynamic-region dimensions [(cols, rows)] that
-    will be in effect once {!prepare} flushes the pending static writes, before
-    it grows the region to the rows a frame requires. In [`Alt] mode, when the
-    static queue is empty, and so in [on_render], this equals {!size}. *)
+    will be in effect once {!draw} flushes the pending static writes, before it
+    grows the region to the rows a frame requires. In [`Alt] mode, when the
+    static queue is empty, and so in the function given to {!draw}, this equals
+    {!size}. *)
 
-val pixel_resolution : app -> (int * int) option
+val pixel_resolution : 'msg app -> (int * int) option
 (** [pixel_resolution app] is the last known pixel resolution as
     [(width, height)], or [None] if the terminal has not reported one. *)
 
-val terminal : app -> Terminal.t
+val terminal : 'msg app -> Terminal.t
 (** [terminal app] is the underlying terminal handle. *)
 
-val capabilities : app -> Terminal.capabilities
+val capabilities : 'msg app -> Terminal.capabilities
 (** [capabilities app] is the current terminal capabilities. *)
 
 (** {1:static Static output}
@@ -511,7 +569,7 @@ val capabilities : app -> Terminal.capabilities
     These functions are ignored in [`Alt] mode. *)
 
 val static_write :
-  ?preserve_live_region:bool -> ?rows:int -> app -> Grid.t -> unit
+  ?preserve_live_region:bool -> ?rows:int -> 'msg app -> Grid.t -> unit
 (** [static_write ?preserve_live_region ?rows app grid] queues a snapshot of the
     first [rows] grid rows before the live viewport. [rows] defaults to the full
     grid height, including blank or background-only rows. The snapshot is
@@ -519,8 +577,8 @@ val static_write :
     replaces the complete terminal row and ends with CRLF. Rows never wrap if
     the terminal becomes narrower before the queued output is presented; excess
     cells overwrite the rightmost column, following terminal margin behavior.
-    The rows go out with the next frame {!prepare} lays out: one written while a
-    frame is drawn goes out with the frame after it.
+    The rows go out with the next frame {!draw} lays out, which this asks for:
+    one written while a frame is drawn goes out with the frame after it.
 
     Raises [Invalid_argument] if the grid is wider than the current terminal, or
     [rows] is outside the grid height. [rows = 0] queues nothing.
@@ -531,7 +589,7 @@ val static_write :
     down to [min_tui_height]. *)
 
 val static_replace :
-  ?preserve_live_region:bool -> ?rows:int -> app -> Grid.t -> unit
+  ?preserve_live_region:bool -> ?rows:int -> 'msg app -> Grid.t -> unit
 (** [static_replace ?preserve_live_region ?rows app grid] queues an atomic
     replacement of all primary static content with a snapshot of [grid]. Row
     selection, snapshot ownership, and validation match {!static_write}.
@@ -542,18 +600,19 @@ val static_replace :
     shell output from before the application. Support for [CSI 3 J] varies
     across terminals. This function is ignored in [`Alt] mode. *)
 
-val static_clear : app -> unit
+val static_clear : 'msg app -> unit
 (** [static_clear app] clears the primary screen immediately, discards pending
     static output, and resets the live viewport to the full terminal height. It
     is an immediate terminal reset rather than a queued frame operation. *)
 
 (** {1:scroll Scroll optimisation} *)
 
-val set_scroll_hint : app -> Screen.scroll_hint -> unit
+val set_scroll_hint : 'msg app -> Screen.scroll_hint -> unit
 (** [set_scroll_hint app hint] sets a scroll hint for the current frame.
-    Consumed by the next {!submit} call. The runtime currently applies hints
-    only in [`Alt] mode. In [`Primary] mode hints are discarded because primary
-    static output already owns the frame's temporary scroll-region protocol.
+    Consumed by the frame being drawn, or the next. The runtime currently
+    applies hints only in [`Alt] mode. In [`Primary] mode hints are discarded
+    because primary static output already owns the frame's temporary
+    scroll-region protocol.
 
     Use this when a scrollable container's viewport shifts: the renderer applies
     DECSTBM hardware scroll so only the newly-revealed edge rows need cell-level
@@ -561,82 +620,51 @@ val set_scroll_hint : app -> Screen.scroll_hint -> unit
 
 (** {1:cursor Cursor control} *)
 
-val set_cursor : ?visible:bool -> ?style:Ansi.cursor_style -> app -> unit
+val set_cursor : ?visible:bool -> ?style:Ansi.cursor_style -> 'msg app -> unit
 (** [set_cursor ?visible ?style app] updates cursor visibility and/or style. *)
 
-val set_cursor_style : app -> style:Ansi.cursor_style -> blinking:bool -> unit
+val set_cursor_style :
+  'msg app -> style:Ansi.cursor_style -> blinking:bool -> unit
 (** [set_cursor_style app ~style ~blinking] sets cursor shape and blink. *)
 
-val set_cursor_position : app -> row:int -> col:int -> unit
+val set_cursor_position : 'msg app -> row:int -> col:int -> unit
 (** [set_cursor_position app ~row ~col] moves the cursor to 1-based coordinates
     within the dynamic render region. *)
 
-val set_cursor_color : app -> r:float -> g:float -> b:float -> unit
+val set_cursor_color : 'msg app -> r:float -> g:float -> b:float -> unit
 (** [set_cursor_color app ~r ~g ~b] sets the cursor color. Components are in
     \[[0.];[1.]\]. *)
 
 (** {1:diagnostics Diagnostics} *)
 
 val set_debug_overlay :
-  ?corner:debug_overlay_corner -> app -> enabled:bool -> unit
+  ?corner:debug_overlay_corner -> 'msg app -> enabled:bool -> unit
 (** [set_debug_overlay app ~enabled] shows or hides the debug overlay. [corner]
-    defaults to the value given to {!create}. *)
+    defaults to the value given to {!config}. *)
 
-val toggle_debug_overlay : ?corner:debug_overlay_corner -> app -> unit
+val toggle_debug_overlay : ?corner:debug_overlay_corner -> 'msg app -> unit
 (** [toggle_debug_overlay app] flips overlay visibility. *)
 
 val configure_frame_dump :
-  ?every:int -> ?dir:string -> ?pattern:string -> ?hits:bool -> app -> unit
+  ?every:int -> ?dir:string -> ?pattern:string -> ?hits:bool -> 'msg app -> unit
 (** [configure_frame_dump app] updates the periodic frame-dump schedule. See the
-    diagnostics parameters of {!create}. *)
+    diagnostics parameters of {!config}. *)
 
-val dump_frame : ?hits:bool -> ?dir:string -> ?pattern:string -> app -> unit
+val dump_frame :
+  ?hits:bool -> ?dir:string -> ?pattern:string -> 'msg app -> unit
 (** [dump_frame app] writes the current frame to disk immediately. *)
 
-(** {1:custom Custom backends}
+(**/**)
 
-    {!attach} creates an application wired to caller-provided I/O callbacks
-    instead of Unix. Use this in tests or with alternative runtimes (e.g. Eio).
-*)
+(* For test harnesses that drive a run they did not start, such as
+   [Matrix_test]: the run that holds the terminal, whether it owes a frame,
+   and events decoded elsewhere, queued as if the input had just been
+   decoded. *)
 
-val attach :
-  ?mode:mode ->
-  ?raw_mode:bool ->
-  ?target_fps:float option ->
-  ?mouse_enabled:bool ->
-  ?mouse:Terminal.mouse_mode option ->
-  ?bracketed_paste:bool ->
-  ?kitty_keyboard:kitty_keyboard ->
-  ?key_releases:bool ->
-  ?exit_on_ctrl_c:bool ->
-  ?debug_overlay:bool ->
-  ?debug_overlay_corner:debug_overlay_corner ->
-  ?debug_overlay_capacity:int ->
-  ?frame_dump_every:int ->
-  ?frame_dump_dir:string ->
-  ?frame_dump_pattern:string ->
-  ?frame_dump_hits:bool ->
-  ?cursor_visible:bool ->
-  ?explicit_width:bool ->
-  ?input_timeout:float option ->
-  ?resize_debounce:float option ->
-  ?min_tui_height:int ->
-  ?start_idle:bool ->
-  ?pace_redraws:bool ->
-  ?caps:Terminal.capabilities ->
-  backend:Backend.t ->
-  unit ->
-  app
-(** [attach ~backend ()] creates an application over [backend]. It owns the
-    input decoder and terminal protocol state, negotiates capabilities, obtains
-    the initial dimensions, and preserves input received during startup.
+type held = Held : 'msg app -> held
 
-    Optional parameters have the same meaning as in {!create}. Raw mode and
-    startup queries require [backend.input_is_tty] and [raw_mode]; terminal mode
-    output requires [backend.output_is_tty].
+val holder : unit -> held option
+val frame_owed : 'msg app -> bool
+val inject : 'msg app -> event -> unit
 
-    [attach] takes ownership of backend cleanup. Failed construction restores
-    acquired terminal modes and raw mode, calls [backend.cleanup] once, and
-    propagates the original exception and backtrace. On success, {!close}
-    releases these resources. The caller owns signal handling and must arrange
-    to close the application when its enclosing scope exits. *)
+(**/**)
