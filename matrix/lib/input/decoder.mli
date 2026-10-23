@@ -64,8 +64,14 @@
     The caller sends the queries, so it knows which replies may come; each query
     says what it is owed. {!expect} adds to the counts, and {!settle} takes back
     what a batch of queries was owed once it is answered or will not be: when
-    the DA1 that ends the batch is answered, or after a wait. The decoder only
-    reads the counts.
+    the DA1 that ends the batch is answered, or when the caller gives up on an
+    answer. The decoder only reads the counts.
+
+    The counts decide how a reply decodes, so a reply that arrives after its
+    batch was settled is input: its [ESC P], [ESC \]] or [ESC _] is an Alt key
+    and the rest is typed, and its [CSI 1 ; m R] is F3. Replies are never keys
+    while they are owed; a caller keeps a batch owed until its answer, and gives
+    up on one only after longer than a terminal takes to answer.
 
     {1:paste Paste}
 

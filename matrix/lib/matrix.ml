@@ -91,7 +91,7 @@ type batch = {
   sent : float;
   mutable reports : int;  (** Cursor reports received. *)
   mutable cursor : (int * int) option;  (** A cursor batch's answer. *)
-  mutable settled : bool;
+  mutable answered : bool;
 }
 
 type app = {
@@ -104,8 +104,11 @@ type app = {
   (* The round trip of the startup probe, 0 until measured. *)
   mutable rtt : float;
   mutable evidence : Terminal.Caps.evidence;
-  (* Batches not yet settled, oldest first. *)
+  (* Batches still owed, oldest first. *)
   mutable batches : batch list;
+  (* Cursor reports owed by batches given up, which a late report answers
+     first. *)
+  mutable lost_reports : int;
   (* Events decoded and not yet delivered. *)
   events : event Queue.t;
   (* The size the last resize event reported. *)
@@ -443,8 +446,22 @@ let update_capabilities t =
    of the startup probe, the time a terminal takes to write what it began. An
    ESC that may begin a sequence waits max(50 ms, 2 RTT), the 50 ms that
    libtermkey and neovim wait; a sequence begun, which a terminal writes
-   whole, waits max(500 ms, 4 RTT). A batch of queries is settled once, when
-   its DA1 is answered or after max(500 ms, 4 RTT). *)
+   whole, waits max(500 ms, 4 RTT).
+
+   A batch of queries is owed until it is answered, by its DA1 or, for a
+   cursor batch, its report, and while it is owed the decoder reads its
+   replies as replies: a reply is never typed for arriving late. The runtime
+   waits for an answer only max(500 ms, 4 RTT), then goes on without it, and
+   the batch stays owed. A terminal that never answers would then keep
+   [ESC P], [ESC \]] and [ESC _] from being Alt keys, and a modified F3 from
+   being F3, for the whole session, so a batch is given up after max(5 s,
+   4 RTT). No reference bounds it: it must exceed any real answer's delay,
+   since a reply after it decodes as input, and it costs only those keys while
+   it lasts. 5 s is ten times the wait for an answer, and 4 RTT keeps it above
+   a slow link's round trip as the sequence wait does. The cursor reports a
+   given-up batch was owed are counted: a report that comes later answers
+   them first, so that it never answers a later batch, such as the one that
+   anchors the live region. *)
 
 let silence t =
   match Input.Decoder.pending t.decoder with
@@ -452,7 +469,8 @@ let silence t =
   | Ambiguous -> Some (Float.max 0.05 (2. *. t.rtt))
   | Sequence -> Some (Float.max 0.5 (4. *. t.rtt))
 
-let expiry t = Float.max 0.5 (4. *. t.rtt)
+let answer_wait t = Float.max 0.5 (4. *. t.rtt)
+let owed_bound t = Float.max 5. (4. *. t.rtt)
 
 let push t event =
   (match event with
@@ -460,11 +478,16 @@ let push t event =
   | _ -> ());
   Queue.push event t.events
 
-let settle t b =
-  if not b.settled then (
-    b.settled <- true;
+(* A batch leaves the decoder's counts once, answered or given up. *)
+let close t b =
+  if List.memq b t.batches then (
     Input.Decoder.settle t.decoder b.owed;
     t.batches <- List.filter (fun b' -> b' != b) t.batches)
+
+let give_up t b =
+  t.lost_reports <-
+    t.lost_reports + b.owed.Input.Decoder.cursor_reports - b.reports;
+  close t b
 
 let send_batch t question (bytes, owed) =
   Terminal.send t.terminal bytes;
@@ -476,7 +499,7 @@ let send_batch t question (bytes, owed) =
       sent = now t;
       reports = 0;
       cursor = None;
-      settled = false;
+      answered = false;
     }
   in
   t.batches <- t.batches @ [ b ];
@@ -492,25 +515,31 @@ let ask_cursor t =
     ( Ansi.(to_string (query Cursor_position)),
       { Input.Decoder.cursor_reports = 1; string_replies = 0 } )
 
-(* A cursor report answers the oldest batch still owed one. *)
+(* A cursor report answers the oldest query still owed one, a given-up one
+   first. *)
 let cursor_report t ~row ~col =
-  match
-    List.find_opt
-      (fun b -> b.reports < b.owed.Input.Decoder.cursor_reports)
-      t.batches
-  with
-  | None -> ()
-  | Some b -> (
-      let index = b.reports in
-      b.reports <- index + 1;
-      match b.question with
-      | Capabilities q ->
-          t.evidence <- Terminal.Caps.cursor t.evidence q ~index ~row ~col
-      | Cursor ->
-          b.cursor <- Some (row, col);
-          settle t b)
+  if t.lost_reports > 0 then t.lost_reports <- t.lost_reports - 1
+  else
+    match
+      List.find_opt
+        (fun b -> b.reports < b.owed.Input.Decoder.cursor_reports)
+        t.batches
+    with
+    | None -> ()
+    | Some b -> (
+        let index = b.reports in
+        b.reports <- index + 1;
+        match b.question with
+        | Capabilities q ->
+            t.evidence <- Terminal.Caps.cursor t.evidence q ~index ~row ~col
+        | Cursor ->
+            b.cursor <- Some (row, col);
+            b.answered <- true;
+            close t b)
 
-(* A DA1 reply ends the oldest batch that asked for one. *)
+(* A DA1 reply answers the oldest batch that asked for one. The terminal
+   answers in order, so every query sent before it has been answered or never
+   will be. *)
 let attributes_report t attributes =
   match
     List.find_opt
@@ -519,7 +548,14 @@ let attributes_report t attributes =
       t.batches
   with
   | Some ({ question = Capabilities q; _ } as b) ->
-      settle t b;
+      let rec before = function
+        | b' :: rest when b' != b -> b' :: before rest
+        | _ -> []
+      in
+      List.iter (close t) (before t.batches);
+      t.lost_reports <- 0;
+      b.answered <- true;
+      close t b;
       if q = Probe then t.rtt <- now t -. b.sent;
       t.evidence <- Terminal.Caps.answered t.evidence q ~attributes;
       Option.iter (ask t) (Terminal.Caps.next t.evidence q)
@@ -554,8 +590,8 @@ let decoded t : Input.Decoder.event -> unit = function
   | Invalid s -> push t (Invalid s)
 
 let expire t =
-  let now = now t and expiry = expiry t in
-  List.iter (fun b -> if now >= b.sent +. expiry then settle t b) t.batches
+  let now = now t and bound = owed_bound t in
+  List.iter (fun b -> if now >= b.sent +. bound then give_up t b) t.batches
 
 (* The time until the input needs attention, as a timeout. *)
 let input_timeout t =
@@ -567,8 +603,8 @@ let input_timeout t =
   match t.batches with
   | [] -> silence
   | b :: _ -> (
-      let expiry = after (b.sent +. expiry t) in
-      match (silence, expiry) with
+      let bound = after (b.sent +. owed_bound t) in
+      match (silence, bound) with
       | Some a, Some b -> Some (Float.min a b)
       | None, x | x, None -> x)
 
@@ -595,10 +631,18 @@ let read_input t ~timeout ~native =
      | _ -> ());
   expire t
 
-(* Reads input until [b] is settled or the input ends. *)
+(* Reads input until [b] is answered, the wait for its answer is over, or the
+   input ends. [b] stays owed after the wait. *)
 let await t b =
-  while (not b.settled) && not t.input_ended do
-    read_input t ~timeout:(input_timeout t) ~native:(push t)
+  let until () = b.sent +. answer_wait t in
+  while (not b.answered) && (not t.input_ended) && now t < until () do
+    let wait = until () -. now t in
+    let timeout =
+      match input_timeout t with
+      | Some timeout -> Float.min timeout wait
+      | None -> wait
+    in
+    read_input t ~timeout:(Some timeout) ~native:(push t)
   done
 
 let abort_paste t = Input.Decoder.cut_paste t.decoder (decoded t)
@@ -1288,6 +1332,7 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
           rtt = 0.;
           evidence;
           batches = [];
+          lost_reports = 0;
           events = Queue.create ();
           reported_size = (width, height);
           config;

@@ -116,6 +116,12 @@ let make_app ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
   in
   let write_output buf off len =
     Buffer.add_subbytes state.output buf off len;
+    (* A terminal answers the startup probe at least with its DA1, unless the
+       test gives the answer. *)
+    if
+      startup_input = []
+      && String.starts_with ~prefix:"\027 F" (Bytes.sub_string buf off len)
+    then startup_chunks := [ "\027[?62c" ];
     if Bytes.sub_string buf off len = "\027[6n" then
       cursor_reply :=
         match !app_ref with
@@ -1062,7 +1068,7 @@ let test_startup_capability_window_defers_split_response () =
 let test_resume_reanchors_primary_from_bottom_cursor () =
   let app, state =
     make_app ~mode:`Primary ~terminal_tty:true ~target_fps:None
-      ~input_timeout:(Some 0.)
+      ~input_timeout:(Some 0.) ~startup_cursor:(1, 1)
       ~query_cursor_position:(fun ~timeout:_ -> Some (24, 3))
       ()
   in
@@ -2340,8 +2346,8 @@ type clocked = {
   mutable seen : (float * Matrix.event) list;  (** Delivered, latest first. *)
 }
 
-let clocked_app ?(env = no_env) ?(exit_on_ctrl_c = true) ?(limit = 10.)
-    ?(rtt = 0.) ?(answer = fun _ -> []) typed =
+let clocked_app ?(mode = `Alt) ?(env = no_env) ?(exit_on_ctrl_c = true)
+    ?(limit = 10.) ?(rtt = 0.) ?(answer = fun _ -> []) typed =
   let c =
     {
       now = 0.;
@@ -2408,7 +2414,7 @@ let clocked_app ?(env = no_env) ?(exit_on_ctrl_c = true) ?(limit = 10.)
     }
   in
   let app =
-    Matrix.attach ~target_fps:None ~exit_on_ctrl_c ~resize_debounce:None
+    Matrix.attach ~mode ~target_fps:None ~exit_on_ctrl_c ~resize_debounce:None
       ~pace_redraws:false ~backend ()
   in
   app_ref := Some app;
@@ -2459,13 +2465,15 @@ let test_waits_follow_round_trip () =
       is_true ~msg:"50 ms with no round trip" (close_to at 1.05)
   | _ -> fail "expected one Escape"
 
-(* A batch without its DA1 is settled after max(500 ms, 4 RTT): the decoder is
-   owed nothing more, so a modified F3 is a key and [ESC \]] is Alt+\]. *)
-let test_unanswered_batch_expires () =
+(* A batch is owed until its answer, so a reply that comes after the runtime
+   stopped waiting for it is still a reply. A batch the terminal never answers
+   is given up after 5 s, and what comes after decodes as input: a modified F3
+   is a key and [ESC \]] is Alt+\]. *)
+let test_unanswered_batch_is_given_up () =
   let ((_, c) as t) =
-    clocked_app ~limit:2. [ (1., "\027[1;2R"); (1.5, "\027]1x") ]
+    clocked_app ~limit:7. [ (1., "\027[1;2R"); (6., "\027[1;2R\027]1x") ]
   in
-  is_true ~msg:"startup waits out the probe" (close_to c.now 0.5);
+  is_true ~msg:"startup waits 500 ms for the probe" (close_to c.now 0.5);
   run_clocked t;
   let key ?(text = "") ?(mods = Matrix.Input.Keystroke.no_mods) key =
     Matrix.Key { key; mods; text; base = None; keypad = false; repeat = false }
@@ -2489,6 +2497,66 @@ let index_of s sub =
     else go (i + 1)
   in
   go 0
+
+(* A terminal that answers every query, as xterm with the kitty keyboard
+   protocol does: the probe with a mode report, its two cursor reports,
+   XTVERSION, the kitty flags and DA1, a cursor query with the cursor on row
+   10, and the flags and pixel size when asked. *)
+let answers_everything s =
+  let has sub = index_of s sub <> None in
+  if String.starts_with ~prefix:"\027 F" s then
+    [
+      "\027[?2026;1$y\027[1;2R\027[1;3R\027P>|XTerm(398)\027\\\027[?0u\027[?64;1c";
+    ]
+  else if s = "\027[6n" then [ "\027[10;1R" ]
+  else if has "\027[?u" then [ "\027[?5u" ]
+  else if has "\027[14t" then [ "\027[4;480;800t" ]
+  else []
+
+(* However slow the link, up to the 5 s a batch stays owed, no reply is
+   typed: the application receives exactly what the user typed. A cursor
+   report anchors the live region only where the report it answers says. *)
+let test_late_replies_never_typed () =
+  let letters = "abcdefghijklmnopqrstuvwxyz" in
+  let typed =
+    List.init 26 (fun i ->
+        (0.1 +. (0.25 *. Float.of_int i), String.make 1 letters.[i]))
+  in
+  List.iter
+    (fun mode ->
+      List.iter
+        (fun latency ->
+          let ((app, c) as t) =
+            clocked_app ~mode ~rtt:latency ~answer:answers_everything ~limit:12.
+              typed
+          in
+          run_clocked t;
+          let msg =
+            Printf.sprintf "%s, latency %g s"
+              (match mode with `Alt -> "alt" | `Primary -> "primary")
+              latency
+          in
+          let keys =
+            List.filter_map
+              (function
+                | Matrix.Key { key = Char u; mods; _ }
+                  when mods = Matrix.Input.Keystroke.no_mods ->
+                    Some (Uchar.to_char u)
+                | Resize _ | Color_scheme _ -> None
+                | e -> Some (failf "%s: %a" msg Matrix.pp_event e))
+              (events c)
+          in
+          equal ~msg string letters (String.of_seq (List.to_seq keys));
+          (* An answer later than the wait for it anchors nothing: the live
+             region stays where the runtime planned it, the whole screen. *)
+          if mode = `Primary then
+            equal
+              ~msg:(msg ^ ": anchored at row 10, or not at all")
+              (pair int int)
+              (if latency <= 1. then (80, 15) else (80, 24))
+              (Matrix.size app))
+        [ 0.01; 0.3; 0.55; 0.8; 1.; 2.; 3.; 4.; 4.9 ])
+    [ `Alt; `Primary ]
 
 (* The startup payload starts with S7C1T and sets the reports that need no
    answer; a late answer changes the modes by their difference: the kitty
@@ -2878,7 +2946,9 @@ let () =
       group "Input"
         [
           test "waits follow the round trip" test_waits_follow_round_trip;
-          test "an unanswered batch expires" test_unanswered_batch_expires;
+          test "an unanswered batch is given up"
+            test_unanswered_batch_is_given_up;
+          test "late replies are never typed" test_late_replies_never_typed;
           test "a late answer changes modes" test_late_answer_changes_modes;
           test "metaSendsEscape set is kept" test_meta_sends_escape_kept;
           test "paste streams and aborts" test_paste_streams_and_aborts;

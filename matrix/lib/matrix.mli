@@ -56,7 +56,9 @@ type mode = [ `Alt | `Primary ]
 (** The type for what the terminal says to the application. The input is decoded
     by {!Input.Decoder}; replies to the runtime's queries never reach the
     application, but those that are application facts do, as {!Resize} and
-    {!Color_scheme}. *)
+    {!Color_scheme}. A batch of queries is owed until the terminal answers it,
+    however late, or, if it never does, for 5 s or four round trips of the
+    startup probe, whichever is longer; a reply after that decodes as input. *)
 type event =
   | Key of Input.Keystroke.t  (** A key pressed or auto-repeated. *)
   | Key_release of Input.Keystroke.release
