@@ -64,6 +64,12 @@ event, a timer that came due (`Matrix.at`), a function another thread posted
 (`Matrix.post`), or a frame to draw, which comes only when asked for
 (`Matrix.request_redraw`). An idle program costs no wakeups.
 
+`Matrix.next` waits for the terminal with `select(2)`. A program with an event
+loop of its own takes the run's steps with `Matrix.step app ~now`, which never
+waits, and waits with that loop until one of `Matrix.fds app` is readable or
+`Matrix.deadline app` comes. Mosaic's `24-eio`, `26-lwt` and `27-threads`
+examples show it for Eio, Lwt and threads.
+
 ### Display Modes
 
 Matrix supports two rendering modes:

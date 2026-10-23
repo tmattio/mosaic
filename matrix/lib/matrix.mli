@@ -6,9 +6,12 @@
 
     An application runs in a scope, {!run}, which takes the terminal and gives
     it back on every way out. Inside, the application asks for the next thing to
-    do, {!next}, and does it: an input event, a timer that came due, a function
+    do, {!next}, and does it: an input event, a timer that came due, a message
     another thread posted, or a frame to draw. Matrix decides the order and the
-    timing; the application decides what each step means.
+    timing; the application decides what each step means. {!next} waits for the
+    terminal itself; a program that waits with an event loop of its own takes
+    the steps with {!val-step} and waits for what {!fds} and {!deadline} say
+    ({{!loop}The loop}).
 
     {[
     let () =
