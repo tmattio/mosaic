@@ -2768,3 +2768,92 @@ let%expect_test "a posted message that changes nothing asks for no frame" =
     after messages that change nothing: false
     after one that changes the model: true
     |}]
+
+(* Cost and order. *)
+
+let%expect_test "C1: a read of 1,000 keys is 1,000 updates, painted each frame"
+    =
+  (* Each update takes 0.1 ms: the burst takes 100 ms, and a frame is
+     painted each frame interval of it. A frame is one write. *)
+  let updates = ref 0 and views = ref 0 and writes = ref 0 in
+  let counting = ref false in
+  let application =
+    {
+      Mosaic.init = (fun () -> (0, Mosaic.Cmd.none));
+      update =
+        (fun () n ->
+          incr updates;
+          stall 0.0001;
+          (n + 1, Mosaic.Cmd.none));
+      view =
+        (fun n ->
+          incr views;
+          Mosaic.text (string_of_int n));
+      subscriptions = (fun _ -> Mosaic.Sub.on_key (fun _ -> Some ()));
+    }
+  in
+  let t =
+    Matrix_test.create ~width:20 ~height:1
+      ~on_idle:(fun t ~until ->
+        if not (Matrix_test.settle t ~until) then
+          if not !counting then (
+            counting := true;
+            views := 0;
+            writes := 0;
+            Matrix_test.feed t (String.make 1000 'a'))
+          else Matrix_test.stop t)
+      ()
+  in
+  terminal := Some t;
+  let backend = Matrix_test.backend t in
+  let backend =
+    {
+      backend with
+      write_output =
+        (fun b off len ->
+          if !counting then incr writes;
+          backend.write_output b off len);
+    }
+  in
+  Mosaic.run ~backend ~config:(Matrix_test.config t) application;
+  Printf.printf "%d updates, %d views, %d paints in %d ms\n" !updates !views
+    !writes
+    (Matrix_test.now t / 1_000_000);
+  [%expect {| 1000 updates, 1000 views, 6 paints in 100 ms |}]
+
+let%expect_test "C2: quit ends the run; keys read after it are dropped" =
+  let observed, application =
+    recording (fun _ ->
+        Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key))))
+  in
+  let application =
+    {
+      application with
+      Mosaic.update =
+        (fun msg model ->
+          let model, cmd = application.Mosaic.update msg model in
+          (model, if msg = Pressed "q" then Mosaic.Cmd.quit else cmd));
+    }
+  in
+  drive ~width:70 ~height:1 application [ `Feed "aqbc" ];
+  print_endline (String.concat "," !observed.keys);
+  [%expect {| a,q |}]
+
+let%expect_test "C3: a batch starts its commands in list order, depth first" =
+  let order = ref [] in
+  let started name = Mosaic.Cmd.perform (fun _ -> order := name :: !order) in
+  let application =
+    app
+      ~init_cmd:
+        (Mosaic.Cmd.batch
+           [
+             started "p1";
+             Mosaic.Cmd.batch [ started "p2"; started "p3" ];
+             Mosaic.Cmd.set_title "title";
+             started "p4";
+           ])
+      ()
+  in
+  drive ~process_perform:(fun work -> work ()) application [];
+  print_endline (String.concat "," (List.rev !order));
+  [%expect {| p1,p2,p3,p4 |}]

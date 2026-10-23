@@ -42,6 +42,7 @@
 
 #### Changed (runtime)
 
+- **`Cmd.batch` order is promised** – a batch starts its commands in list order, depth first, so terminal commands take effect in that order; the messages of work done off the loop arrive as it finishes. `Cmd.quit` ends the run once its update's commands have started, and drops the events read after it
 - **Each tick has its own `dt`** – `Sub.on_tick` ticks once per frame with the time since that subscription's previous tick, `0.` on its first; it was the time since the previous frame, so an animation started after ten idle seconds began with a ten-second step
 - **A late timer fires once, with a count** – `Sub.every ~id period f` dispatches `f k`, `k` the periods that ended since its previous call: `1` on time, more after a stall, where it replayed every missed period one turn at a time. Timers that come due in the same turn fire in the order of their grid points
 - **`Mosaic.run ?backend ?config`** replaces `?matrix`; `init` runs before the terminal is taken, its commands and the first subscriptions inside the run, so an exception in either gives the terminal back. Work done off the loop dispatches through `Matrix.post`; `every` deadlines are exact integer nanoseconds; `on_tick` runs only in frames

@@ -771,7 +771,7 @@ module Cmd : sig
   type 'msg t =
     | None  (** No command. Equivalent to [batch []]. *)
     | Batch of 'msg t list
-        (** Execute all commands in the list. Order is not guaranteed. *)
+        (** Start the commands in list order. See {!val-batch}. *)
     | Perform of (('msg -> unit) -> unit)
         (** Execute an arbitrary side-effecting function. The function receives
             a {e dispatch} callback and may call it zero or more times, from any
@@ -780,7 +780,7 @@ module Cmd : sig
         (** Give the terminal to a function and dispatch its result. See
             {!val-exec}. *)
     | Suspend  (** Stop the job. See {!val-suspend}. *)
-    | Quit  (** Request orderly termination of the application. *)
+    | Quit  (** End the run. See {!val-quit}. *)
     | Set_title of string
         (** Set the terminal window title to the given string. *)
     | Copy_to_clipboard of string
@@ -811,8 +811,14 @@ module Cmd : sig
   (** [none] is the empty command. Produces no side-effects. *)
 
   val batch : 'msg t list -> 'msg t
-  (** [batch cmds] is a command that executes every command in [cmds]. Execution
-      order among the commands is not specified. *)
+  (** [batch cmds] starts the commands of [cmds] in list order, depth first.
+
+      A command starts after the update that returned it, before the next
+      message, event or frame. The commands that act on the terminal (a title,
+      the clipboard, static output, a child given the terminal) therefore take
+      effect in list order: they write to one stream, in order. Work done off
+      the loop ({!val-perform}) starts in that order too, but its messages
+      arrive in the order it finishes, which nothing promises. *)
 
   val perform : (('msg -> unit) -> unit) -> 'msg t
   (** [perform f] runs [f dispatch] off the loop, by {!val-run}'s
@@ -853,8 +859,10 @@ module Cmd : sig
       the run began). *)
 
   val quit : 'msg t
-  (** [quit] requests orderly application termination after the current update
-      cycle completes. *)
+  (** [quit] ends the run once the commands of the update that returned it have
+      started, so [batch [static_commit v; quit]] commits [v]. Nothing after
+      that update is applied: events read and not yet handled, typed for a
+      program that has ended, are dropped, and no frame is drawn. *)
 
   val set_title : string -> 'msg t
   (** [set_title s] sets the terminal window title to [s]. *)
