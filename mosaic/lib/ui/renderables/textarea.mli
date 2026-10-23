@@ -129,14 +129,16 @@ module Props : sig
   (** [make ~state ()] describes [state] with the widget's visual defaults.
       [annotations] must describe the same bytes as [Editor.text state]. Raises
       [Invalid_argument] on a mismatch, before applying any properties. Omit
-      annotations while awaiting a result for a changed source. *)
+      annotations while awaiting a result for a changed source. Annotations
+      depend only on the source bytes: the same annotations stay valid while the
+      caret and selection move. *)
 
   val default : t
   (** [default] is [make ~state:Editor.empty ()]. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] refer to the same editor value and
-      have equal visual properties. *)
+      the same annotations, and have equal visual properties. *)
 end
 
 val apply_props : t -> Props.t -> unit

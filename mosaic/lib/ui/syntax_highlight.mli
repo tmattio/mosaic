@@ -2,7 +2,14 @@
 
     [Syntax_highlight] is the stable bridge between syntax highlighters and code
     renderables. It describes styled byte ranges over a UTF-8 source string
-    without depending on a concrete highlighter such as Tree-sitter.
+    without depending on a concrete highlighter such as Tree-sitter: a producer
+    names each range with a scope (see {!Syntax_style} for the vocabulary), and
+    a {!Syntax_style.t} chosen by the view turns scopes into terminal styles.
+
+    Captures are bound to the source they describe. A range means nothing
+    without its bytes, so a consumer shows captures only over exactly those
+    bytes: captures computed for another source, even one of the same length,
+    are rejected rather than coloring text they were not computed for.
 
     Ranges can carry metadata used by source renderables for behaviours such as
     concealment and injection-container suppression. *)
@@ -33,7 +40,9 @@ type t
 val range :
   ?meta:meta -> start_byte:int -> end_byte:int -> scope:string -> unit -> range
 (** [range ~start_byte ~end_byte ~scope ()] highlights bytes from [start_byte]
-    inclusive to [end_byte] exclusive with capture scope [scope].
+    inclusive to [end_byte] exclusive with capture scope [scope]. Offsets count
+    bytes of the UTF-8 source, not characters or graphemes, as tree-sitter's
+    captures do. An empty range highlights nothing.
 
     Raises [Invalid_argument] if [start_byte < 0] or [end_byte < start_byte]. *)
 

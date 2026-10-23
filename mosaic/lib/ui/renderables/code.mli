@@ -6,8 +6,16 @@
 
     [Code] differs from {!Text} in its defaults: wrapping defaults to [`None],
     tab width defaults to [4], and it registers as a
-    {!type:Renderable.text_rows} provider. See doc/highlighting.md for backend
-    integration and Markdown fence recipes. *)
+    {!type:Renderable.text_rows} provider.
+
+    {1:highlighting Highlighting}
+
+    Code colors byte ranges that something else computed. Either the ranges are
+    already known ({!val-syntax}), or a {!Highlighter.t} computes them for
+    whatever content the view shows ({!with_highlighter}). Mosaic holds no
+    grammar and no table of languages: a language is a name the application
+    passes to {!with_highlighter} and its highlighter interprets, so aliases,
+    filename extensions and the choice of parser stay with the application. *)
 
 (** {1:types Types} *)
 
@@ -19,14 +27,26 @@ type syntax
 
     Syntax settings are values: their language, style, ranges and flags compare
     by value, so a view may rebuild them on every render. Only the
-    {!Highlighter.t} inside compares by identity (see {!Highlighter.t}). *)
+    {!Highlighter.t} inside compares by identity (see {!Highlighter.t}).
+
+    [style] and [conceal] only present captures: a change of either alone
+    restyles the result already received for the content without highlighting it
+    again, and a pending result is styled with the settings current when it
+    arrives. *)
 
 module Highlighter : sig
   type request = { content : string; language : string }
-  (** The type for highlight requests. *)
+  (** The type for highlight requests. [content] is the whole buffer the view
+      shows, never an edit to an earlier one, and [language] is the name given
+      to {!with_highlighter}, passed through uninterpreted. A highlighter that
+      wants to reuse work across requests keeps that state itself, for instance
+      a cache keyed on [language] and [content]. *)
 
   type result = (Syntax_highlight.t, exn) Stdlib.result
-  (** The type for highlighter results. *)
+  (** The type for highlighter results. The captures must be bound to the
+      request's [content] (see {!Syntax_highlight.make}). An [Error], or
+      captures bound to other bytes, is a highlighting failure: the view shows
+      that content as plain text. A failure affects only its request. *)
 
   type job
   (** The type for an in-flight asynchronous highlight job. *)
@@ -39,31 +59,41 @@ module Highlighter : sig
       they are physically equal. Create a highlighter once, at module level or
       in the model, and reuse it across renders and code blocks; a highlighter
       created during a render is a new producer, and the code it configures is
-      highlighted again. *)
+      highlighted again. {!Diff} and {!Markdown} compare highlighters the same
+      way, and one highlighter may serve any number of views.
+
+      Each view has at most one request queued or running at a time, even across
+      highlighter changes. Content and syntax changes made meanwhile coalesce
+      into a single follow-up request, sent when that one completes. Destroying
+      the view cancels its request. *)
 
   val job : poll:(unit -> result option) -> cancel:(unit -> unit) -> job
   (** [job ~poll ~cancel] is an asynchronous job. [poll ()] returns [None] while
       the job is pending and [Some outcome] once it has completed. [cancel ()]
       asks the producer to stop work or discard its result when the widget is
-      destroyed. Content and syntax changes coalesce while a job runs; when it
-      completes, the latest request starts. An obsolete result is never shown as
-      such (see {!with_highlighter}). A live job must eventually complete even
-      if its input has become obsolete. *)
+      destroyed. While a job runs, later requests wait (see {!t}); an obsolete
+      result is never shown as such (see {!with_highlighter}). A live job must
+      therefore eventually complete even if its input has become obsolete. *)
 
   val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
-  (** [sync f] is a synchronous highlighter. Exceptions raised by [f] are
-      treated as highlighting failures and fall back to plain text. Captures
-      must be bound to the requested content; mismatches also fall back to plain
-      text. *)
+  (** [sync f] is a synchronous highlighter: [f] runs on the rendering thread
+      when content or syntax changes. Exceptions raised by [f] are highlighting
+      failures (see {!type-result}). *)
 
   val threaded : (language:string -> content:string -> Syntax_highlight.t) -> t
   (** [threaded f] runs whole-buffer requests on a worker systhread. Reuse the
       returned highlighter: it runs at most one call to [f] at a time, queues
-      live requests in order, and releases its worker when the queue empties.
-      Cancelled queued requests are removed immediately. A running call cannot
-      be interrupted; cancellation discards its result. Polling and cancellation
-      are thread-safe and do not wait for [f] to finish. Exceptions from [f]
-      become highlighting failures, falling back to plain text.
+      live requests in order, starts its worker when a request arrives and
+      releases it when the queue empties. Views sharing the highlighter share
+      its worker, so a slow call delays the requests queued behind it. Cancelled
+      queued requests are removed immediately. A running call cannot be
+      interrupted; cancellation discards its result. Polling and cancellation
+      are thread-safe and do not wait for [f] to finish. Exceptions from [f] are
+      highlighting failures of their request (see {!type-result}); the worker
+      goes on with the next one.
+
+      The worker publishes the immutable result and schedules a render; the
+      result is applied on the rendering thread.
 
       [f] must finish, must not mutate renderables, and must synchronize any
       state shared outside this highlighter. Systhreads do not provide CPU
@@ -75,9 +105,8 @@ module Highlighter : sig
       The job producer should call [notify] when [poll] may return a completed
       result. [notify] is safe to call from a worker thread. Its only effect is
       to schedule rendering; polling and applying results happen on the render
-      thread. Each widget starts at most one job at a time, including across
-      highlighter changes. Exceptions raised by the starter or job polling are
-      treated as highlighting failures and fall back to plain text. *)
+      thread. Exceptions raised by the starter or job polling are highlighting
+      failures (see {!type-result}). *)
 end
 
 val syntax :
@@ -104,7 +133,7 @@ val with_highlighter :
   syntax
 (** [with_highlighter ~language highlighter] is a syntax configuration that
     derives highlight ranges from [highlighter], which receives [language] and
-    the whole content in each request.
+    the whole content in each request. Empty content is shown without a request.
 
     A synchronous highlighter's result is shown at once. While an asynchronous
     result is pending, the code still shows its current content: bytes it shares

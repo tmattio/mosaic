@@ -28,9 +28,7 @@
     Producers should normalize backend-specific captures into these categories.
     Applications may define additional scopes in a custom style. Unmapped scopes
     are retained and resolve to the base style; they are never dropped. Language
-    names remain opaque application-defined strings.
-
-    See doc/highlighting.md for integration recipes. *)
+    names remain opaque application-defined strings. *)
 
 (** {1:types Types} *)
 

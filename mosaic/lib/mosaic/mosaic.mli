@@ -687,8 +687,7 @@ module Code : sig
     (** [threaded f] serializes requests on one on-demand worker systhread per
         highlighter. Cancellation removes queued requests and discards running
         results. Reuse the highlighter across renders. See
-        {!Mosaic_ui.Code.Highlighter.threaded} for the threading contract and
-        doc/highlighting.md for integration recipes. *)
+        {!Mosaic_ui.Code.Highlighter.threaded} for the threading contract. *)
 
     val async : (request -> notify:(unit -> unit) -> job) -> t
   end
@@ -714,7 +713,7 @@ module Code : sig
 end
 
 (** Syntax styles. The normative scope vocabulary and fallback rules are
-    documented in {!Mosaic_ui.Syntax_style}; see also doc/highlighting.md. *)
+    documented in {!Mosaic_ui.Syntax_style}. *)
 module Syntax_style : sig
   type t = Mosaic_ui.Syntax_style.t
   (** The type for syntax styles. *)
