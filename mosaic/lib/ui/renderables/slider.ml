@@ -49,6 +49,9 @@ type t = {
   mutable on_change : (float -> unit) option;
   mutable dragging : bool;
   mutable drag_offset_virtual : int;
+  mutable drag_pos : int;
+      (* The pointer's position along the track at the last press or drag,
+         whose value has been proposed. *)
 }
 
 let node t = t.node
@@ -239,6 +242,7 @@ let point_in_rect ~px ~py r =
 
 let start_drag t ev =
   t.dragging <- true;
+  t.drag_pos <- mouse_pos_along_axis t ev;
   t.drag_offset_virtual <- calculate_drag_offset_virtual t ev
 
 let handle_mouse_down t ev =
@@ -260,6 +264,7 @@ let handle_mouse_down t ev =
     in
     let value = t.props.min +. (ratio *. (t.props.max -. t.props.min)) in
     t.dragging <- true;
+    t.drag_pos <- mouse_pos_along_axis t ev;
     t.drag_offset_virtual <-
       max 0
         (min (virtual_thumb_size t)
@@ -269,10 +274,14 @@ let handle_mouse_down t ev =
 let handle_mouse_drag t ev =
   if t.dragging then (
     Event.Mouse.stop_propagation ev;
+    t.drag_pos <- mouse_pos_along_axis t ev;
     update_value_from_mouse_with_offset t ev t.drag_offset_virtual)
 
+(* A release where the last press or drag left the pointer proposes nothing
+   more: the press maps a track position to a value by its ratio, and the drag
+   mapping would give a slightly different value for the same cell. *)
 let handle_mouse_up t ev =
-  if t.dragging then
+  if t.dragging && mouse_pos_along_axis t ev <> t.drag_pos then
     update_value_from_mouse_with_offset t ev t.drag_offset_virtual;
   t.dragging <- false
 
@@ -306,6 +315,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
       on_change;
       dragging = false;
       drag_offset_virtual = 0;
+      drag_pos = 0;
     }
   in
   Renderable.set_render node (render t);

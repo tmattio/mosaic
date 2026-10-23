@@ -384,6 +384,18 @@ let click_on_track_jumps_value () =
   Renderable.Private.emit_mouse node (mouse_down ~x:15 ~y:0);
   is_true ~msg:"value near 75" (float_close (Slider.value slider) 75.)
 
+(* A click is a press and a release at the same cell, and proposes one value:
+   the release where the pointer has not moved proposes nothing more. *)
+let click_proposes_one_value () =
+  let proposals = ref [] in
+  let _t, slider =
+    make_slider ~value:0. ~on_change:(fun v -> proposals := v :: !proposals) ()
+  in
+  ignore (render_slider slider ~width:20 ~height:1 : Matrix_grid.t);
+  Renderable.Private.emit_mouse (Slider.node slider) (mouse_down ~x:15 ~y:0);
+  Renderable.Private.emit_mouse (Slider.node slider) (mouse_up ~x:15 ~y:0);
+  equal ~msg:"one proposal" (list float_exact) [ 75. ] !proposals
+
 let click_on_track_vertical () =
   let _t, slider = make_slider ~orientation:`Vertical ~value:0. () in
   let node = Slider.node slider in
@@ -622,6 +634,7 @@ let () =
         [
           test "click on track jumps value" click_on_track_jumps_value;
           test "click on track vertical" click_on_track_vertical;
+          test "click proposes one value" click_proposes_one_value;
           test "drag updates value" drag_updates_value;
           test "drag vertical" drag_vertical;
           test "drag fires on_change" drag_fires_on_change;
