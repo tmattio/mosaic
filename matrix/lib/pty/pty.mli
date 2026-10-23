@@ -279,7 +279,8 @@ val close : ?wait:bool -> t -> unit
     the [SIGTERM]. A second [close] does nothing.
 
     With [wait], [close] blocks until the child is reaped. With [~wait:false],
-    [pty] keeps its child, which the program must reap with {!wait}.
+    it blocks at most about 100 ms, and [pty] keeps its child, which the program
+    must reap with {!wait}.
 
     [close] never raises. *)
 

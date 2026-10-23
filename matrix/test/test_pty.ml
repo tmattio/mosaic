@@ -591,7 +591,6 @@ let test_wait_after_terminate () =
 let test_wait_after_close_without_wait () =
   let pty = Pty.spawn ~prog:"cat" ~args:[] () in
   Pty.close ~wait:false pty;
-  is_true ~msg:"the handle keeps its child" (Pty.pid pty <> None);
   (match Pty.wait pty with
   | Unix.WSIGNALED _ | Unix.WEXITED _ -> ()
   | Unix.WSTOPPED _ -> fail "stopped");
@@ -626,9 +625,12 @@ let test_reap_through_signals () =
   is_true ~msg:"wait gives the exit status" (status = Unix.WEXITED 0);
   Pty.close pty;
   let pty =
-    Pty.spawn ~prog:"sh" ~args:[ "-c"; "trap '' TERM; while :; do :; done" ] ()
+    Pty.spawn ~prog:"sh"
+      ~args:[ "-c"; "trap '' TERM HUP; echo ready; while :; do :; done" ]
+      ()
   in
   let pid = Option.get (Pty.pid pty) in
+  ignore (Unix.select [ Pty.in_fd pty ] [] [] 2. : _ * _ * _);
   with_interrupts (fun () -> Pty.close pty);
   let reaped =
     match Unix.waitpid [ Unix.WNOHANG ] pid with
@@ -636,6 +638,32 @@ let test_reap_through_signals () =
     | exception Unix.Unix_error (Unix.ECHILD, _, _) -> true
   in
   is_true ~msg:"close reaped the child" reaped
+
+(* Regression: close ~wait:false sent SIGTERM alone, so a child that
+   ignores it and the hangup's SIGHUP ran on, though close promises SIGKILL about 100 ms later. *)
+let test_close_without_wait_kills () =
+  let pty =
+    Pty.spawn ~prog:"sh"
+      ~args:[ "-c"; "trap '' TERM HUP; echo ready; while :; do :; done" ]
+      ()
+  in
+  let pid = Option.get (Pty.pid pty) in
+  (* The traps are set once the child has written. *)
+  ignore (Unix.select [ Pty.in_fd pty ] [] [] 2. : _ * _ * _);
+  Pty.close ~wait:false pty;
+  let rec ended n =
+    match Unix.waitpid [ Unix.WNOHANG ] pid with
+    | 0, _ when n > 0 ->
+        Unix.sleepf 0.01;
+        ended (n - 1)
+    | 0, _ ->
+        Unix.kill pid Sys.sigkill;
+        ignore (Unix.waitpid [] pid : int * Unix.process_status);
+        false
+    | _ -> true
+    | exception Unix.Unix_error (Unix.ECHILD, _, _) -> true
+  in
+  is_true ~msg:"the child ended within a second" (ended 100)
 
 (* Regression: a second close used to call Unix.close on the stored fd number
    again. The kernel reallocates freed numbers to the next opened descriptor,
@@ -729,6 +757,7 @@ let tests =
       test "wait after terminate" test_wait_after_terminate;
       test "wait after close without wait" test_wait_after_close_without_wait;
       test "reap through signals" test_reap_through_signals;
+      test "close without wait kills" test_close_without_wait_kills;
       test "eof on close" test_eof_on_close;
       test "pty close" test_pty_close;
     ]

@@ -119,8 +119,8 @@ let close ?wait:(reap = true) t =
     close_fd t.fd;
     Option.iter close_fd t.slave;
     signal t Sys.sigterm;
+    grace t 10;
     if reap then (
-      grace t 10;
       (match t.child with
       | Running _ -> (
           try ignore (wait t : Unix.process_status)
