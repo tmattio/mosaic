@@ -747,15 +747,26 @@ let fill_opaque_rect t ~x0 ~y0 ~width ~height ~bg_color =
       Buf.fill_range t.bg_color ~pos:start_idx ~len:width bg_color
     done
 
+(* Clipped as [clip_rect_to_grid] clips, in integers: a reader that clears
+   one row at a time, such as Vte.blit_row, allocates nothing. *)
 let clear_rect ?color t ~x ~y ~width ~height =
-  match clip_rect_to_grid t Rect.{ x; y; width; height } with
-  | None -> ()
-  | Some r ->
-      let bg_color =
-        Option.value color ~default:default_bg |> Color_packed.encode
-      in
-      fill_opaque_rect t ~x0:r.x ~y0:r.y ~width:r.width ~height:r.height
-        ~bg_color
+  let x0 = ref (max 0 x) and y0 = ref (max 0 y) in
+  let x1 = ref (min t.width (x + width))
+  and y1 = ref (min t.height (y + height)) in
+  let scissors = Dynarray.length t.scissor_stack in
+  if scissors > 0 then begin
+    let s = Dynarray.get t.scissor_stack (scissors - 1) in
+    x0 := max !x0 s.Rect.x;
+    y0 := max !y0 s.y;
+    x1 := min !x1 (s.x + s.width);
+    y1 := min !y1 (s.y + s.height)
+  end;
+  if !x1 > !x0 && !y1 > !y0 then
+    let bg_color =
+      Option.value color ~default:default_bg |> Color_packed.encode
+    in
+    fill_opaque_rect t ~x0:!x0 ~y0:!y0 ~width:(!x1 - !x0) ~height:(!y1 - !y0)
+      ~bg_color
 
 let fill_rect t ~x ~y ~width ~height ~color =
   match clip_rect_to_grid t Rect.{ x; y; width; height } with
