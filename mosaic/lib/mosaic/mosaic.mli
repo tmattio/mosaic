@@ -666,30 +666,45 @@ module Code : sig
   (** The type for source-code syntax settings. *)
 
   module Highlighter : sig
-    type request = Mosaic_ui.Code.Highlighter.request = {
-      content : string;
-      language : string;
+    type edit = Mosaic_ui.Code.Highlighter.edit = {
+      start : int;
+      removed : int;
+      inserted : int;
     }
 
-    type result = (Mosaic_ui.Syntax_highlight.t, exn) Stdlib.result
-    type job = Mosaic_ui.Code.Highlighter.job
+    type 'state previous = 'state Mosaic_ui.Code.Highlighter.previous = {
+      content : string;
+      state : 'state;
+      edit : edit;
+    }
+
+    type 'state request = 'state Mosaic_ui.Code.Highlighter.request = {
+      content : string;
+      language : string;
+      previous : 'state previous option;
+    }
+
+    type 'state result =
+      (Mosaic_ui.Syntax_highlight.t * 'state, exn) Stdlib.result
+
+    type 'state job = 'state Mosaic_ui.Code.Highlighter.job
     type t = Mosaic_ui.Code.Highlighter.t
 
-    val job : poll:(unit -> result option) -> cancel:(unit -> unit) -> job
+    val job :
+      poll:(unit -> 'state result option) -> cancel:(unit -> unit) -> 'state job
 
-    val sync :
-      (language:string -> content:string -> Mosaic_ui.Syntax_highlight.t) -> t
+    val sync : ('state request -> Mosaic_ui.Syntax_highlight.t * 'state) -> t
     (** [sync f] runs [f] on the rendering thread; errors fall back to plain
-        text. *)
+        text. See {!Mosaic_ui.Code.Highlighter} for requests and results. *)
 
     val threaded :
-      (language:string -> content:string -> Mosaic_ui.Syntax_highlight.t) -> t
+      ('state request -> Mosaic_ui.Syntax_highlight.t * 'state) -> t
     (** [threaded f] serializes requests on one on-demand worker systhread per
         highlighter. Cancellation removes queued requests and discards running
         results. Reuse the highlighter across renders. See
         {!Mosaic_ui.Code.Highlighter.threaded} for the threading contract. *)
 
-    val async : (request -> notify:(unit -> unit) -> job) -> t
+    val async : ('state request -> notify:(unit -> unit) -> 'state job) -> t
   end
 
   val syntax :

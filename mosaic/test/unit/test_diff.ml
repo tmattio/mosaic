@@ -289,8 +289,9 @@ let manual_highlighter () =
             outcome :=
               Some
                 (Ok
-                   (Syntax_highlight.make
-                      ~content:request.Code.Highlighter.content [])))
+                   ( Syntax_highlight.make
+                       ~content:request.Code.Highlighter.content [],
+                     () )))
           :: !outstanding;
         Code.Highlighter.job
           ~poll:(fun () ->
@@ -334,8 +335,8 @@ let async_wrapped_split_settles () =
 
 let syntax_compares_styles_by_value () =
   let highlighter =
-    Code.Highlighter.sync (fun ~language:_ ~content ->
-        Syntax_highlight.make ~content [])
+    Code.Highlighter.sync (fun { content; _ } ->
+        (Syntax_highlight.make ~content [], ()))
   in
   let props color =
     let style =

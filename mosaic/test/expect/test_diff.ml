@@ -70,8 +70,8 @@ let asymmetric_wrap_diff =
 
 let plain_highlight =
   let highlighter =
-    Code.Highlighter.sync (fun ~language:_ ~content ->
-        Syntax_highlight.make ~content [])
+    Code.Highlighter.sync (fun { content; _ } ->
+        (Syntax_highlight.make ~content [], ()))
   in
   let syntax = Diff.syntax ~language:"text" highlighter in
   { Diff.old = syntax; new_ = syntax }

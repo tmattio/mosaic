@@ -144,7 +144,9 @@ let update msg scroll =
    renders each fenced block as a borderless [Code] view and passes the fence's
    language to the highlighter, which leaves unknown languages plain. The
    highlighter is created once and reused across renders. *)
-let highlighter = Code.Highlighter.sync Toy_highlighter.highlight
+let highlighter =
+  Code.Highlighter.sync (fun { language; content; _ } ->
+      (Toy_highlighter.highlight ~language ~content, ()))
 
 (* Palette *)
 let header_bg = Ansi.Color.of_rgb 30 80 100

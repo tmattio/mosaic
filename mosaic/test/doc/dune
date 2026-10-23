@@ -1,6 +1,6 @@
 ; Typecheck the OCaml snippets of doc/highlighting.md, so the guide's recipe
 ; cannot drift from the API. The tree-sitter grammars are stubbed by their
-; highlighting interface; mosaic does not depend on them.
+; parsing interface; mosaic does not depend on them.
 
 (executable
  (name extract)
@@ -21,6 +21,7 @@
   test_highlighting_doc
   highlighting
   doc_prelude
+  tree_sitter
   tree_sitter_ocaml
   tree_sitter_json)
  (package mosaic)

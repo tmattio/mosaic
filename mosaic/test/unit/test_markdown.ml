@@ -92,10 +92,11 @@ let set_style_custom () =
 let recording_highlighter () =
   let requests = ref [] in
   let highlighter =
-    Code.Highlighter.sync (fun ~language ~content ->
+    Code.Highlighter.sync (fun { language; content; _ } ->
         requests := (language, content) :: !requests;
-        Syntax_highlight.of_triples ~content
-          [ (0, min 3 (String.length content), "keyword") ])
+        ( Syntax_highlight.of_triples ~content
+            [ (0, min 3 (String.length content), "keyword") ],
+          () ))
   in
   (requests, highlighter)
 

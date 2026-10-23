@@ -1,3 +1,4 @@
-let highlight _ = []
-let highlight_interface _ = []
-let highlight_type _ = []
+let ocaml () = Tree_sitter.Language.stub
+let interface () = Tree_sitter.Language.stub
+let ocaml_highlights_query = ""
+let interface_highlights_query = ""

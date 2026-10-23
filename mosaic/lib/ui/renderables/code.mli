@@ -31,24 +31,70 @@ type syntax
 
     [style] only presents captures: a change of style alone restyles the result
     already received for the content without highlighting it again, and a
-    pending result is styled with the settings current when it arrives. The same
-    holds for the view's [conceal] property (see {!Props.make}). *)
+    pending result is styled with the settings current when it arrives. *)
 
 module Highlighter : sig
-  type request = { content : string; language : string }
+  (** {1:requests Requests} *)
+
+  type edit = { start : int; removed : int; inserted : int }
+  (** The type for the change from one content to the next, in bytes: the
+      [removed] bytes at [start] were replaced by [inserted] bytes, and the
+      bytes before [start] and after the replaced ones are unchanged. In
+      tree-sitter's terms, [start_byte = start],
+      [old_end_byte = start + removed] and [new_end_byte = start + inserted]. *)
+
+  type 'state previous = {
+    content : string;  (** The content of the view's latest result. *)
+    state : 'state;
+        (** What the highlighter returned with that result (see {!type-result}).
+        *)
+    edit : edit;
+        (** From [content] to the requested content: the longest common prefix,
+            then the longest common suffix that does not overlap it. Changes
+            made while a request runs reach the next request as the one edit
+            that encloses them. *)
+  }
+  (** The type for what a view kept from its latest result. *)
+
+  type 'state request = {
+    content : string;
+    language : string;
+    previous : 'state previous option;
+  }
   (** The type for highlight requests. [content] is the whole buffer the view
-      shows, never an edit to an earlier one, and [language] is the name given
-      to {!with_highlighter}, passed through uninterpreted. A highlighter that
-      wants to reuse work across requests keeps that state itself, for instance
-      a cache keyed on [language] and [content]. *)
+      shows, and [language] is the name given to {!with_highlighter}, passed
+      through uninterpreted.
 
-  type result = (Syntax_highlight.t, exn) Stdlib.result
-  (** The type for highlighter results. The captures must be bound to the
-      request's [content] (see {!Syntax_highlight.make}). An [Error], or
-      captures bound to other bytes, is a highlighting failure: the view shows
-      that content as plain text. A failure affects only its request. *)
+      [previous] is [None] on a view's first request, and on its first after a
+      change of highlighter or language. Otherwise it is the view's latest
+      result, so a highlighter may reuse the work it did for it: a tree-sitter
+      highlighter edits the tree it returned as its state and parses [content]
+      again from it, at a cost that grows with the change rather than the
+      buffer. A highlighter that keeps nothing ignores [previous] and returns
+      [()] as its state. *)
 
-  type job
+  type 'state result = (Syntax_highlight.t * 'state, exn) Stdlib.result
+  (** The type for highlighter results: captures bound to the request's
+      [content] (see {!Syntax_highlight.make}), and the state the view's next
+      request receives in its [previous].
+
+      The captures are the whole highlight of [content] by the state returned
+      with them: for tree-sitter, the query of the whole returned tree. They are
+      never pieced together from the previous result's captures, because a
+      capture may depend on bytes far from the edit (a pattern that relates
+      siblings, or a field of a parent), which no span around the edit bounds. A
+      [previous] therefore changes what a result costs, not what it holds,
+      except through the state: a tree parsed again from an edited tree can
+      differ from a fresh parse of the same bytes, but only where the bytes have
+      a syntax error, both being guesses of error recovery.
+
+      An [Error], or captures bound to other bytes, is a highlighting failure:
+      the view shows that content as plain text and keeps its latest result and
+      state, so it may pass the same state again. A highlighter therefore treats
+      a state as a value and never changes one it returned: a tree-sitter tree
+      is copied, which is cheap, before it is edited. *)
+
+  type 'state job
   (** The type for an in-flight asynchronous highlight job. *)
 
   type t
@@ -60,14 +106,17 @@ module Highlighter : sig
       in the model, and reuse it across renders and code blocks; a highlighter
       created during a render is a new producer, and the code it configures is
       highlighted again. {!Diff} and {!Markdown} compare highlighters the same
-      way, and one highlighter may serve any number of views.
+      way, and one highlighter may serve any number of views, each with its own
+      state.
 
       Each view has at most one request queued or running at a time, even across
       highlighter changes. Content and syntax changes made meanwhile coalesce
-      into a single follow-up request, sent when that one completes. Destroying
-      the view cancels its request. *)
+      into a single follow-up request, sent when that one completes. A state
+      therefore reaches the highlighter only after the result that carried it
+      was taken by the view. Destroying the view cancels its request. *)
 
-  val job : poll:(unit -> result option) -> cancel:(unit -> unit) -> job
+  val job :
+    poll:(unit -> 'state result option) -> cancel:(unit -> unit) -> 'state job
   (** [job ~poll ~cancel] is an asynchronous job. [poll ()] returns [None] while
       the job is pending and [Some outcome] once it has completed. [cancel ()]
       asks the producer to stop work or discard its result when the widget is
@@ -75,32 +124,33 @@ module Highlighter : sig
       result is never shown as such (see {!with_highlighter}). A live job must
       therefore eventually complete even if its input has become obsolete. *)
 
-  val sync : (language:string -> content:string -> Syntax_highlight.t) -> t
+  val sync : ('state request -> Syntax_highlight.t * 'state) -> t
   (** [sync f] is a synchronous highlighter: [f] runs on the rendering thread
       when content or syntax changes. Exceptions raised by [f] are highlighting
       failures (see {!type-result}). *)
 
-  val threaded : (language:string -> content:string -> Syntax_highlight.t) -> t
-  (** [threaded f] runs whole-buffer requests on a worker systhread. Reuse the
-      returned highlighter: it runs at most one call to [f] at a time, queues
-      live requests in order, starts its worker when a request arrives and
-      releases it when the queue empties. Views sharing the highlighter share
-      its worker, so a slow call delays the requests queued behind it. Cancelled
-      queued requests are removed immediately. A running call cannot be
-      interrupted; cancellation discards its result. Polling and cancellation
-      are thread-safe and do not wait for [f] to finish. Exceptions from [f] are
-      highlighting failures of their request (see {!type-result}); the worker
-      goes on with the next one.
+  val threaded : ('state request -> Syntax_highlight.t * 'state) -> t
+  (** [threaded f] runs requests on a worker systhread. Reuse the returned
+      highlighter: it runs at most one call to [f] at a time, queues live
+      requests in order, starts its worker when a request arrives and releases
+      it when the queue empties. Views sharing the highlighter share its worker,
+      so a slow call delays the requests queued behind it. Cancelled queued
+      requests are removed immediately. A running call cannot be interrupted;
+      cancellation discards its result. Polling and cancellation are thread-safe
+      and do not wait for [f] to finish. Exceptions from [f] are highlighting
+      failures of their request (see {!type-result}); the worker goes on with
+      the next one.
 
       The worker publishes the immutable result and schedules a render; the
       result is applied on the rendering thread.
 
       [f] must finish, must not mutate renderables, and must synchronize any
-      state shared outside this highlighter. Systhreads do not provide CPU
-      parallelism. Native calls that retain the OCaml runtime lock can still
-      block rendering. Use {!async} for a different execution policy. *)
+      state shared outside this highlighter. A view's state reaches [f] on one
+      thread at a time. Systhreads do not provide CPU parallelism. Native calls
+      that retain the OCaml runtime lock can still block rendering. Use {!async}
+      for a different execution policy. *)
 
-  val async : (request -> notify:(unit -> unit) -> job) -> t
+  val async : ('state request -> notify:(unit -> unit) -> 'state job) -> t
   (** [async f] is an asynchronous highlighter. [f] starts a job for a request.
       The job producer should call [notify] when [poll] may return a completed
       result. [notify] is safe to call from a worker thread. Its only effect is
@@ -136,9 +186,9 @@ val with_highlighter :
     highlighted prefix and shows its new tail plain until the result arrives,
     and content seen for the first time shows plain. A result for content that
     has since changed is never shown as such, but it becomes the latest result,
-    so styling keeps up with content that changes faster than it can be
-    highlighted. A different highlighter or language starts again from plain
-    text. *)
+    with its state, so styling keeps up with content that changes faster than it
+    can be highlighted. A different highlighter or language starts again from
+    plain text. *)
 
 (** {1:props Props} *)
 

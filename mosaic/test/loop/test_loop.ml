@@ -949,7 +949,7 @@ let%expect_test "threaded highlighting wakes an idle application" =
   let woke = Atomic.make false in
   let worker = Atomic.make None in
   let highlighter =
-    Mosaic.Code.Highlighter.threaded (fun ~language:_ ~content ->
+    Mosaic.Code.Highlighter.threaded (fun { content; _ } ->
         Atomic.set worker (Some (Thread.self ()));
         while not (Atomic.get released) do
           Thread.delay 0.001
@@ -957,11 +957,12 @@ let%expect_test "threaded highlighting wakes an idle application" =
         let meta =
           { Mosaic.Syntax_highlight.default_meta with conceal = Some "done" }
         in
-        Mosaic.Syntax_highlight.make ~content
-          [
-            Mosaic.Syntax_highlight.range ~meta ~start_byte:0 ~end_byte:3
-              ~scope:"keyword" ();
-          ])
+        ( Mosaic.Syntax_highlight.make ~content
+            [
+              Mosaic.Syntax_highlight.range ~meta ~start_byte:0 ~end_byte:3
+                ~scope:"keyword" ();
+            ],
+          () ))
   in
   let syntax = Mosaic.Code.with_highlighter ~language:"example" highlighter in
   let base = app () in
@@ -1014,13 +1015,13 @@ let%expect_test "application exit cancels queued highlighting" =
       let worker = Atomic.make None in
       let calls = Atomic.make [] in
       let highlighter =
-        Mosaic.Code.Highlighter.threaded (fun ~language:_ ~content ->
+        Mosaic.Code.Highlighter.threaded (fun { content; _ } ->
             Atomic.set worker (Some (Thread.self ()));
             Atomic.set calls (content :: Atomic.get calls);
             while not (Atomic.get released) do
               Thread.delay 0.001
             done;
-            Mosaic.Syntax_highlight.make ~content [])
+            (Mosaic.Syntax_highlight.make ~content [], ()))
       in
       let syntax =
         Mosaic.Code.with_highlighter ~language:"example" highlighter

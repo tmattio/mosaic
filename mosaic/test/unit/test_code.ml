@@ -26,9 +26,9 @@ let span_text span = (span : Text_buffer.span).text
 let span_style span = (span : Text_buffer.span).style
 
 type async_job = {
-  request : Code.Highlighter.request;
+  request : unit Code.Highlighter.request;
   notify : unit -> unit;
-  mutable outcome : Code.Highlighter.result option;
+  mutable outcome : unit Code.Highlighter.result option;
   mutable cancelled : bool;
 }
 
@@ -50,7 +50,7 @@ let async_highlighter () =
   (jobs, highlighter)
 
 let complete job outcome =
-  job.outcome <- Some outcome;
+  job.outcome <- Some (Result.map (fun captures -> (captures, ())) outcome);
   job.notify ()
 
 let plain_without_syntax () =
@@ -70,10 +70,10 @@ let precomputed_highlights_apply_style () =
 
 let sync_highlighter_applies_style () =
   let highlighter =
-    Code.Highlighter.sync (fun ~language ~content ->
+    Code.Highlighter.sync (fun { language; content; _ } ->
         equal ~msg:"request content" string "let x" content;
         equal ~msg:"request language" string "ocaml" language;
-        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
+        (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
   in
   let syntax =
     Code.with_highlighter ~language:"ocaml" ~style:(syntax_style red)
@@ -433,9 +433,9 @@ let apply_props_updates_syntax_style () =
 let syntax_compares_styles_by_value () =
   let calls = ref 0 in
   let highlighter =
-    Code.Highlighter.sync (fun ~language:_ ~content ->
+    Code.Highlighter.sync (fun { content; _ } ->
         incr calls;
-        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
+        (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
   in
   (* A view rebuilds its syntax settings, style included, on every render. *)
   let props style =
@@ -455,8 +455,8 @@ let syntax_compares_styles_by_value () =
        (Code.Props.make ~content:"let x"
           ~syntax:
             (Code.with_highlighter ~language:"ocaml"
-               (Code.Highlighter.sync (fun ~language:_ ~content ->
-                    Syntax_highlight.make ~content [])))
+               (Code.Highlighter.sync (fun { content; _ } ->
+                    (Syntax_highlight.make ~content [], ()))))
           ()));
   let _ctx, code = make_code () in
   Code.apply_props code (props (syntax_style red));
@@ -519,11 +519,11 @@ let threaded_requests_are_bounded_and_cancelled () =
   let wait, release = gate () in
   let calls = Atomic.make [] in
   let highlighter =
-    Code.Highlighter.threaded (fun ~language ~content ->
+    Code.Highlighter.threaded (fun { language; content; _ } ->
         if language <> "ocaml" then failwith "wrong request language";
         Atomic.set calls (content :: Atomic.get calls);
         if content = "let old" then wait ();
-        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
+        (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
   in
   let renderer = Renderer.create () in
   let syntax =
@@ -577,10 +577,10 @@ let threaded_requests_are_bounded_and_cancelled () =
 let threaded_failure_and_idle_restart () =
   let worker = Atomic.make None in
   let highlighter =
-    Code.Highlighter.threaded (fun ~language:_ ~content ->
+    Code.Highlighter.threaded (fun { content; _ } ->
         Atomic.set worker (Some (Thread.self ()));
         if content = "bad" then failwith "highlight failed"
-        else Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
+        else (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
   in
   let renderer = Renderer.create () in
   let syntax =
@@ -633,9 +633,9 @@ let destroy_cancels_job_once () =
 let theme_changes_reuse_highlighter_captures () =
   let calls = ref 0 in
   let highlighter =
-    Code.Highlighter.sync (fun ~language:_ ~content ->
+    Code.Highlighter.sync (fun { content; _ } ->
         incr calls;
-        Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ])
+        (Syntax_highlight.of_triples ~content [ (0, 3, "keyword") ], ()))
   in
   let syntax color =
     Code.with_highlighter ~language:"ocaml" ~style:(syntax_style color)
@@ -709,6 +709,282 @@ let equivalent_capture_declaration_does_not_repaint () =
   equal ~msg:"equivalent capture declaration does not redo paint" int 0
     !notifications
 
+(* ── Incremental highlighting ── *)
+
+(* A toy incremental highlighter: its state is the words of the content, which
+   a request with [previous] lexes again only around the edit. Its captures are
+   always the whole highlight of its state. *)
+module Words = struct
+  type state = { id : int; words : (int * int) list }
+
+  let is_letter c = c >= 'a' && c <= 'z'
+
+  let lex content ~first ~last =
+    let words = ref [] and i = ref first in
+    while !i < last do
+      if is_letter content.[!i] then begin
+        let start = !i in
+        while !i < last && is_letter content.[!i] do
+          incr i
+        done;
+        words := (start, !i) :: !words
+      end
+      else incr i
+    done;
+    List.rev !words
+
+  (* The words of [content] from the words of the previous content. *)
+  let relex content (previous : state Code.Highlighter.previous) =
+    let { Code.Highlighter.start; removed; inserted } = previous.edit in
+    let shift = inserted - removed in
+    let first = ref start and last = ref (start + inserted) in
+    while !first > 0 && is_letter content.[!first - 1] do
+      decr first
+    done;
+    while !last < String.length content && is_letter content.[!last] do
+      incr last
+    done;
+    let before = List.filter (fun (_, e) -> e <= !first) previous.state.words in
+    let after =
+      List.filter_map
+        (fun (s, e) ->
+          if s + shift >= !last then Some (s + shift, e + shift) else None)
+        previous.state.words
+    in
+    before @ lex content ~first:!first ~last:!last @ after
+
+  let captures content words =
+    Syntax_highlight.of_triples ~content
+      (List.map
+         (fun (s, e) ->
+           ( s,
+             e,
+             if String.sub content s (e - s) = "let" then "keyword"
+             else "variable" ))
+         words)
+
+  let fresh content =
+    captures content (lex content ~first:0 ~last:(String.length content))
+end
+
+let words_style =
+  Syntax_style.make ~base:Ansi.Style.default
+    [ ("keyword", red); ("variable", blue) ]
+
+let previous_carries_state_and_edit () =
+  let seen = ref [] in
+  let highlighter =
+    Code.Highlighter.sync
+      (fun ({ content; previous; _ } : int Code.Highlighter.request) ->
+        seen := previous :: !seen;
+        (Words.fresh content, String.length content))
+  in
+  let syntax = Code.with_highlighter ~language:"x" highlighter in
+  let _ctx, code = make_code ~content:"let x = 1" ~syntax () in
+  Code.set_content code "let xy = 1";
+  (match !seen with
+  | [ Some { content; state; edit = { start; removed; inserted } }; None ] ->
+      equal ~msg:"previous content" string "let x = 1" content;
+      equal ~msg:"state returned with it" int 9 state;
+      equal ~msg:"edit" (triple int int int) (5, 0, 1) (start, removed, inserted)
+  | _ -> fail "expected a first request without previous, then one with it");
+  Code.set_syntax code (Some (Code.with_highlighter ~language:"y" highlighter));
+  is_true ~msg:"a change of language starts afresh" (List.hd !seen = None)
+
+(* Random scripts of edits, completions, failures and producer changes. The
+   view must pass each request the content and state of its latest accepted
+   result and the edit from it, show what a whole highlight of the content
+   shows once a result arrives, and while one is pending keep the bytes outside
+   the edit styled. *)
+let incremental_requests_hold_on_random_scripts () =
+  let random = Random.State.make [| 42 |] in
+  let ids = ref 0 and content_of = Hashtbl.create 64 in
+  let jobs = Queue.create () in
+  (* A producer is a highlighter and a language; the view keeps the latest
+     result of the current one. *)
+  let highlighters = ref 0 and language = ref "a" in
+  let producer () = (!highlighters, !language) in
+  let latest = ref None in
+  (* A starter's exception is a highlighting failure, so violations are
+     collected and checked after each step. *)
+  let violations = ref [] in
+  let fail what = violations := what :: !violations in
+  let check_request (request : Words.state Code.Highlighter.request) =
+    let equal ~msg _ a b = if a <> b then fail msg in
+    let is_true ~msg b = if not b then fail msg in
+    match (request.previous, !latest) with
+    | None, None -> ()
+    | Some previous, Some id ->
+        equal ~msg:"state of the latest result" int id previous.state.id;
+        equal ~msg:"content of that result" string
+          (Hashtbl.find content_of id)
+          previous.content;
+        let { Code.Highlighter.start; removed; inserted } = previous.edit in
+        let old = previous.content and content = request.content in
+        equal ~msg:"edit turns the previous content into the request's" string
+          content
+          (String.sub old 0 start
+          ^ String.sub content start inserted
+          ^ String.sub old (start + removed)
+              (String.length old - start - removed));
+        is_true ~msg:"the common prefix is longest"
+          (removed = 0 || inserted = 0 || old.[start] <> content.[start]);
+        is_true ~msg:"the common suffix is longest"
+          (removed = 0 || inserted = 0
+          || old.[start + removed - 1] <> content.[start + inserted - 1])
+    | None, Some _ -> fail "a request lost the latest result"
+    | Some _, None -> fail "a request carried a result of another producer"
+  in
+  let make_highlighter () =
+    Code.Highlighter.async (fun request ~notify ->
+        check_request request;
+        let outcome = ref None in
+        Queue.add (request, producer (), outcome, notify) jobs;
+        Code.Highlighter.job
+          ~poll:(fun () ->
+            let result = !outcome in
+            outcome := None;
+            result)
+          ~cancel:ignore)
+  in
+  let highlighter = ref (make_highlighter ()) in
+  let syntax () =
+    Code.with_highlighter ~language:!language ~style:words_style !highlighter
+  in
+  let reference_highlighter =
+    Code.Highlighter.sync (fun { content; _ } -> (Words.fresh content, ()))
+  in
+  let initial = "let x be" in
+  let _ctx, code = make_code ~content:initial ~syntax:(syntax ()) () in
+  let _ctx, reference =
+    make_code ~content:initial
+      ~syntax:
+        (Code.with_highlighter ~language:"a" ~style:words_style
+           reference_highlighter)
+      ()
+  in
+  let styles code =
+    let buffer = Code.buffer code in
+    List.init (Text_buffer.grapheme_count buffer) (fun g ->
+        fst (Text_buffer.style_at buffer g))
+  in
+  let shown_ok = ref false in
+  let content = ref initial in
+  for step = 1 to 3_000 do
+    let msg what = Printf.sprintf "step %d: %s" step what in
+    if !violations <> [] then failf "step %d: %s" step (List.hd !violations);
+    match Random.State.int random 10 with
+    | 0 | 1 | 2 | 3 ->
+        let n = String.length !content in
+        let at = Random.State.int random (n + 1) in
+        let removed = min (n - at) (Random.State.int random 3) in
+        let insert =
+          [| ""; "x"; "let"; " "; "y"; "le" |].(Random.State.int random 6)
+        in
+        let next =
+          String.sub !content 0 at ^ insert
+          ^ String.sub !content (at + removed) (n - at - removed)
+        in
+        if next <> "" && next <> !content then begin
+          let settled = (not (Code.is_highlighting code)) && !shown_ok in
+          let before = styles code and source = !content in
+          content := next;
+          Code.set_content code next;
+          if settled then begin
+            let { Code.Highlighter.start; removed; inserted } =
+              (* The test's own derivation of the one edit. *)
+              let p = ref 0
+              and m = min (String.length source) (String.length next) in
+              while !p < m && source.[!p] = next.[!p] do
+                incr p
+              done;
+              let q = ref 0 in
+              while
+                !q < m - !p
+                && source.[String.length source - 1 - !q]
+                   = next.[String.length next - 1 - !q]
+              do
+                incr q
+              done;
+              {
+                Code.Highlighter.start = !p;
+                removed = String.length source - !p - !q;
+                inserted = String.length next - !p - !q;
+              }
+            in
+            let after = Array.of_list (styles code)
+            and before = Array.of_list before in
+            Array.iteri
+              (fun i style ->
+                let expected =
+                  if i < start then before.(i)
+                  else if i >= start + inserted then
+                    before.(i - inserted + removed)
+                  else Ansi.Style.default
+                in
+                if not (Ansi.Style.equal expected style) then
+                  failf "step %d: pending byte %d of %S lost its style" step i
+                    next)
+              after
+          end
+        end
+    | 4 | 5 | 6 | 7 -> (
+        match Queue.take_opt jobs with
+        | None -> ()
+        | Some
+            ( (request : Words.state Code.Highlighter.request),
+              job_producer,
+              outcome,
+              notify ) ->
+            let failed = Random.State.int random 5 = 0 in
+            let current = job_producer = producer () in
+            if failed then outcome := Some (Error (Failure "toy"))
+            else begin
+              let words =
+                match request.previous with
+                | None ->
+                    Words.lex request.content ~first:0
+                      ~last:(String.length request.content)
+                | Some previous -> Words.relex request.content previous
+              in
+              incr ids;
+              Hashtbl.replace content_of !ids request.content;
+              outcome :=
+                Some
+                  (Ok
+                     ( Words.captures request.content words,
+                       { Words.id = !ids; words } ));
+              if current then latest := Some !ids
+            end;
+            if current && String.equal request.content !content then
+              shown_ok := not failed;
+            notify ();
+            render_code code;
+            if not (Code.is_highlighting code) then begin
+              Code.set_content reference !content;
+              let shown = styles code in
+              let expected =
+                if !shown_ok then styles reference
+                else List.map (fun _ -> Ansi.Style.default) shown
+              in
+              is_true
+                ~msg:(msg "settled view equals a whole highlight")
+                (List.equal Ansi.Style.equal expected shown)
+            end)
+    | 8 ->
+        language := if !language = "a" then "b" else "a";
+        latest := None;
+        shown_ok := false;
+        Code.set_syntax code (Some (syntax ()))
+    | _ ->
+        highlighter := make_highlighter ();
+        incr highlighters;
+        latest := None;
+        shown_ok := false;
+        Code.set_syntax code (Some (syntax ()))
+  done;
+  if !violations <> [] then failf "%s" (List.hd !violations)
+
 let () =
   run "mosaic.code"
     [
@@ -753,6 +1029,13 @@ let () =
             invalid_highlights_fall_back_to_plain_text;
           test "conceal metadata applies" conceal_metadata_applies;
           test "conceal is a view property" conceal_is_a_view_property;
+        ];
+      group "Incremental"
+        [
+          test "previous carries the state and the edit"
+            previous_carries_state_and_edit;
+          test "requests hold on random scripts"
+            incremental_requests_hold_on_random_scripts;
         ];
       group "Workers"
         [

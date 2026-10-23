@@ -225,7 +225,7 @@ let clear_removes_all_callbacks () =
 
 type async_highlight_job = {
   notify : unit -> unit;
-  mutable outcome : Code.Highlighter.result option;
+  mutable outcome : unit Code.Highlighter.result option;
 }
 
 let async_highlighter () =
@@ -246,7 +246,7 @@ let async_highlighter () =
   (jobs, highlighter)
 
 let complete_highlight job outcome =
-  job.outcome <- Some outcome;
+  job.outcome <- Some (Result.map (fun captures -> (captures, ())) outcome);
   job.notify ()
 
 let pending_provider_reports_work () =
