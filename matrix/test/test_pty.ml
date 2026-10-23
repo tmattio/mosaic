@@ -358,6 +358,34 @@ let test_spawn_script_without_shebang () =
   in
   equal ~msg:"the script ran with its argument" string "script ran\r\n" output
 
+(* Regression: a child that could not exec exited with status 127, so
+   spawn returned a handle on a dead child and the caller saw no error. *)
+let test_spawn_missing_program_raises () =
+  List.iter
+    (fun prog ->
+      match Pty.spawn ~prog ~args:[] () with
+      | pty ->
+          Pty.close pty;
+          failf "spawn returned for the missing program %s" prog
+      | exception Unix.Unix_error (err, fn, arg) ->
+          is_true ~msg:"ENOENT" (err = Unix.ENOENT);
+          equal ~msg:"the step that failed" (pair string string)
+            ("execvp", prog) (fn, arg))
+    [ "/definitely/not/a/matrix-program"; "definitely-not-a-matrix-program" ]
+
+let test_spawn_missing_cwd_raises () =
+  let cwd = "/definitely/not/a/matrix-directory" in
+  match Pty.spawn ~cwd ~prog:"echo" ~args:[] () with
+  | pty ->
+      Pty.close pty;
+      fail "spawn returned for a missing directory"
+  | exception Unix.Unix_error (err, fn, arg) ->
+      is_true ~msg:"ENOENT" (err = Unix.ENOENT);
+      equal ~msg:"the step that failed" (pair string string) ("chdir", cwd)
+        (fn, arg)
+
+(* A child that fails runs nothing of the parent's: ordinary OCaml
+   termination in it would run the parent's [at_exit] handlers. *)
 let test_failed_spawn_does_not_run_parent_at_exit () =
   let parent_pid = Unix.getpid () in
   let marker_read, marker_write = Unix.pipe () in
@@ -367,23 +395,13 @@ let test_failed_spawn_does_not_run_parent_at_exit () =
         try
           ignore (Unix.write marker_write marker 0 (Bytes.length marker) : int)
         with Unix.Unix_error _ -> ());
-  let pty = Pty.spawn ~prog:"/definitely/not/a/matrix-program" ~args:[] () in
-  let child =
-    match Pty.pid pty with
-    | Some child -> child
-    | None -> fail "spawned PTY has no child pid"
-  in
-  let _, status = Unix.waitpid [] child in
-  Pty.close ~wait:false pty;
+  (try
+     Pty.close (Pty.spawn ~prog:"/definitely/not/a/matrix-program" ~args:[] ())
+   with Unix.Unix_error _ -> ());
   Unix.close marker_write;
   let received = Bytes.create (Bytes.length marker) in
   let received_len = Unix.read marker_read received 0 (Bytes.length received) in
   Unix.close marker_read;
-  (match status with
-  | Unix.WEXITED code -> equal ~msg:"failed PTY child exit status" int 127 code
-  | Unix.WSIGNALED signal ->
-      failf "failed PTY child was killed by signal %d" signal
-  | Unix.WSTOPPED signal -> failf "failed PTY child stopped on signal %d" signal);
   equal ~msg:"failed child skips inherited parent at_exit handlers" int 0
     received_len
 
@@ -552,6 +570,8 @@ let tests =
       test "slave on a std fd" test_slave_on_std_fd;
       test "spawn while a domain runs" test_spawn_while_a_domain_runs;
       test "spawn script without shebang" test_spawn_script_without_shebang;
+      test "spawn missing program raises" test_spawn_missing_program_raises;
+      test "spawn missing cwd raises" test_spawn_missing_cwd_raises;
       test "failed spawn skips parent at_exit"
         test_failed_spawn_does_not_run_parent_at_exit;
       (* Non-blocking I/O *)

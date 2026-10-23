@@ -172,26 +172,38 @@ CAMLprim value ocaml_pty_set_winsize(value fd, value ws_val) {
 // What the child of spawn needs between fork and exec, built by the parent.
 struct child {
   int slave;
+  int report;           // the write end of the error pipe
   const char *cwd;      // NULL to stay in the parent's directory
   char **paths;         // where to look for the program, in order
   char **argv, **envp;  // NULL-terminated
   char **sh_argv;       // {"/bin/sh", NULL, argv[1], ...}
 };
 
-// The child's side of spawn. The parent may run other threads, among them
+// The steps of the child that can fail, as the error names them.
+enum step { SETSID, SETCTTY, DUP2, CHDIR, EXEC };
+static const char *const step_names[] = {"setsid", "ioctl(TIOCSCTTY)",
+                                         "dup2", "chdir", "execvp"};
+
+// The child's side of spawn, which returns only on failure, with the step
+// that failed and errno set. The parent may run other threads, among them
 // OCaml domains, whose locks the fork copied in whatever state they were in:
 // POSIX lets the child of a multithreaded process call only async-signal-safe
 // functions until it execs. Every call here is one, except ioctl, a system
 // call that POSIX does not define. Nothing here allocates: the parent built
 // the strings and arrays.
-static void exec_child(struct child *c) {
-  if (setsid() == -1 || ioctl(c->slave, TIOCSCTTY, 0) == -1) return;
+static enum step exec_child(struct child *c) {
+  // Keep the report off the std fds, which the slave replaces.
+  int report = fcntl(c->report, F_DUPFD_CLOEXEC, 3);
+  if (report == -1) return DUP2;
+  c->report = report;
+  if (setsid() == -1) return SETSID;
+  if (ioctl(c->slave, TIOCSCTTY, 0) == -1) return SETCTTY;
   // The slave is close-on-exec. dup2 clears the flag on a copy, but does
   // nothing when the slave already is that std fd.
   for (int fd = 0; fd <= 2; fd++)
     if ((c->slave == fd ? fcntl(fd, F_SETFD, 0) : dup2(c->slave, fd)) == -1)
-      return;
-  if (c->cwd != NULL && chdir(c->cwd) == -1) return;
+      return DUP2;
+  if (c->cwd != NULL && chdir(c->cwd) == -1) return CHDIR;
   // As execvp does: a directory without the program, or that is not a
   // directory, moves on to the next; a file without permission is
   // remembered; any other failure ends the search. A file the kernel cannot
@@ -211,6 +223,20 @@ static void exec_child(struct child *c) {
     }
   }
   errno = err;
+  return EXEC;
+}
+
+// A pipe whose ends are both close-on-exec. macOS has no pipe2: a fork by
+// another thread between pipe and fcntl leaks the ends into that child.
+static int cloexec_pipe(int fds[2]) {
+#ifdef __APPLE__
+  if (pipe(fds) == -1) return -1;
+  fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+  fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+  return 0;
+#else
+  return pipe2(fds, O_CLOEXEC);
+#endif
 }
 
 static void check_strings(value v, const char *cmd) {
@@ -219,34 +245,55 @@ static void check_strings(value v, const char *cmd) {
       caml_unix_error(EINVAL, cmd, Field(v, i));
 }
 
+// The child reports a failure before exec on a close-on-exec pipe: the
+// parent reads the step and errno, or the end of file that a successful
+// exec gives when it closes the pipe. So spawn returns once the program
+// runs, and raises the child's error otherwise, having reaped the child.
 CAMLprim value ocaml_pty_fork_exec(value slave, value paths, value argv,
                                    value env, value cwd) {
   CAMLparam5(slave, paths, argv, env, cwd);
-  check_strings(paths, "execv");
-  check_strings(argv, "execv");
-  check_strings(env, "execv");
+  check_strings(paths, "execvp");
+  check_strings(argv, "execvp");
+  check_strings(env, "execvp");
   if (Is_some(cwd)) caml_unix_check_path(Some_val(cwd), "chdir");
 
+  int pipe_fds[2];
+  if (cloexec_pipe(pipe_fds) == -1) caml_uerror("pipe", Nothing);
   struct child c;
   c.slave = Int_val(slave);
+  c.report = pipe_fds[1];
   c.cwd = Is_some(cwd) ? caml_stat_strdup(String_val(Some_val(cwd))) : NULL;
-  c.paths = caml_unix_cstringvect(paths, "execv");
-  c.argv = caml_unix_cstringvect(argv, "execv");
-  c.envp = caml_unix_cstringvect(env, "execv");
+  c.paths = caml_unix_cstringvect(paths, "execvp");
+  c.argv = caml_unix_cstringvect(argv, "execvp");
+  c.envp = caml_unix_cstringvect(env, "execvp");
   mlsize_t argc = Wosize_val(argv);
   c.sh_argv = caml_stat_alloc((argc + 2) * sizeof(char *));
   c.sh_argv[0] = "/bin/sh";
   c.sh_argv[1] = NULL;
   for (mlsize_t i = 1; i <= argc; i++) c.sh_argv[i + 1] = c.argv[i];
 
-  // A child that fails before exec exits with 127, as a shell reports a
-  // command it cannot run, and without running anything of the parent's.
   pid_t pid = fork();
   if (pid == 0) {
-    exec_child(&c);
+    int failure[2];
+    failure[0] = exec_child(&c);
+    failure[1] = errno;
+    // One write of a few bytes to a pipe is atomic.
+    (void)!write(c.report, failure, sizeof failure);
     _exit(127);
   }
   int fork_errno = errno;
+  close(pipe_fds[1]);
+  int failure[2];
+  ssize_t n = 0;
+  if (pid != -1) {
+    caml_enter_blocking_section();
+    do n = read(pipe_fds[0], failure, sizeof failure);
+    while (n == -1 && errno == EINTR);
+    if (n == sizeof failure)
+      while (waitpid(pid, NULL, 0) == -1 && errno == EINTR);
+    caml_leave_blocking_section();
+  }
+  close(pipe_fds[0]);
 
   caml_stat_free((char *)c.cwd);
   caml_unix_cstringvect_free(c.paths);
@@ -254,6 +301,13 @@ CAMLprim value ocaml_pty_fork_exec(value slave, value paths, value argv,
   caml_unix_cstringvect_free(c.envp);
   caml_stat_free(c.sh_argv);
   if (pid == -1) caml_unix_error(fork_errno, "fork", Nothing);
+  if (n == sizeof failure) {
+    enum step step = failure[0];
+    value arg = step == CHDIR  ? Some_val(cwd)
+                : step == EXEC ? Field(argv, 0)
+                               : Nothing;
+    caml_unix_error(failure[1], step_names[step], arg);
+  }
   CAMLreturn(Val_int(pid));
 }
 
