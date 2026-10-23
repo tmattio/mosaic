@@ -1120,6 +1120,47 @@ let ris_and_decstr () =
   is_true ~msg:"DECSTR resets SGR"
     (Ansi.Attr.is_empty (Ansi.Attr.unpack (Grid.get_attrs (Vte.grid vte) 0)))
 
+let cursor_style_testable =
+  let pp ppf (shape, blinking) =
+    Format.fprintf ppf "%s %s"
+      (if blinking then "blinking" else "steady")
+      (match shape with
+      | `Block -> "block"
+      | `Underline -> "underline"
+      | `Line -> "bar")
+  in
+  Testable.make ~pp ~equal:( = )
+
+let cursor_style () =
+  let vte = Vte.create ~rows:2 ~cols:5 () in
+  let style ~msg expected s =
+    feed vte s;
+    equal ~msg cursor_style_testable expected (Vte.cursor_style vte)
+  in
+  style ~msg:"power-up" (`Block, false) "";
+  List.iter
+    (fun (ps, expected) ->
+      style ~msg:(Printf.sprintf "Ps = %s" ps) expected ("\x1b[" ^ ps ^ " q"))
+    [
+      ("6", (`Line, false));
+      ("", (`Block, true));
+      ("4", (`Underline, false));
+      ("0", (`Block, true));
+      ("5", (`Line, true));
+      ("2", (`Block, false));
+      ("3", (`Underline, true));
+      ("1", (`Block, true));
+    ];
+  style ~msg:"an unknown style changes nothing" (`Line, false)
+    "\x1b[6 q\x1b[7 q";
+  style ~msg:"shared by both screens" (`Line, false) "\x1b[?1049h";
+  style ~msg:"DECSC does not save it" (`Underline, false)
+    "\x1b7\x1b[4 q\x1b8\x1b[?1049l";
+  Vte.clear_dirty vte;
+  style ~msg:"DECSTR" (`Block, false) "\x1b[!p";
+  is_true ~msg:"a new style marks the cursor changed" (Vte.is_cursor_dirty vte);
+  style ~msg:"RIS" (`Block, false) "\x1b[3 q\x1bc"
+
 (** {1 Dirty Tracking} *)
 
 let dirty_flag_on_text () =
@@ -2180,6 +2221,7 @@ let tests =
     test "resize clamps cursor" resize_clamps_cursor;
     test "reset clears state" reset_clears_state;
     test "RIS and DECSTR" ris_and_decstr;
+    test "cursor style" cursor_style;
     test "selective erase" selective_erase;
     test "dirty flag on text" dirty_flag_on_text;
     test "dirty flag on cursor move" dirty_flag_on_cursor_move;

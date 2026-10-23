@@ -154,12 +154,12 @@
 
     RIS returns to the power-up state. DECSTR returns each terminal setting to
     its power-up value: insert, origin, autowrap, reverse-wrap and national
-    modes, cursor keys, cursor visibility and the margins; the pen and the
-    character sets to their defaults; both DECSC slots to the power-up cursor
-    state. The VT510's table gives "No autowrap", its own power-up value; this
-    terminal powers up with autowrap on, so DECSTR sets it on. The screen, the
-    cursor position, the active screen, bracketed paste, the tab stops and the
-    title stay. *)
+    modes, cursor keys, cursor visibility and style, and the margins; the pen
+    and the character sets to their defaults; both DECSC slots to the power-up
+    cursor state. The VT510's table gives "No autowrap", its own power-up value;
+    this terminal powers up with autowrap on, so DECSTR sets it on. The screen,
+    the cursor position, the active screen, bracketed paste, the tab stops and
+    the title stay. *)
 
 type t
 (** The type for terminal emulators. Mutable, not thread-safe. *)
@@ -244,6 +244,12 @@ val last_column : t -> bool
     first. It implies autowrap and [snd (cursor_pos t) = cols t - 1]. Cursor
     reports never show it. *)
 
+val cursor_style : t -> Ansi.cursor_style * bool
+(** [cursor_style t] is the cursor's shape and whether it blinks, as DECSCUSR
+    ([CSI Ps SP q]) last set them. It powers up as a steady block, as in xterm;
+    RIS and DECSTR restore that. Both screens share it and DECSC does not save
+    it. *)
+
 val wrapped : t -> int -> bool
 (** [wrapped t y] is the wrap mark of row [y] of the active screen, or for
     [y < 0] of the [-y]th newest scrollback line. [false] outside them. *)
@@ -296,8 +302,8 @@ val render_with_scrollback : t -> offset:int -> Matrix_grid.t -> unit
 (** {1:dirty Changes}
 
     A renderer redraws what changed since it last looked. Writing cells, moving
-    the cursor or changing its visibility, and changing the rendition mark [t]
-    changed; the title and the other modes do not. *)
+    the cursor or changing its visibility or style, and changing the rendition
+    mark [t] changed; the title and the other modes do not. *)
 
 val is_dirty : t -> bool
 (** [is_dirty t] is [true] iff [t] changed since {!clear_dirty}. *)
@@ -307,8 +313,8 @@ val dirty_rows : t -> int list
     increasing order. *)
 
 val is_cursor_dirty : t -> bool
-(** [is_cursor_dirty t] is [true] iff the cursor moved or was shown or hidden
-    since {!clear_dirty}. *)
+(** [is_cursor_dirty t] is [true] iff the cursor moved, was shown or hidden, or
+    changed style since {!clear_dirty}. *)
 
 val clear_dirty : t -> unit
 (** [clear_dirty t] forgets the changes. *)

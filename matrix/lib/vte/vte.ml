@@ -116,6 +116,7 @@ type t = {
   mutable pen : pen;
   mutable charsets : charsets;
   mutable modes : modes;
+  mutable cursor_style : Ansi.cursor_style * bool;
   mutable margins : margins;
   mutable tabs : bool array;
   mutable title : string;
@@ -149,6 +150,9 @@ let power_up_modes =
     alternate_screen = false;
     national = false;
   }
+
+(* xterm's, as Matrix_terminal resets it. *)
+let power_up_cursor_style = (`Block, false)
 
 (* Tab stops every eight columns, as at power-up. *)
 let default_tabs cols = Array.init cols (fun i -> i > 0 && i mod 8 = 0)
@@ -931,6 +935,12 @@ let set_cursor_visible t visible =
     t.dirty.any <- true;
     t.dirty.cursor <- true)
 
+let set_cursor_style t style =
+  if t.cursor_style <> style then (
+    t.cursor_style <- style;
+    t.dirty.any <- true;
+    t.dirty.cursor <- true)
+
 let switch_screen t ~alternate =
   if t.modes.alternate_screen <> alternate then (
     t.modes <- { t.modes with alternate_screen = alternate };
@@ -988,6 +998,7 @@ let ris t =
     [ t.primary; t.alternate ];
   clear_history t;
   set_cursor_visible t true;
+  set_cursor_style t power_up_cursor_style;
   t.modes <- power_up_modes;
   set_cursor t ~row:0 ~col:0 ~last_column:false;
   t.pen <- plain_pen;
@@ -1029,6 +1040,7 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
       pen = plain_pen;
       charsets = ascii_sets;
       modes = power_up_modes;
+      cursor_style = power_up_cursor_style;
       margins = { top = 0; bottom = 0 };
       tabs = [||];
       title = "";
@@ -1059,9 +1071,11 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
   t
 
 (* DECSTR: the settings, the pen and the character sets to their power-up
-   values (VT510 DECSTR, Table 5-9), autowrap on as at power-up. *)
+   values (VT510 DECSTR, Table 5-9), autowrap on as at power-up, and the
+   cursor style, as xterm does. *)
 let decstr t =
   set_cursor_visible t true;
+  set_cursor_style t power_up_cursor_style;
   t.modes <-
     {
       power_up_modes with
@@ -1134,6 +1148,15 @@ let sgr t p =
   if not (Ansi.Style.equal style t.pen.style) then (
     t.pen <- { t.pen with style };
     t.dirty.any <- true)
+
+let decscusr t = function
+  | 0 | 1 -> set_cursor_style t (`Block, true)
+  | 2 -> set_cursor_style t (`Block, false)
+  | 3 -> set_cursor_style t (`Underline, true)
+  | 4 -> set_cursor_style t (`Underline, false)
+  | 5 -> set_cursor_style t (`Line, true)
+  | 6 -> set_cursor_style t (`Line, false)
+  | _ -> ()
 
 let decsca t = function
   | 0 | 2 -> t.pen <- { t.pen with protected = false }
@@ -1220,6 +1243,7 @@ let csi t (s : Ansi.Parser.sequence) =
   | Some '>', "", 'c' when ps 0 = 0 -> da2 t
   | None, "!", 'p' -> decstr t
   | None, "\"", 'q' -> decsca t (ps 0)
+  | None, " ", 'q' -> decscusr t (ps 0)
   | None, " ", '@' -> sl t (pn 0)
   | None, " ", 'A' -> sr t (pn 0)
   | None, "'", '}' -> decic t (pn 0)
@@ -1421,6 +1445,7 @@ let rows t = t.rows
 let cols t = t.cols
 let cursor_pos t = (t.cursor.row, t.cursor.col)
 let last_column t = t.cursor.last_column
+let cursor_style t = t.cursor_style
 
 let wrapped t y =
   if y >= 0 then y < t.rows && wrapped_row t y
