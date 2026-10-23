@@ -169,8 +169,8 @@ let () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let clock = Eio.Stdenv.clock env in
-  let matrix =
-    Matrix_eio.create ~sw
+  let backend =
+    Matrix_eio.backend
       ~clock:(Eio.Stdenv.mono_clock env)
       ~stdin:env#stdin ~stdout:env#stdout ()
   in
@@ -179,5 +179,5 @@ let () =
         thunk ();
         `Stop_daemon)
   in
-  Mosaic.run ~matrix ~process_perform
+  Mosaic.run ~backend ~process_perform
     { init = init ~clock; update; view; subscriptions }

@@ -1,10 +1,11 @@
 # Matrix_eio
 
-Eio-based runtime for the [Matrix](../matrix/README.md) terminal library.
+Eio backend for the [Matrix](../matrix/README.md) terminal library.
 
-Matrix_eio replaces Matrix's default Unix.select event loop with Eio fibers and structured concurrency. The event loop yields to other Eio fibers while waiting for terminal input, and the application is automatically closed when the Eio switch is released.
-
-All other Matrix functions (`Matrix.grid`, `Matrix.submit`, `Matrix.run`, etc.) work unchanged — only the creation step differs.
+Matrix_eio gives `Matrix.run` a backend whose waits yield to other Eio fibers:
+while the loop waits for input, a wake, a signal or a deadline, the domain runs
+the program's other fibers. Everything else is Matrix's: the run, its loop and
+its frames are the same over every backend.
 
 ## Getting Started
 
@@ -21,43 +22,45 @@ open Matrix
 
 let () =
   Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw ->
-  let app =
-    Matrix_eio.create ~sw ~clock:(Eio.Stdenv.mono_clock env) ~stdin:env#stdin
+  let backend =
+    Matrix_eio.backend ~clock:(Eio.Stdenv.mono_clock env) ~stdin:env#stdin
       ~stdout:env#stdout ()
   in
-  let frames = ref 0 in
-  Matrix.run app
-    ~on_frame:(fun _ ~dt:_ -> incr frames)
-    ~on_input:(fun app event ->
-      match event with
-      | Key { key = Escape; _ } -> Matrix.stop app
-      | _ -> ())
-    ~on_render:(fun app ->
-      let grid = Matrix.grid app in
-      Grid.clear grid;
-      Grid.draw_text grid ~x:2 ~y:2
-        ~text:(Printf.sprintf "Frames: %d" !frames))
+  Matrix.run ~backend @@ fun app ->
+  let rec loop keys =
+    match Matrix.next app with
+    | Stopped | Event (Key { key = Escape; _ }) -> ()
+    | Event (Key _) ->
+        Matrix.request_redraw app;
+        loop (keys + 1)
+    | Frame ->
+        Matrix.draw app (fun grid ->
+            Grid.draw_text grid ~x:2 ~y:2 ~text:(Printf.sprintf "Keys: %d" keys));
+        loop keys
+    | Event _ | Timer _ | Posted _ -> loop keys
+  in
+  loop 0
 ```
 
-The four mandatory parameters connect Matrix to the Eio runtime:
+The three parameters connect Matrix to the Eio runtime:
 
-- `sw` — Eio switch controlling the application lifetime
-- `clock` — Eio clock for frame timing and input timeouts
+- `clock` — Eio's monotonic clock, which the wait sleeps on until a deadline
 - `stdin` — Eio source for terminal input
 - `stdout` — Eio sink for terminal output
 
-All optional parameters (display mode, mouse, keyboard protocol, etc.) match `Matrix.create`. See the [Matrix README](../matrix/README.md) for the full API overview.
+The wait wakes on the input, on a `Matrix.post` from any thread or fiber, on
+the signals the runtime takes, and at the next deadline; nothing polls, so an
+idle program costs no wakeups.
 
 ## When to Use Matrix_eio
 
-Use `Matrix_eio.create` instead of `Matrix.create` when:
+Use `Matrix_eio.backend` when:
 
 - Your application already runs inside `Eio_main.run`
 - You want terminal I/O to cooperate with other concurrent Eio fibers
-- You want Eio switch release to automatically close the terminal app
 
-If you are not using Eio, use `Matrix.create` directly — no adapter needed.
+If you are not using Eio, `Matrix.run` uses its Unix backend by default — no
+adapter needed.
 
 ## License
 

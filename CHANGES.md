@@ -145,6 +145,7 @@
 
 ### matrix-eio
 
+- **A backend** – `Matrix_eio.backend ~clock ~stdin ~stdout` replaces `create`: its wait suspends only the loop's fiber and wakes on the process's wake pipe, which `Matrix.post` and the signal handlers write; the 50 ms poll goes
 - Termination signals are handled on the event loop, not inside the OCaml signal handler, so the terminal is restored on SIGTERM/SIGHUP
 - The idle wait races input, a level-triggered wake, and a deadline as peer fibers, so a wake arriving outside the wait can no longer strand the render loop under scheduler pressure
 

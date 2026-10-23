@@ -1,251 +1,58 @@
-(* ───── SIGWINCH Handling ───── *)
+let descriptor resource = Eio_unix.Fd.use_exn "Matrix_eio" resource Fun.id
 
-let with_rollback ~rollback fn =
-  try fn ()
-  with exn ->
-    let backtrace = Printexc.get_raw_backtrace () in
-    (try rollback () with _ -> ());
-    Printexc.raise_with_backtrace exn backtrace
-
-(* Signal handlers cannot use Eio primitives, so we poll an atomic flag at most
-   every 50ms — imperceptible for resize events. *)
-let sigwinch_poll_interval = 0.05
-let winch_flag = Atomic.make false
-
-let install_winch_handler () =
-  try
-    Atomic.set winch_flag false;
-    let previous =
-      Sys.signal Sys.sigwinch
-        (Sys.Signal_handle (fun _ -> Atomic.set winch_flag true))
+let backend ~clock ~stdin ~stdout () =
+  let input = descriptor (Eio_unix.Resource.fd stdin) in
+  let output = descriptor (Eio_unix.Resource.fd stdout) in
+  let unix = Matrix.Backend.unix ~input ~output () in
+  let wake_fd = Matrix.Backend.wake_fd () in
+  let input_cs = Cstruct.create 4096 in
+  let read_input buf off len =
+    let cs =
+      if len >= Cstruct.length input_cs then input_cs
+      else Cstruct.sub input_cs 0 len
     in
-    let active = ref true in
-    fun () ->
-      if !active then (
-        active := false;
-        (try ignore (Sys.signal Sys.sigwinch previous : Sys.signal_behavior)
-         with _ -> ());
-        Atomic.set winch_flag false)
-  with Invalid_argument _ -> ignore
-
-(* ───── Termination Signals ───── *)
-
-(* Termination signals must not run [Matrix.close] from the signal handler:
-   for this backend close performs Eio effects (terminal output writes go
-   through [Eio.Flow], flush_input through [Eio_unix.Fd.use_exn]), and
-   performing an effect inside an OCaml signal handler is unsound. When the
-   domain is parked in the Eio scheduler — the normal state for an idle TUI —
-   the interrupted stack has no effect handler, so the perform raises
-   [Effect.Unhandled]; the terminal is then left raw exactly in the
-   clean-shutdown case the handler exists for. When a fiber is running, the
-   effect would instead suspend that fiber mid-handler, corrupting scheduler
-   state. The handler therefore only records the signal; the event loop polls
-   the flag at the same <=50ms cadence as SIGWINCH and shuts down from the
-   loop fiber, where Eio operations are legal. *)
-let termination_signal = Atomic.make 0
-
-let install_termination_handlers () =
-  Atomic.set termination_signal 0;
-  let installed = ref [] in
-  let restore () =
-    List.iter
-      (fun (signal, previous) ->
-        try ignore (Sys.signal signal previous : Sys.signal_behavior)
-        with _ -> ())
-      !installed;
-    Atomic.set termination_signal 0
+    match Eio.Flow.single_read stdin cs with
+    | n ->
+        Cstruct.blit_to_bytes cs 0 buf off n;
+        n
+    | exception End_of_file -> 0
   in
-  let handler =
-    Sys.Signal_handle (fun signum -> Atomic.set termination_signal signum)
+  let write_output buf off len =
+    Eio.Flow.write stdout [ Cstruct.of_bytes ~off ~len buf ]
   in
-  List.iter
-    (fun signal ->
-      match Sys.signal signal handler with
-      | previous -> installed := (signal, previous) :: !installed
-      | exception Invalid_argument _ -> ())
-    [ Sys.sigterm; Sys.sigint; Sys.sigquit; Sys.sigabrt; Sys.sighup ];
-  let active = ref true in
-  fun () ->
-    if !active then (
-      active := false;
-      restore ())
-
-(* ───── Application Setup ───── *)
-
-let create ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
-    ?(mouse_enabled = true) ?(mouse = None) ?(bracketed_paste = true)
-    ?(kitty_keyboard = `Auto) ?(key_releases = false) ?(exit_on_ctrl_c = true)
-    ?(debug_overlay = false) ?(debug_overlay_corner = `Bottom_right)
-    ?(debug_overlay_capacity = 120) ?(frame_dump_every = 0) ?frame_dump_dir
-    ?frame_dump_pattern ?(frame_dump_hits = false)
-    ?(cursor_visible = mode = `Alt) ?(explicit_width = false)
-    ?(input_timeout = None) ?(resize_debounce = Some 0.1) ?(min_tui_height = 1)
-    ?(start_idle = false) ?(signal_handlers = true) ?caps ~sw ~clock ~stdin
-    ~stdout () =
-  let input_eio_fd = Eio_unix.Resource.fd stdin in
-  let output_eio_fd = Eio_unix.Resource.fd stdout in
-  let output_is_tty =
-    Eio_unix.Fd.use_exn "is_tty" output_eio_fd Matrix.Terminal.is_tty
+  let drain () =
+    let buf = Bytes.create 64 in
+    let rec go () =
+      match Unix.read wake_fd buf 0 64 with
+      | 64 -> go ()
+      | _ -> ()
+      | exception Unix.Unix_error _ -> ()
+    in
+    go ()
   in
-  let input_is_tty =
-    Eio_unix.Fd.use_exn "is_tty" input_eio_fd Matrix.Terminal.is_tty
+  (* Input, wake and deadline race as peers; the first to finish cancels the
+     others. *)
+  let wait ~until ~reading =
+    let input () =
+      Eio_unix.await_readable input;
+      true
+    in
+    let woken () =
+      Eio_unix.await_readable wake_fd;
+      false
+    in
+    let deadline until () =
+      let seconds = Float.of_int (until - unix.now ()) *. 1e-9 in
+      if seconds > 0. then Eio.Time.Mono.sleep clock seconds;
+      false
+    in
+    let peers = [ woken ] in
+    let peers = if reading then input :: peers else peers in
+    let peers =
+      match until with Some until -> deadline until :: peers | None -> peers
+    in
+    let readable = Eio.Fiber.any peers in
+    drain ();
+    readable
   in
-  let wakeup = Eio.Condition.create () in
-  (* Level-triggered wake: [wake] sets [wake_pending] before broadcasting, and
-     the wait's fast path takes a pending wake without awaiting, so a wake that
-     lands while the loop is out of its wait (mid-render, or descheduled by
-     another fiber) is never lost to an edge-triggered broadcast. *)
-  let wake_pending = Atomic.make false in
-  let original_termios = ref None in
-  let restore_winch = ref ignore in
-  let restore_termination = ref ignore in
-  let set_raw_mode enabled =
-    match (enabled, !original_termios) with
-    | true, Some _ | false, None -> ()
-    | true, None ->
-        if input_is_tty then
-          original_termios :=
-            Some
-              (Eio_unix.Fd.use_exn "set_raw" input_eio_fd
-                 Matrix.Terminal.set_raw)
-    | false, Some saved ->
-        Eio_unix.Fd.use_exn "restore" input_eio_fd (fun fd ->
-            Matrix.Terminal.restore fd saved);
-        original_termios := None
-  in
-  let app_ref = ref None in
-  (* Shut down from the loop fiber when a termination signal was recorded:
-     close the app (legal here, unlike in the signal handler) and exit with
-     the conventional status, matching the Unix backend's semantics. *)
-  let check_termination () =
-    match Atomic.get termination_signal with
-    | 0 -> ()
-    | signum ->
-        (match !app_ref with
-        | Some app -> ( try Matrix.close app with _ -> ())
-        | None -> ());
-        exit (128 + signum)
-  in
-  (* Register before acquiring raw mode. Once attachment succeeds this same
-     callback transfers from construction rollback to [Matrix.close]. *)
-  let close_owned () =
-    match !app_ref with
-    | Some app -> Matrix.close app
-    | None -> set_raw_mode false
-  in
-  let close_owned_protected () = Eio.Cancel.protect close_owned in
-  Eio.Switch.on_release sw close_owned_protected;
-  with_rollback ~rollback:close_owned_protected (fun () ->
-      let input_cs = Cstruct.create 4096 in
-      let read_input buf off len =
-        let cs =
-          if len >= Cstruct.length input_cs then input_cs
-          else Cstruct.sub input_cs 0 len
-        in
-        match Eio.Flow.single_read stdin cs with
-        | n ->
-            Cstruct.blit_to_bytes cs 0 buf off n;
-            n
-        | exception End_of_file -> 0
-      in
-      let terminal_size () =
-        Eio_unix.Fd.use_exn "size" output_eio_fd Matrix.Terminal.size
-      in
-      (* ───── IO Callbacks ───── *)
-      let now () =
-        Eio.Time.Mono.now clock |> Mtime.to_uint64_ns |> Mtime.Span.of_uint64_ns
-        |> Mtime.Span.to_float_ns
-        |> fun ns -> ns *. 1e-9
-      in
-      let wake () =
-        Atomic.set wake_pending true;
-        Eio.Condition.broadcast wakeup
-      in
-      let flush_input () =
-        if input_is_tty then
-          Eio_unix.Fd.use_exn "flush_input" input_eio_fd
-            Matrix.Terminal.flush_input
-      in
-      let write_output buf off len =
-        Eio.Flow.write stdout [ Cstruct.of_bytes ~off ~len buf ]
-      in
-      (* The three peer branches of the wait, allocated once so a successful
-         read stays on the no-allocation path; the deadline is read from a cell
-         each call rather than re-closed over. *)
-      let wait_deadline = ref sigwinch_poll_interval in
-      let await_input () =
-        Eio_unix.Fd.use_exn "await" input_eio_fd (fun fd ->
-            Eio_unix.await_readable fd);
-        `Input
-      in
-      let take_wake () =
-        if Atomic.exchange wake_pending false then Some `Wakeup else None
-      in
-      (* Register before checking the atomic latch: a native worker can
-         broadcast between the fast-path check and suspension. *)
-      let await_wake () = Eio.Condition.loop_no_mutex wakeup take_wake in
-      let await_deadline () =
-        Eio.Time.Mono.sleep clock !wait_deadline;
-        `Timeout
-      in
-      let wait_branches = [ await_input; await_wake; await_deadline ] in
-      let wait ~timeout ~on_event =
-        let effective_timeout =
-          match timeout with
-          | None -> sigwinch_poll_interval
-          | Some t -> Float.min t sigwinch_poll_interval
-        in
-        (* Input, wake, and deadline race as three peers. The deadline is a
-           plain [sleep] re-armed every call — not a [with_timeout] wrapping
-           the wait, whose nested [Fiber.first] can leave the loop parked in
-           the wake branch after the timer fired — so it always resolves and
-           no cancellation race can strand the loop. [wake] is
-           level-triggered: it sets [wake_pending] before its broadcast, so a
-           wake that lands while the loop is out of this wait is taken by the
-           fast path without awaiting, never lost to the edge-triggered
-           broadcast nor to a cancelled wake branch. *)
-        wait_deadline := effective_timeout;
-        let got =
-          if Atomic.exchange wake_pending false then `Wakeup
-          else Eio.Fiber.any wait_branches
-        in
-        check_termination ();
-        if Atomic.get winch_flag then (
-          Atomic.set winch_flag false;
-          let cols, rows = terminal_size () in
-          on_event (Matrix.Resize (cols, rows)));
-        got = `Input
-      in
-      let backend : Matrix.Backend.t =
-        {
-          now;
-          protect = Eio.Cancel.protect;
-          wake;
-          write_output;
-          read_input;
-          wait;
-          input_is_tty;
-          output_is_tty;
-          terminal_size;
-          set_raw_mode;
-          flush_input;
-          cleanup =
-            (fun () ->
-              !restore_termination ();
-              !restore_winch ());
-          env = Matrix.Terminal.Caps.env Sys.getenv_opt ~win32:Sys.win32;
-        }
-      in
-      let app =
-        Matrix.attach ~mode ~raw_mode ~target_fps ~mouse_enabled ~mouse
-          ~bracketed_paste ~kitty_keyboard ~key_releases ~exit_on_ctrl_c
-          ~debug_overlay ~debug_overlay_corner ~debug_overlay_capacity
-          ~frame_dump_every ?frame_dump_dir ?frame_dump_pattern ~frame_dump_hits
-          ~cursor_visible ~explicit_width ~input_timeout ~resize_debounce
-          ~min_tui_height ~start_idle ?caps ~backend ()
-      in
-      app_ref := Some app;
-      restore_winch := install_winch_handler ();
-      if signal_handlers then
-        restore_termination := install_termination_handlers ();
-      app)
+  { unix with wait; read_input; write_output; protect = Eio.Cancel.protect }

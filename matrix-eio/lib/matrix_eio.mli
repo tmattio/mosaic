@@ -1,87 +1,45 @@
-(** Eio-based runtime for {!Matrix}.
+(** Eio backend for {!Matrix}.
 
-    [Matrix_eio] provides an Eio-native event loop for terminal applications.
-    Use {!create} to build an {!Matrix.app} with Eio-backed I/O, then pass it to
-    {!Matrix.run}. All other Matrix functions ({!Matrix.prepare},
-    {!Matrix.submit}, {!Matrix.grid}, etc.) work unchanged.
+    [Matrix_eio] gives {!Matrix.run} a backend whose waits yield to other Eio
+    fibers: while the loop waits for input, a wake, a signal or a deadline, the
+    domain runs the program's other fibers.
 
     {1:quick_start Quick start}
 
     {[
     Eio_main.run @@ fun env ->
-    Eio.Switch.run @@ fun sw ->
-    let app =
-      Matrix_eio.create ~sw
+    let backend =
+      Matrix_eio.backend
         ~clock:(Eio.Stdenv.mono_clock env)
         ~stdin:env#stdin ~stdout:env#stdout ()
     in
-    Matrix.run app ~on_render:(fun app ->
-        let g = Matrix.grid app in
-        (* draw … *)
-        ())
+    Matrix.run ~backend @@ fun app ->
+    let rec loop () =
+      match Matrix.next app with
+      | Stopped | Event (Key { key = Escape; _ }) -> ()
+      | Frame ->
+          Matrix.draw app (fun grid -> (* draw into grid *) ignore grid);
+          loop ()
+      | _ -> loop ()
+    in
+    loop ()
     ]} *)
 
-(** {1:creating Creating} *)
-
-val create :
-  ?mode:Matrix.mode ->
-  ?raw_mode:bool ->
-  ?target_fps:float option ->
-  ?mouse_enabled:bool ->
-  ?mouse:Matrix.Terminal.mouse_mode option ->
-  ?bracketed_paste:bool ->
-  ?kitty_keyboard:Matrix.kitty_keyboard ->
-  ?key_releases:bool ->
-  ?exit_on_ctrl_c:bool ->
-  ?debug_overlay:bool ->
-  ?debug_overlay_corner:Matrix.debug_overlay_corner ->
-  ?debug_overlay_capacity:int ->
-  ?frame_dump_every:int ->
-  ?frame_dump_dir:string ->
-  ?frame_dump_pattern:string ->
-  ?frame_dump_hits:bool ->
-  ?cursor_visible:bool ->
-  ?explicit_width:bool ->
-  ?input_timeout:float option ->
-  ?resize_debounce:float option ->
-  ?min_tui_height:int ->
-  ?start_idle:bool ->
-  ?signal_handlers:bool ->
-  ?caps:Matrix.Terminal.capabilities ->
-  sw:Eio.Switch.t ->
+val backend :
   clock:_ Eio.Time.Mono.t ->
   stdin:_ Eio_unix.source ->
   stdout:_ Eio_unix.sink ->
   unit ->
-  Matrix.app
-(** [create ~sw ~clock ~stdin ~stdout ()] is a live {!Matrix.app} with
-    Eio-backed I/O.
+  Matrix.Backend.t
+(** [backend ~clock ~stdin ~stdout ()] is {!Matrix.Backend.unix} over the
+    descriptors of [stdin] and [stdout], reading and writing through Eio, with a
+    [wait] that suspends only the fiber that runs the loop.
 
-    Equivalent to {!Matrix.create} but integrates with the Eio scheduler: the
-    event loop yields to other Eio fibers while waiting for terminal input. The
-    application is automatically closed when [sw] is released. Permanent EOF
-    from [stdin] finalizes pending decoder state and closes the application
-    without polling the source again. The app owns its SIGWINCH disposition and
-    restores the previous disposition before releasing backend resources.
-    Construction is transactional: a probe, cursor query, attachment, or initial
-    output failure restores raw mode and closes any partial application before
-    propagating the original exception.
+    The wait is woken as {!Matrix.Backend.unix}'s is: by the input, by
+    {!Matrix.Backend.wake_fd}, which {!Matrix.post} and the runtime's signal
+    handlers write to, and by [clock] at the deadline. Nothing polls: an idle
+    loop costs no wakeups. The clock is the runtime's monotonic one; [clock]
+    only sleeps until a deadline on it.
 
-    The mandatory parameters are:
-    - [sw] — Eio switch controlling the application lifetime. The app is closed
-      when [sw] is released.
-    - [clock] — monotonic Eio clock for frame timing and input timeouts.
-      Typically [Eio.Stdenv.mono_clock env].
-    - [stdin] — Eio source for terminal input (typically [env#stdin]).
-    - [stdout] — Eio sink for terminal output (typically [env#stdout]).
-
-    All optional parameters match {!Matrix.create}; see its documentation for
-    details.
-
-    [signal_handlers] keeps {!Matrix.create}'s meaning — the app owns
-    SIGTERM/SIGINT/SIGQUIT/SIGABRT/SIGHUP until close and prior dispositions are
-    restored — but termination is handled Eio-natively: the signal handler only
-    records the signal, and the event loop closes the application from a fiber
-    (within its regular 50ms poll) before exiting with [128 + signum]. Running
-    the teardown inside the signal handler would perform Eio effects without an
-    effect handler on the stack. *)
+    [stdin] and [stdout] must stay open while the run that uses the backend
+    lasts. *)

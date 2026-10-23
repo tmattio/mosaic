@@ -107,28 +107,22 @@ let nonblocking_read_returns_without_input ~master fd =
   Thread.join reader;
   Atomic.get outcome = `Nonblocking
 
-(* Proves the concurrent driver pattern a deterministic Eio test harness
-   builds on matrix.test: the Matrix loop runs in one fiber, blocked inside
-   [on_idle] on an [Eio.Condition]; the test script drives it from another
-   fiber; an asynchronous fiber (a completed perform, in TEA terms) wakes the
-   quiescent loop through [Matrix.request_redraw]'s wake channel. Runs under
-   [Eio_mock.Backend]: single domain, deterministic scheduling.
+(* The concurrent driver pattern a deterministic Eio test harness builds on
+   matrix.test: the Matrix loop runs in one fiber, blocked inside [on_idle]
+   on an [Eio.Condition]; the test script drives it from another fiber; an
+   asynchronous fiber (a completed perform, in TEA terms) wakes the quiescent
+   loop with [Matrix.post]. Runs under [Eio_mock.Backend]: single domain,
+   deterministic scheduling.
 
-   The condition-variable discipline matters: [signaled] is set before the
-   broadcast and re-checked in a loop, so a wake that lands while the loop is
-   between draining and awaiting is never lost. On a single domain the loop
-   fiber only yields inside [Eio.Condition.await_no_mutex], so observing a
-   fresh [idles] increment from the script implies the loop is parked and the
-   presented frame is stable. *)
+   [signaled] is set before the broadcast and re-checked in a loop, so a wake
+   that lands while the loop is between draining and awaiting is never lost.
+   On a single domain the loop fiber only yields inside
+   [Eio.Condition.await_no_mutex], so a fresh [idles] increment seen from the
+   script means the loop is parked and the presented frame is stable. *)
 
 (* The round-trip oracle, shared with mosaic/test/loop: the bytes the driver
    emitted must, replayed through matrix's own VTE, reconstruct the grid the
-   backend believes it painted. Asserting the screen string alone leaves the
-   emission path — the part eio's driver actually owns — unchecked.
-
-   Rows are compared without trailing blanks: Matrix_test.screen right-trims
-   each row and Vte.to_string pads to the full width, so the padding is a
-   representation difference rather than content. *)
+   backend believes it painted. *)
 let rstrip_rows s =
   String.split_on_char '\n' s
   |> List.map (fun row ->
@@ -147,39 +141,38 @@ let screen_replays t ~width ~height =
     (rstrip_rows (Vte.to_string vte))
 
 type driver = {
-  mutable backend : Matrix_test.t option;
+  mutable terminal : Matrix_test.t option;
   cond : Eio.Condition.t;
   mutable signaled : bool;
   mutable idles : int;
-  mutable stopping : bool;
 }
 
 let make_driver ~width ~height =
   let driver =
     {
-      backend = None;
+      terminal = None;
       cond = Eio.Condition.create ();
       signaled = false;
       idles = 0;
-      stopping = false;
     }
   in
-  let on_idle _t ~timeout:_ =
-    driver.idles <- driver.idles + 1;
-    while (not driver.signaled) && not driver.stopping do
-      Eio.Condition.await_no_mutex driver.cond
-    done;
-    driver.signaled <- false
+  let on_idle t ~until =
+    if not (Matrix_test.settle t ~until) then (
+      driver.idles <- driver.idles + 1;
+      while not driver.signaled do
+        Eio.Condition.await_no_mutex driver.cond
+      done;
+      driver.signaled <- false)
   in
   let wake () =
     driver.signaled <- true;
     Eio.Condition.broadcast driver.cond
   in
-  let backend = Matrix_test.create ~on_idle ~on_wake:wake ~width ~height () in
-  driver.backend <- Some backend;
+  driver.terminal <-
+    Some (Matrix_test.create ~on_idle ~on_wake:wake ~width ~height ());
   driver
 
-let backend driver = Option.get driver.backend
+let terminal driver = Option.get driver.terminal
 
 (* Block the script fiber until the loop parks at a quiescent point newer
    than [beyond]. *)
@@ -188,108 +181,122 @@ let await_idle driver ~beyond =
     Eio.Fiber.yield ()
   done
 
-let feed driver bytes =
-  Matrix_test.feed (backend driver) bytes;
+let poke driver =
   driver.signaled <- true;
   Eio.Condition.broadcast driver.cond
 
+let feed driver bytes =
+  Matrix_test.feed (terminal driver) bytes;
+  poke driver
+
+(* Ends the input, which ends the run. *)
 let stop driver =
-  driver.stopping <- true;
-  (* [Matrix.stop] raises the wake channel, which unparks [on_idle]. *)
-  Matrix_test.stop (backend driver)
+  Matrix_test.stop (terminal driver);
+  poke driver
+
+(* What another fiber sends the loop. *)
+type message = Redraw
 
 let run_typed_app driver ~script =
-  let t = backend driver in
+  let t = terminal driver in
   let typed = Buffer.create 8 in
   let frames = ref 0 in
+  let post = ref ignore in
   let loop () =
-    Matrix.run (Matrix_test.app t)
-      ~on_input:(fun _app event ->
-        match event with
-        | Matrix.Key { key = Char u; _ } when Uchar.is_char u ->
-            Buffer.add_char typed (Uchar.to_char u)
-        | _ -> ())
-      ~on_render:(fun app ->
-        incr frames;
-        Matrix.Grid.draw_text (Matrix.grid app) ~x:0 ~y:0
-          ~text:("typed:" ^ Buffer.contents typed))
+    Matrix.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+      (fun app ->
+        (post := fun () -> Matrix.post app Redraw);
+        let rec loop () =
+          match Matrix.next app with
+          | Stopped -> ()
+          | Event (Key { key = Char u; _ }) when Uchar.is_char u ->
+              Buffer.add_char typed (Uchar.to_char u);
+              Matrix.request_redraw app;
+              loop ()
+          | Posted Redraw ->
+              Matrix.request_redraw app;
+              loop ()
+          | Frame ->
+              incr frames;
+              Matrix.draw app (fun grid ->
+                  Matrix.Grid.draw_text grid ~x:0 ~y:0
+                    ~text:("typed:" ^ Buffer.contents typed));
+              loop ()
+          | Event _ | Timer _ -> loop ()
+        in
+        loop ())
   in
-  Eio.Fiber.both loop (fun () -> script ~frames)
+  Eio.Fiber.both loop (fun () -> script ~frames ~post:(fun () -> !post ()))
 
 let test_input_crosses_fibers () =
   Eio_mock.Backend.run @@ fun () ->
   let driver = make_driver ~width:24 ~height:2 in
-  run_typed_app driver ~script:(fun ~frames:_ ->
+  run_typed_app driver ~script:(fun ~frames:_ ~post:_ ->
       await_idle driver ~beyond:0;
       equal ~msg:"initial frame presented" string "typed:"
-        (String.trim (Matrix_test.screen (backend driver)));
-      screen_replays (backend driver) ~width:24 ~height:2;
+        (String.trim (Matrix_test.screen (terminal driver)));
+      screen_replays (terminal driver) ~width:24 ~height:2;
       let before = driver.idles in
       feed driver "hi";
       await_idle driver ~beyond:before;
       equal ~msg:"input crossed fibers and re-rendered" string "typed:hi"
-        (String.trim (Matrix_test.screen (backend driver)));
-      screen_replays (backend driver) ~width:24 ~height:2;
+        (String.trim (Matrix_test.screen (terminal driver)));
+      screen_replays (terminal driver) ~width:24 ~height:2;
       stop driver)
 
 let test_async_wake_reaches_quiescent_loop () =
   Eio_mock.Backend.run @@ fun () ->
   Eio.Switch.run @@ fun sw ->
   let driver = make_driver ~width:24 ~height:2 in
-  run_typed_app driver ~script:(fun ~frames ->
+  run_typed_app driver ~script:(fun ~frames ~post ->
       await_idle driver ~beyond:0;
       let settled_frames = !frames in
       let before = driver.idles in
-      (* A completed perform calls [Matrix.request_redraw] from its own
-         fiber; the wake channel must unpark the loop. *)
-      Eio.Fiber.fork ~sw (fun () ->
-          Matrix.request_redraw (Matrix_test.app (backend driver)));
+      (* A completed perform posts from its own fiber; the wake unparks the
+         loop. *)
+      Eio.Fiber.fork ~sw post;
       await_idle driver ~beyond:before;
-      equal ~msg:"async wake produced exactly one frame" int
-        (settled_frames + 1) !frames;
+      equal ~msg:"the post produced exactly one frame" int (settled_frames + 1)
+        !frames;
       stop driver)
+
+let quiet = Matrix.config ~raw_mode:false ~mouse:`Off ()
+
+(* Draws the frames that come until [until] is true of a step. *)
+let rec loop_until app until =
+  match Matrix.next app with
+  | Frame ->
+      Matrix.draw app ignore;
+      loop_until app until
+  | step -> if not (until step) then loop_until app until
 
 let test_native_thread_wakes_eio_loop () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let stdin, stdin_writer = Eio_unix.pipe sw in
   let stdout_reader, stdout = Eio_unix.pipe sw in
-  let app =
-    Matrix_eio.create ~sw
-      ~clock:(Eio.Stdenv.mono_clock env)
-      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
-      ~signal_handlers:false ~start_idle:true ()
+  let backend =
+    Matrix_eio.backend ~clock:(Eio.Stdenv.mono_clock env) ~stdin ~stdout ()
   in
-  let worker = ref None in
-  let frames = ref 0 in
   let result =
-    Fun.protect
-      ~finally:(fun () -> Option.iter Thread.join !worker)
-      (fun () ->
-        Eio.Time.with_timeout (Eio.Stdenv.clock env) 2. (fun () ->
-            Matrix.run app ~on_render:(fun app ->
-                incr frames;
-                if !frames = 1 then
-                  worker :=
-                    Some
-                      (Thread.create
-                         (fun () ->
-                           Thread.delay 0.01;
-                           Matrix.request_redraw app)
-                         ())
-                else begin
-                  Option.iter Thread.join !worker;
-                  worker := None;
-                  Matrix.stop app
-                end);
-            Ok ()))
+    Eio.Time.with_timeout (Eio.Stdenv.clock env) 2. (fun () ->
+        Matrix.run ~backend ~config:quiet (fun app ->
+            let worker =
+              Thread.create
+                (fun () ->
+                  Thread.delay 0.01;
+                  Matrix.post app ignore)
+                ()
+            in
+            loop_until app (function Posted _ -> true | _ -> false);
+            Thread.join worker);
+        Ok ())
   in
   Eio.Flow.close stdin_writer;
   Eio.Flow.close stdout_reader;
-  (match result with
+  match result with
   | Ok () -> ()
-  | Error `Timeout -> fail "native-thread redraw did not wake Eio");
-  equal ~msg:"native-thread notification produces a second frame" int 2 !frames
+  | Error `Timeout -> fail "a post from a native thread did not wake Eio"
 
 let test_stdin_eof_stops_the_runtime () =
   Eio_main.run @@ fun env ->
@@ -298,25 +305,20 @@ let test_stdin_eof_stops_the_runtime () =
   let stdin, state = counting_source stdin_pipe in
   let stdout_reader, stdout = Eio_unix.pipe sw in
   Eio.Flow.close stdin_writer;
-  let app =
-    Matrix_eio.create ~sw
-      ~clock:(Eio.Stdenv.mono_clock env)
-      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
-      ~signal_handlers:false ~start_idle:true ()
+  let backend =
+    Matrix_eio.backend ~clock:(Eio.Stdenv.mono_clock env) ~stdin ~stdout ()
   in
   let result =
     Eio.Time.with_timeout (Eio.Stdenv.clock env) 0.5 (fun () ->
-        Matrix.run app ~on_render:(fun _app -> ());
+        Matrix.run ~backend ~config:quiet (fun app ->
+            loop_until app (function Stopped -> true | _ -> false));
         Ok ())
   in
   Eio.Flow.close stdout_reader;
   (match result with
   | Ok () -> ()
-  | Error `Timeout -> fail "Matrix.run did not return after stdin EOF");
-  equal ~msg:"EOF is read exactly once" int 1 state.reads;
-  is_false ~msg:"EOF closes the application" (Matrix.running app);
-  Matrix.close app;
-  equal ~msg:"repeated close does not poll EOF again" int 1 state.reads
+  | Error `Timeout -> fail "the run did not stop after stdin EOF");
+  equal ~msg:"EOF is read exactly once" int 1 state.reads
 
 let measure_successful_read_allocations iterations =
   Eio_main.run @@ fun env ->
@@ -325,11 +327,8 @@ let measure_successful_read_allocations iterations =
   let stdout_reader, stdout = Eio_unix.pipe sw in
   let seen = ref 0 in
   let consumed = Eio.Condition.create () in
-  let app =
-    Matrix_eio.create ~sw
-      ~clock:(Eio.Stdenv.mono_clock env)
-      ~stdin ~stdout ~raw_mode:false ~target_fps:(Some 1.) ~mouse_enabled:false
-      ~signal_handlers:false ~start_idle:true ()
+  let backend =
+    Matrix_eio.backend ~clock:(Eio.Stdenv.mono_clock env) ~stdin ~stdout ()
   in
   Gc.full_major ();
   let allocated_before = Gc.allocated_bytes () in
@@ -337,11 +336,14 @@ let measure_successful_read_allocations iterations =
     (fun () ->
       Eio.Fiber.both
         (fun () ->
-          Matrix.run app
-            ~on_input:(fun _app _event ->
-              incr seen;
-              Eio.Condition.broadcast consumed)
-            ~on_render:(fun _app -> ());
+          Matrix.run ~backend ~config:quiet (fun app ->
+              loop_until app (function
+                | Stopped -> true
+                | Event _ ->
+                    incr seen;
+                    Eio.Condition.broadcast consumed;
+                    false
+                | _ -> false));
           Eio.Flow.close stdout)
         (fun () ->
           for expected = 1 to iterations do
@@ -375,6 +377,16 @@ let test_successful_reads_do_not_allocate_a_result () =
          words_per_read)
     (words_per_read <= 1575.)
 
+(* A pty-backed resource whose writes go to the terminal, or fail. *)
+let pty_tty ~sw fd =
+  failing_tty ~sw fd ~on_write:(fun buffers ->
+      List.fold_left
+        (fun written buffer ->
+          let text = Cstruct.to_string buffer in
+          ignore (Unix.write_substring fd text 0 (String.length text) : int);
+          written + String.length text)
+        0 buffers)
+
 let test_probe_failure_restores_pty_termios () =
   with_distinct_signal_handler Sys.sighup @@ fun sighup_handler ->
   with_distinct_signal_handler Sys.sigwinch @@ fun winch_handler ->
@@ -386,40 +398,30 @@ let test_probe_failure_restores_pty_termios () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let tty, state = failing_tty ~sw slave_fd in
-  let failure =
-    try
-      ignore
-        (Matrix_eio.create ~sw
-           ~clock:(Eio.Stdenv.mono_clock env)
-           ~stdin:tty ~stdout:tty ~signal_handlers:true ());
-      None
-    with exn -> Some exn
+  let backend =
+    Matrix_eio.backend
+      ~clock:(Eio.Stdenv.mono_clock env)
+      ~stdin:tty ~stdout:tty ()
   in
-  (match failure with
-  | Some Injected_probe_failure -> ()
-  | Some exn -> failf "unexpected probe exception: %s" (Printexc.to_string exn)
-  | None -> fail "probe failure did not escape Matrix_eio.create");
-  equal ~msg:"failed probe attempts terminal teardown" int 2 state.writes;
+  (match Matrix.run ~backend ignore with
+  | () -> fail "probe failure did not escape Matrix.run"
+  | exception Injected_probe_failure -> ()
+  | exception exn ->
+      failf "unexpected probe exception: %s" (Printexc.to_string exn));
+  equal ~msg:"no mode was set, so none is reset" int 1 state.writes;
   let after = Unix.tcgetattr slave_fd in
-  is_true ~msg:"echo restored after failed construction"
-    (before.c_echo = after.c_echo);
-  is_true ~msg:"canonical input restored after failed construction"
-    (before.c_icanon = after.c_icanon);
-  is_true ~msg:"terminal signal processing restored after failed construction"
-    (before.c_isig = after.c_isig);
-  equal ~msg:"minimum input bytes restored after failed construction" int
-    before.c_vmin after.c_vmin;
-  equal ~msg:"input timeout restored after failed construction" int
-    before.c_vtime after.c_vtime;
-  is_true ~msg:"failed construction preserves the backend's nonblocking flag"
+  is_true ~msg:"echo restored" (before.c_echo = after.c_echo);
+  is_true ~msg:"canonical input restored" (before.c_icanon = after.c_icanon);
+  is_true ~msg:"signal keys restored" (before.c_isig = after.c_isig);
+  equal ~msg:"minimum input bytes restored" int before.c_vmin after.c_vmin;
+  equal ~msg:"input timeout restored" int before.c_vtime after.c_vtime;
+  is_true ~msg:"the backend's nonblocking flag is kept"
     (nonblocking_read_returns_without_input ~master slave_fd);
-  assert_signal_handler ~msg:"failed construction preserves SIGHUP disposition"
-    Sys.sighup sighup_handler;
-  assert_signal_handler
-    ~msg:"failed construction preserves SIGWINCH disposition" Sys.sigwinch
+  assert_signal_handler ~msg:"SIGHUP disposition kept" Sys.sighup sighup_handler;
+  assert_signal_handler ~msg:"SIGWINCH disposition restored" Sys.sigwinch
     winch_handler
 
-let test_cancelled_attachment_restores_terminal () =
+let test_cancelled_setup_restores_terminal () =
   Pty.with_pty ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
   @@ fun master slave ->
   let fd = Pty.file_descr slave in
@@ -451,18 +453,19 @@ let test_cancelled_attachment_restores_terminal () =
               0 buffers
           in
           let tty = fst (failing_tty ~on_write ~sw fd) in
-          ignore
-            (Matrix_eio.create ~sw
-               ~clock:(Eio.Stdenv.mono_clock env)
-               ~stdin:tty ~stdout:tty ~signal_handlers:false ()));
+          let backend =
+            Matrix_eio.backend
+              ~clock:(Eio.Stdenv.mono_clock env)
+              ~stdin:tty ~stdout:tty ()
+          in
+          Matrix.run ~backend ignore);
       None
     with exn -> Some exn
   in
   (match failure with
   | Some (Eio.Cancel.Cancelled _) -> ()
-  | Some exn ->
-      failf "unexpected attachment exception: %s" (Printexc.to_string exn)
-  | None -> fail "attachment did not propagate cancellation");
+  | Some exn -> failf "unexpected setup exception: %s" (Printexc.to_string exn)
+  | None -> fail "setup did not propagate cancellation");
   let after = Unix.tcgetattr fd in
   is_true ~msg:"raw mode restored before cancellation escapes"
     (before.c_echo = after.c_echo
@@ -475,109 +478,61 @@ let test_cancelled_attachment_restores_terminal () =
         (List.mem sequence !output))
     [ "\027[?1049h"; "\027[?1049l"; "\027[?2004h"; "\027[?2004l" ]
 
-let test_close_restores_eio_winch_disposition_once () =
-  with_distinct_signal_handler Sys.sigwinch @@ fun prior_handler ->
-  Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw ->
-  let stdin, stdin_writer = Eio_unix.pipe sw in
-  let stdout_reader, stdout = Eio_unix.pipe sw in
-  let app =
-    Matrix_eio.create ~sw
-      ~clock:(Eio.Stdenv.mono_clock env)
-      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
-      ~signal_handlers:false ~start_idle:true ()
-  in
-  (match peek_signal Sys.sigwinch with
-  | Sys.Signal_handle current ->
-      is_false ~msg:"live Eio app owns SIGWINCH" (current == prior_handler)
-  | Sys.Signal_default | Sys.Signal_ignore -> ());
-  Matrix.close app;
-  assert_signal_handler ~msg:"Eio close restores SIGWINCH" Sys.sigwinch
-    prior_handler;
-  Matrix.close app;
-  assert_signal_handler ~msg:"repeated Eio close preserves SIGWINCH"
-    Sys.sigwinch prior_handler;
-  Eio.Flow.close stdin_writer;
-  Eio.Flow.close stdout_reader
-
-(* Regression: the Eio backend used to forward signal_handlers to
-   Matrix.attach, whose handler runs Matrix.close — Eio effects — inside the
-   OCaml signal handler and then exits the process. The handler must only
-   record the signal; teardown happens on the loop fiber. Pre-fix this test
-   kills the whole test binary. *)
-let test_termination_signal_defers_shutdown_to_the_loop () =
-  with_distinct_signal_handler Sys.sigterm @@ fun prior_handler ->
-  Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw ->
-  let stdin, stdin_writer = Eio_unix.pipe sw in
-  let stdout_reader, stdout = Eio_unix.pipe sw in
-  let app =
-    Matrix_eio.create ~sw
-      ~clock:(Eio.Stdenv.mono_clock env)
-      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
-      ~signal_handlers:true ~start_idle:true ()
-  in
-  (match peek_signal Sys.sigterm with
-  | Sys.Signal_handle current ->
-      is_false ~msg:"live Eio app owns SIGTERM" (current == prior_handler)
-  | Sys.Signal_default | Sys.Signal_ignore ->
-      fail "expected an installed SIGTERM handler");
-  (* Deliver SIGTERM while the loop is not running: the handler must only
-     record it, not tear the app down (let alone exit the process). *)
-  Unix.kill (Unix.getpid ()) Sys.sigterm;
-  is_true ~msg:"signal handler defers shutdown to the loop" (Matrix.running app);
-  Matrix.close app;
-  assert_signal_handler ~msg:"close restores the prior SIGTERM disposition"
-    Sys.sigterm prior_handler;
-  Eio.Flow.close stdin_writer;
-  Eio.Flow.close stdout_reader
-
+(* A run on a terminal takes SIGWINCH, calling the handler installed before,
+   and wakes on it: the new size comes as a [Resize]. The disposition is
+   restored when the run ends. *)
 let test_sigwinch_wakes_eio_runtime () =
-  with_distinct_signal_handler Sys.sigwinch @@ fun prior_handler ->
+  let calls = ref 0 in
+  let prior _ = incr calls in
+  let previous = Sys.signal Sys.sigwinch (Sys.Signal_handle prior) in
+  Fun.protect ~finally:(fun () ->
+      ignore (Sys.signal Sys.sigwinch previous : Sys.signal_behavior))
+  @@ fun () ->
+  Pty.with_pty ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
+  @@ fun master slave ->
+  let fd = Pty.file_descr slave in
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
-  let stdin, stdin_writer = Eio_unix.pipe sw in
-  let stdout_reader, stdout = Eio_unix.pipe sw in
-  let app =
-    Matrix_eio.create ~sw
+  let tty = fst (pty_tty ~sw fd) in
+  let backend =
+    Matrix_eio.backend
       ~clock:(Eio.Stdenv.mono_clock env)
-      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
-      ~signal_handlers:false ~start_idle:true ()
+      ~stdin:tty ~stdout:tty ()
   in
-  Unix.kill (Unix.getpid ()) Sys.sigwinch;
-  let resized = ref false in
+  let resized = ref None in
   let result =
-    Eio.Time.with_timeout (Eio.Stdenv.clock env) 0.5 (fun () ->
-        Matrix.run app
-          ~on_input:(fun app -> function
-            | Matrix.Resize _ ->
-                resized := true;
-                Matrix.stop app
-            | _ -> ())
-          ~on_render:(fun _ -> ());
+    Eio.Time.with_timeout (Eio.Stdenv.clock env) 2. (fun () ->
+        Matrix.run ~backend
+          ~config:(Matrix.config ~kitty_keyboard:`Off ~mouse:`Off ())
+          (fun app ->
+            (match Matrix.next app with
+            | Frame -> Matrix.draw app ignore
+            | _ -> fail "expected the first frame");
+            Pty.set_winsize master
+              Pty.{ rows = 30; cols = 100; xpixel = 0; ypixel = 0 };
+            Unix.kill (Unix.getpid ()) Sys.sigwinch;
+            loop_until app (function
+              | Event (Resize (cols, rows)) ->
+                  resized := Some (cols, rows);
+                  true
+              | _ -> false));
         Ok ())
   in
   (match result with
-  | Ok () -> is_true ~msg:"SIGWINCH wakes the Eio runtime" !resized
+  | Ok () ->
+      equal ~msg:"the new size"
+        (option (pair int int))
+        (Some (100, 30))
+        !resized
   | Error `Timeout -> fail "SIGWINCH did not wake the Eio runtime");
-  assert_signal_handler ~msg:"SIGWINCH wake restores the prior disposition"
-    Sys.sigwinch prior_handler;
-  Eio.Flow.close stdin_writer;
-  Eio.Flow.close stdout_reader
+  is_true ~msg:"the prior handler was called" (!calls > 0);
+  match peek_signal Sys.sigwinch with
+  | Sys.Signal_handle h -> is_true ~msg:"restored" (h == prior)
+  | _ -> fail "SIGWINCH disposition not restored"
 
-(* A wake that lands while the loop is momentarily out of its wait — busy in a
-   render, or descheduled by another fiber's work — must still reach the loop.
-   A real app is never purely between-draining-and-awaiting: the render write
-   yields, and a subprocess tool's spawn/reap raises SIGCHLD across the domain.
-   This test reproduces that gap deterministically ([on_render] yields, exactly
-   as a loop with pending IO would) while a subprocess storm perturbs the Eio
-   scheduler as a shell or search tool does. It then repaints from another fiber
-   during the gap and times the result.
-
-   With a level-triggered wake the paint lands on the next turn (~microseconds);
-   a backend that drops the edge-triggered [broadcast] recovers only through the
-   50ms sigwinch poll, so each of 150 wakes costs ~50ms (~7.5s) — and if the
-   [with_timeout] fails to re-arm across the cancellation, it hangs outright. *)
+(* A post from another fiber that lands while the loop is out of its wait,
+   with a subprocess storm perturbing the scheduler, still reaches the loop
+   at once. *)
 let test_wake_survives_subprocess_storm () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
@@ -587,13 +542,9 @@ let test_wake_survives_subprocess_storm () =
   let stdout_reader, stdout = Eio_unix.pipe sw in
   let renders = Atomic.make 0 in
   let bumped = Eio.Condition.create () in
-  let app =
-    Matrix_eio.create ~sw
-      ~clock:(Eio.Stdenv.mono_clock env)
-      ~stdin ~stdout ~raw_mode:false ~target_fps:None ~mouse_enabled:false
-      ~signal_handlers:false ~start_idle:true ()
+  let backend =
+    Matrix_eio.backend ~clock:(Eio.Stdenv.mono_clock env) ~stdin ~stdout ()
   in
-  (* Drain the frame stream so the loop's writes never block. *)
   Eio.Fiber.fork_daemon ~sw (fun () ->
       let reader = Eio.Buf_read.of_flow stdout_reader ~max_size:max_int in
       (try
@@ -602,7 +553,6 @@ let test_wake_survives_subprocess_storm () =
          done
        with End_of_file | Eio.Cancel.Cancelled _ -> ());
       `Stop_daemon);
-  (* A continuous subprocess spawn/reap storm on the same domain. *)
   Eio.Fiber.fork_daemon ~sw (fun () ->
       (try
          while true do
@@ -613,40 +563,50 @@ let test_wake_survives_subprocess_storm () =
   let iterations = 400 in
   let stalled = ref 0 in
   let elapsed = ref 0. in
-  Eio.Fiber.both
-    (fun () ->
-      Matrix.run app ~on_render:(fun _ ->
-          Atomic.incr renders;
-          Eio.Condition.broadcast bumped;
-          (* The loop is not purely between draining and awaiting: yield so a
-             wake from another fiber lands while we are out of the wait. *)
-          Eio.Fiber.yield ());
-      Eio.Flow.close stdout)
-    (fun () ->
-      let await_render ~before =
-        Eio.Time.with_timeout clock 3.0 (fun () ->
-            while Atomic.get renders <= before do
-              Eio.Condition.await_no_mutex bumped
-            done;
-            Ok ())
-      in
-      (* Reach the first quiescent frame, then ping-pong: each request_redraw
-         fires while the loop is parked in [on_render]'s yield. *)
-      (match await_render ~before:0 with Ok () | Error `Timeout -> ());
-      let start = Eio.Time.now clock in
-      let index = ref 0 in
-      while !index < iterations && !stalled = 0 do
-        incr index;
-        let before = Atomic.get renders in
-        Matrix.request_redraw app;
-        match await_render ~before with
-        | Ok () -> ()
-        | Error `Timeout -> stalled := !index
-      done;
-      elapsed := Eio.Time.now clock -. start;
-      Matrix.stop app);
+  Matrix.run ~backend ~config:quiet (fun app ->
+      let finished = ref false in
+      Eio.Fiber.both
+        (fun () ->
+          let rec loop () =
+            if not !finished then
+              match Matrix.next app with
+              | Frame ->
+                  Matrix.draw app ignore;
+                  Atomic.incr renders;
+                  Eio.Condition.broadcast bumped;
+                  (* Out of the wait: a post from another fiber lands now. *)
+                  Eio.Fiber.yield ();
+                  loop ()
+              | Posted f ->
+                  f ();
+                  loop ()
+              | _ -> loop ()
+          in
+          loop ())
+        (fun () ->
+          let await_render ~before =
+            Eio.Time.with_timeout clock 3.0 (fun () ->
+                while Atomic.get renders <= before do
+                  Eio.Condition.await_no_mutex bumped
+                done;
+                Ok ())
+          in
+          (match await_render ~before:0 with Ok () | Error `Timeout -> ());
+          let start = Eio.Time.now clock in
+          let index = ref 0 in
+          while !index < iterations && !stalled = 0 do
+            incr index;
+            let before = Atomic.get renders in
+            Matrix.post app (fun () -> Matrix.request_redraw app);
+            match await_render ~before with
+            | Ok () -> ()
+            | Error `Timeout -> stalled := !index
+          done;
+          elapsed := Eio.Time.now clock -. start;
+          finished := true;
+          Matrix.post app ignore));
+  Eio.Flow.close stdout;
   Eio.Flow.close stdin_writer;
-  Eio.Flow.close stdout_reader;
   if !stalled > 0 then
     failf "render loop stranded after wake %d/%d (no frame within 3s)" !stalled
       iterations;
@@ -672,12 +632,8 @@ let () =
             test_successful_reads_do_not_allocate_a_result;
           test "probe failure restores PTY termios"
             test_probe_failure_restores_pty_termios;
-          test "cancelled attachment restores terminal modes"
-            test_cancelled_attachment_restores_terminal;
-          test "close restores Eio SIGWINCH disposition once"
-            test_close_restores_eio_winch_disposition_once;
-          test "termination signal defers shutdown to the loop"
-            test_termination_signal_defers_shutdown_to_the_loop;
+          test "cancelled setup restores terminal modes"
+            test_cancelled_setup_restores_terminal;
           test "SIGWINCH wakes Eio runtime" test_sigwinch_wakes_eio_runtime;
         ];
     ]
