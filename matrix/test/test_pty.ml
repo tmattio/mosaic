@@ -65,15 +65,22 @@ let readable ~timeout fd =
   in
   wait ()
 
-(* Spawns [prog] and returns once it has closed its descriptors on exit,
-   without reaping it: the child inherits the write end of a pipe. *)
-let spawn_and_await_exit ~prog ~args =
-  let exited_r, exited_w = Unix.pipe () in
-  let pty = Pty.spawn ~prog ~args () in
-  Unix.close exited_w;
-  let exited = readable ~timeout:2. exited_r in
-  Unix.close exited_r;
-  if not exited then failf "%s did not exit within 2s" prog;
+(* Spawns a child that writes "hello\r\n" and returns once it has exited,
+   without reaping it. The child inherits no descriptor to signal its exit
+   with, so its last act is to remove a file: [exec rm], which exits right
+   after. *)
+let spawn_hello_and_await_exit () =
+  let marker = Filename.temp_file "matrix_pty" ".exit" in
+  let pty =
+    Pty.spawn ~prog:"sh" ~args:[ "-c"; "echo hello; exec rm \"$0\""; marker ] ()
+  in
+  let deadline = Unix.gettimeofday () +. 2. in
+  while Sys.file_exists marker && Unix.gettimeofday () < deadline do
+    Unix.sleepf 0.001
+  done;
+  if Sys.file_exists marker then (
+    Sys.remove marker;
+    fail "the child did not exit within 2s");
   pty
 
 let read_to_eof pty =
@@ -241,12 +248,11 @@ let test_spawn_with_cwd () =
    master has not read within about 0.6s. With the slave held, the output
    waits for the read, so the sleep only matters without the fix. *)
 let test_spawn_output_read_late () =
-  let pty = spawn_and_await_exit ~prog:"echo" ~args:[ "hello" ] in
+  let pty = spawn_hello_and_await_exit () in
   Unix.sleepf 1.;
   let output = read_to_eof pty in
   Pty.close pty;
-  equal ~msg:"output read 1s after the child closed its descriptors" string
-    "hello\r\n" output
+  equal ~msg:"output read 1s after the child exited" string "hello\r\n" output
 
 (* Regression: the slave was opened without close-on-exec, so a child that
    the program started while holding it, here [sleep], inherited it. The
@@ -357,6 +363,53 @@ let test_spawn_script_without_shebang () =
         output)
   in
   equal ~msg:"the script ran with its argument" string "script ran\r\n" output
+
+(* Regression: the child inherited the parent's ignored signals, and the
+   program, here a shell, could not get their default action back: the
+   shell ignored on entry stays ignored, so [kill] did not end it. *)
+let test_spawn_resets_ignored_signals () =
+  let previous = Sys.signal Sys.sigusr1 Sys.Signal_ignore in
+  let output =
+    Fun.protect
+      ~finally:(fun () -> Sys.set_signal Sys.sigusr1 previous)
+      (fun () ->
+        let pty =
+          Pty.spawn ~prog:"sh" ~args:[ "-c"; "kill -s USR1 $$; echo alive" ] ()
+        in
+        let output = read_to_eof pty in
+        Pty.close pty;
+        output)
+  in
+  equal ~msg:"SIGUSR1 ended the child" string "" output
+
+(* Regression: the child inherited the parent's signal mask, so a signal
+   the parent blocked stayed pending in the program. *)
+let test_spawn_unblocks_signals () =
+  let previous = Unix.sigprocmask Unix.SIG_BLOCK [ Sys.sigusr1 ] in
+  let output =
+    Fun.protect
+      ~finally:(fun () -> ignore (Unix.sigprocmask Unix.SIG_SETMASK previous))
+      (fun () ->
+        let pty =
+          Pty.spawn ~prog:"sh" ~args:[ "-c"; "kill -s USR1 $$; echo alive" ] ()
+        in
+        let output = read_to_eof pty in
+        Pty.close pty;
+        output)
+  in
+  equal ~msg:"SIGUSR1 ended the child" string "" output
+
+(* Regression: the child inherited every descriptor the parent opened
+   without close-on-exec. Here [cat] held the write end of a pipe, so its
+   reader read no end of file while [cat] ran. *)
+let test_spawn_inherits_only_std_fds () =
+  let r, w = Unix.pipe () in
+  let pty = Pty.spawn ~prog:"cat" ~args:[] () in
+  Unix.close w;
+  let ended = readable ~timeout:2. r && Unix.read r (Bytes.create 1) 0 1 = 0 in
+  Unix.close r;
+  Pty.close pty;
+  is_true ~msg:"the pipe's reader reads its end while the child runs" ended
 
 (* Regression: a child that could not exec exited with status 127, so
    spawn returned a handle on a dead child and the caller saw no error. *)
@@ -492,7 +545,7 @@ let test_close_reaps_exited_child_without_delay () =
 (* An exiting child that waits for its output to be read must not make close
    wait in turn. *)
 let test_close_with_unread_output () =
-  let pty = spawn_and_await_exit ~prog:"echo" ~args:[ "hello" ] in
+  let pty = spawn_hello_and_await_exit () in
   let pid = Option.get (Pty.pid pty) in
   Pty.close pty;
   let reaped =
@@ -570,6 +623,9 @@ let tests =
       test "slave on a std fd" test_slave_on_std_fd;
       test "spawn while a domain runs" test_spawn_while_a_domain_runs;
       test "spawn script without shebang" test_spawn_script_without_shebang;
+      test "spawn resets ignored signals" test_spawn_resets_ignored_signals;
+      test "spawn unblocks signals" test_spawn_unblocks_signals;
+      test "spawn inherits only std fds" test_spawn_inherits_only_std_fds;
       test "spawn missing program raises" test_spawn_missing_program_raises;
       test "spawn missing cwd raises" test_spawn_missing_cwd_raises;
       test "failed spawn skips parent at_exit"

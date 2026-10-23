@@ -134,6 +134,13 @@ val spawn :
     stdin/stdout/stderr to the slave, and executes [prog]. The child's PID is
     available via {!pid}.
 
+    The program starts afresh, whatever state the parent is in. Exec passes on
+    every descriptor not marked close-on-exec, the signal mask, and the signals
+    set to be ignored, such as [SIGPIPE] in many programs. So the child closes
+    every descriptor but its standard ones, and holds open no pipe or terminal
+    whose reader waits for its end; and it gives every signal its default action
+    and blocks none.
+
     The child runs no OCaml code between the fork and the exec, only system
     calls that are safe in the child of a multithreaded process. So, unlike
     [Unix.fork], [spawn] works while other domains run, and after they have run.
@@ -157,7 +164,10 @@ val spawn :
     - [winsize] is the initial terminal size. Defaults to the system default.
 
     [args] are the command-line arguments {e excluding} [argv[0]] which is set
-    to [prog]. If [prog] is relative it is searched in [PATH].
+    to [prog]. As with [execvp], a [prog] without ['/'] is searched for in the
+    directories of the parent's [PATH] ([/bin:/usr/bin] when it is unset), and a
+    file that the kernel cannot execute, a script without [#!], runs under
+    [/bin/sh].
 
     [spawn] returns once [prog] runs. The child reports a failure before then on
     a close-on-exec pipe, which a successful exec closes, so the parent reads

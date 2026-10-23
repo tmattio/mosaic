@@ -13,18 +13,19 @@
 #ifdef MATRIX_HAS_POSIX_PTY
 #define _GNU_SOURCE  // For ptsname on Linux
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 
-// Feature test for ptsname_r availability
-#ifdef __GLIBC__
-#include <limits.h>
+#ifdef __linux__
+#include <sys/syscall.h>
 #endif
 #endif  // MATRIX_HAS_POSIX_PTY
 
@@ -177,6 +178,10 @@ struct child {
   char **paths;         // where to look for the program, in order
   char **argv, **envp;  // NULL-terminated
   char **sh_argv;       // {"/bin/sh", NULL, argv[1], ...}
+  int fd_limit;         // no descriptor is opened at this number or above
+  int last_signal;
+  struct sigaction default_action;
+  sigset_t no_signals;
 };
 
 // The steps of the child that can fail, as the error names them.
@@ -184,12 +189,30 @@ enum step { SETSID, SETCTTY, DUP2, CHDIR, EXEC };
 static const char *const step_names[] = {"setsid", "ioctl(TIOCSCTTY)",
                                          "dup2", "chdir", "execvp"};
 
+// Closes every descriptor from [low] up. POSIX has no call for this, nor a
+// way to list a process's descriptors: Linux (5.9) has close_range and the
+// BSDs closefrom, one system call each. Elsewhere, as on macOS, and on older
+// Linux, close each number below [limit], the RLIMIT_NOFILE soft limit. A
+// descriptor opened before that limit was lowered can lie above it, and
+// stays open there.
+static void close_from(int low, int limit) {
+#if defined(__linux__) && defined(SYS_close_range)
+  if (syscall(SYS_close_range, low, ~0U, 0) == 0) return;
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \
+    defined(__DragonFly__)
+  closefrom(low);
+  return;
+#endif
+  for (int fd = low; fd < limit; fd++) close(fd);
+}
+
 // The child's side of spawn, which returns only on failure, with the step
 // that failed and errno set. The parent may run other threads, among them
 // OCaml domains, whose locks the fork copied in whatever state they were in:
 // POSIX lets the child of a multithreaded process call only async-signal-safe
 // functions until it execs. Every call here is one, except ioctl, a system
-// call that POSIX does not define. Nothing here allocates: the parent built
+// call that POSIX does not define, and close_range or closefrom, system calls
+// that it does not define either. Nothing here allocates: the parent built
 // the strings and arrays.
 static enum step exec_child(struct child *c) {
   // Keep the report off the std fds, which the slave replaces.
@@ -203,7 +226,26 @@ static enum step exec_child(struct child *c) {
   for (int fd = 0; fd <= 2; fd++)
     if ((c->slave == fd ? fcntl(fd, F_SETFD, 0) : dup2(c->slave, fd)) == -1)
       return DUP2;
+  // Exec keeps every descriptor that is not close-on-exec, so the program
+  // would inherit any the parent opened without the flag, and hold pipes and
+  // terminals open that their readers wait to see closed. Keep only the std
+  // fds: park the report at 3, still close-on-exec, and close every other.
+  if (c->report != 3) {
+    if (dup2(c->report, 3) == -1 || fcntl(3, F_SETFD, FD_CLOEXEC) == -1)
+      return DUP2;
+    c->report = 3;
+  }
+  close_from(4, c->fd_limit);
   if (c->cwd != NULL && chdir(c->cwd) == -1) return CHDIR;
+  // Exec keeps the signal mask, and the signals the parent ignores, such as
+  // the SIGPIPE that many programs ignore, stay ignored: start the program
+  // with every signal's default action and none blocked. Signals have been
+  // blocked since before the fork, so no handler of the parent's runs here.
+  // sigaction fails, harmlessly, for SIGKILL, SIGSTOP and the signals that
+  // the C library reserves.
+  for (int sig = 1; sig <= c->last_signal; sig++)
+    sigaction(sig, &c->default_action, NULL);
+  pthread_sigmask(SIG_SETMASK, &c->no_signals, NULL);
   // As execvp does: a directory without the program, or that is not a
   // directory, moves on to the next; a file without permission is
   // remembered; any other failure ends the search. A file the kernel cannot
@@ -271,7 +313,25 @@ CAMLprim value ocaml_pty_fork_exec(value slave, value paths, value argv,
   c.sh_argv[0] = "/bin/sh";
   c.sh_argv[1] = NULL;
   for (mlsize_t i = 1; i <= argc; i++) c.sh_argv[i + 1] = c.argv[i];
+  struct rlimit nofile;
+  c.fd_limit = getrlimit(RLIMIT_NOFILE, &nofile) == 0 &&
+                       nofile.rlim_cur != RLIM_INFINITY &&
+                       nofile.rlim_cur < INT_MAX
+                   ? (int)nofile.rlim_cur
+                   : INT_MAX;
+#ifdef SIGRTMAX
+  c.last_signal = SIGRTMAX > NSIG - 1 ? SIGRTMAX : NSIG - 1;
+#else
+  c.last_signal = NSIG - 1;
+#endif
+  memset(&c.default_action, 0, sizeof c.default_action);
+  c.default_action.sa_handler = SIG_DFL;
+  sigemptyset(&c.default_action.sa_mask);
+  sigemptyset(&c.no_signals);
 
+  sigset_t all_signals, parent_signals;
+  sigfillset(&all_signals);
+  pthread_sigmask(SIG_SETMASK, &all_signals, &parent_signals);
   pid_t pid = fork();
   if (pid == 0) {
     int failure[2];
@@ -282,6 +342,7 @@ CAMLprim value ocaml_pty_fork_exec(value slave, value paths, value argv,
     _exit(127);
   }
   int fork_errno = errno;
+  pthread_sigmask(SIG_SETMASK, &parent_signals, NULL);
   close(pipe_fds[1]);
   int failure[2];
   ssize_t n = 0;
