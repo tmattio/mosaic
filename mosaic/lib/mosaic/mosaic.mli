@@ -928,8 +928,8 @@ module Sub : sig
         (** [After (id, delay, msg)] dispatches [msg] once, [delay] seconds
             after [id] appears; see {!val-after}. *)
     | On_tick of string * (dt:float -> 'msg)
-        (** [On_tick (id, f)] fires [f ~dt] on every render frame, where [dt] is
-            the elapsed time in seconds since the previous frame. *)
+        (** [On_tick (id, f)] fires [f ~dt] once per frame; see {!val-on_tick}.
+        *)
     | On_key of phase * (Event.key -> 'msg option)
         (** [On_key (phase, f)] listens to key presses; see {!val-on_key}. *)
     | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
@@ -996,9 +996,16 @@ module Sub : sig
       finite. *)
 
   val on_tick : id:string -> (dt:float -> 'msg) -> 'msg t
-  (** [on_tick ~id f] fires [f ~dt] on every rendered frame. [dt] is the elapsed
-      time in seconds since the previous frame. Use this for animations that
-      must advance at the display frame rate. *)
+  (** [on_tick ~id f] dispatches [f ~dt] once per frame while declared, before
+      the frame is laid out, and asks for the next frame: frames then come at
+      the frame rate ({!Matrix.config}'s [fps]), and stop when no tick or live
+      element asks. [dt] is the time in seconds since this subscription's
+      previous tick, [0.] on its first: an animation started after a pause does
+      not jump by the pause. Keeping [id] keeps the count of time; dropping it
+      and declaring it again starts at [0.]. Use this for animations; for work
+      at a fixed rate, {!val-every}.
+
+      Raises [Invalid_argument] if [id] is empty. *)
 
   val on_key : ?phase:phase -> (Event.key -> 'msg option) -> 'msg t
   (** [on_key f] calls [f] on each key press that reaches [phase] (defaults to

@@ -2309,3 +2309,76 @@ let%expect_test
     ];
   print_fires !log;
   [%expect {| once x1 at 1500 ms |}]
+
+let%expect_test "T4: a tick's first dt is 0, after any idle time" =
+  let dts = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> (false, Mosaic.Cmd.none));
+      update =
+        (fun msg ticking ->
+          match msg with
+          | `Start -> (true, Mosaic.Cmd.none)
+          | `Tick dt ->
+              dts := dt :: !dts;
+              (ticking, Mosaic.Cmd.none));
+      view = (fun _ -> Mosaic.text "ticks");
+      subscriptions =
+        (fun ticking ->
+          Mosaic.Sub.batch
+            [
+              on_s `Start;
+              (if ticking then Mosaic.Sub.on_tick ~id:"T" (fun ~dt -> `Tick dt)
+               else Mosaic.Sub.none);
+            ]);
+    }
+  in
+  let t =
+    Matrix_test.create ~width:20 ~height:1
+      ~on_idle:(fun t ~until ->
+        match until with
+        | _ when Matrix_test.now t = 0 ->
+            Matrix_test.advance t (ns 10.);
+            Matrix_test.feed t "s"
+        | Some until when until <= ns 10.05 ->
+            Matrix_test.advance t (until - Matrix_test.now t)
+        | Some _ | None -> Matrix_test.stop t)
+      ()
+  in
+  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+    application;
+  List.rev !dts
+  |> List.iteri (fun i dt -> if i < 3 then Printf.printf "dt %.4f\n" dt);
+  [%expect {|
+    dt 0.0000
+    dt 0.0167
+    dt 0.0167
+    |}]
+
+let%expect_test "T5: a tick fires once per frame, whatever else wakes the loop"
+    =
+  let ticks = ref 0 and total = ref 0. in
+  let application =
+    {
+      Mosaic.init = (fun () -> (0, Mosaic.Cmd.none));
+      update =
+        (fun msg n ->
+          match msg with
+          | `Tick dt ->
+              incr ticks;
+              total := !total +. dt;
+              (n, Mosaic.Cmd.none)
+          | `Every k -> (n + k, Mosaic.Cmd.none));
+      view = (fun n -> Mosaic.text (string_of_int n));
+      subscriptions =
+        (fun _ ->
+          Mosaic.Sub.batch
+            [
+              Mosaic.Sub.on_tick ~id:"T" (fun ~dt -> `Tick dt);
+              Mosaic.Sub.every ~id:"E" 0.005 (fun k -> `Every k);
+            ]);
+    }
+  in
+  run_until 1.0 application;
+  Printf.printf "%d ticks, %.3f s of dt\n" !ticks !total;
+  [%expect {| 60 ticks, 0.983 s of dt |}]

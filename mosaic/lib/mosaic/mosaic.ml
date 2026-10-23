@@ -386,6 +386,8 @@ type ('model, 'msg) runtime = {
   mutable paste_subs : (Sub.phase * (Event.paste -> 'msg option)) list;
   mutable resize_sub : (width:int -> height:int -> 'msg) list;
   mutable tick_sub : (string * (dt:float -> 'msg)) list;
+  (* When each tick subscription last ticked, by id. *)
+  ticked : (string, int) Hashtbl.t;
   mutable timers : 'msg timer list;
   mutable focus_sub : 'msg list;
   mutable blur_sub : 'msg list;
@@ -598,11 +600,11 @@ let update_subscriptions runtime =
       invalid_arg ("Mosaic.Sub: empty or duplicate id: " ^ id);
     Hashtbl.add ids id ()
   in
-  List.iter
-    (fun (id, callback) ->
-      check_id id;
-      ignore callback)
-    runtime.tick_sub;
+  List.iter (fun (id, _) -> check_id id) runtime.tick_sub;
+  Hashtbl.filter_map_inplace
+    (fun id last ->
+      if List.mem_assoc id runtime.tick_sub then Some last else None)
+    runtime.ticked;
   let now = Matrix.now runtime.matrix_app in
   runtime.timers <-
     List.rev_map
@@ -696,8 +698,18 @@ let handle_resize runtime ~width ~height =
   List.iter (fun f -> push_msg runtime (f ~width ~height)) runtime.resize_sub;
   synchronize runtime
 
-let handle_tick runtime ~dt =
-  List.iter (fun pair -> push_msg runtime ((snd pair) ~dt)) runtime.tick_sub
+(* Each tick subscription ticks once per frame, with the time since its own
+   previous tick: none on its first, whatever the frames before it. *)
+let handle_tick runtime =
+  let now = Matrix.now runtime.matrix_app in
+  List.iter
+    (fun (id, f) ->
+      let last =
+        Option.value ~default:now (Hashtbl.find_opt runtime.ticked id)
+      in
+      Hashtbl.replace runtime.ticked id now;
+      push_msg runtime (f ~dt:(Float.of_int (now - last) *. 1e-9)))
+    runtime.tick_sub
 
 (* The timers whose deadline the turn reached fire once each, in the order of
    their deadlines: an [every] timer with the periods that ended since it
@@ -879,6 +891,7 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
       paste_checked = 0;
       resize_sub = [];
       tick_sub = [];
+      ticked = Hashtbl.create 4;
       timers = [];
       focus_sub = [];
       blur_sub = [];
@@ -968,7 +981,7 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
     let now = Matrix.now matrix_app in
     let dt = Float.of_int (now - !last_frame) *. 1e-9 in
     last_frame := now;
-    handle_tick runtime ~dt;
+    handle_tick runtime;
     synchronize runtime;
     (* Matrix reports time in nanoseconds; the render pipeline runs on
        milliseconds. Convert once at the boundary. *)
