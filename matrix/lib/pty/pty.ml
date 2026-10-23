@@ -126,10 +126,7 @@ let spawn ?env ?cwd ?winsize ~prog ~args () =
   (* [Unix.fork] never returns -1: on failure it raises [Unix_error]. Close
      both PTY ends before propagating so a failed fork does not leak them. *)
   let pid =
-    try
-      (* A held slave must not leak into other children. *)
-      if hold_slave then Unix.set_close_on_exec pty_slave.fd;
-      Unix.fork ()
+    try Unix.fork ()
     with exn ->
       close pty_master;
       close pty_slave;
@@ -142,9 +139,11 @@ let spawn ?env ?cwd ?winsize ~prog ~args () =
       try
         Unix.close pty_master.fd;
         setsid_and_setctty pty_slave.fd;
-        Unix.dup2 pty_slave.fd Unix.stdin;
-        Unix.dup2 pty_slave.fd Unix.stdout;
-        Unix.dup2 pty_slave.fd Unix.stderr;
+        (* The slave is close-on-exec. [dup2] clears the flag on the copy,
+           but does nothing when the slave already is that std fd. *)
+        Unix.dup2 ~cloexec:false pty_slave.fd Unix.stdin;
+        Unix.dup2 ~cloexec:false pty_slave.fd Unix.stdout;
+        Unix.dup2 ~cloexec:false pty_slave.fd Unix.stderr;
         if
           pty_slave.fd <> Unix.stdin
           && pty_slave.fd <> Unix.stdout

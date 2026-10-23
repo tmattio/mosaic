@@ -230,6 +230,65 @@ let test_spawn_output_read_late () =
   equal ~msg:"output read 1s after the child closed its descriptors" string
     "hello\r\n" output
 
+(* Regression: the slave was opened without close-on-exec, so a child that
+   the program started while holding it, here [sleep], inherited it. The
+   terminal then stayed open, and the master read no end of output until
+   that child exited. *)
+let test_slave_not_inherited () =
+  let master, slave = Pty.open_pty () in
+  let null = Unix.openfile "/dev/null" [ Unix.O_RDWR ] 0 in
+  let other = Unix.create_process "sleep" [| "sleep"; "10" |] null null null in
+  Unix.close null;
+  Pty.close slave;
+  let buf = Bytes.create 16 in
+  let n = read_with_select master buf 0 16 2.0 in
+  let ended =
+    match Unix.select [ Pty.in_fd master ] [] [] 0. with
+    | [], _, _ -> false
+    | _ -> (
+        match Pty.read master buf 0 16 with
+        | 0 -> true
+        | _ -> false
+        | exception Unix.Unix_error (Unix.EIO, _, _) -> true)
+  in
+  Unix.kill other Sys.sigkill;
+  ignore (Unix.waitpid [] other);
+  Pty.close master;
+  equal ~msg:"no output" int 0 n;
+  is_true ~msg:"master reads the end of output once the slave is closed" ended
+
+(* Regression: with the slave close-on-exec, a [dup2] of the slave onto the
+   std fd it already is did nothing, so exec closed that fd in the child.
+   The slave lands on a std fd when the program runs with them closed: here
+   stdout and stderr are closed, so the master is fd 1 and the slave fd 2. *)
+let test_slave_on_std_fd () =
+  flush stdout;
+  flush stderr;
+  let saved_out = Unix.dup ~cloexec:true Unix.stdout in
+  let saved_err = Unix.dup ~cloexec:true Unix.stderr in
+  Unix.close Unix.stdout;
+  Unix.close Unix.stderr;
+  let pty = ref None in
+  let output =
+    Fun.protect
+      ~finally:(fun () ->
+        Option.iter Pty.close !pty;
+        Unix.dup2 saved_out Unix.stdout;
+        Unix.dup2 saved_err Unix.stderr;
+        Unix.close saved_out;
+        Unix.close saved_err)
+      (fun () ->
+        let p =
+          Pty.spawn ~prog:"sh" ~args:[ "-c"; "echo out; echo err >&2" ] ()
+        in
+        pty := Some p;
+        let buf = Bytes.create 256 in
+        let n = read_with_select p buf 0 256 2.0 in
+        Bytes.sub_string buf 0 n)
+  in
+  equal ~msg:"the child writes to its stdout and stderr" string "out\r\nerr\r\n"
+    output
+
 let test_failed_spawn_does_not_run_parent_at_exit () =
   let parent_pid = Unix.getpid () in
   let marker_read, marker_write = Unix.pipe () in
@@ -426,6 +485,8 @@ let tests =
       test "spawn with env" test_spawn_with_env;
       test "spawn with cwd" test_spawn_with_cwd;
       test "spawn output read late" test_spawn_output_read_late;
+      test "slave not inherited" test_slave_not_inherited;
+      test "slave on a std fd" test_slave_on_std_fd;
       test "failed spawn skips parent at_exit"
         test_failed_spawn_does_not_run_parent_at_exit;
       (* Non-blocking I/O *)

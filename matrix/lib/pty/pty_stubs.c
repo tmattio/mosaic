@@ -50,8 +50,8 @@ struct pty_fds c_open_pty_posix() {
   // Enter blocking section for potentially blocking syscalls
   caml_enter_blocking_section();
 
-  // O_CLOEXEC prevents the file descriptor from being inherited by child
-  // processes created by exec functions. This is a good security practice.
+  // Both ends are close-on-exec (see open_pty in pty.mli), set by the open
+  // itself so that no child forked meanwhile by another thread inherits them.
   int master_fd = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
   if (master_fd == -1) {
     caml_leave_blocking_section();
@@ -92,7 +92,7 @@ struct pty_fds c_open_pty_posix() {
 #endif
 
   caml_enter_blocking_section();
-  fds.slave_fd = open(slave_name, O_RDWR | O_NOCTTY);
+  fds.slave_fd = open(slave_name, O_RDWR | O_NOCTTY | O_CLOEXEC);
   caml_leave_blocking_section();
 
   if (fds.slave_fd == -1) {

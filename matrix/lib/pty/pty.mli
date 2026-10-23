@@ -92,8 +92,16 @@ type winsize = {
 val open_pty : ?winsize:winsize -> unit -> t * t
 (** [open_pty ()] is [(master, slave)], a fresh PTY pair.
 
-    Both handles must be closed with {!close}. The slave should be connected to
-    a child process via [Unix.dup2].
+    Both handles must be closed with {!close}.
+
+    Both descriptors are close-on-exec, so no program that the process starts
+    inherits them by accident: while any process holds the slave open, the
+    terminal stays open and the master reads no end of output. To give the slave
+    to a child, copy it onto the child's standard descriptors with
+    [Unix.dup2 ~cloexec:false]. A plain [Unix.dup2], like [Unix.create_process],
+    clears the flag on a copy but leaves it set when the slave already is the
+    target descriptor, as when the process runs with its standard descriptors
+    closed.
 
     [winsize] sets the initial terminal size. Omit to use the system default.
 
