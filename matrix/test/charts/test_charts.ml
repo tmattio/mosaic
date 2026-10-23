@@ -1018,3 +1018,23 @@ let%expect_test "stacked bar segments draw their labels" =
     |            |
     |            |
     |}]
+
+let%expect_test "a legend keeps to its height" =
+  let item label = { Legend.label; style = Style.make (); marker = "*" } in
+  let items = [ item "one"; item "two"; item "three" ] in
+  let grid = Grid.create ~width:8 ~height:6 () in
+  Legend.draw ~gap:1 items grid ~width:8 ~height:3;
+  print_cells grid;
+  let grid = Grid.create ~width:8 ~height:1 () in
+  Legend.draw ~direction:`Horizontal items grid ~width:8 ~height:0;
+  print_cells grid;
+  [%expect
+    {|
+    |* one   |
+    |        |
+    |* two   |
+    |        |
+    |        |
+    |        |
+    |        |
+    |}]

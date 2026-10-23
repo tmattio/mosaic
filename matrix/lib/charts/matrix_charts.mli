@@ -1160,7 +1160,7 @@ module Legend : sig
       with [gap] empty rows between items, [0] by default. [`Horizontal] puts
       the items on row 0, with [gap] columns between them, where a [gap] of [0],
       the default, is taken as [2], and starts no item at or past column
-      [width]. [height] is unused. *)
+      [width]. No item is drawn on a row at or past [height]. *)
 
   val items_of_layout : Layout.t -> item list
   (** [items_of_layout l] is an item for each mark of [l] that has a label, in

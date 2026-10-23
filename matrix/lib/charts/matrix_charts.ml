@@ -332,9 +332,10 @@ end
 module Legend = struct
   type item = { label : string; style : Style.t; marker : string }
 
-  let draw ?(direction = `Vertical) ?(gap = 0) items (grid : G.t) ~width
-      ~height:_ =
+  let draw ?(direction = `Vertical) ?(gap = 0) items (grid : G.t) ~width ~height
+      =
     match direction with
+    | `Horizontal when height < 1 -> ()
     | `Horizontal ->
         let x = ref 0 in
         let y = 0 in
@@ -355,11 +356,12 @@ module Legend = struct
         let gap = max 0 gap in
         List.iter
           (fun { label; style; marker } ->
-            Render.draw_text grid ~x:0 ~y:!y ~style marker;
-            Render.draw_text grid
-              ~x:(Layout.text_width marker + 1)
-              ~y:!y ~style label;
-            y := !y + 1 + gap)
+            if !y < height then (
+              Render.draw_text grid ~x:0 ~y:!y ~style marker;
+              Render.draw_text grid
+                ~x:(Layout.text_width marker + 1)
+                ~y:!y ~style label;
+              y := !y + 1 + gap))
           items
 
   let items_of_layout (layout : Layout.t) : item list =
