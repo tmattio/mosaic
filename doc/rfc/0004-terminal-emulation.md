@@ -12,6 +12,15 @@
   measurement, and an adjudication. After implementation, a design review of the whole branch
   and a differential fuzzing campaign against xterm (§6).
 - Compatibility: none before 1.0. Breaks are listed in §5 and stated in their commits.
+- Amended 2026-10-23 (the Widths row, refined by measurement): the tables follow Unicode 18.0,
+  whose GB9c binds a consonant to any linker before it. Under `Unicode` an emoji modifier
+  sequence is two cells whatever its base (☝🏽: UTS #51 §2.7.1; kitty 0.49.2, WezTerm 20240203
+  and foot 1.21.0 draw 2), while a text-default pictograph alone stays one cell; and a conjunct
+  takes its first consonant's cell in every script, as mode 2027's specification and kitty's
+  text-sizing protocol place a cluster, where Devanagari alone took a cell per consonant; and a
+  narrow spacing mark has no width of its own, so one that starts a cluster leaves it no cells,
+  as kitty's protocol states and kitty, WezTerm and foot draw it. The
+  grid's span tests place wide spans with `Grid.set_grapheme`: no text is wider than two cells.
 
 ## Summary
 
