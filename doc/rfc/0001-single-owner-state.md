@@ -17,7 +17,7 @@
   design: Elm's `Html.Lazy`, CSS Resize Observer, prosemirror-history.
 - Relation: [RFC 0002](0002-syntax-highlighting-boundary.md) delivered configuration compared by
   value (its R6). [RFC 0003](0003-text-layout.md) owns text geometry, replaces this RFC's promise to
-  preserve text internals, and requires revision-safe proposals (its D5).
+  preserve text internals, and required revision-safe proposals until its D5 was amended.
 - Compatibility: breaking, before 1.0. The breaks are in §5.
 
 ## Summary
@@ -84,7 +84,7 @@ Tests are in `mosaic/test/` unless stated.
 | Subscriptions | Every kind accumulates in declaration order. `Sub.every` and `on_tick` take an `~id`; a duplicate raises | timers were re-paired by interval and declaration order | high | "non-key subscriptions accumulate in declaration order", "timer ids must be unique across every and on_tick" (`test_loop.ml`) |
 | Presentation | Input, update and refresh may repeat before a frame; paint presents once. Work that would dirty a frame mid-frame resolves inside layout and paint | four non-atomicity fixes (§1) | high | "in-frame geometry changes settle without input" (`test_loop.ml`) |
 | Undo | An entry holds the inverse change: the bytes replaced, where, and the caret, affinity and selection to restore. No count bound; one step per edit | prosemirror-history (`src/history.ts`): items hold "the inverted step" | high | "matches snapshot history over edit scripts" (property, `test_editor.ml`) |
-| Stale proposals | `Editor.accept ~current proposal` is `current` unless `current` is the proposal's base. Dispatch is synchronous, so only a deferred proposal needs it | RFC 0003 D5 | high | "stale text proposal" (`test_editor.ml`), "deferred proposal stale after text change" (`test_textarea.ml`) |
+| Stale proposals | None arise: the surface proposes from the value it was given and dispatch is synchronous. `Editor.t` is a plain value; `Editor.accept`, which discarded a proposal whose base was not the current value, was removed on 2026-10-23 (RFC 0003 D5) | RFC 0003 D5 | high | "normalization is authoritative before the next key in a burst" (`test_loop.ml`), "values carry no identity" (`test_editor.ml`), "a deferred proposal is a complete value" (`test_textarea.ml`) |
 | Surface | Labelled layout and paint arguments, layout defaults and MLX are kept | state ownership needs none of them changed (§4) | medium | `test_mlx.ml`, the examples |
 
 ## 3. Decisions taken during implementation
@@ -247,7 +247,7 @@ this repository, so its figures cannot be reproduced and are not kept.
   `newGroupDelay`, when an `Editor.t` observes no clock?
 - Should the runtime report an `on_size` response deferred on every frame, as Resize Observer's
   loop error does, rather than alternate silently?
-- Should `Editor.t` become a plain value, its acceptance tokens replaced by explicit provenance or
-  dropped for synchronous delivery, which would amend RFC 0003 §2.5 and D5?
+- ~~Should `Editor.t` become a plain value?~~ Yes, on 2026-10-23: its acceptance tokens and
+  `Editor.accept` went, as delivery is synchronous (RFC 0003 D5, amended).
 - Is Toffee's promise that an unchanged layout value means an unchanged subtree an acceptable
   public contract, or should culling learn that fact through a narrower interface?

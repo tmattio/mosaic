@@ -15,8 +15,8 @@
   [RFC 0002](0002-syntax-highlighting-boundary.md) the highlighter boundary;
   [RFC 0004](0004-terminal-emulation.md) renamed the display-unit functions.
 - Compatibility: breaking. Display-line inspection and the cursor's type change. Amends RFC 0001's
-  promise to preserve text internals and requires revision-safe proposals; its model ownership and
-  Toffee sizing stand.
+  promise to preserve text internals and required revision-safe proposals (removed, D5); its
+  model ownership and Toffee sizing stand.
 
 ## Summary
 
@@ -121,7 +121,7 @@ reason.
 | decision | rule | reference / reason | confidence |
 |---|---|---|---|
 | Revisions | A geometry query names its source revision; a proposal, the complete state it came from (source, cursor, selection) | — | high |
-| Stale proposals | The owner discards a proposal whose base is not its current state, even with unchanged text, or dispatch recomputes from the input. A stale proposal never restores old text or overwrites newer cursor or selection state. Applications need not retain layouts. See D5 | a queued next state cannot tell it is stale | high |
+| Stale proposals | Dispatch proposes from the current state, synchronously, so no proposal is stale; an owner that defers one stores a complete value. Applications need not retain layouts. The acceptance guard first decided here was removed (D5) | a queued next state cannot tell it is stale | high |
 | Replacement | Follows the widget's reset and clamp policy; a layout keeps its source while referenced | — | high |
 | Edits | Resolve endpoints to old-source bytes, splice, reindex. Rebase the caret from the byte after the insertion or at the deletion seam, snapping forward from inside a cluster; retained selection endpoints likewise. Never add the inserted fragment's grapheme count | U+0301 after `e` makes one cluster | high |
 | Length limit | Applies to the resegmented result; positions clamp | — | high |
@@ -165,11 +165,19 @@ surface, crop helpers, gutters, diff. No shipped consumer keeps another coordina
   `line_info`, a record of closures beside an `iter_lines` only diff called, is gone with it. The
   gutter visits the clipped rows, a diff hit reads one row, and split alignment alone traverses
   all of them.
-- **D5. The acceptance guard is a function.** Editor values carry a revision and their base;
-  `Editor.accept ~current proposal` returns `current` unless it is the proposal's base (tests
-  "stale same-source proposals", "stale affinity proposal", "stale text proposal"). The edit
-  surface proposes only from its current state, synchronously. An application deferring a
-  proposal must call `accept`; dispatch does not enforce it.
+- **D5. The acceptance guard is a function**, removed on 2026-10-23. Editor values carried a
+  revision and their base, and `Editor.accept ~current proposal` returned `current` unless it was
+  the proposal's base. `Editor.t` is now a plain value and `accept` is gone. The edit surface
+  proposes only from the value it was given, synchronously, and the runtime refreshes declarations
+  before the next key of a burst ("normalization is authoritative before the next key in a
+  burst", `mosaic/test/loop/test_loop.ml`), so the library never produces a stale proposal. The
+  guard served only applications that defer proposals, was optional and unenforced, and made
+  equal-looking values behave differently. Controlled inputs keep the model a plain value
+  updated synchronously (React, `<input>`: "Every controlled input needs an onChange event
+  handler that synchronously updates its backing value."); prosemirror-history and CodeMirror's
+  history meet concurrent edits by mapping their changes through later ones
+  (`history.done.rebased`, `addMappingToBranch` in their `src/history.ts`), not by rejecting
+  states. If deferral ever matters, the answer is proposals as changes, not a guard.
 - **D6. Source-bound annotations** (`07d38086`): `Text_buffer.Annotations` binds styles to byte
   ranges of the installed source, without copies; an interior boundary resolves downstream (the
   first-byte rule). Code installs highlights this way, so a theme change rebuilds no geometry.
@@ -201,8 +209,8 @@ surface, crop helpers, gutters, diff. No shipped consumer keeps another coordina
   built only for zero-width clusters other than line terminators, which end their rows anyway.
   Latency distributions stay unrecorded.
 - **G2. Closed: tested** (`23cb206a`, `23daa2a9`). A proposal made stale by a text change (another
-  edit, equal text from another edit, an undo back to the base, a replacement) leaves the newer
-  state. Properties of `hit` and `locate` state their preconditions: a visible, unambiguous
+  edit, equal text from another edit, an undo back to the base, a replacement) left the newer
+  state; those tests went with the guard (D5). Properties of `hit` and `locate` state their preconditions: a visible, unambiguous
   boundary round-trips; elsewhere `hit` snaps canonically, a fixed point of `locate` then `hit` on
   the clicked row; `locate` is monotonic. They found four bugs, now fixed: a click past a row's
   end, the nearest boundary inside a wide cluster and the ellipsis cell each returned an unsnapped

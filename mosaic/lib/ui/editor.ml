@@ -37,8 +37,6 @@ module Engine = struct
     mutable undo_stack : change list;
     mutable redo_stack : change list;
     mutable cache : Source.t option;
-    mutable revision : unit ref;
-    mutable base : unit ref option;
     mutable preferred_col : int option;
     mutable viewport : viewport;
   }
@@ -72,8 +70,6 @@ module Engine = struct
       undo_stack = [];
       redo_stack = [];
       cache = Some source;
-      revision = ref ();
-      base = None;
       preferred_col = None;
       viewport = { x = 0; y = 0; follow = false };
     }
@@ -554,19 +550,12 @@ let selection = Engine.selection
 let selected_text = Engine.selected_text
 let source = Engine.source
 
-let accept ~current proposal =
-  match proposal.Engine.base with
-  | Some base when base != current.Engine.revision -> current
-  | _ -> proposal
-
 let transform f t =
   let next = Engine.copy t in
   f next;
   if Engine.same t next && t.Engine.preferred_col = None then t
   else begin
     ignore (Engine.source next : Matrix.Text.Layout.Source.t);
-    next.revision <- ref ();
-    next.base <- Some t.revision;
     next.preferred_col <- None;
     if not next.viewport.follow then
       next.viewport <- { next.viewport with follow = true };
@@ -651,13 +640,10 @@ let select_carets ~anchor ~cursor =
       Engine.set_caret t anchor;
       Engine.set_caret ~select:true t cursor)
 
+(* A proposal that changes nothing is [base] itself, so the surface sees no
+   change; otherwise it is [next] with the column vertical motion keeps. *)
 let propose ~base ~preferred_col next =
   if Engine.same base next && base.Engine.preferred_col = preferred_col then
     base
-  else if
-    (match next.base with
-      | Some revision -> revision == base.revision
-      | None -> false)
-    && next.preferred_col = preferred_col
-  then next
-  else { next with revision = ref (); base = Some base.revision; preferred_col }
+  else if next.Engine.preferred_col = preferred_col then next
+  else { next with preferred_col }

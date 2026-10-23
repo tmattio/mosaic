@@ -394,7 +394,7 @@ let rejected_movement_preserves_preferred_column () =
   ignore (render_textarea ta ~width:20 ~height:3 : Matrix_grid.t);
   send_key ta Matrix_input.Keystroke.Down;
   equal ~msg:"short row clamps the caret" int 7 (Editor.cursor !proposal);
-  update_editor ta (fun current -> Editor.accept ~current !proposal);
+  update_editor ta (fun _ -> !proposal);
   let accepted = Textarea.state ta in
   send_key ta Matrix_input.Keystroke.Down;
   equal ~msg:"vertical proposal restores desired column" int 12
@@ -408,11 +408,13 @@ let rejected_movement_preserves_preferred_column () =
   equal ~msg:"rejected movement preserves desired column" int 4
     (Editor.cursor !proposal);
   is_true ~msg:"proposal still derives from accepted state"
-    (Editor.accept ~current:accepted !proposal == !proposal);
+    (Editor.source !proposal == Editor.source accepted);
   equal ~msg:"original accepted value stays intact" int 7
     (Editor.cursor accepted)
 
-let deferred_proposal_stale_after_text_change () =
+(* A proposal is a complete value: an application that defers one and stores
+   it later gets exactly that value, even over a newer one it stored since. *)
+let deferred_proposal_is_a_complete_value () =
   let proposal = ref Editor.empty in
   let _, ta =
     make_textarea ~value:"ab" ~accept:false
@@ -422,8 +424,10 @@ let deferred_proposal_stale_after_text_change () =
   send_char ta 'x';
   equal string "abx" (Editor.text !proposal);
   update_editor ta (Editor.insert "y");
-  update_editor ta (fun current -> Editor.accept ~current !proposal);
-  equal ~msg:"deferred proposal discarded" string "aby" (Textarea.value ta)
+  equal string "aby" (Textarea.value ta);
+  update_editor ta (fun _ -> !proposal);
+  equal ~msg:"deferred proposal stored" string "abx" (Textarea.value ta);
+  equal ~msg:"with its caret" int 3 (Textarea.cursor ta)
 
 let transformed_acceptance_is_next_event_base () =
   let widget = ref None in
@@ -1198,8 +1202,8 @@ let () =
             rejected_cursor_does_not_affect_next_edit;
           test "rejected movement preserves preferred column"
             rejected_movement_preserves_preferred_column;
-          test "deferred proposal stale after text change"
-            deferred_proposal_stale_after_text_change;
+          test "a deferred proposal is a complete value"
+            deferred_proposal_is_a_complete_value;
           test "transformed acceptance is next event base"
             transformed_acceptance_is_next_event_base;
           test "blur does not propose" blur_and_submit_do_not_propose_edits;

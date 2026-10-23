@@ -10,7 +10,11 @@ type t
     edit surface proposes a value with a new viewport, and a surface shows the
     viewport of the value it is given, so remounting a widget does not move it.
     A value from {!of_string} shows the start of its text; a value from an
-    editing or movement operation keeps its caret visible. *)
+    editing or movement operation keeps its caret visible.
+
+    A value carries no identity: whichever value its owner stores is the state,
+    whatever it was derived from, and two values built by the same operations
+    behave alike. *)
 
 val empty : t
 (** [empty] has empty text and no history. *)
@@ -126,13 +130,6 @@ val move_line_start : ?select:bool -> t -> t
 
 val move_line_end : ?select:bool -> t -> t
 (** [move_line_end ?select t] moves to the logical line end. *)
-
-val accept : current:t -> t -> t
-(** [accept ~current proposal] accepts a directly derived proposal only while
-    [current] is its original state, including caret and selection. Otherwise it
-    returns [current]. Use this when deliberately deferring proposals; ordinary
-    widget callbacks are delivered synchronously. Values from {!of_string} are
-    unconditional replacements. *)
 
 (**/**)
 

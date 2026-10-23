@@ -68,47 +68,24 @@ let restored_source_is_shared_by_cursor_branches () =
   is_true (Editor.source left == Editor.source home);
   is_true (Editor.source restored == Editor.source left)
 
-let stale_same_source_proposal () =
+(* A value is what it holds. Values built separately by the same operations
+   are interchangeable, and a value derived from an older state is a complete
+   state of its own: whoever stores it gets its text, caret and history. *)
+let values_carry_no_identity () =
+  let build () = Editor.of_string "abcd" |> Editor.insert "x" in
+  let a = build () and b = build () in
+  let script e = e |> Editor.move_left |> Editor.insert "y" |> Editor.undo in
+  equal string (Editor.text (script a)) (Editor.text (script b));
+  equal int (Editor.cursor (script a)) (Editor.cursor (script b));
+  equal string (Editor.text (Editor.undo a)) (Editor.text (Editor.undo b));
   let original = Editor.of_string "abcd" in
   let proposal = Editor.insert "x" original in
-  let moved = Editor.move_left original in
-  is_true (Editor.source moved == Editor.source original);
-  is_true (Editor.accept ~current:moved proposal == moved);
-  let selected = Editor.select ~anchor:0 ~cursor:4 original in
-  is_true (Editor.accept ~current:selected proposal == selected);
-  is_true (Editor.accept ~current:original proposal == proposal)
-
-let stale_affinity_proposal () =
-  let original = Editor.of_string "abcd" in
-  let proposal = Editor.insert "x" original in
-  let moved =
-    Editor.set_caret
-      Matrix.Text.Layout.{ grapheme = 4; affinity = Upstream }
-      original
-  in
-  equal int (Editor.cursor original) (Editor.cursor moved);
-  is_true (Editor.accept ~current:moved proposal == moved)
-
-let stale_text_proposal () =
-  let original = Editor.of_string "abcd" in
-  let proposal = Editor.insert "x" original in
-  let caret_proposal = Editor.move_left original in
-  let edited = Editor.insert "y" original in
-  is_true ~msg:"edit proposal after a text change"
-    (Editor.accept ~current:edited proposal == edited);
-  is_true ~msg:"caret proposal does not restore older text"
-    (Editor.accept ~current:edited caret_proposal == edited);
-  let same_text = Editor.insert "x" original in
-  equal string (Editor.text proposal) (Editor.text same_text);
-  is_true ~msg:"equal text from another edit is still newer"
-    (Editor.accept ~current:same_text proposal == same_text);
-  let restored = Editor.undo edited in
-  equal string (Editor.text original) (Editor.text restored);
-  is_true ~msg:"undo back to the base text is a newer state"
-    (Editor.accept ~current:restored proposal == restored);
-  let replaced = Editor.of_string "zz" in
-  is_true ~msg:"replacement"
-    (Editor.accept ~current:replaced proposal == replaced)
+  let newer = Editor.insert "y" original |> Editor.move_home in
+  is_true ~msg:"an older derivation is still a complete value"
+    (Editor.text proposal = "abcdx" && Editor.cursor proposal = 5);
+  equal ~msg:"its history is its own" string "abcd"
+    (Editor.text (Editor.undo proposal));
+  equal ~msg:"the newer value is unaffected" string "abcdy" (Editor.text newer)
 
 let combining_insertion_and_limit () =
   let original = Editor.of_string ~max_length:1 "e" in
@@ -1033,9 +1010,7 @@ let () =
             cursor_shares_large_source;
           test "restored source shared by cursor branches"
             restored_source_is_shared_by_cursor_branches;
-          test "stale same-source proposals" stale_same_source_proposal;
-          test "stale affinity proposal" stale_affinity_proposal;
-          test "stale text proposal" stale_text_proposal;
+          test "values carry no identity" values_carry_no_identity;
           test "combining insertion at limit" combining_insertion_and_limit;
           test "no-op edits preserve identity" no_op_identity;
         ];
