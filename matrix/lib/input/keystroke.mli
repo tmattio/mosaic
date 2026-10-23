@@ -207,6 +207,13 @@ type t = {
 }
 (** The type for key presses. *)
 
+val is_interrupt : t -> bool
+(** [is_interrupt k] is [true] iff [k] is Ctrl+C, the key a terminal in cooked
+    mode turns into SIGINT (its VINTR character): Ctrl with c, Shift allowed
+    (the kitty protocol may report C), or with a key whose {!field-base} is c,
+    and no other modifier. In raw mode the terminal sends it as this key, and
+    what it means is the application's. *)
+
 (** {1:fmt Formatting} *)
 
 val pp_key : Format.formatter -> key -> unit

@@ -1415,6 +1415,25 @@ let key_equivalence () =
 
 let equivalence_tests = [ test "one value per keystroke" key_equivalence ]
 
+(* Ctrl+C, however the terminal encodes it, and nothing else. *)
+let interrupt () =
+  List.iter
+    (fun (bytes, expected) ->
+      equal bool ~msg:(String.escaped bytes) expected
+        (K.is_interrupt (decode_key bytes)))
+    [
+      ("\003", true);
+      ("\027[99;5u", true);
+      ("\027[99:67;6u", true);
+      ("\027[1089::99;5u", true);
+      ("c", false);
+      ("\004", false);
+      ("\027\003", false);
+      ("\027[99;7u", false);
+    ]
+
+let interrupt_tests = [ test "Ctrl+C is the interrupt" interrupt ]
+
 let () =
   run "matrix.input.decoder"
     [
@@ -1431,4 +1450,5 @@ let () =
       group "attacks" attacks;
       group "measured" measured_tests;
       group "key equivalence" equivalence_tests;
+      group "interrupt" interrupt_tests;
     ]

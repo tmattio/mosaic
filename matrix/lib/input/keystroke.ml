@@ -93,6 +93,16 @@ type t = {
 
 (* Formatting *)
 
+let is_interrupt (k : t) =
+  let c = Uchar.of_char 'c' in
+  k.mods.ctrl
+  && (not (k.mods.alt || k.mods.super || k.mods.hyper || k.mods.meta))
+  &&
+  match k.key with
+  | Char u ->
+      Uchar.equal u c || Uchar.equal u (Uchar.of_char 'C') || k.base = Some c
+  | _ -> false
+
 let media_name : media -> string = function
   | Play -> "Play"
   | Pause -> "Pause"
