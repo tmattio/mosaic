@@ -1,4 +1,4 @@
-; Install eio and eio_main and uncommend to run the example
-; (executable
-;  (name main)
-;  (libraries mosaic matrix-eio eio eio_main))
+(executable
+ (name main)
+ (optional)
+ (libraries mosaic matrix eio eio.unix eio_main))

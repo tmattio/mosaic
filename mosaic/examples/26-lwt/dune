@@ -1,0 +1,4 @@
+(executable
+ (name main)
+ (optional)
+ (libraries mosaic matrix lwt lwt.unix threads.posix unix))

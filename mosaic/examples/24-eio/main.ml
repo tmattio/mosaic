@@ -1,6 +1,7 @@
 (** Async task runner demonstrating [Cmd.perform] with Eio fibers. *)
 
 open Mosaic
+open Eio.Std
 
 type job_status = Pending | Running of float | Done
 type job = { id : int; name : string; duration : float; status : job_status }
@@ -164,20 +165,58 @@ let subscriptions model =
         ];
     ]
 
+(* The Eio glue. The program runs alone on a domain the program's
+   [Domain_manager] gives it, and waits for its terminal with Eio there; the
+   main domain goes on with its other fibers meanwhile, and runs the work
+   of [Cmd.perform] as fibers of its own. *)
+
+(* Returns once one of the program's descriptors is readable or its
+   deadline comes. Cancelling the fiber ends the wait. *)
+let await_program clock program =
+  let readable fd () = Eio_unix.await_readable fd in
+  let deadline () =
+    match Mosaic.deadline program with
+    | None -> Fiber.await_cancel ()
+    | Some deadline ->
+        let seconds = Float.of_int (deadline - Matrix.clock ()) *. 1e-9 in
+        if seconds > 0. then Eio.Time.Mono.sleep clock seconds
+  in
+  Fiber.any (deadline :: List.map readable (Mosaic.fds program))
+
+(* Work of the program, run as fibers on the calling domain: the program's
+   domain hands it over through a stream, which any domain may add to. *)
+let job_runner ~sw =
+  let jobs = Eio.Stream.create max_int in
+  Fiber.fork_daemon ~sw (fun () ->
+      while true do
+        let job = Eio.Stream.take jobs in
+        Fiber.fork_daemon ~sw (fun () ->
+            job ();
+            `Stop_daemon)
+      done;
+      `Stop_daemon);
+  Eio.Stream.add jobs
+
+(* Runs [app] until it ends. Cancelling the calling fiber cancels the wait,
+   and the program gives the terminal back on its domain before
+   [Domain_manager.run] returns. *)
+let run env ~sw app =
+  let process_perform = job_runner ~sw in
+  Eio.Domain_manager.run env#domain_mgr @@ fun () ->
+  Mosaic.start ~process_perform app @@ fun program ->
+  let rec loop () =
+    match Mosaic.step program ~now:(Matrix.clock ()) with
+    | `Stepped -> loop ()
+    | `Idle ->
+        await_program env#mono_clock program;
+        loop ()
+    | `Stopped -> ()
+  in
+  loop ()
+
 let () =
   Random.self_init ();
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let clock = Eio.Stdenv.clock env in
-  let backend =
-    Matrix_eio.backend
-      ~clock:(Eio.Stdenv.mono_clock env)
-      ~stdin:env#stdin ~stdout:env#stdout ()
-  in
-  let process_perform thunk =
-    Eio.Fiber.fork_daemon ~sw (fun () ->
-        thunk ();
-        `Stop_daemon)
-  in
-  Mosaic.run ~backend ~process_perform
-    { init = init ~clock; update; view; subscriptions }
+  run env ~sw { init = init ~clock; update; view; subscriptions }

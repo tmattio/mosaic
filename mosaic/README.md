@@ -265,7 +265,9 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `21-line-number`   | Code gutter with signs and colors                 |
 | `22-layout`        | CSS Grid with responsive switching                |
 | `23-resize`        | Terminal resize and focus events                  |
-| `24-eio`           | Eio-based runtime                                 |
+| `24-eio`           | A program waited for with Eio                     |
+| `26-lwt`           | A program as an Lwt promise                       |
+| `27-threads`       | A program fed by a thread and stopped by another  |
 | `x-agent`          | Agent-style primary-screen CLI                    |
 | `x-dashboard`      | Component composition with `map`                  |
 | `x-syspanel`       | System monitor: CPU, memory, disk, processes      |

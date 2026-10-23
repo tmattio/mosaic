@@ -1,11 +1,14 @@
-# `23-eio`
+# `24-eio`
 
-Async task runner using Eio fibers. Demonstrates `Cmd.perform` for
-non-blocking background work with the `matrix-eio` runtime.
+Async task runner using Eio fibers: the program runs on a domain of its own
+and waits for its terminal with Eio, while the main domain runs its jobs as
+fibers.
 
 ```bash
-dune exec ./mosaic/examples/23-eio/main.exe
+dune exec ./mosaic/examples/24-eio/main.exe
 ```
+
+It is built only when `eio_main` is installed.
 
 ## Controls
 
@@ -20,7 +23,11 @@ dune exec ./mosaic/examples/23-eio/main.exe
 
 ## Highlights
 
-- Demonstrates `Cmd.perform` dispatching messages from an Eio fiber.
-- Shows the `Matrix_eio` + `process_perform` integration pattern.
-- Uses `Eio.Time.sleep` for non-blocking delays.
-- Tick subscriptions are only active while jobs are running.
+- `Mosaic.start` leaves the waiting to the caller: the loop takes the
+  program's steps with `Mosaic.step`, and between them waits with Eio until
+  one of `Mosaic.fds` is readable or `Mosaic.deadline` comes.
+- `Eio.Domain_manager.run` gives the program its domain, so the main
+  domain's other fibers go on while a step runs, and cancelling the caller
+  cancels the wait.
+- `process_perform` hands the work of `Cmd.perform` to fibers of the main
+  domain through an `Eio.Stream`.

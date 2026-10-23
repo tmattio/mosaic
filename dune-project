@@ -76,6 +76,8 @@
   cmarkit
   (windtrap :with-test)
   (ppx_windtrap :with-test)
-  (thumper :with-test))
+  (thumper :with-test)
+  (eio_main :with-test)
+  (lwt :with-test))
  (tags
   (tui terminal tea elm "user-interface")))

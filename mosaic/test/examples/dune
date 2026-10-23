@@ -1,0 +1,50 @@
+; The examples that run a program from another event loop, run in a
+; pseudo-terminal. Those whose event loop is not installed are skipped.
+
+(executable
+ (name test_examples)
+ (libraries windtrap matrix.pty unix))
+
+(rule
+ (alias runtest)
+ (package mosaic)
+ (enabled_if %{lib-available:eio_main})
+ (action
+  (setenv
+   EXAMPLE
+   %{dep:../../examples/24-eio/main.exe}
+   (setenv
+    TITLE
+    "Async Tasks"
+    (run %{exe:test_examples.exe})))))
+
+(rule
+ (alias runtest)
+ (package mosaic)
+ (enabled_if %{lib-available:lwt.unix})
+ (action
+  (setenv
+   EXAMPLE
+   %{dep:../../examples/26-lwt/main.exe}
+   (setenv
+    TITLE
+    "Lwt timers"
+    (setenv
+     CANCEL
+     1
+     (run %{exe:test_examples.exe}))))))
+
+(rule
+ (alias runtest)
+ (package mosaic)
+ (action
+  (setenv
+   EXAMPLE
+   %{dep:../../examples/27-threads/main.exe}
+   (setenv
+    TITLE
+    "Thread feed"
+    (setenv
+     CANCEL
+     1
+     (run %{exe:test_examples.exe}))))))
