@@ -431,7 +431,8 @@ let focus_request_accepted requested target =
 
 (* ───── Creation ───── *)
 
-let create ?width_method ?screen ?style ?(request_render = fun () -> ()) () =
+let create ?width_method ?screen ?style ?(request_render = fun () -> ())
+    ?(executor = fun work -> ignore (Thread.create work () : Thread.t)) () =
   let tree = Toffee.new_tree () in
   let adopted = Option.is_some screen in
   let screen =
@@ -500,6 +501,7 @@ let create ?width_method ?screen ?style ?(request_render = fun () -> ()) () =
       tree;
       schedule =
         (fun () -> if not (Atomic.exchange dirty true) then request_render ());
+      off_loop = executor;
       focus =
         (fun node ->
           if not (Renderable.focusable node) then false

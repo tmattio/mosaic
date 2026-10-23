@@ -197,6 +197,11 @@ val set_render : t -> render -> unit
 val request_render : t -> unit
 (** [request_render t] schedules a re-render for [t]. *)
 
+val off_loop : t -> (unit -> unit) -> unit
+(** [off_loop t work] runs [work] off the rendering thread, on the executor of
+    [t]'s renderer ({!Renderer.create}). [work] must not touch renderables, and
+    gives its result back by publishing it and calling {!request_render}. *)
+
 val set_render_before : t -> render option -> unit
 (** [set_render_before t hook] assigns an optional pre-render hook. [None]
     clears it. *)
@@ -431,6 +436,8 @@ module Private : sig
     tree : unit Toffee.tree;
     schedule : unit -> unit;
         (** Requests a render. Must be safe to call from a worker thread. *)
+    off_loop : (unit -> unit) -> unit;
+        (** Runs work off the rendering thread ({!val-off_loop}). *)
     focus : t -> bool;
     blur : t -> unit;
     get_selection : unit -> Selection.t option;

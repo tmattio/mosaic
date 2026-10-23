@@ -58,9 +58,11 @@ val equal : syntax -> syntax -> bool
 type t
 (** The type for a view's highlighting. *)
 
-val create : notify:(unit -> unit) -> t
-(** [create ~notify] shows nothing yet. [notify] schedules a render of the view;
-    a highlighter may call it from any thread. *)
+val create : notify:(unit -> unit) -> off_loop:((unit -> unit) -> unit) -> t
+(** [create ~notify ~off_loop] shows nothing yet. [notify] schedules a render of
+    the view; a highlighter may call it from any thread. [off_loop] runs a
+    threaded highlighter's work off the rendering thread
+    ({!Renderable.off_loop}). *)
 
 val set : t -> content:string -> syntax option -> unit
 (** [set t ~content syntax] makes [t] describe [content] under [syntax]. A

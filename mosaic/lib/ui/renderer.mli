@@ -27,6 +27,7 @@ val create :
   ?screen:Matrix.Screen.t ->
   ?style:Toffee.Style.t ->
   ?request_render:(unit -> unit) ->
+  ?executor:((unit -> unit) -> unit) ->
   unit ->
   t
 (** [create ()] is a renderer with a root renderable and an empty screen. The
@@ -40,6 +41,11 @@ val create :
     - [request_render]: wakes the host event loop when a node requests a frame.
       Defaults to doing nothing. The callback must be thread-safe and must not
       raise or render synchronously; worker highlighters can call it.
+    - [executor]: runs work off the rendering thread, such as a threaded
+      highlighter's ({!Renderable.off_loop}), and must return without waiting
+      for the work. Defaults to running each piece of work on a systhread of its
+      own. A host runtime passes its own, so that the work runs where the host's
+      other work does.
     - [style]: the root node's initial style. Defaults to
       {!Toffee.Style.default}. *)
 

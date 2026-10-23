@@ -125,7 +125,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content ?syntax
   in
   let node = Text_renderable.node text in
   let session =
-    Syntax_session.create ~notify:(fun () -> Renderable.request_render node)
+    Syntax_session.create
+      ~notify:(fun () -> Renderable.request_render node)
+      ~off_loop:(Renderable.off_loop node)
   in
   let t = { text; props; session; on_rows_change = None } in
   Renderable.set_render_before node (Some (render_before t));

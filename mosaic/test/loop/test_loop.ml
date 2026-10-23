@@ -1028,6 +1028,36 @@ let join_worker worker =
   done;
   is_true ~msg:"worker exits within five seconds" (Atomic.get joined)
 
+(* An executor that runs each piece of work on a thread of its own. *)
+let threads work = ignore (Thread.create work () : Thread.t)
+
+let%expect_test "threaded highlighting runs on the program's executor" =
+  (* On the session's queue, the highlighting is done by the time the run
+     settles: the first settled frame shows it, with no thread. *)
+  let calls = ref 0 in
+  let highlighter =
+    Mosaic.Code.Highlighter.threaded_incremental (fun { content; _ } ->
+        incr calls;
+        let meta =
+          { Mosaic.Syntax_highlight.default_meta with conceal = Some "done" }
+        in
+        ( Mosaic.Syntax_highlight.make ~content
+            [
+              Mosaic.Syntax_highlight.range ~meta ~start_byte:0 ~end_byte:3
+                ~scope:"keyword" ();
+            ],
+          () ))
+  in
+  let syntax = Mosaic.Code.with_highlighter ~language:"example" highlighter in
+  let base = app () in
+  drive ~width:20 ~height:1
+    { base with Mosaic.view = (fun _ -> Mosaic.code ~syntax "let x") }
+    [ `Snap; `Run (fun _ -> Printf.printf "calls: %d\n" !calls) ];
+  [%expect {|
+    |done x
+    calls: 1
+    |}]
+
 let%expect_test "threaded highlighting wakes an idle application" =
   let released = Atomic.make false in
   let worker = Atomic.make None in
@@ -1056,7 +1086,9 @@ let%expect_test "threaded highlighting wakes an idle application" =
   Fun.protect
     ~finally:(fun () -> Atomic.set released true)
     (fun () ->
-      run t application (fun _ ->
+      (* The work blocks until the test releases it, so it runs on a thread
+         the program's executor starts, and the session waits for nothing. *)
+      run ~process_perform:threads ~quiesce:ignore t application (fun _ ->
           equal ~msg:"plain initial frame" string "let x"
             (String.trim (screen t));
           Atomic.set released true;
@@ -1122,8 +1154,9 @@ let%expect_test "application exit cancels queued highlighting" =
             raises_match ~msg:"application failure preserved"
               (function
                 | Failure message -> message = "application failed" | _ -> false)
-              (fun () -> run t application body)
-          else run t application body);
+              (fun () ->
+                run ~process_perform:threads ~quiesce:ignore t application body)
+          else run ~process_perform:threads ~quiesce:ignore t application body);
       join_worker (Option.get (Atomic.get worker));
       equal ~msg:"closed application leaves no queued work" (list string)
         [ "first" ] (Atomic.get calls))

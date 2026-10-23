@@ -17,9 +17,16 @@ module Highlighter = struct
     cancel : unit -> unit;
   }
 
-  (* The state's type is the highlighter's own: a view never looks at it. *)
+  (* The state's type is the highlighter's own: a view never looks at it.
+     [off_loop] runs work off the rendering thread, on the renderer's
+     executor. *)
   type t =
-    | Highlighter : ('state request -> notify:(unit -> unit) -> 'state job) -> t
+    | Highlighter :
+        ('state request ->
+        notify:(unit -> unit) ->
+        off_loop:((unit -> unit) -> unit) ->
+        'state job)
+        -> t
 
   let job ~poll ~cancel = { poll; cancel }
 
@@ -34,7 +41,7 @@ module Highlighter = struct
 
   let sync_incremental f =
     Highlighter
-      (fun request ~notify:_ ->
+      (fun request ~notify:_ ~off_loop:_ ->
         completed (try Ok (f request) with exn -> Error exn))
 
   (* A highlighter that keeps nothing has [()] as its state. *)
@@ -45,7 +52,7 @@ module Highlighter = struct
 
   let async f =
     Highlighter
-      (fun request ~notify ->
+      (fun request ~notify ~off_loop:_ ->
         try f request ~notify with exn -> completed (Error exn))
 
   type 'state work = {
@@ -79,33 +86,40 @@ module Highlighter = struct
               end);
           work ()
     in
-    async (fun request ~notify ->
+    (* The worker runs on the renderer's executor, started outside the lock,
+       which an executor that runs it at once takes. *)
+    Highlighter
+      (fun request ~notify ~off_loop ->
         let task = { request; notify; cancelled = false; outcome = None } in
-        Mutex.protect mutex (fun () ->
-            Queue.add task pending;
-            if not !running then begin
+        let start =
+          Mutex.protect mutex (fun () ->
+              Queue.add task pending;
+              let start = not !running in
               running := true;
-              try ignore (Thread.create work () : Thread.t)
-              with exn ->
+              start)
+        in
+        match if start then off_loop work with
+        | exception exn ->
+            Mutex.protect mutex (fun () ->
                 running := false;
-                Queue.clear pending;
-                raise exn
-            end);
-        job
-          ~poll:(fun () ->
-            Mutex.protect mutex (fun () ->
-                let result = task.outcome in
-                task.outcome <- None;
-                result))
-          ~cancel:(fun () ->
-            Mutex.protect mutex (fun () ->
-                task.cancelled <- true;
-                task.outcome <- None;
-                (* Remove cancelled input immediately, preserving the live FIFO. *)
-                for _ = 1 to Queue.length pending do
-                  let queued = Queue.take pending in
-                  if queued != task then Queue.add queued pending
-                done)))
+                Queue.clear pending);
+            completed (Error exn)
+        | () ->
+            job
+              ~poll:(fun () ->
+                Mutex.protect mutex (fun () ->
+                    let result = task.outcome in
+                    task.outcome <- None;
+                    result))
+              ~cancel:(fun () ->
+                Mutex.protect mutex (fun () ->
+                    task.cancelled <- true;
+                    task.outcome <- None;
+                    (* Remove cancelled input immediately, preserving the live FIFO. *)
+                    for _ = 1 to Queue.length pending do
+                      let queued = Queue.take pending in
+                      if queued != task then Queue.add queued pending
+                    done)))
 
   let threaded f = threaded_incremental (stateless f)
 end
@@ -172,8 +186,11 @@ let rec request : type state.
     cancel = job.cancel;
   }
 
-let first_request (Highlighter.Highlighter start) ~language ~content ~notify =
-  request start ~language None ~content ~notify
+let first_request (Highlighter.Highlighter start) ~off_loop ~language ~content
+    ~notify =
+  request
+    (fun request ~notify -> start request ~notify ~off_loop)
+    ~language None ~content ~notify
 
 (* Syntax settings *)
 
@@ -222,6 +239,7 @@ type running = {
 
 type t = {
   notify : unit -> unit;
+  off_loop : (unit -> unit) -> unit;
   mutable content : string;
   mutable syntax : syntax option;
   mutable generation : int;
@@ -237,9 +255,10 @@ type t = {
          it failed. *)
 }
 
-let create ~notify =
+let create ~notify ~off_loop =
   {
     notify;
+    off_loop;
     content = "";
     syntax = None;
     generation = 0;
@@ -260,7 +279,9 @@ let launch t content syntax highlighter =
   let job =
     match t.latest with
     | Some latest -> latest.next ~content ~notify:t.notify
-    | None -> first_request highlighter ~language ~content ~notify:t.notify
+    | None ->
+        first_request highlighter ~off_loop:t.off_loop ~language ~content
+          ~notify:t.notify
   in
   t.running <- Some { generation = t.generation; content; syntax; job }
 

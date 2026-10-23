@@ -49,6 +49,7 @@ type measure =
 type context = {
   tree : unit Toffee.tree;
   schedule : unit -> unit;
+  off_loop : (unit -> unit) -> unit;
   focus : node -> bool;
   blur : node -> unit;
   get_selection : unit -> Selection.t option;
@@ -499,6 +500,7 @@ let set_on_blur t handler = t.blur_handler <- handler
 (* ───── Rendering ───── *)
 
 let request_render t = t.ctx.schedule ()
+let off_loop t work = t.ctx.off_loop work
 
 let set_render t fn =
   t.render <- fn;
@@ -1192,6 +1194,7 @@ module Private = struct
   type nonrec context = context = {
     tree : unit Toffee.tree;
     schedule : unit -> unit;
+    off_loop : (unit -> unit) -> unit;
     focus : t -> bool;
     blur : t -> unit;
     get_selection : unit -> Selection.t option;

@@ -700,9 +700,10 @@ module Code : sig
 
     val threaded :
       (language:string -> content:string -> Mosaic_ui.Syntax_highlight.t) -> t
-    (** [threaded f] runs [f ~language ~content] on one on-demand worker
-        systhread per highlighter, as {!threaded_incremental} runs its function.
-        Reuse the highlighter across renders. *)
+    (** [threaded f] runs [f ~language ~content] on one on-demand worker per
+        highlighter, on the program's [process_perform] executor, as
+        {!threaded_incremental} runs its function. Reuse the highlighter across
+        renders. *)
 
     val sync_incremental :
       ('state request -> Mosaic_ui.Syntax_highlight.t * 'state) -> t
@@ -712,11 +713,11 @@ module Code : sig
 
     val threaded_incremental :
       ('state request -> Mosaic_ui.Syntax_highlight.t * 'state) -> t
-    (** [threaded_incremental f] serializes requests on one on-demand worker
-        systhread per highlighter. Cancellation removes queued requests and
-        discards running results. Reuse the highlighter across renders. See
-        {!Mosaic_ui.Code.Highlighter.threaded_incremental} for the threading
-        contract. *)
+    (** [threaded_incremental f] serializes requests on one on-demand worker per
+        highlighter, which runs on the program's [process_perform] executor
+        ({!val-run}). Cancellation removes queued requests and discards running
+        results. Reuse the highlighter across renders. See
+        {!Mosaic_ui.Code.Highlighter.threaded_incremental} for the contract. *)
 
     val async : ('state request -> notify:(unit -> unit) -> 'state job) -> t
   end
@@ -1319,14 +1320,15 @@ val run :
       runs ({!Matrix.Stop}), as the end of its input does.
     - [config] -- what the run sets up. Defaults to {!Matrix.val-config}[ ()].
     - [process_perform] -- the executor: it runs the work of {!Cmd.val-perform}
-      and {!Sub.val-worker} off the loop, each given as a function that has the
-      dispatch wired in and raises nothing. By default each runs on a thread of
-      its own, in one helper domain, so that the loop's domain runs the loop
-      alone: work on a thread of the loop's domain shares its lock, and work
-      that computes would hold up each key by up to a tick of OCaml's thread
-      scheduler (50 ms) at each of its blocking calls. The helper domain starts
-      with the first work (about 160 us) and ends when it has none. While it
-      runs, OCaml's systhread tick wakes the process 20 times a second, and
+      and {!Sub.val-worker}, and of threaded highlighters
+      ({!Code.Highlighter.threaded}), off the loop, each given as a function
+      that has the dispatch wired in and raises nothing. By default each runs on
+      a thread of its own, in one helper domain, so that the loop's domain runs
+      the loop alone: work on a thread of the loop's domain shares its lock, and
+      work that computes would hold up each key by up to a tick of OCaml's
+      thread scheduler (50 ms) at each of its blocking calls. The helper domain
+      starts with the first work (about 160 us) and ends when it has none. While
+      it runs, OCaml's systhread tick wakes the process 20 times a second, and
       {!Unix.fork} raises, as OCaml forbids forking a process that runs several
       domains; {!Unix.create_process} works. An executor given here runs the
       work where it likes, such as on fibers of the application's own scheduler;

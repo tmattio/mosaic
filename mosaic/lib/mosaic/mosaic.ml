@@ -1033,17 +1033,20 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
     | `Alt -> None
   in
   let rendering = Atomic.make false in
-  (* A widget may ask for a frame from another thread, as a highlighter's
-     worker does when it finishes: that request goes through the loop. *)
+  (* A widget may ask for a frame from elsewhere than a step, as a
+     highlighter's work does when it finishes, on another thread or on the
+     loop's between two steps: that request goes through the loop, which
+     takes it as a step of its own. *)
   let loop_thread = Thread.id (Thread.self ()) in
+  let in_step = ref false in
   let redraw () = Matrix.request_redraw matrix_app in
   let renderer =
     Renderer.create ?style:renderer_style ~screen:(Matrix.screen matrix_app)
       ~request_render:(fun () ->
         if not (Atomic.get rendering) then
-          if Thread.id (Thread.self ()) = loop_thread then redraw ()
+          if !in_step && Thread.id (Thread.self ()) = loop_thread then redraw ()
           else Matrix.post matrix_app Redraw)
-      ()
+      ~executor:process_perform ()
   in
   let container = Renderer.root renderer in
   let reconciler = Reconciler.create ~container in
@@ -1231,7 +1234,11 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
       f
         {
           matrix_app;
-          handle;
+          handle =
+            (fun step ->
+              in_step := true;
+              handle step;
+              in_step := false);
           over = (fun () -> runtime.quit);
           dispatch_msg = (mailbox runtime).dispatch;
         })

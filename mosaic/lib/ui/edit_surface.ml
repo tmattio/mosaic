@@ -806,7 +806,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
   let surface = Text_surface.create node text_buf in
   Text_surface.set_wrap surface props.wrap;
   let session =
-    Syntax_session.create ~notify:(fun () -> Renderable.request_render node)
+    Syntax_session.create
+      ~notify:(fun () -> Renderable.request_render node)
+      ~off_loop:(Renderable.off_loop node)
   in
   Syntax_session.set session ~content:(Editor.text state) props.syntax;
   let t =

@@ -56,6 +56,7 @@ let make_ctx ?(width_method = `Unicode) () =
     {
       tree;
       schedule = (fun () -> incr schedule_count);
+      off_loop = (fun work -> ignore (Thread.create work () : Thread.t));
       focus =
         (fun n ->
           focus_log := Renderable.id n :: !focus_log;

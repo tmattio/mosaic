@@ -137,7 +137,7 @@ module Highlighter : sig
 
   val threaded : (language:string -> content:string -> Syntax_highlight.t) -> t
   (** [threaded f] is {!threaded_incremental} with [f ~language ~content] for
-      each request: [f] runs on a worker systhread and keeps nothing between
+      each request: [f] runs off the rendering thread and keeps nothing between
       results. *)
 
   val sync_incremental : ('state request -> Syntax_highlight.t * 'state) -> t
@@ -148,25 +148,27 @@ module Highlighter : sig
 
   val threaded_incremental :
     ('state request -> Syntax_highlight.t * 'state) -> t
-  (** [threaded_incremental f] runs requests on a worker systhread. Reuse the
-      returned highlighter: it runs at most one call to [f] at a time, queues
-      live requests in order, starts its worker when a request arrives and
-      releases it when the queue empties. Views sharing the highlighter share
-      its worker, so a slow call delays the requests queued behind it. Cancelled
-      queued requests are removed immediately. A running call cannot be
-      interrupted; cancellation discards its result. Polling and cancellation
-      are thread-safe and do not wait for [f] to finish. Exceptions from [f] are
-      highlighting failures of their request (see {!type-result}); the worker
-      goes on with the next one.
+  (** [threaded_incremental f] runs requests off the rendering thread, on the
+      executor of the view's renderer ({!Renderable.off_loop}), which a Mosaic
+      program's is its [process_perform]. Reuse the returned highlighter: it
+      runs at most one call to [f] at a time, queues live requests in order,
+      starts its worker on the executor when a request arrives and ends it when
+      the queue empties. Views sharing the highlighter share its worker, so a
+      slow call delays the requests queued behind it. Cancelled queued requests
+      are removed immediately. A running call cannot be interrupted;
+      cancellation discards its result. Polling and cancellation are thread-safe
+      and do not wait for [f] to finish. Exceptions from [f] are highlighting
+      failures of their request (see {!type-result}); the worker goes on with
+      the next one.
 
       The worker publishes the immutable result and schedules a render; the
       result is applied on the rendering thread.
 
       [f] must finish, must not mutate renderables, and must synchronize any
       state shared outside this highlighter. A view's state reaches [f] on one
-      thread at a time. Systhreads do not provide CPU parallelism. Native calls
-      that retain the OCaml runtime lock can still block rendering. Use {!async}
-      for a different execution policy. *)
+      thread at a time. On an executor of systhreads in the rendering domain,
+      native calls that retain the OCaml runtime lock can still block rendering.
+      Use {!async} for a different execution policy. *)
 
   val async : ('state request -> notify:(unit -> unit) -> 'state job) -> t
   (** [async f] is an asynchronous highlighter. [f] starts a job for a request.
