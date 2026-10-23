@@ -921,10 +921,10 @@ let run_case case =
       output_is_tty = true;
       controlling = false;
       on_fatal = ignore;
-      terminal_size = (fun () -> r.size);
+      fds = (fun ~reading:_ -> []);
+      terminal_size = (fun () -> Some r.size);
       set_raw_mode = ignore;
       flush_input = ignore;
-      protect = (fun f -> f ());
       cleanup = ignore;
       env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
     }
@@ -934,7 +934,7 @@ let run_case case =
       ~kitty_keyboard:`Off ~min_tui_height:case.min_live
       ~caps:(capabilities case) ()
   in
-  Matrix.run ~backend ~config (fun app ->
+  Matrix.run_on backend ~config (fun app ->
       (* Each frame of the case is set up, drawn and checked in turn. *)
       let next_frame () =
         match r.pending with

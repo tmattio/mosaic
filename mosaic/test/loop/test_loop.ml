@@ -1,7 +1,8 @@
-(* Full-loop tests: a real [Mosaic.run] application driven headlessly through
-   matrix.test — virtual clock, byte-level input, frame snapshots. The driver
-   is a scripted [on_idle]: each time the loop goes idle, one step runs, so
-   every step observes a fully rendered, quiescent frame. *)
+(* Full-loop tests: a real Mosaic application driven headlessly through
+   matrix.test — the test's clock, byte-level input, frame snapshots. The
+   test drives the program by its steps ([run]); each time the program goes
+   idle, a scripted [on_idle] runs one step of the test, so every step
+   observes a fully rendered, quiescent frame. *)
 
 open Windtrap
 
@@ -85,12 +86,54 @@ let rstrip_rows s =
 
 let replay_matches t ~width ~height =
   let vte = Vte.create ~rows:height ~cols:width () in
-  ignore (Vte.feed_string vte (Matrix_test.output t) : _ list);
+  ignore (Vte.feed_string vte (Matrix_test.written t) : _ list);
   equal ~msg:"replaying the emitted ANSI reconstructs the grid" text
     (rstrip_rows (Matrix_test.screen t))
     (rstrip_rows (Vte.to_string vte))
 
 let ns seconds = Float.to_int (Float.round (seconds *. 1e9))
+
+(* The times [sub] occurs in [s] from [from]. *)
+let occurrences ?(from = 0) s sub =
+  let n = String.length sub in
+  let count = ref 0 in
+  for i = from to String.length s - n do
+    if String.sub s i n = sub then incr count
+  done;
+  !count
+
+(* Whether a run over [t] took the terminal, reading the size the terminal
+   reported as it was made, and gave it back: no run holds it. *)
+let taken t = not (Matrix.Tty.readable (Matrix_test.input t))
+let given_back t = taken t && Matrix.holder () = None
+
+(* The run's time at which the test's clock started. *)
+let start t = Matrix_test.now t - Matrix_test.elapsed t
+
+(* Runs [application] over [t], the test driving it: each step at the
+   test's clock. When the program has nothing to do and nothing has come
+   for it, [on_idle t ~until] scripts what happens next, given the run's
+   deadline; if it returns without acting, it runs again. Without
+   [on_idle], the input ends at the first idle. *)
+let run ?config ?process_perform ?probe
+    ?(on_idle = fun t ~until:_ -> Matrix_test.stop t) t application =
+  Mosaic.start ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
+    ~config:(Option.value config ~default:(Matrix_test.config t))
+    ?process_perform ?probe application
+    (fun r ->
+      let rec loop () =
+        match Mosaic.step r ~now:(Matrix_test.now t) with
+        | `Stepped -> loop ()
+        | `Stopped -> ()
+        | `Idle ->
+            (match Mosaic.deadline r with
+            | Some deadline when deadline <= Matrix_test.now t -> ()
+            | until ->
+                if not (List.exists Matrix.Tty.readable (Mosaic.fds r)) then
+                  on_idle t ~until);
+            loop ()
+      in
+      loop ())
 
 let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
     steps =
@@ -119,7 +162,7 @@ let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
            generation at a time. Every timer deadline before [target] is
            observed as its own quiescent frame, and the step ends with the
            clock at exactly [target]. *)
-          let target = ns target in
+          let target = start t + ns target in
           let now = Matrix_test.now t in
           if now >= target then steps := rest
           else
@@ -144,9 +187,8 @@ let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
               snap t
           | `Run f -> f t))
   in
-  let t = Matrix_test.create ?mode ~on_idle ~width ~height () in
-  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-    ?process_perform ?probe application
+  let t = Matrix_test.create ?mode ~width ~height () in
+  run ?process_perform ?probe ~on_idle t application
 
 let on_keys _ = Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))
 
@@ -500,7 +542,7 @@ let%expect_test "replaying the output stream through a VTE matches the grid" =
       `Run
         (fun t ->
           let vte = Vte.create ~rows:2 ~cols:48 () in
-          ignore (Vte.feed_string vte (Matrix_test.output t) : _ list);
+          ignore (Vte.feed_string vte (Matrix_test.written t) : _ list);
           result := Some (Vte.to_string vte, Matrix_test.screen t));
     ];
   let replayed, screen = Option.get !result in
@@ -533,7 +575,7 @@ let%expect_test
     [
       `Run
         (fun t ->
-          let output = Matrix_test.output t in
+          let output = Matrix_test.written t in
           in_order ~msg:"blinking style follows cursor visibility"
             ~subs:[ "\027[?25h"; "\027[1 q" ]
             output);
@@ -625,10 +667,8 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
       | Some p when Mosaic.Probe.is_settled p -> Matrix_test.stop t
       | _ -> Thread.yield ()
   in
-  let t = Matrix_test.create ~on_idle ~width:48 ~height:2 () in
-  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-    ~probe:(fun p -> probe := Some p)
-    (app ~init_cmd:hammer ());
+  let t = Matrix_test.create ~width:48 ~height:2 () in
+  run ~on_idle t ~probe:(fun p -> probe := Some p) (app ~init_cmd:hammer ());
   snap t;
   [%expect {|
     |keys:[] ticks:6000000 size:- note:-
@@ -857,7 +897,7 @@ let%expect_test "a late unfocused editor never steals focus" =
       `Run
         (fun t ->
           not_contains ~msg:"late element must not steal focus" ~sub:"\027[?25h"
-            (Matrix_test.output t));
+            (Matrix_test.written t));
     ];
   [%expect {| |}]
 
@@ -958,7 +998,7 @@ let%expect_test "static output follows the terminal's width method" =
       `Run
         (fun t ->
           let vte = Vte.create ~rows:4 ~cols:6 () in
-          ignore (Vte.feed_string vte (Matrix_test.output t) : _ list);
+          ignore (Vte.feed_string vte (Matrix_test.written t) : _ list);
           print_string (rstrip_rows (Vte.to_string vte)));
     ];
   [%expect {|
@@ -978,7 +1018,7 @@ let%expect_test "static commit emits content taller than the viewport" =
     [
       `Run
         (fun t ->
-          let out = Matrix_test.output t in
+          let out = Matrix_test.written t in
           List.iter
             (fun line -> contains ~msg:(line ^ " emitted") ~sub:line out)
             lines);
@@ -1003,7 +1043,6 @@ let join_worker worker =
 
 let%expect_test "threaded highlighting wakes an idle application" =
   let released = Atomic.make false in
-  let woke = Atomic.make false in
   let worker = Atomic.make None in
   let highlighter =
     Mosaic.Code.Highlighter.threaded (fun { content; _ } ->
@@ -1045,7 +1084,14 @@ let%expect_test "threaded highlighting wakes an idle application" =
         | None -> fail "worker did not start"
       in
       join_worker thread;
-      is_true ~msg:"completion wakes the loop" (Atomic.get woke)
+      (* The worker's result is posted to the loop, which writes its wake:
+         a loop waiting for its descriptors would wake. *)
+      let woken =
+        match Matrix.holder () with
+        | Some (Held app) -> List.exists Matrix.Tty.readable (Matrix.fds app)
+        | None -> false
+      in
+      is_true ~msg:"completion wakes the loop" woken
     end
     else begin
       equal ~msg:"highlight applied without user input" string "done x"
@@ -1053,16 +1099,10 @@ let%expect_test "threaded highlighting wakes an idle application" =
       Matrix_test.stop t
     end
   in
-  let t =
-    Matrix_test.create
-      ~on_wake:(fun () -> Atomic.set woke true)
-      ~on_idle ~width:20 ~height:1 ()
-  in
+  let t = Matrix_test.create ~width:20 ~height:1 () in
   Fun.protect
     ~finally:(fun () -> Atomic.set released true)
-    (fun () ->
-      Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-        application);
+    (fun () -> run ~on_idle t application);
   [%expect {| |}]
 
 let%expect_test "application exit cancels queued highlighting" =
@@ -1103,7 +1143,7 @@ let%expect_test "application exit cancels queued highlighting" =
         if exceptional then failwith "application failed"
         else Matrix_test.stop t
       in
-      let t = Matrix_test.create ~on_idle ~width:20 ~height:2 () in
+      let t = Matrix_test.create ~width:20 ~height:2 () in
       Fun.protect
         ~finally:(fun () -> Atomic.set released true)
         (fun () ->
@@ -1111,12 +1151,8 @@ let%expect_test "application exit cancels queued highlighting" =
             raises_match ~msg:"application failure preserved"
               (function
                 | Failure message -> message = "application failed" | _ -> false)
-              (fun () ->
-                Mosaic.run ~backend:(Matrix_test.backend t)
-                  ~config:(Matrix_test.config t) application)
-          else
-            Mosaic.run ~backend:(Matrix_test.backend t)
-              ~config:(Matrix_test.config t) application);
+              (fun () -> run ~on_idle t application)
+          else run ~on_idle t application);
       join_worker (Option.get (Atomic.get worker));
       equal ~msg:"closed application leaves no queued work" (list string)
         [ "first" ] (Atomic.get calls))
@@ -1540,13 +1576,11 @@ let%expect_test "an on_size response that resizes its own node presents frames"
     }
   in
   let screens = ref [] in
-  let t =
-    Matrix_test.create ~width:60 ~height:2
-      ~on_idle:(fun t ~until ->
-        if not (Matrix_test.settle t ~until) then Matrix_test.stop t)
-      ()
-  in
-  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+  let t = Matrix_test.create ~width:60 ~height:2 () in
+  run
+    ~on_idle:(fun t ~until ->
+      if not (Matrix_test.settle t ~until) then Matrix_test.stop t)
+    t
     {
       application with
       update =
@@ -2116,27 +2150,26 @@ let%expect_test "a bubble listener sees a prevented key; a shortcut does not" =
    terminal given back. *)
 let%expect_test
     "exceptions in init and the first subscriptions give the terminal back" =
-  let cleanups = ref 0 in
+  (* What the run wrote: nothing when it never took the terminal, and the
+     alternate screen left when it gave it back. *)
   let raises ~msg application =
-    let t =
-      Matrix_test.create
-        ~on_idle:(fun t ~until:_ -> Matrix_test.stop t)
-        ~width:20 ~height:1 ()
-    in
-    let backend =
-      { (Matrix_test.backend t) with cleanup = (fun () -> incr cleanups) }
-    in
-    (match Mosaic.run ~backend ~config:(Matrix_test.config t) application with
+    let t = Matrix_test.create ~width:20 ~height:1 () in
+    (match run t application with
     | () -> fail (msg ^ ": no exception")
     | exception Failure m -> equal ~msg string msg m);
-    is_true ~msg:"no run holds the terminal" (Matrix.holder () = None)
+    is_true ~msg:"no run holds the terminal" (Matrix.holder () = None);
+    t
   in
   let base = app () in
-  raises ~msg:"init" { base with Mosaic.init = (fun () -> failwith "init") };
-  equal ~msg:"the terminal was never taken" int 0 !cleanups;
-  raises ~msg:"subscriptions"
-    { base with Mosaic.subscriptions = (fun _ -> failwith "subscriptions") };
-  equal ~msg:"the terminal was given back" int 1 !cleanups;
+  let t =
+    raises ~msg:"init" { base with Mosaic.init = (fun () -> failwith "init") }
+  in
+  is_false ~msg:"the terminal was never taken" (taken t);
+  let t =
+    raises ~msg:"subscriptions"
+      { base with Mosaic.subscriptions = (fun _ -> failwith "subscriptions") }
+  in
+  is_true ~msg:"the terminal was given back" (given_back t);
   [%expect {| |}]
 
 (* Ctrl+C quits unless a handler prevented it. *)
@@ -2162,7 +2195,7 @@ let%expect_test "an unprevented Ctrl+C quits" =
 
 let terminal = ref None
 let stall seconds = Matrix_test.advance (Option.get !terminal) (ns seconds)
-let clock () = Matrix_test.now (Option.get !terminal)
+let clock () = Matrix_test.elapsed (Option.get !terminal)
 
 type timed = Stall | Fired of string * int
 
@@ -2185,14 +2218,13 @@ let run_until seconds application =
   let target = ns seconds in
   let on_idle t ~until =
     match until with
-    | Some until when until <= target ->
+    | Some until when until - start t <= target ->
         Matrix_test.advance t (until - Matrix_test.now t)
     | Some _ | None -> Matrix_test.stop t
   in
-  let t = Matrix_test.create ~on_idle ~width:20 ~height:1 () in
+  let t = Matrix_test.create ~width:20 ~height:1 () in
   terminal := Some t;
-  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-    application
+  run ~on_idle t application
 
 let on_s msg =
   Mosaic.Sub.on_key (fun key -> if key_name key = "s" then Some msg else None)
@@ -2401,20 +2433,17 @@ let%expect_test "T4: a tick's first dt is 0, after any idle time" =
             ]);
     }
   in
-  let t =
-    Matrix_test.create ~width:20 ~height:1
-      ~on_idle:(fun t ~until ->
-        match until with
-        | _ when Matrix_test.now t = 0 ->
-            Matrix_test.advance t (ns 10.);
-            Matrix_test.feed t "s"
-        | Some until when until <= ns 10.05 ->
-            Matrix_test.advance t (until - Matrix_test.now t)
-        | Some _ | None -> Matrix_test.stop t)
-      ()
-  in
-  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-    application;
+  let t = Matrix_test.create ~width:20 ~height:1 () in
+  run
+    ~on_idle:(fun t ~until ->
+      match until with
+      | _ when Matrix_test.elapsed t = 0 ->
+          Matrix_test.advance t (ns 10.);
+          Matrix_test.feed t "s"
+      | Some until when until - start t <= ns 10.05 ->
+          Matrix_test.advance t (until - Matrix_test.now t)
+      | Some _ | None -> Matrix_test.stop t)
+    t application;
   List.rev !dts
   |> List.iteri (fun i dt -> if i < 3 then Printf.printf "dt %.4f\n" dt);
   [%expect {|
@@ -2481,16 +2510,14 @@ let%expect_test "frames keep coming while posted messages are applied" =
       subscriptions = (fun _ -> on_s `Go);
     }
   in
-  let t =
-    Matrix_test.create ~width:20 ~height:1
-      ~on_idle:(fun t ~until ->
-        if not (Matrix_test.settle t ~until) then
-          if Matrix_test.now t = 0 then Matrix_test.feed t "s"
-          else Matrix_test.stop t)
-      ()
-  in
+  let t = Matrix_test.create ~width:20 ~height:1 () in
   terminal := Some t;
-  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+  run
+    ~on_idle:(fun t ~until ->
+      if not (Matrix_test.settle t ~until) then
+        if Matrix_test.elapsed t = 0 then Matrix_test.feed t "s"
+        else Matrix_test.stop t)
+    t
     ~process_perform:(fun work -> work ())
     application;
   let views = List.rev !views in
@@ -2524,7 +2551,6 @@ let capturing_stderr f =
 
 let%expect_test "X2: an exception in a perform ends the run" =
   Printexc.record_backtrace true;
-  let cleanups = ref 0 in
   let application =
     app
       ~init_cmd:(Mosaic.Cmd.perform (fun _ -> failwith "perform-thread"))
@@ -2534,21 +2560,14 @@ let%expect_test "X2: an exception in a perform ends the run" =
   (* The run ends when the loop takes the worker's exception; a minute
      guards against one that never comes. *)
   let started = Unix.gettimeofday () in
-  let t =
-    Matrix_test.create ~width:20 ~height:1
-      ~on_idle:(fun t ~until:_ ->
-        if Unix.gettimeofday () -. started > 60. then Matrix_test.stop t
-        else Thread.delay 0.001)
-      ()
+  let on_idle t ~until:_ =
+    if Unix.gettimeofday () -. started > 60. then Matrix_test.stop t
+    else Thread.delay 0.001
   in
-  let backend =
-    { (Matrix_test.backend t) with cleanup = (fun () -> incr cleanups) }
-  in
+  let t = Matrix_test.create ~width:20 ~height:1 () in
   let err =
     capturing_stderr (fun () ->
-        match
-          Mosaic.run ~backend ~config:(Matrix_test.config t) application
-        with
+        match run ~on_idle t application with
         | () -> print_endline "the run ended without the exception"
         | exception Failure m ->
             let bt = Printexc.get_backtrace () in
@@ -2561,7 +2580,7 @@ let%expect_test "X2: an exception in a perform ends the run" =
             Printf.printf "raised %S, from the worker's raise: %b\n" m
               names_the_raise)
   in
-  Printf.printf "terminal given back: %b; standard error: %S\n" (!cleanups = 1)
+  Printf.printf "terminal given back: %b; standard error: %S\n" (given_back t)
     err;
   [%expect
     {|
@@ -2593,9 +2612,8 @@ let run_live ?process_perform steps application =
             Matrix_test.stop t)
           else Thread.delay 0.001
   in
-  let t = Matrix_test.create ~on_idle ~width:20 ~height:1 () in
-  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-    ?process_perform application
+  let t = Matrix_test.create ~width:20 ~height:1 () in
+  run ~on_idle t ?process_perform application
 
 let locked = Mutex.create ()
 let record log s = Mutex.protect locked (fun () -> log := s :: !log)
@@ -2814,24 +2832,22 @@ let%expect_test "a posted message that changes nothing asks for no frame" =
   let application =
     app ~init_cmd:(Mosaic.Cmd.perform (fun m -> dispatch := m.dispatch)) ()
   in
-  let t =
-    Matrix_test.create ~width:40 ~height:1
-      ~on_idle:(fun t ~until ->
-        let owed = Matrix_test.frame_owed t in
-        incr step;
-        match !step with
-        | 1 -> ignore (Matrix_test.settle t ~until : bool)
-        | 2 -> List.iter !dispatch [ Ignored; Ignored; Ignored ]
-        | 3 ->
-            Printf.printf "after messages that change nothing: %b\n" owed;
-            !dispatch (Note "changed")
-        | 4 ->
-            Printf.printf "after one that changes the model: %b\n" owed;
-            Matrix_test.stop t
-        | _ -> Matrix_test.stop t)
-      ()
-  in
-  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+  let t = Matrix_test.create ~width:40 ~height:1 () in
+  run
+    ~on_idle:(fun t ~until ->
+      let owed = Matrix_test.frame_owed t in
+      incr step;
+      match !step with
+      | 1 -> ignore (Matrix_test.settle t ~until : bool)
+      | 2 -> List.iter !dispatch [ Ignored; Ignored; Ignored ]
+      | 3 ->
+          Printf.printf "after messages that change nothing: %b\n" owed;
+          !dispatch (Note "changed")
+      | 4 ->
+          Printf.printf "after one that changes the model: %b\n" owed;
+          Matrix_test.stop t
+      | _ -> Matrix_test.stop t)
+    t
     ~process_perform:(fun work -> work ())
     application;
   [%expect
@@ -2863,33 +2879,24 @@ let%expect_test "C1: a read of 1,000 keys is 1,000 updates, painted each frame"
       subscriptions = (fun _ -> Mosaic.Sub.on_key (fun _ -> Some ()));
     }
   in
-  let t =
-    Matrix_test.create ~width:20 ~height:1
-      ~on_idle:(fun t ~until ->
-        if not (Matrix_test.settle t ~until) then
-          if not !counting then (
-            counting := true;
-            views := 0;
-            writes := 0;
-            Matrix_test.feed t (String.make 1000 'a'))
-          else Matrix_test.stop t)
-      ()
+  let mark = ref 0 in
+  let on_idle t ~until =
+    if not (Matrix_test.settle t ~until) then
+      if not !counting then (
+        counting := true;
+        views := 0;
+        mark := String.length (Matrix_test.written t);
+        Matrix_test.feed t (String.make 1000 'a'))
+      else Matrix_test.stop t
   in
+  let t = Matrix_test.create ~width:20 ~height:1 () in
   terminal := Some t;
-  let backend = Matrix_test.backend t in
-  let backend =
-    {
-      backend with
-      write_output =
-        (fun b off len ->
-          if !counting then incr writes;
-          backend.write_output b off len);
-    }
-  in
-  Mosaic.run ~backend ~config:(Matrix_test.config t) application;
+  run ~on_idle t application;
+  (* Every frame written begins by hiding the cursor. *)
+  writes := occurrences ~from:!mark (Matrix_test.written t) "\027[?25l";
   Printf.printf "%d updates, %d views, %d paints in %d ms\n" !updates !views
     !writes
-    (Matrix_test.now t / 1_000_000);
+    (Matrix_test.elapsed t / 1_000_000);
   [%expect {| 1000 updates, 1000 views, 6 paints in 100 ms |}]
 
 let%expect_test "C2: quit ends the run; keys read after it are dropped" =
@@ -3038,41 +3045,7 @@ let%expect_test "timers follow the reference model" =
       }
     in
     let pending = ref None in
-    let t =
-      Matrix_test.create ~width:20 ~height:1
-        ~on_idle:(fun t ~until ->
-          let now = Matrix_test.now t in
-          events := `Turn now :: !events;
-          match !pending with
-          | Some target when now < target ->
-              (* Step to the loop's deadlines as often as past them. *)
-              let step =
-                match until with
-                | Some until when until > now && Random.State.bool rand ->
-                    min (until - now) (target - now)
-                | _ -> target - now
-              in
-              Matrix_test.advance t step
-          | _ -> (
-              match !script with
-              | [] -> Matrix_test.stop t
-              | (set, gap) :: rest ->
-                  script := rest;
-                  pending := Some (now + gap);
-                  events := `Declare (now, set) :: !events;
-                  Matrix_test.feed_event t
-                    (Matrix.Key
-                       {
-                         Matrix.Input.Keystroke.key = Char (Uchar.of_char 'x');
-                         mods = Matrix.Input.Keystroke.no_mods;
-                         text = "x";
-                         base = None;
-                         keypad = false;
-                         repeat = false;
-                       });
-                  declare := set))
-        ()
-    in
+    let t = Matrix_test.create ~width:20 ~height:1 () in
     terminal := Some t;
     let application =
       {
@@ -3086,8 +3059,40 @@ let%expect_test "timers follow the reference model" =
               ]);
       }
     in
-    Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-      application;
+    run
+      ~on_idle:(fun t ~until ->
+        let now = Matrix_test.elapsed t in
+        let until = Option.map (fun until -> until - start t) until in
+        events := `Turn now :: !events;
+        match !pending with
+        | Some target when now < target ->
+            (* Step to the loop's deadlines as often as past them. *)
+            let step =
+              match until with
+              | Some until when until > now && Random.State.bool rand ->
+                  min (until - now) (target - now)
+              | _ -> target - now
+            in
+            Matrix_test.advance t step
+        | _ -> (
+            match !script with
+            | [] -> Matrix_test.stop t
+            | (set, gap) :: rest ->
+                script := rest;
+                pending := Some (now + gap);
+                events := `Declare (now, set) :: !events;
+                Matrix_test.feed_event t
+                  (Matrix.Key
+                     {
+                       Matrix.Input.Keystroke.key = Char (Uchar.of_char 'x');
+                       mods = Matrix.Input.Keystroke.no_mods;
+                       text = "x";
+                       base = None;
+                       keypad = false;
+                       repeat = false;
+                     });
+                declare := set))
+      t application;
     let expected = reference_timers (List.rev !events) in
     total := !total + List.length expected;
     List.iter (fun (_, _, k) -> if k > 1 then incr counted) expected;
@@ -3153,13 +3158,9 @@ let%expect_test "a perform's send returns once update has applied the message" =
    dispatched from elsewhere reaches [update], and the end of the input is
    [`Stopped]. *)
 let%expect_test "a caller drives a started program by its steps" =
-  let t =
-    Matrix_test.create
-      ~on_idle:(fun _ ~until:_ -> failwith "the program waited")
-      ~width:48 ~height:1 ()
-  in
-  Mosaic.start ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-    (app ~subs:on_keys ()) (fun r ->
+  let t = Matrix_test.create ~width:48 ~height:1 () in
+  Mosaic.start ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
+    ~config:(Matrix_test.config t) (app ~subs:on_keys ()) (fun r ->
       let rec until_idle () =
         match Mosaic.step r ~now:(Matrix_test.now t) with
         | `Stepped -> until_idle ()

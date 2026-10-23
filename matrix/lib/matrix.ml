@@ -48,6 +48,10 @@ let pp_event ppf = function
 
 module Signal = Tty.Signal
 
+(* The device a run drives: a terminal's input and output, a clock, and a
+   way to wait for them. A run decodes, negotiates and schedules; a device
+   moves bytes and waits. [unix] is the device of every run; the runtime's
+   own tests build others, whose clock and input they script. *)
 module Backend = struct
   type signal = Winch | Cont | Tstp | Terminate of int
 
@@ -55,35 +59,20 @@ module Backend = struct
     now : unit -> int;
     wait : until:int option -> reading:bool -> bool;
     wake : unit -> unit;
+    fds : reading:bool -> Unix.file_descr list;
     take_signals : unit -> signal list;
     read_input : bytes -> int -> int -> int;
     write_output : bytes -> int -> int -> unit;
-    terminal_size : unit -> int * int;
+    terminal_size : unit -> (int * int) option;
     set_raw_mode : bool -> unit;
     flush_input : unit -> unit;
     input_is_tty : bool;
     output_is_tty : bool;
     controlling : bool;
     on_fatal : string -> unit;
-    protect : (unit -> unit) -> unit;
     cleanup : unit -> unit;
     env : Terminal.Caps.env;
   }
-
-  (* The input and the wake pipe of the backends [unix] made, by their
-     [wake], which a backend built from one keeps. *)
-  let pipes : ((unit -> unit) * (Unix.file_descr * Unix.file_descr)) list ref =
-    ref []
-
-  let pipes_lock = Mutex.create ()
-
-  let descriptors b =
-    Mutex.protect pipes_lock (fun () -> List.assq_opt b.wake !pipes)
-
-  let wake_fd b =
-    match descriptors b with
-    | Some (_, wake) -> wake
-    | None -> invalid_arg "Matrix.Backend.wake_fd: not a backend unix made"
 
   let drain fd =
     let buf = Bytes.create 64 in
@@ -95,23 +84,28 @@ module Backend = struct
     in
     go ()
 
-  (* The signals the handlers recorded for holder [h], in the order of this
-     list. *)
-  let signals_from_handlers h () =
-    let take acc (s, signal) =
-      if Signal.received h s then signal :: acc else acc
-    in
-    List.rev
-      (List.fold_left take []
-         [
-           (Sys.sigwinch, Winch);
-           (Sys.sigcont, Cont);
-           (Sys.sigtstp, Tstp);
-           (Sys.sigint, Terminate Sys.sigint);
-           (Sys.sigterm, Terminate Sys.sigterm);
-           (Sys.sighup, Terminate Sys.sighup);
-           (Sys.sigquit, Terminate Sys.sigquit);
-         ])
+  let handled =
+    [|
+      (Sys.sigwinch, Winch);
+      (Sys.sigcont, Cont);
+      (Sys.sigtstp, Tstp);
+      (Sys.sigint, Terminate Sys.sigint);
+      (Sys.sigterm, Terminate Sys.sigterm);
+      (Sys.sighup, Terminate Sys.sighup);
+      (Sys.sigquit, Terminate Sys.sigquit);
+    |]
+
+  (* The signals the handlers recorded for holder [h], in the order of
+     [handled], from its [i]th on. Every turn asks, so none received
+     allocates nothing. *)
+  let rec received_from h i =
+    if i = Array.length handled then []
+    else
+      let s, signal = handled.(i) in
+      if Signal.received h s then signal :: received_from h (i + 1)
+      else received_from h (i + 1)
+
+  let signals_from_handlers h () = received_from h 0
 
   let rec read_input fd buf off len =
     match Unix.read fd buf off len with
@@ -119,18 +113,35 @@ module Backend = struct
     | exception Unix.Unix_error (Unix.EINTR, _, _) -> read_input fd buf off len
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) -> -1
 
-  let unix ?(input = Unix.stdin) ?(output = Unix.stdout) () =
+  (* The environment of the process, with the description the terminfo
+     database has for its [TERM]. *)
+  let process_env () =
+    let terminfo =
+      match Sys.getenv_opt "TERM" with
+      | Some term -> Result.to_option (Tty.terminfo term)
+      | None -> None
+    in
+    Terminal.Caps.env ?terminfo Sys.getenv_opt ~win32:Sys.win32
+
+  (* A run on descriptors. Its wait is [select(2)] on the input and the
+     holder's wake pipe, which [post] and the signal handlers write; a wait
+     until a time already past looks with [Tty.readable] instead, which
+     allocates nothing. On Windows the wake would have to be a socket, the
+     one kind of descriptor [Unix.select] waits on without polling, and the
+     console's handle could never be among the descriptors, since waiting
+     on it through [Unix.select] reads away its records that are not keys;
+     [Signal.hold] fails there, so no run starts. *)
+  let unix ?(input = Unix.stdin) ?(output = Unix.stdout) ?env () =
     let input_is_tty = Tty.is_tty input in
     let output_is_tty = Tty.is_tty output in
     let controlling = Tty.is_controlling input || Tty.is_controlling output in
+    let env = match env with Some env -> env | None -> process_env () in
     let holder =
       Signal.hold ~controlling
         ~output:(if output_is_tty then Some output else None)
     in
     let wake_r = Signal.wake_fd holder in
-    let wake () = Signal.wake holder in
-    Mutex.protect pipes_lock (fun () ->
-        pipes := (wake, (input, wake_r)) :: !pipes);
+    let both = [ input; wake_r ] and wake_only = [ wake_r ] in
     let saved = ref None in
     let set_raw_mode raw =
       match (raw, !saved) with
@@ -149,54 +160,45 @@ module Backend = struct
       | _ -> ()
     in
     let wait ~until ~reading =
-      let fds = if reading then [ input; wake_r ] else [ wake_r ] in
-      let timeout =
-        match until with
-        | None -> -1.
-        | Some until ->
-            let now = Tty.now () in
-            if until <= now then 0. else Float.of_int (until - now) *. 1e-9
-      in
-      let readable, _, _ =
-        try Unix.select fds [] [] timeout
-        with Unix.Unix_error (Unix.EINTR, _, _) -> ([], [], [])
-      in
-      if List.mem wake_r readable then drain wake_r;
-      reading && List.mem input readable
+      let now = match until with Some _ -> Tty.now () | None -> 0 in
+      match until with
+      | Some until when until <= now ->
+          if Tty.readable wake_r then drain wake_r;
+          reading && Tty.readable input
+      | _ ->
+          let timeout =
+            match until with
+            | None -> -1.
+            | Some until -> Float.of_int (until - now) *. 1e-9
+          in
+          let readable, _, _ =
+            try Unix.select (if reading then both else wake_only) [] [] timeout
+            with Unix.Unix_error (Unix.EINTR, _, _) -> ([], [], [])
+          in
+          if List.mem wake_r readable then drain wake_r;
+          reading && List.mem input readable
     in
     {
       now = Tty.now;
       wait;
-      wake;
+      wake = (fun () -> Signal.wake holder);
+      fds = (fun ~reading -> if reading then both else wake_only);
       take_signals = signals_from_handlers holder;
       read_input = read_input input;
       write_output = Signal.write holder output;
-      (* A descriptor with no window, a pipe or a file, is given the size
-         of a classic terminal. *)
-      terminal_size =
-        (fun () -> Option.value (Tty.window output) ~default:(80, 24));
+      terminal_size = (fun () -> Tty.window output);
       set_raw_mode;
       flush_input = (fun () -> if input_is_tty then Tty.flush_input input);
       input_is_tty;
       output_is_tty;
       controlling;
       on_fatal = Signal.set_reset holder;
-      protect = (fun f -> f ());
       cleanup =
         (fun () ->
           Fun.protect
             (fun () -> set_raw_mode false)
-            ~finally:(fun () ->
-              Signal.release holder;
-              Mutex.protect pipes_lock (fun () ->
-                  pipes := List.filter (fun (w, _) -> w != wake) !pipes)));
-      env =
-        (let terminfo =
-           match Sys.getenv_opt "TERM" with
-           | Some term -> Result.to_option (Tty.terminfo term)
-           | None -> None
-         in
-         Terminal.Caps.env ?terminfo Sys.getenv_opt ~win32:Sys.win32);
+            ~finally:(fun () -> Signal.release holder));
+      env;
     }
 end
 
@@ -321,8 +323,6 @@ type 'msg app = {
   events : event Queue.t;
   config : config;
   backend : Backend.t;
-  (* The input and the wake of a backend [Backend.unix] made. *)
-  descriptors : (Unix.file_descr * Unix.file_descr) option;
   owner : int;
   screen : Screen.t;
   (* One retained writer owns the complete terminal frame. *)
@@ -386,9 +386,6 @@ type 'msg app = {
   mutable frame_follows : bool;
   mutable frame_modes_armed : bool;
   mutable restore_modes_on_next_focus : bool;
-  (* While [wait] runs, the application must not call in: an Eio fiber on
-     the loop's thread could. *)
-  mutable waiting_backend : bool;
   mutable released : bool;
   (* Signals the run took, to restore when it ends. *)
   mutable taken : int list;
@@ -424,9 +421,7 @@ let thread_id () = Thread.id (Thread.self ())
 
 let check t =
   if thread_id () <> t.owner then
-    invalid_arg "Matrix: called off the thread that runs the application";
-  if t.waiting_backend then
-    invalid_arg "Matrix: called while the loop waits in its backend"
+    invalid_arg "Matrix: called off the thread that runs the application"
 
 (* Heap *)
 
@@ -501,6 +496,12 @@ let sync_primary_layout t ~resize =
   if resize then Screen.resize t.screen ~width:t.width ~height:region.height
 
 let force_full_redraw t = t.force_full_next_frame <- true
+
+(* The terminal's size as its device has it. An output with no window, a
+   pipe, a file or a socket, keeps the size its terminal last reported in
+   band (mode 2048). *)
+let device_size t =
+  Option.value (t.backend.terminal_size ()) ~default:(t.width, t.height)
 
 (* Accessors *)
 
@@ -880,16 +881,7 @@ let read_input t ~ready =
 
 (* Waits in the backend, which says whether the input is readable. A wait
    until a time already past ([past]) looks without waiting. *)
-let wait_only t ~until =
-  t.waiting_backend <- true;
-  match t.backend.wait ~until ~reading:(not t.input_ended) with
-  | ready ->
-      t.waiting_backend <- false;
-      ready
-  | exception exn ->
-      t.waiting_backend <- false;
-      raise exn
-
+let wait_only t ~until = t.backend.wait ~until ~reading:(not t.input_ended)
 let past = Some min_int
 
 (* The run's own waits, as it takes and gives back the terminal, are on its
@@ -1003,7 +995,7 @@ let static_clear t =
     t.last_cursor_position <- Some (1, 1);
     t.cursor_live_row <- Some 0;
     force_full_redraw t;
-    let cols, rows = t.backend.terminal_size () in
+    let cols, rows = device_size t in
     t.width <- max 1 cols;
     t.height <- max 1 rows;
     refresh_render_region t;
@@ -1245,7 +1237,7 @@ let apply_size t =
   let cols, rows =
     match t.size_report with
     | Applied -> (t.width, t.height)
-    | Read -> t.backend.terminal_size ()
+    | Read -> device_size t
     | Reported (cols, rows) -> (cols, rows)
   in
   t.size_report <- Applied;
@@ -1296,14 +1288,12 @@ let run_undos t ~exiting =
   let undos = t.undo in
   t.undo <- [];
   let first = ref None in
-  t.backend.protect (fun () ->
-      List.iter
-        (fun undo ->
-          try undo ~exiting
-          with exn ->
-            if !first = None then
-              first := Some (exn, Printexc.get_raw_backtrace ()))
-        undos);
+  List.iter
+    (fun undo ->
+      try undo ~exiting
+      with exn ->
+        if !first = None then first := Some (exn, Printexc.get_raw_backtrace ()))
+    undos;
   Option.iter (fun (exn, bt) -> Printexc.raise_with_backtrace exn bt) !first
 
 (* Signals, which the runtime takes as Tty.Signal's policy says, for
@@ -1466,12 +1456,11 @@ let settle t =
    report that says where the live region went is waited for with the
    replies owed. *)
 let give_back t ~exiting =
-  t.backend.protect (fun () ->
-      try
-        t.size_report <- Read;
-        apply_size t;
-        settle t
-      with _ -> ());
+  (try
+     t.size_report <- Read;
+     apply_size t;
+     settle t
+   with _ -> ());
   run_undos t ~exiting
 
 (* The batch that waited for the ones dropped is sent. *)
@@ -1490,7 +1479,7 @@ let take_again t =
   take_fatal_reset t;
   take_raw_mode t;
   t.backend.flush_input ();
-  let cols, rows = t.backend.terminal_size () in
+  let cols, rows = device_size t in
   t.width <- max 1 cols;
   t.height <- max 1 rows;
   t.size_report <- Applied;
@@ -1754,9 +1743,7 @@ let deadline t =
 
 let fds t =
   check t;
-  match t.descriptors with
-  | Some (input, wake) -> if t.input_ended then [ wake ] else [ input; wake ]
-  | None -> []
+  t.backend.fds ~reading:(not t.input_ended)
 
 let clock = Tty.now
 
@@ -1784,7 +1771,9 @@ let make backend config =
         backend.write_output (Bytes.unsafe_of_string s) 0 (String.length s))
       (Terminal.Caps.derive evidence)
   in
-  let cols, rows = backend.terminal_size () in
+  (* An output with no window has the size of a classic terminal until its
+     terminal reports one. *)
+  let cols, rows = Option.value (backend.terminal_size ()) ~default:(80, 24) in
   let width = max 1 cols and height = max 1 rows in
   let cursor_visible =
     Option.value config.cursor_visible ~default:(config.mode = `Alt)
@@ -1808,7 +1797,6 @@ let make backend config =
     events = Queue.create ();
     config;
     backend;
-    descriptors = Backend.descriptors backend;
     owner = thread_id ();
     screen;
     submit_buf = Ansi.Writer.create 4096;
@@ -1848,7 +1836,6 @@ let make backend config =
     frame_follows = false;
     frame_modes_armed = false;
     restore_modes_on_next_focus = false;
-    waiting_backend = false;
     released = false;
     taken = [];
     kept = [];
@@ -1877,7 +1864,7 @@ let probe t =
       send_batch t (Capabilities Probe) (Terminal.Caps.ask t.evidence Probe)
     in
     await t ~from:b.sent [ b ];
-    let cols, rows = t.backend.terminal_size () in
+    let cols, rows = device_size t in
     t.width <- max 1 cols;
     t.height <- max 1 rows;
     t.primary <-
@@ -1969,22 +1956,21 @@ let unhold t =
   Mutex.protect runs_lock (fun () ->
       runs := List.filter (fun (Held app) -> app.serial <> t.serial) !runs)
 
-let run ?backend ?(config = config ()) f =
-  let backend = match backend with Some b -> b | None -> Backend.unix () in
+let run_on backend ?(config = config ()) f =
   let t =
     try make backend config
     with exn ->
       let bt = Printexc.get_raw_backtrace () in
-      (try backend.protect backend.cleanup with _ -> ());
+      (try backend.Backend.cleanup () with _ -> ());
       Printexc.raise_with_backtrace exn bt
   in
   if not (hold t) then (
-    (try backend.protect backend.cleanup with _ -> ());
+    (try backend.cleanup () with _ -> ());
     invalid_arg "Matrix.run: another run holds the terminal");
   let finish () =
     Atomic.set t.accepting false;
     unhold t;
-    t.backend.protect t.backend.cleanup
+    t.backend.cleanup ()
   in
   let teardown () =
     Fun.protect ~finally:finish (fun () ->
@@ -2002,6 +1988,9 @@ let run ?backend ?(config = config ()) f =
       let bt = Printexc.get_raw_backtrace () in
       (try teardown () with _ -> ());
       Printexc.raise_with_backtrace exn bt
+
+let run ?input ?output ?env ?config f =
+  run_on (Backend.unix ?input ?output ?env ()) ?config f
 
 (* Diagnostics *)
 

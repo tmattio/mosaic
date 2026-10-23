@@ -61,11 +61,23 @@ let drive ?(focused = true) ?(disabled = false) ?(accept_focus = true)
           else Mosaic.Sub.none);
     }
   in
-  let terminal = Matrix_test.create ~width:20 ~height:2 ~on_idle () in
-  Mosaic.run
-    ~backend:(Matrix_test.backend terminal)
-    ~config:(Matrix_test.config terminal)
-    application;
+  let terminal = Matrix_test.create ~width:20 ~height:2 () in
+  (* The test drives the program, scripting a step whenever it is idle. *)
+  Mosaic.start ~input:(Matrix_test.input terminal)
+    ~output:(Matrix_test.output terminal) ~config:(Matrix_test.config terminal)
+    application (fun r ->
+      let rec loop () =
+        match Mosaic.step r ~now:(Matrix_test.now terminal) with
+        | `Stepped -> loop ()
+        | `Stopped -> ()
+        | `Idle ->
+            (match Mosaic.deadline r with
+            | Some deadline when deadline <= Matrix_test.now terminal -> ()
+            | until -> on_idle terminal ~until);
+            loop ()
+      in
+      loop ());
+  Matrix_test.close terminal;
   trace
 
 let activation_count trace =

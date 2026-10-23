@@ -14,14 +14,14 @@ let backend () : Matrix.Backend.t =
     take_signals = (fun () -> []);
     read_input = (fun _ _ _ -> -1);
     write_output = (fun _bytes _off _len -> ());
-    terminal_size = (fun () -> (160, 48));
+    fds = (fun ~reading:_ -> []);
+    terminal_size = (fun () -> Some (160, 48));
     set_raw_mode = (fun _ -> ());
     flush_input = (fun () -> ());
     input_is_tty = false;
     output_is_tty = false;
     controlling = false;
     on_fatal = ignore;
-    protect = (fun f -> f ());
     cleanup = (fun () -> ());
     env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
   }
@@ -37,7 +37,7 @@ let frame app draw =
   | _ -> failwith "runtime benchmark: no frame"
 
 let () =
-  Matrix.run ~backend:(backend ()) ~config @@ fun app ->
+  Matrix.run_on (backend ()) ~config @@ fun app ->
   frame app ignore;
   frame app ignore;
   let no_changes =

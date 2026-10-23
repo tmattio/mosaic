@@ -124,14 +124,14 @@ let backend f : Matrix.Backend.t =
         f.fail_write s;
         Buffer.add_string f.output s;
         match f.answer s with "" -> () | r -> f.input <- f.input @ [ r ]);
-    terminal_size = (fun () -> f.size);
+    fds = (fun ~reading:_ -> []);
+    terminal_size = (fun () -> Some f.size);
     set_raw_mode = (fun raw -> f.raw <- raw :: f.raw);
     flush_input = (fun () -> f.flushes <- f.flushes + 1);
     input_is_tty = f.tty;
     output_is_tty = f.tty;
     controlling = f.tty;
     on_fatal = ignore;
-    protect = (fun f -> f ());
     cleanup = (fun () -> f.cleanups <- f.cleanups + 1);
     env = no_env;
   }
@@ -140,7 +140,7 @@ let quiet ?(mode = `Alt) ?(fps = 60.) ?caps ?(min_tui_height = 1) () =
   Matrix.config ~mode ~fps ~mouse:`Off ~bracketed_paste:false
     ~kitty_keyboard:`Off ?caps ~min_tui_height ()
 
-let run ?config f body = Matrix.run ~backend:(backend f) ?config body
+let run ?config f body = Matrix.run_on (backend f) ?config body
 
 (* The next step that is not a frame; frames met meanwhile are drawn
    empty. *)
@@ -442,7 +442,7 @@ let test_frame_property () =
     in
     let waits = ref 0 in
     let resizes_ok = ref true in
-    Matrix.run ~backend ~config:(quiet ()) (fun app ->
+    Matrix.run_on backend ~config:(quiet ()) (fun app ->
         f.on_wait <-
           (fun f ~until ->
             incr waits;
@@ -584,7 +584,7 @@ let test_turn_budget_property () =
     let keys = ref [] and posts = Array.make 3 [] in
     let typed = ref 0 and posted = Array.make 3 0 and waits = ref 0 in
     let work = ref [] in
-    Matrix.run ~backend ~config:(quiet ()) (fun app ->
+    Matrix.run_on backend ~config:(quiet ()) (fun app ->
         f.on_wait <-
           (fun f ~until ->
             incr waits;
@@ -784,24 +784,6 @@ let test_frame_calls_outside_a_frame () =
         (fun () -> Matrix.draw app ignore);
       match Matrix.next app with Stopped -> () | _ -> fail "Stopped again")
 
-(* An Eio fiber on the loop's thread could call in while the loop waits in
-   its backend: such a call raises. *)
-let test_call_while_waiting () =
-  let f = fake () in
-  let raised = ref false in
-  f.on_wait <-
-    (fun f ~until:_ ->
-      f.eof <- true;
-      match Matrix.holder () with
-      | Some (Held app) -> (
-          try Matrix.request_redraw app
-          with Invalid_argument _ -> raised := true)
-      | None -> ());
-  run ~config:(quiet ()) f (fun app -> ignore (drain app : _ list));
-  is_true ~msg:"raises" !raised
-
-(* Lifecycle *)
-
 let test_run_gives_back_on_exception () =
   let f = fake ~tty:true () in
   f.answer <-
@@ -911,7 +893,7 @@ let test_setup_rolls_back () =
     Fun.protect
       ~finally:(fun () -> Printexc.record_backtrace recording)
       (fun () ->
-        match Matrix.run ~backend ignore with
+        match Matrix.run_on backend ignore with
         | () -> None
         | exception exn -> Some (exn, Printexc.get_raw_backtrace ()))
   in
@@ -932,15 +914,15 @@ let test_setup_rolls_back () =
 let test_nested_runs () =
   let f = fake () in
   let controlling f = { (backend f) with controlling = true } in
-  Matrix.run ~backend:(controlling f) ~config:(quiet ()) (fun app ->
+  Matrix.run_on (controlling f) ~config:(quiet ()) (fun app ->
       raises_match ~msg:"a run inside a run"
         (function Invalid_argument _ -> true | _ -> false)
         (fun () ->
-          Matrix.run ~backend:(controlling (fake ())) ~config:(quiet ()) ignore);
+          Matrix.run_on (controlling (fake ())) ~config:(quiet ()) ignore);
       run ~config:(quiet ()) (fake ()) ignore;
       let inner = fake () in
       Matrix.release app (fun () ->
-          Matrix.run ~backend:(controlling inner) ~config:(quiet ()) ignore);
+          Matrix.run_on (controlling inner) ~config:(quiet ()) ignore);
       equal ~msg:"the inner run ran" int 1 inner.cleanups;
       raises_match ~msg:"a release inside a release"
         (function Invalid_argument _ -> true | _ -> false)
@@ -961,34 +943,6 @@ let test_runs_on_other_terminals () =
   let a = session () and b = session () in
   equal ~msg:"both ran" (pair int int) (1, 1) (Domain.join a, Domain.join b)
 
-(* Giving the terminal back waits for the replies owed under the backend's
-   protection: an Eio backend's waits raise in a cancelled fiber unless
-   protected, and a run often ends by its fiber's cancellation. *)
-let test_settle_under_protect () =
-  let f = fake ~tty:true () in
-  f.answer <- probe_answer;
-  let protected = ref false and ending = ref false and exposed = ref 0 in
-  let b = backend f in
-  let backend =
-    {
-      b with
-      wait =
-        (fun ~until ~reading ->
-          if !ending && not !protected then incr exposed;
-          b.wait ~until ~reading);
-      protect =
-        (fun g ->
-          protected := true;
-          Fun.protect g ~finally:(fun () -> protected := false));
-    }
-  in
-  Matrix.run ~backend ~config:(quiet ()) (fun app ->
-      Matrix.query app ~owed:{ cursor_reports = 1; string_replies = 0 } "[6n";
-      ending := true);
-  is_true ~msg:"a reply was waited for" (f.now >= ms 500);
-  equal ~msg:"no wait outside the protection" int 0 !exposed
-
-(* A Focus_in after a Focus_out sets the modes again, once. *)
 let test_focus_restore_runs_only_after_blur_once () =
   let f = fake ~tty:true () in
   f.answer <- probe_answer;
@@ -1088,7 +1042,7 @@ let test_ghostty_profile_reaches_runtime () =
           ];
     }
   in
-  Matrix.run ~backend (fun app ->
+  Matrix.run_on backend (fun app ->
       is_true ~msg:"the probe keeps the wide profile"
         ((Matrix.capabilities app).unicode_width = `Unicode_wide);
       let grid = Matrix.Screen.next_grid (Matrix.screen app) in
@@ -1111,7 +1065,7 @@ let test_grapheme_mode_as_found () =
     let backend =
       { (backend f) with env = env [ ("TERM", "xterm-256color") ] }
     in
-    Matrix.run ~backend (fun app ->
+    Matrix.run_on backend (fun app ->
         is_true ~msg:"grapheme clusters"
           ((Matrix.capabilities app).unicode_width = `Unicode));
     output f
@@ -1311,7 +1265,7 @@ let test_partial_frame_restores_transient_modes () =
           in
           let backend = { (backend f) with output_is_tty = true } in
           (try
-             Matrix.run ~backend ~config:(quiet ~mode:`Primary ~caps ())
+             Matrix.run_on backend ~config:(quiet ~mode:`Primary ~caps ())
                (fun app ->
                  Matrix.static_write app
                    (static_grid
@@ -1487,7 +1441,7 @@ let test_static_write_snapshots_selected_rows () =
 let test_static_clear_is_immediate_and_forces_full_repaint () =
   let f = fake () in
   let backend = { (backend f) with output_is_tty = true } in
-  Matrix.run ~backend ~config:(quiet ~mode:`Primary ()) (fun app ->
+  Matrix.run_on backend ~config:(quiet ~mode:`Primary ()) (fun app ->
       present app [ "live" ];
       Buffer.clear f.output;
       Matrix.static_clear app;
@@ -2031,14 +1985,14 @@ let clocked ?(limit = 10.) ?(rtt = 0.) ?(answer = fun _ -> []) typed =
           let bytes = Bytes.sub_string buf off len in
           Buffer.add_string c.written bytes;
           List.iter (arrive (c.now + s rtt)) (answer bytes));
-      terminal_size = (fun () -> (80, 24));
+      fds = (fun ~reading:_ -> []);
+      terminal_size = (fun () -> Some (80, 24));
       set_raw_mode = ignore;
       flush_input = ignore;
       input_is_tty = true;
       output_is_tty = true;
       controlling = true;
       on_fatal = ignore;
-      protect = (fun f -> f ());
       cleanup = ignore;
       env = no_env;
     }
@@ -2047,7 +2001,7 @@ let clocked ?(limit = 10.) ?(rtt = 0.) ?(answer = fun _ -> []) typed =
 
 let run_clocked ?(mode = `Alt) ?(env = no_env) ?(start = fun _ -> ())
     ?(on_event = fun _ _ -> ()) (c, backend) =
-  Matrix.run ~backend:{ backend with env } ~config:(Matrix.config ~mode ())
+  Matrix.run_on { backend with env } ~config:(Matrix.config ~mode ())
     (fun app ->
       start app;
       let rec loop () =
@@ -2282,7 +2236,7 @@ let test_meta_sends_escape_kept () =
         else [])
       []
   in
-  Matrix.run ~backend ignore;
+  Matrix.run_on backend ignore;
   not_contains ~sub:"\027[?1036"
     ( Buffer.contents c.written |> fun w ->
       match index_of w "\027[?1036$p" with
@@ -2641,14 +2595,14 @@ let test_signals_of_a_served_terminal () =
       f.answer <- probe_answer;
       { (backend f) with controlling = false }
     in
-    Matrix.run ~backend:(served ()) (fun _ ->
+    Matrix.run_on (served ()) (fun _ ->
         List.iter
           (fun (name, s) -> is_true ~msg:("taken: " ^ name) (caught s))
           [ ("TERM", sigterm); ("HUP", sighup); ("INT", sigint) ];
         List.iter
           (fun (name, s) -> is_false ~msg:("not taken: " ^ name) (caught s))
           [ ("WINCH", sigwinch); ("TSTP", sigtstp) ];
-        Matrix.run ~backend:(served ()) ignore;
+        Matrix.run_on (served ()) ignore;
         is_true ~msg:"still taken after the other run" (caught sigterm));
     is_false ~msg:"given back with the last run" (caught sigterm))
 
@@ -2727,8 +2681,7 @@ let test_unix_wakes_per_run () =
     and ready = Atomic.make false in
     let domain =
       Domain.spawn (fun () ->
-          Matrix.run ~backend:(Matrix.Backend.unix ~input ~output ())
-            ~config:(quiet ()) (fun a ->
+          Matrix.run ~input ~output ~config:(quiet ()) (fun a ->
               app := Some a;
               Atomic.set ready true;
               let rec loop () =
@@ -2795,7 +2748,7 @@ let test_unix_post_wakes_the_loop () =
       (* A loop the post did not wake would wait for input forever: the
          test's timeout fails it. *)
       let woken =
-        Matrix.run ~backend ~config:(quiet ()) (fun app ->
+        Matrix.run_on backend ~config:(quiet ()) (fun app ->
             let poster =
               Thread.create
                 (fun () ->
@@ -2818,6 +2771,37 @@ let test_unix_post_wakes_the_loop () =
             woken)
       in
       is_true ~msg:"woken without input" woken)
+
+(* A run takes the environment of the session its terminal runs, a served
+   session's client's, in place of the process's. *)
+let test_unix_session_environment () =
+  let devnull = Unix.openfile "/dev/null" [ O_RDWR; O_CLOEXEC ] 0 in
+  Fun.protect
+    ~finally:(fun () -> Unix.close devnull)
+    (fun () ->
+      let rgb vars =
+        Matrix.run ~input:devnull ~output:devnull ~env:(env vars)
+          ~config:(quiet ()) (fun app -> (Matrix.capabilities app).rgb)
+      in
+      is_true ~msg:"a truecolor session" (rgb [ ("COLORTERM", "truecolor") ]);
+      is_false ~msg:"a session that says nothing" (rgb []))
+
+(* An output with no window keeps the size its terminal reported in band:
+   giving the terminal away and taking it back reads no size to replace it
+   with. *)
+let test_unix_reported_size_survives_a_release () =
+  let input, writer = Unix.pipe ~cloexec:true () in
+  let output = Unix.openfile "/dev/null" [ O_WRONLY; O_CLOEXEC ] 0 in
+  Fun.protect
+    ~finally:(fun () -> List.iter Unix.close [ input; writer; output ])
+    (fun () ->
+      let report = "\027[48;5;30;0;0t" in
+      ignore (Unix.write_substring writer report 0 (String.length report) : int);
+      Matrix.run ~input ~output ~config:(quiet ()) (fun app ->
+          equal ~msg:"the reported size" (pair int int) (30, 5)
+            (Matrix.size app);
+          Matrix.release app ignore;
+          equal ~msg:"after a release" (pair int int) (30, 5) (Matrix.size app)))
 
 (* A write the terminal is slow to take is interrupted by a signal the
    process handles, here with an OCaml handler, which resumes no system
@@ -2948,7 +2932,6 @@ let () =
           test "an idle step leaves nothing due, a property"
             test_idle_deadline_property;
           test "frame calls outside a frame" test_frame_calls_outside_a_frame;
-          test "a call while the loop waits" test_call_while_waiting;
         ];
       group "Lifecycle"
         [
@@ -2967,8 +2950,6 @@ let () =
           test "setup rolls back" test_setup_rolls_back;
           test "nested runs" test_nested_runs;
           test "runs on other terminals" test_runs_on_other_terminals;
-          test "the settle under the backend's protection"
-            test_settle_under_protect;
           test "focus restore runs only after blur once"
             test_focus_restore_runs_only_after_blur_once;
           test "late capability response requests a frame"
@@ -3141,6 +3122,9 @@ let () =
       group "Unix backend"
         [
           test "a post wakes the loop" test_unix_post_wakes_the_loop;
+          test "the session's environment" test_unix_session_environment;
+          test "a reported size survives a release"
+            test_unix_reported_size_survives_a_release;
           test "each run has its own wake" test_unix_wakes_per_run;
           test "a pseudo-terminal is not the controlling terminal"
             test_unix_controlling;

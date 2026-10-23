@@ -29,6 +29,7 @@
 
 #### Changed
 
+- `Mosaic.run ?input ?output ?env` (and `Mosaic.start`) replace `?backend`, as `Matrix.run` takes them
 - **Highlighting builds on the latest result** – a `Code.Highlighter` request carries `previous`: the content of the view's latest result, the state the highlighter returned with it, and the one edit from it in bytes, derived by the view. `sync`, `threaded` and `async` take a `'state request` and return the captures with the highlighter's state; a highlighter that keeps nothing returns `()`. Results stay whole: a tree-sitter highlighter parses again from its edited tree and queries the whole new one, so a keystroke in 1 MB of OCaml under tree-sitter-ocaml's highlights.scm costs the worker about 110 ms instead of 240. `doc/highlighting.md` shows the recipe
 - **Concealment is a property of the view** – `Code.create`, `Code.Props.make` and the `code` element take `?conceal`; `Code.syntax` and `Code.with_highlighter` lose it. `Diff.syntax` keeps its `?conceal` and passes it to its panes
 - **Widgets list the keys they act on** – `select`, `tab_select`, `table`, `tree`, `scroll_box`, `scroll_bar`, `textarea`, `text_input` and `button` document, in their interfaces, every key their behavior acts on when focused; those keys are consumed and reach no ancestor and no `Bubble` listener, and every other key passes on. A focused `button` now consumes the Enter or Space that activates it
@@ -80,8 +81,8 @@
 
 - `Tty.readable fd` says whether a read would return without waiting (`poll(2)` with no timeout), allocating nothing and taking nothing from `fd`
 - **Driving a run by steps** – `Matrix.step app ~now` is the next step at the time the caller gives, or `None` when the run has nothing to do until one of `Matrix.fds app` is readable or `Matrix.deadline app` comes; it never waits. `Matrix.next` is that loop waiting with `select(2)`, and allocates nothing while idle. A program with an event loop of its own waits with that loop instead, and a test or a replay gives the steps the times of its own clock: a step is a function of the run's state, its input and `now`, which must never decrease (`Invalid_argument` otherwise) and must be on the clock `deadline` answers in, `Matrix.clock` or a test's own
-- **Pluggable backends** – `Matrix.Backend` is a record of I/O primitives with a shared `bootstrap` handshake
-- **Headless test backend (`matrix.test`)** – virtual clock, byte-level input through the real decoder, plain-text frame snapshots
+- **A run on any terminal, with its session's environment** – `Matrix.run ?input ?output ?env` takes the terminal on any pair of descriptors, and guesses its capabilities from the environment of the session it runs (`TERM`, `COLORTERM`, `NO_COLOR`…) rather than the process's: a served session runs with its client's. A served session runs on a pseudo-terminal pair the program pumps, and receives its size in band (`CSI 48 ; rows ; cols ; height ; width t`), before the run and on each change
+- **Headless terminals (`matrix.test`)** – a pipe the test writes and a file it reads, under an ordinary `Matrix.run`: the test drives the run's steps with a clock it moves (`Matrix_test.now`, `advance`, `elapsed`), byte-level input goes through the real decoder, the size is reported in band, and frames are read as plain-text snapshots
 - **Unicode text layer (`matrix.text`)** – grapheme iteration, width measurement, wrap-break and line-break discovery, and position helpers, independent of cell storage
 - **Terminal charts (`matrix.charts`)** – declarative chart composition rendered into grids
 - **Timer wakeups and paced one-shot redraws** – `Matrix.schedule_wakeup`, and `request_redraw` bursts coalesce to `target_fps`; `Matrix.request_immediate_redraw` renders one frame off-cadence
@@ -146,6 +147,8 @@
 #### Fixed
 
 - `Matrix_text.Layout` hangs the blanks at the end of a row that wraps, shown in no cell and taking none of its width, as CSS Text 3 hangs white space at the end of a pre-wrap line (at the end of a line only where they do not fit): a word that filled its row left the blank after it on a row of its own, a blank could start a continuation, and a row whose last word fitted exactly wrapped before that word (`a b c d e` at 5 cells was `a b` / `c d e`, now `a b c` / `d e`)
+- An output with no window keeps the size its terminal reported in band: giving the terminal away and taking it back, a SIGCONT and `static_clear` replaced it with 80×24
+- An idle turn on a real terminal allocates nothing: asking the signal handlers what they recorded allocated a closure every turn
 - Giving the terminal back waits for an owed answer only until as long after its batch was sent as any answer: a cancel during a silent terminal's probe ended 500 ms after the probe had already given up, waiting for the same answer a second time
 - A size the terminal reported in band before the run, as the transport of a served session writes it ahead of the run, is the run's size from its first frame on an output that is not a terminal: the run started at 80×24 and resized in its first turn
 - Inside tmux, before its answer to DECRQM (3.6), `Caps` gives bracketed paste from tmux 1.7 and focus reports from 1.8, the versions that brought them, where it gave both only from 3.6, when tmux began answering for them
@@ -180,6 +183,8 @@
 
 #### Removed
 
+- The public `Matrix.Backend` record: a run is driven by its steps and waits on its descriptors (`Matrix.step`, `fds`, `deadline`), `Matrix.run ?input ?output ?env` takes any terminal, and a test gives the steps its own clock. Its `protect` field, which only an Eio backend's waits needed, goes, and so does the check that raised for a call into the run while its loop waited in a backend: nothing runs on the loop's thread then
+- `Matrix_test.backend`, `create ?on_idle ?on_wake ?now` and `Matrix_test.output` as a string (now `written`): the test drives the steps itself
 - The unsound Windows ConPTY backend: `matrix.pty` is POSIX-only and says so; non-POSIX platforms raise `ENOSYS`
 - The `matrix.glyph` library: text semantics moved to `matrix.text` and cell storage into `matrix.grid`
 - The `matrix.input` `Keymap` API, superseded by `Mosaic.Shortcut`

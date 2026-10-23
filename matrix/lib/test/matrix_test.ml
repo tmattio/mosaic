@@ -1,19 +1,14 @@
-type entry = Chunk of string | Event of Matrix.event
-
 type t = {
-  mutable now : int;
-  mutable width : int;
-  mutable height : int;
+  input_r : Unix.file_descr;
+  input_w : Unix.file_descr;
+  output_fd : Unix.file_descr;
   mode : Matrix.mode;
   fps : float;
-  queue : entry Queue.t;
-  mutable input_offset : int;
   mutable ended : bool;
-  mutable resized : bool;
-  woken : bool Atomic.t;
-  output : Buffer.t;
-  on_idle : t -> until:int option -> unit;
-  on_wake : unit -> unit;
+  (* The run's time when the clock was first read, and how far the test
+     has moved it since. *)
+  mutable origin : int option;
+  mutable elapsed : int;
   (* The last run seen over [t], read after it ends. *)
   mutable last : Matrix.held option;
 }
@@ -42,6 +37,43 @@ let capabilities : Matrix.Terminal.capabilities =
     identity = None;
   }
 
+let rec write_all fd s off =
+  if off < String.length s then
+    match Unix.write_substring fd s off (String.length s - off) with
+    | n -> write_all fd s (off + n)
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> write_all fd s off
+
+(* The terminal's own report of its size, as mode 2048 has it. *)
+let report_size t ~width ~height =
+  write_all t.input_w (Printf.sprintf "\027[48;%d;%d;0;0t" height width) 0
+
+let create ?(mode = `Alt) ?(fps = 60.) ~width ~height () =
+  let input_r, input_w = Unix.pipe ~cloexec:true () in
+  let path = Filename.temp_file "matrix_test" ".out" in
+  let output_fd =
+    Unix.openfile path [ O_RDWR; O_APPEND; O_TRUNC; O_CLOEXEC ] 0o600
+  in
+  Unix.unlink path;
+  let t =
+    {
+      input_r;
+      input_w;
+      output_fd;
+      mode;
+      fps;
+      ended = false;
+      origin = None;
+      elapsed = 0;
+      last = None;
+    }
+  in
+  report_size t ~width ~height;
+  t
+
+let input t = t.input_r
+let output t = t.output_fd
+let config t = Matrix.config ~mode:t.mode ~fps:t.fps ~caps:capabilities ()
+
 let app t =
   match Matrix.holder () with
   | Some held ->
@@ -52,135 +84,76 @@ let app t =
       | Some held -> held
       | None -> invalid_arg "Matrix_test: no run held the terminal")
 
-let grid t =
-  let (Matrix.Held app) = app t in
-  Matrix.current_grid app
+let now t =
+  match t.origin with
+  | Some origin -> origin + t.elapsed
+  | None -> (
+      match Matrix.holder () with
+      | Some (Held a as held) ->
+          t.last <- Some held;
+          let origin = Matrix.now a in
+          t.origin <- Some origin;
+          origin + t.elapsed
+      | None -> invalid_arg "Matrix_test.now: no run holds the terminal")
 
-let size t =
-  let (Matrix.Held app) = app t in
-  Matrix.size app
+let elapsed t = t.elapsed
+
+let advance t ns =
+  if ns < 0 then invalid_arg "Matrix_test.advance: negative time";
+  t.elapsed <- t.elapsed + ns
+
+let feed t bytes =
+  if t.ended then invalid_arg "Matrix_test.feed: the input has ended";
+  write_all t.input_w bytes 0
+
+let feed_event t event =
+  let (Matrix.Held a) = app t in
+  Matrix.inject a event
+
+let resize t ~width ~height = report_size t ~width ~height
+
+let stop t =
+  if not t.ended then (
+    t.ended <- true;
+    Unix.close t.input_w)
+
+let close t =
+  stop t;
+  Unix.close t.input_r;
+  Unix.close t.output_fd
 
 let frame_owed _ =
   match Matrix.holder () with
-  | Some (Held app) -> Matrix.frame_owed app
+  | Some (Held a) -> Matrix.frame_owed a
   | None -> false
 
 let settle t ~until =
   match until with
-  | Some until when frame_owed t && until > t.now ->
-      t.now <- until;
+  | Some until when frame_owed t && until > now t ->
+      advance t (until - now t);
       true
   | _ -> false
 
-let feed t bytes = if bytes <> "" then Queue.push (Chunk bytes) t.queue
-let feed_event t event = Queue.push (Event event) t.queue
+let grid t =
+  let (Matrix.Held a) = app t in
+  Matrix.current_grid a
 
-let resize t ~width ~height =
-  t.width <- width;
-  t.height <- height;
-  t.resized <- true
-
-let now t = t.now
-
-let advance t ns =
-  if ns < 0 then invalid_arg "Matrix_test.advance: negative time";
-  t.now <- t.now + ns
+let size t =
+  let (Matrix.Held a) = app t in
+  Matrix.size a
 
 let screen t = Matrix.Grid.to_text (grid t)
 let screen_ansi t = Matrix.Grid.to_ansi (grid t)
-let output t = Buffer.contents t.output
-let stop t = t.ended <- true
-let config t = Matrix.config ~mode:t.mode ~fps:t.fps ~caps:capabilities ()
 
-let create ?(mode = `Alt) ?(fps = 60.) ?(now = 0) ?(on_wake = fun () -> ())
-    ~on_idle ~width ~height () =
-  {
-    now;
-    width;
-    height;
-    mode;
-    fps;
-    queue = Queue.create ();
-    input_offset = 0;
-    ended = false;
-    resized = false;
-    woken = Atomic.make false;
-    output = Buffer.create 4096;
-    on_idle;
-    on_wake;
-    last = None;
-  }
-
-(* Events queued ahead of the next bytes are handed to the run as decoded;
-   the input is readable when bytes or its end come next. *)
-let rec deliver t =
-  match Queue.peek_opt t.queue with
-  | Some (Event event) ->
-      ignore (Queue.pop t.queue : entry);
-      let (Matrix.Held app) = app t in
-      Matrix.inject app event;
-      deliver t
-  | Some (Chunk _) -> true
-  | None -> t.ended
-
-let has_input t = (not (Queue.is_empty t.queue)) || t.ended || t.resized
-let due t = function Some until -> t.now >= until | None -> false
-
-let wait t ~until ~reading =
-  if t.last = None then ignore (app t : Matrix.held);
-  if not (has_input t || Atomic.exchange t.woken false || due t until) then
-    t.on_idle t ~until;
-  reading && deliver t
-
-let rec copy_input t buf off len written =
-  if written = len then written
-  else
-    match Queue.peek_opt t.queue with
-    | None | Some (Event _) -> written
-    | Some (Chunk chunk) ->
-        let remaining = String.length chunk - t.input_offset in
-        let count = min (len - written) remaining in
-        Bytes.blit_string chunk t.input_offset buf (off + written) count;
-        if count = remaining then (
-          ignore (Queue.pop t.queue : entry);
-          t.input_offset <- 0)
-        else t.input_offset <- t.input_offset + count;
-        copy_input t buf off len (written + count)
-
-let read_input t buf off len =
-  match copy_input t buf off len 0 with
-  | 0 when t.ended && Queue.is_empty t.queue -> 0
-  | 0 -> -1
-  | n -> n
-
-let take_signals t =
-  if t.resized then (
-    t.resized <- false;
-    [ Matrix.Backend.Winch ])
-  else []
-
-let backend t : Matrix.Backend.t =
-  {
-    now = (fun () -> t.now);
-    wait = wait t;
-    wake =
-      (fun () ->
-        Atomic.set t.woken true;
-        t.on_wake ());
-    take_signals = (fun () -> take_signals t);
-    read_input = read_input t;
-    write_output = (fun buf off len -> Buffer.add_subbytes t.output buf off len);
-    terminal_size = (fun () -> (t.width, t.height));
-    set_raw_mode = ignore;
-    flush_input =
-      (fun () ->
-        Queue.clear t.queue;
-        t.input_offset <- 0);
-    input_is_tty = false;
-    output_is_tty = false;
-    controlling = false;
-    on_fatal = ignore;
-    protect = (fun f -> f ());
-    cleanup = ignore;
-    env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;
-  }
+let written t =
+  let length = (Unix.fstat t.output_fd).st_size in
+  let bytes = Bytes.create length in
+  let rec go off =
+    if off < length then
+      match Unix.read t.output_fd bytes off (length - off) with
+      | 0 -> ()
+      | n -> go (off + n)
+  in
+  ignore (Unix.lseek t.output_fd 0 SEEK_SET : int);
+  go 0;
+  Bytes.to_string bytes

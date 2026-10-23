@@ -1,98 +1,147 @@
-(** Headless deterministic terminal for testing Matrix applications.
+(** Headless terminals for testing Matrix applications.
 
-    [Matrix_test] is a {!Matrix.Backend.t} over memory: input comes from a queue
-    the test feeds, output is captured, the terminal size is set by the test,
-    and time is a virtual clock that moves only when the test moves it. Frames
-    are observed by reading the presented cell grid ({!screen}), not by parsing
-    the output stream.
+    A [Matrix_test] terminal is a pipe and a file: the run reads its input from
+    the pipe, which the test writes ({!feed}), and writes its output to the
+    file, which the test reads ({!written}). The run is an ordinary
+    {!Matrix.run} on those descriptors ({!val-input}, {!val-output}). The test
+    drives it: it gives each step a time with {!Matrix.val-step} and does its
+    scripting whenever the run has nothing to do, so the run never waits.
 
-    The run's loop calls [on_idle] whenever it would block: when it has no input
-    to read and its next deadline (a timer, a frame, a terminal that went silent
-    mid-sequence) is still ahead of the virtual clock, or it has none. A test
-    driver does its scripting there: feed input, move the clock, snapshot, or
-    end the input. If [on_idle] returns without acting, the loop calls it again.
+    The test's {e clock} gives the steps their times ({!now}). It starts at the
+    run's time when the test first reads it, which must be inside the run and
+    before the first step, and moves only when the test moves it ({!advance}). A
+    step is a function of the run's state, its input and its time, so a run
+    driven by this clock goes the same way however fast the host is. Frames are
+    at least [1 / fps] apart on it too: a frame asked for in the same instant as
+    the last waits until the test moves the clock to its deadline
+    ({!Matrix.deadline}), as {!settle} does.
 
-    Frames are at least [1 / fps] apart on the virtual clock too: a frame asked
-    for in the same instant as the last waits until the test moves the clock to
-    its deadline. A driver that wants to observe every frame presented moves the
-    clock to [until] while {!frame_owed}, as {!settle} does.
+    The output is not a terminal, so the run sends no query and has no window.
+    The terminal reports its size in band, as mode 2048 does: once when it is
+    made, which the run takes as it begins, and on each {!resize}. Its
+    capabilities are fixed by {!config}: a plain modern terminal (24-bit colour,
+    Unicode width tables, bracketed paste; no Kitty extensions), so rendering
+    never depends on the environment. Frames are observed by reading the
+    presented cell grid ({!screen}).
 
-    The terminal models a plain modern terminal with fixed capabilities (24-bit
-    colour, Unicode width tables, bracketed paste; no Kitty extensions), set by
-    {!config}, so rendering never depends on the environment.
+    A terminal holds its three descriptors from {!create} to {!close}.
 
+    This test types a key and reads the frame it brings:
     {[
-    let t = Matrix_test.create ~on_idle ~width:20 ~height:2 () in
-    Matrix.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
-      (fun app -> ...)
+    let t = Matrix_test.create ~width:20 ~height:1 () in
+    Fun.protect ~finally:(fun () -> Matrix_test.close t) @@ fun () ->
+    Matrix.run ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
+      ~config:(Matrix_test.config t)
+    @@ fun app ->
+    let keys = ref 0 in
+    let rec until_idle () =
+      match Matrix.step app ~now:(Matrix_test.now t) with
+      | Some Frame ->
+          Matrix.draw app (fun grid ->
+              Matrix.Grid.draw_text grid ~x:0 ~y:0
+                ~text:(Printf.sprintf "%d keys" !keys));
+          until_idle ()
+      | Some (Event (Key _)) ->
+          incr keys;
+          Matrix.request_redraw app;
+          until_idle ()
+      | Some _ -> until_idle ()
+      | None -> (
+          match Matrix.deadline app with
+          | Some deadline ->
+              Matrix_test.advance t (deadline - Matrix_test.now t);
+              until_idle ()
+          | None -> ())
+    in
+    until_idle ();
+    Matrix_test.feed t "a";
+    until_idle ();
+    assert (String.trim (Matrix_test.screen t) = "1 keys")
     ]} *)
 
 type t
 (** The type for headless terminals. *)
 
 val create :
-  ?mode:Matrix.mode ->
-  ?fps:float ->
-  ?now:int ->
-  ?on_wake:(unit -> unit) ->
-  on_idle:(t -> until:int option -> unit) ->
-  width:int ->
-  height:int ->
-  unit ->
-  t
-(** [create ~on_idle ~width ~height ()] is a headless terminal of the given
-    size.
-
+  ?mode:Matrix.mode -> ?fps:float -> width:int -> height:int -> unit -> t
+(** [create ~width ~height ()] is a terminal of [width] columns and [height]
+    rows, with its size already reported on its input.
     - [mode] is the presentation mode of {!config}. Defaults to [`Alt].
     - [fps] is the frame bound of {!config}. Defaults to [60.].
-    - [now] is the initial virtual time in nanoseconds (default [0]).
-    - [on_wake] runs when the loop is woken from outside its thread of control
-      (another thread posted). A concurrent driver unblocks its [on_idle] wait
-      here; a synchronous script can omit it.
-    - [on_idle t ~until] runs when the loop would block. [until] is the time the
-      loop waits until, [None] when only input or a post can change anything. *)
 
-val backend : t -> Matrix.Backend.t
-(** [backend t] is the backend to give to {!Matrix.run}. *)
+    Raises [Unix.Unix_error] if the pipe or the file cannot be made. *)
+
+val input : t -> Unix.file_descr
+(** [input t] is the terminal's input, for {!Matrix.run}'s [input]. *)
+
+val output : t -> Unix.file_descr
+(** [output t] is the terminal's output, for {!Matrix.run}'s [output]. *)
 
 val config : t -> Matrix.config
 (** [config t] is the configuration a run over [t] uses: its mode and frame
     bound, and the terminal's fixed capabilities. *)
 
-val feed : t -> string -> unit
-(** [feed t bytes] queues raw input bytes, decoded by the real input parser when
-    the loop next reads. Complete escape sequences decode immediately; ambiguous
-    prefixes (a lone [ESC], an Alt chord) wait for the terminal's silence, a
-    deadline that [on_idle]'s [until] shows and that passes once the test moves
-    the clock beyond it. *)
+val close : t -> unit
+(** [close t] ends the input, as {!stop} does, and closes the terminal's
+    descriptors. A run must not use them after. *)
 
-val feed_event : t -> Matrix.event -> unit
-(** [feed_event t event] queues an already-decoded input event, bypassing the
-    parser, in order with the bytes {!feed} queued. *)
-
-val resize : t -> width:int -> height:int -> unit
-(** [resize t ~width ~height] resizes the terminal and signals it, as a window
-    resize does. The run applies the size when it next draws. *)
+(** {1:time The clock} *)
 
 val now : t -> int
-(** [now t] is the current virtual time in nanoseconds. *)
+(** [now t] is the time of the test's clock, on the clock of the run that holds
+    [t]: the time to give {!Matrix.val-step}. The first call takes the run's
+    time ({!Matrix.now}) as the clock's start.
+
+    Raises [Invalid_argument] if it is the first call and no run holds [t]. *)
+
+val elapsed : t -> int
+(** [elapsed t] is how far the test has moved its clock, in nanoseconds: [0]
+    until the first {!advance}. *)
 
 val advance : t -> int -> unit
-(** [advance t ns] moves the virtual clock [ns] nanoseconds forward. The clock
-    never moves otherwise.
+(** [advance t ns] moves the clock [ns] nanoseconds forward. The clock never
+    moves otherwise.
 
     Raises [Invalid_argument] if [ns] is negative. *)
 
 val frame_owed : t -> bool
 (** [frame_owed t] is [true] iff the run over [t] has a frame to draw that waits
-    for its interval to pass: a driver moves the clock to [until] to have it
-    drawn. [false] when no run holds [t]. *)
+    for its interval to pass: a driver moves the clock to the run's deadline to
+    have it drawn. [false] when no run holds [t]. *)
 
 val settle : t -> until:int option -> bool
 (** [settle t ~until] moves the clock to [until] if the run owes a frame that
     waits for it, and says whether it did. A driver whose steps must each see
-    the presented frame calls it first in [on_idle], with the [until] it was
-    given, and takes its step only when it returns [false]. *)
+    the presented frame calls it first whenever the run has nothing to do, with
+    the run's deadline, and takes its step only when it returns [false]. *)
+
+(** {1:input Input} *)
+
+val feed : t -> string -> unit
+(** [feed t bytes] writes [bytes] to the terminal's input, decoded by the run's
+    decoder when it next reads. Complete escape sequences decode then; ambiguous
+    prefixes (a lone [ESC], an Alt chord) wait for the terminal's silence, a
+    deadline the run gives and that passes once the test moves the clock beyond
+    it. It blocks while the pipe is full, so a test feeds at most the pipe's
+    capacity (64 KiB on Linux) between steps.
+
+    Raises [Invalid_argument] if the input has ended ({!stop}). *)
+
+val feed_event : t -> Matrix.event -> unit
+(** [feed_event t event] queues an already-decoded input event for the run that
+    holds [t], bypassing the decoder, ahead of the bytes not yet read.
+
+    Raises [Invalid_argument] if no run ever held [t]. *)
+
+val resize : t -> width:int -> height:int -> unit
+(** [resize t ~width ~height] reports the new size on the input, as a terminal
+    in mode 2048 does. The run applies it when it next draws. *)
+
+val stop : t -> unit
+(** [stop t] ends the input, as a terminal that closes it: the run decodes what
+    was fed, and {!Matrix.val-step} then returns {!Matrix.Stopped}. *)
+
+(** {1:output Output} *)
 
 val grid : t -> Matrix.Grid.t
 (** [grid t] is the presented frame ({!Matrix.current_grid}) of the run that
@@ -115,10 +164,6 @@ val screen_ansi : t -> string
 (** [screen_ansi t] is the presented frame with ANSI styling
     ({!Matrix.Grid.to_ansi}). *)
 
-val output : t -> string
-(** [output t] is everything the runtime wrote so far: the raw ANSI delta
-    stream. Replaying it through a VTE reconstructs {!screen}. *)
-
-val stop : t -> unit
-(** [stop t] ends the input, as a terminal that closes it: the run decodes what
-    was fed, and {!Matrix.next} then returns {!Matrix.Stopped}. *)
+val written : t -> string
+(** [written t] is everything the run wrote so far: the raw ANSI stream.
+    Replaying it through a VTE reconstructs {!screen}. *)

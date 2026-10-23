@@ -57,8 +57,7 @@ let keys app =
 let served path =
   Domain.spawn (fun () ->
       let fd = Unix.openfile path [ O_RDWR; O_NOCTTY; O_CLOEXEC ] 0 in
-      Matrix.run ~backend:(Matrix.Backend.unix ~input:fd ~output:fd ())
-      @@ fun app ->
+      Matrix.run ~input:fd ~output:fd @@ fun app ->
       let rec loop () =
         match Matrix.next app with
         | Stopped -> ()

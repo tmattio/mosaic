@@ -110,10 +110,11 @@ type event =
   | Resize of int * int
       (** The usable size changed to [(cols, rows)], {!size}: the live region in
           [`Primary] mode, the whole terminal in [`Alt] mode. The terminal
-          reports its size when it changes, by the backend's window-size signal
-          or its own report (mode 2048); the runtime applies the latest report
-          when it next draws, so a storm of reports is one [Resize], returned by
-          {!next} just before the {!Frame} drawn at that size. *)
+          reports its size when it changes, by the window-size signal of the
+          process's controlling terminal or its own report (mode 2048); the
+          runtime applies the latest report when it next draws, so a storm of
+          reports is one [Resize], returned by {!next} just before the {!Frame}
+          drawn at that size. *)
   | Color_scheme of [ `Dark | `Light ]
       (** The terminal's color scheme, in reply to a query or on a change. *)
   | Invalid of string
@@ -123,112 +124,6 @@ type event =
 
 val pp_event : Format.formatter -> event -> unit
 (** [pp_event] formats an event for debugging. *)
-
-(** {1:backends Backends} *)
-
-(** The device a run drives: a terminal's input and output, a clock, and a way
-    to wait for any of them. Matrix decodes the input, negotiates protocols and
-    schedules frames; a backend only moves bytes and waits. *)
-module Backend : sig
-  (** The type for the signals a run acts on. *)
-  type signal =
-    | Winch  (** The terminal's window changed size. *)
-    | Cont  (** The process was continued after a stop. *)
-    | Tstp
-        (** The terminal's suspend character, or another process, asked the
-            process to stop. *)
-    | Terminate of int
-        (** A signal whose default action ends the process, by its OCaml number
-            ({!Sys.sigterm}, {!Sys.sigint}, {!Sys.sighup}, {!Sys.sigquit}). *)
-
-  type t = {
-    now : unit -> int;
-        (** [now ()] is monotonic time in nanoseconds, from an arbitrary origin.
-            It never goes back, and setting the system's time does not move it.
-        *)
-    wait : until:int option -> reading:bool -> bool;
-        (** [wait ~until ~reading] returns once the input is readable, when
-            [reading]; once [wake] was called since [wait] last returned; or
-            once [now () >= until]. With [until = None] only the first two end
-            it. Returns [true] iff the input is readable. A backend never moves
-            its own clock to end a wait. *)
-    wake : unit -> unit;
-        (** [wake ()] ends the current or the next [wait]. Any thread, domain or
-            fiber may call it. *)
-    take_signals : unit -> signal list;
-        (** [take_signals ()] is the signals received since the last call,
-            oldest first. *)
-    read_input : bytes -> int -> int -> int;
-        (** [read_input buf off len] reads at most [len] bytes into [buf] at
-            [off]. Called only after [wait] reports readable input. [0] denotes
-            permanent end-of-input; [-1] means input is no longer ready.
-            Positive results denote bytes read. *)
-    write_output : bytes -> int -> int -> unit;
-        (** [write_output buf off len] writes the complete slice before
-            returning. The backend must not retain [buf]. *)
-    terminal_size : unit -> int * int;
-        (** [terminal_size ()] is the terminal size as [(cols, rows)]. *)
-    set_raw_mode : bool -> unit;
-        (** [set_raw_mode raw] switches the input into raw mode, saving its
-            settings and discarding input not yet read, or back to the saved
-            settings once the output already written has been sent, keeping
-            input not yet read. A repeated request does nothing; a terminal that
-            is not one ignores it. *)
-    flush_input : unit -> unit;
-        (** [flush_input ()] discards input received and not yet read. *)
-    input_is_tty : bool;  (** Whether the input device is a terminal. *)
-    output_is_tty : bool;
-        (** Whether the output device accepts terminal modes. *)
-    controlling : bool;
-        (** Whether the terminal is the process's controlling terminal, the one
-            its job runs in. Its window, stop and continue signals are that
-            terminal's, so only a run on it takes them ({{!signals}Signals}),
-            and one run at a time holds it ({!run}). A terminal the process
-            serves, such as a pseudo-terminal it opened or a remote session, is
-            not: it reports its size itself (mode 2048). *)
-    on_fatal : string -> unit;
-        (** [on_fatal reset] keeps [reset], the bytes that undo what the run
-            set, for the backend to write to its terminal itself, with the
-            terminal's saved settings restored, if the process ends where no
-            OCaml code runs: on [abort()], or on a termination signal another
-            run acted on ({{!signals}Signals}). An empty [reset] once the run
-            gave the terminal back. A backend that cannot write from a signal
-            handler ignores it. *)
-    protect : (unit -> unit) -> unit;
-        (** [protect f] runs [f ()] with cancellation deferred until it returns
-            or raises. Used only for teardown; synchronous backends call [f]
-            directly. *)
-    cleanup : unit -> unit;
-        (** [cleanup ()] releases what the backend holds. A run calls it once,
-            when it ends. *)
-    env : Terminal.Caps.env;
-        (** The environment of the session the terminal runs, from which the
-            runtime guesses what the terminal can do until it answers. *)
-  }
-  (** The type for backends. *)
-
-  val unix : ?input:Unix.file_descr -> ?output:Unix.file_descr -> unit -> t
-  (** [unix ()] is the backend of a terminal on [input] (default {!Unix.stdin})
-      and [output] (default {!Unix.stdout}). Its [wait] blocks in [select(2)] on
-      the input and on its wake pipe ({!wake_fd}), its clock is
-      [CLOCK_MONOTONIC], its signals are those the runtime's handlers record for
-      it (see {{!signals}Signals}), and its environment is the process's, with
-      the description the terminfo database has for its [TERM]
-      ({!Tty.terminfo}). It holds its wake pipe from [unix ()] to its [cleanup].
-      On Linux the monotonic clock stops while the system sleeps: a deadline is
-      that much later on the wall clock. On macOS it does not stop. *)
-
-  val wake_fd : t -> Unix.file_descr
-  (** [wake_fd b] is the read end of the wake pipe of [b], a backend {!unix}
-      made, or a record built from one that keeps its [wake]. Its [wake] and the
-      runtime's signal handlers write a byte to it; a backend whose [wait]
-      blocks in the operating system waits for it to be readable too, and reads
-      it empty before returning. Each backend has its own: a wake of one run
-      never ends another's wait.
-
-      Raises [Invalid_argument] if [b]'s [wake] is not one {!unix} made, or [b]
-      was cleaned up. *)
-end
 
 (** {1:running Running} *)
 
@@ -290,7 +185,7 @@ val config :
       Defaults to [false].
     - [caps] the capabilities to assume where the terminal does not answer, in
       place of what the environment says ({!Terminal.Caps.assume}). By default
-      the backend's environment is read when the run begins.
+      {!run}'s [env] is read when the run begins.
 
     Focus reports (mode 1004), color scheme reports (2031) and resize reports
     (2048) are always set, without asking whether the terminal has them: no
@@ -317,10 +212,20 @@ type 'msg app
     the thread that called {!run}: every function of this module that takes one
     raises [Invalid_argument] on another thread, except {!post}. *)
 
-val run : ?backend:Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
-(** [run f] takes the terminal, calls [f app], and gives the terminal back when
-    [f] returns or raises, or when the input ends and [f] returns. [backend]
-    defaults to {!Backend.unix}[ ()]; [run] owns it and cleans it up once.
+val run :
+  ?input:Unix.file_descr ->
+  ?output:Unix.file_descr ->
+  ?env:Terminal.Caps.env ->
+  ?config:config ->
+  ('msg app -> 'a) ->
+  'a
+(** [run f] takes the terminal whose input is [input] and whose output is
+    [output], calls [f app], and gives the terminal back when [f] returns or
+    raises, or when the input ends and [f] returns. [input] defaults to
+    [Unix.stdin] and [output] to [Unix.stdout]. [env] is the environment of the
+    session the terminal runs, from which the runtime guesses what the terminal
+    can do until it answers. It defaults to the process's, with the description
+    the terminfo database has for its [TERM] ({!Tty.terminfo}).
 
     Taking the terminal is a sequence of steps, each of which pushes its undo:
     the signals ({{!signals}Signals}), raw mode, the capability probe (whose
@@ -339,10 +244,22 @@ val run : ?backend:Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
     cursor shown, the screen left (the live region erased below the transcript
     in [`Primary] mode), cooked mode restored, and input not read discarded.
 
-    Raises [Invalid_argument] if [backend]'s terminal is the controlling
-    terminal ({!Backend.t}'s [controlling]) and another run holds it, unless
-    that run gave it away for {!release}. Runs on other terminals, such as
-    sessions a server runs, each in its domain, run side by side. *)
+    A {e served session} is a terminal the process runs for a client elsewhere,
+    such as a remote shell's or a web page's. It runs on the slave side of a
+    pseudo-terminal the program opened, with the client's environment as [env],
+    while the program copies bytes between the master side and the client. The
+    runtime queries only a terminal, so a socket would leave the runtime
+    guessing. A terminal that is not the process's controlling one sends the
+    process no window signal: the program writes the client's size to the master
+    in band, [CSI 48 ; rows ; cols ; height ; width t] as mode 2048 reports it,
+    before the run and on every change. An output that is not a terminal has no
+    window either, and keeps the size its terminal last reported in band, 80 by
+    24 before any.
+
+    Raises [Invalid_argument] if the terminal is the process's controlling
+    terminal ({!Tty.is_controlling}) and another run holds it, unless that run
+    gave it away for {!release}. Runs on other terminals, such as served
+    sessions, each in its domain, run side by side. *)
 
 (** {1:loop The loop}
 
@@ -414,9 +331,10 @@ val fds : 'msg app -> Unix.file_descr list
 (** [fds app] is the descriptors the run waits for: once one of them is
     readable, {!val-step} has something to do. They are the run's choice, and
     may differ from one wait to the next: the input while it has not ended, and
-    the run's wake, which {!post} and the signal handlers write. A caller must
-    wait for them to be readable, and must never read them: what it reads, the
-    run never sees. *)
+    the run's wake, which {!post} and the signal handlers write. They never
+    include a Windows console's handle, which waiting with [Unix.select] would
+    empty of its records that are not keys. A caller must wait for them to be
+    readable, and must never read them: what it reads, the run never sees. *)
 
 val deadline : 'msg app -> int option
 (** [deadline app] is the time by which {!val-step} must be called again after
@@ -576,20 +494,20 @@ val stop_job : 'msg app -> unit
     suspend character into a key: an application that wants Ctrl+Z to suspend
     calls [stop_job] on it. Nothing happens if SIGTSTP was ignored when the run
     began, as nothing could continue the job, or if the run's terminal is not
-    the controlling terminal ({!Backend.t}'s [controlling]): the job is not that
-    terminal's, and stopping it would stop every other session. *)
+    the process's controlling terminal ({!Tty.is_controlling}): the job is not
+    that terminal's, and stopping it would stop every other session. *)
 
 (** {1:signals Signals}
 
     A run holds its terminal's signals as {!Tty.Signal} says every holder of a
     terminal in the process does: a run on a terminal, whichever, takes the
     signals that end the process, SIGINT, SIGTERM, SIGHUP, SIGQUIT and SIGABRT,
-    and a run on the controlling terminal ({!Backend.t}'s [controlling]) also
+    and a run on the process's controlling terminal ({!Tty.is_controlling}) also
     SIGTSTP, SIGWINCH and SIGCONT. All but SIGWINCH and SIGCONT are taken only
     if their action is the default when the run begins, as X/Open Curses allows:
     an application that installed its own action keeps it. The handlers record
-    the signal for each run it concerns and wake it ({!Backend.wake_fd}), and
-    the loop acts on it in its next turn. Runs side by side take a signal
+    the signal for each run it concerns and wake it (its wake is among {!fds}),
+    and the loop acts on it in its next turn. Runs side by side take a signal
     together, and the action it had comes back when the last of them ends.
 
     - SIGINT, SIGTERM, SIGHUP, SIGQUIT end the process, and every run with it.
@@ -607,9 +525,9 @@ val stop_job : 'msg app -> unit
       own settings. The size is read and the next frame drawn whole.
     - SIGWINCH has the size read when the next frame is drawn.
     - SIGABRT, from [abort()], returns to no point where OCaml can run, so its
-      handler restores every run's terminal itself ({!Backend.t}'s [on_fatal]):
-      it writes the bytes that reset the modes the run set to the run's terminal
-      and puts back its saved settings, and the process aborts. *)
+      handler restores every run's terminal itself: it writes the bytes that
+      reset the modes the run set to the run's terminal and puts back its saved
+      settings, and the process aborts. *)
 
 (** {1:queries Terminal queries} *)
 
@@ -768,6 +686,48 @@ val dump_frame :
 (** [dump_frame app] writes the current frame to disk immediately. *)
 
 (**/**)
+
+(* The device a run drives, for the runtime's own tests, which script its
+   clock, its input and what the terminal answers. [run] is [run_on] the
+   device of its descriptors. A device's [wait] returns once the input is
+   readable (when [reading]), once [wake] was called since the last wait, or
+   once [now ()] reaches [until], and says whether the input is readable; a
+   wait until a time already past only looks. [read_input] returns [0] at the
+   end of the input and [-1] when nothing is there. [terminal_size] is [None]
+   for an output with no window. [fds] are the descriptors whose readability
+   ends a wait. *)
+
+module Backend : sig
+  type signal = Winch | Cont | Tstp | Terminate of int
+
+  type t = {
+    now : unit -> int;
+    wait : until:int option -> reading:bool -> bool;
+    wake : unit -> unit;
+    fds : reading:bool -> Unix.file_descr list;
+    take_signals : unit -> signal list;
+    read_input : bytes -> int -> int -> int;
+    write_output : bytes -> int -> int -> unit;
+    terminal_size : unit -> (int * int) option;
+    set_raw_mode : bool -> unit;
+    flush_input : unit -> unit;
+    input_is_tty : bool;
+    output_is_tty : bool;
+    controlling : bool;
+    on_fatal : string -> unit;
+    cleanup : unit -> unit;
+    env : Terminal.Caps.env;
+  }
+
+  val unix :
+    ?input:Unix.file_descr ->
+    ?output:Unix.file_descr ->
+    ?env:Terminal.Caps.env ->
+    unit ->
+    t
+end
+
+val run_on : Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
 
 (* For test harnesses that drive a run they did not start, such as
    [Matrix_test]: the run that holds the terminal, whether it owes a frame,

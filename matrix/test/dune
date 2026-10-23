@@ -202,3 +202,9 @@
   matrix.terminal
   matrix.terminfo)
  (forbidden_libraries unix threads))
+
+(test
+ (name test_examples)
+ (package matrix)
+ (modules test_examples)
+ (libraries windtrap matrix matrix.test unix))

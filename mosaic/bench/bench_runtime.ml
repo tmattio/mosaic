@@ -122,6 +122,26 @@ let close driver =
 let require condition message =
   if not condition then failwith ("runtime benchmark: " ^ message)
 
+(* Runs [application] over [t], the benchmark driving its steps at [t]'s
+   clock: [on_idle] runs whenever the program has nothing to do and nothing
+   has come for it, given the run's deadline. *)
+let drive ?process_perform ~on_idle t application =
+  Mosaic.start ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
+    ~config:(Matrix_test.config t) ?process_perform application (fun r ->
+      let rec loop () =
+        match Mosaic.step r ~now:(Matrix_test.now t) with
+        | `Stepped -> loop ()
+        | `Stopped -> ()
+        | `Idle ->
+            (match Mosaic.deadline r with
+            | Some deadline when deadline <= Matrix_test.now t -> ()
+            | until ->
+                if not (List.exists Matrix.Tty.readable (Mosaic.fds r)) then
+                  on_idle t ~until);
+            loop ()
+      in
+      loop ())
+
 let setup ~mode ~blocks workload () =
   let continuation : (unit, unit) Effect.Deep.continuation option ref =
     ref None
@@ -130,14 +150,13 @@ let setup ~mode ~blocks workload () =
     ref { editor = Mosaic.Editor.of_string "a"; scroll = Mosaic.Scroll.at 7500 }
   in
   let terminal =
-    Matrix_test.create ~mode ~width:initial_width ~height:initial_height
-      ~on_idle:(fun terminal ~until ->
-        match until with
-        | Some until ->
-            Matrix_test.advance terminal
-              (max 1 (until - Matrix_test.now terminal))
-        | None -> Effect.perform Presented)
-      ()
+    Matrix_test.create ~mode ~width:initial_width ~height:initial_height ()
+  in
+  let on_idle terminal ~until =
+    match until with
+    | Some until ->
+        Matrix_test.advance terminal (max 1 (until - Matrix_test.now terminal))
+    | None -> Effect.perform Presented
   in
   let application =
     {
@@ -161,11 +180,7 @@ let setup ~mode ~blocks workload () =
     }
   in
   Effect.Deep.match_with
-    (fun () ->
-      Mosaic.run
-        ~backend:(Matrix_test.backend terminal)
-        ~config:(Matrix_test.config terminal)
-        application)
+    (fun () -> drive ~on_idle terminal application)
     ()
     {
       retc = (fun () -> ());
@@ -202,13 +217,13 @@ let setup ~mode ~blocks workload () =
      are deliberately inspected here, never copied in the measured loop. *)
   for _ = 1 to 2 do
     let before = Matrix_test.screen terminal in
-    let written = String.length (Matrix_test.output terminal) in
+    let written = String.length (Matrix_test.written terminal) in
     step workload driver;
     require
       (not (String.equal before (Matrix_test.screen terminal)))
       "input did not change the presented frame";
     require
-      (String.length (Matrix_test.output terminal) > written)
+      (String.length (Matrix_test.written terminal) > written)
       "changed frame emitted no ANSI output";
     match workload with
     | Keystroke ->
@@ -244,7 +259,6 @@ type loop = {
   suspended : (unit, unit) Effect.Deep.continuation option ref;
   dispatch : (unit -> unit) ref;
   views : int ref;
-  paints : int ref;
 }
 
 let loop_resume loop =
@@ -270,25 +284,12 @@ let loop_close loop =
 let loop_setup ~pause () =
   let suspended : (unit, unit) Effect.Deep.continuation option ref = ref None in
   let dispatch = ref ignore in
-  let views = ref 0 and paints = ref 0 in
-  let t =
-    Matrix_test.create ~width:40 ~height:2
-      ~on_idle:(fun t ~until ->
-        match until with
-        | Some until ->
-            Matrix_test.advance t (max 1 (until - Matrix_test.now t))
-        | None -> if pause () then Effect.perform Presented)
-      ()
-  in
-  let backend = Matrix_test.backend t in
-  let backend =
-    {
-      backend with
-      write_output =
-        (fun b off len ->
-          incr paints;
-          backend.write_output b off len);
-    }
+  let views = ref 0 in
+  let t = Matrix_test.create ~width:40 ~height:2 () in
+  let on_idle t ~until =
+    match until with
+    | Some until -> Matrix_test.advance t (max 1 (until - Matrix_test.now t))
+    | None -> if pause () then Effect.perform Presented
   in
   let application =
     {
@@ -309,9 +310,7 @@ let loop_setup ~pause () =
   in
   Effect.Deep.match_with
     (fun () ->
-      Mosaic.run ~backend ~config:(Matrix_test.config t)
-        ~process_perform:(fun work -> work ())
-        application)
+      drive ~on_idle ~process_perform:(fun work -> work ()) t application)
     ()
     {
       retc = (fun () -> ());
@@ -325,7 +324,18 @@ let loop_setup ~pause () =
                   suspended := Some k)
           | _ -> None);
     };
-  { t; suspended; dispatch; views; paints }
+  { t; suspended; dispatch; views }
+
+(* The frames written in [output] from [from]: each begins by hiding the
+   cursor. *)
+let paints ~from output =
+  let hide = "\027[?25l" in
+  let n = String.length hide in
+  let count = ref 0 in
+  for i = from to String.length output - n do
+    if String.sub output i n = hide then incr count
+  done;
+  !count
 
 (* 10,000 idle turns a sample: the loop waits, finds nothing, waits again. *)
 let idle_turns () =
@@ -343,11 +353,14 @@ let idle_turns () =
 (* 1,000 keys in one read, applied, viewed and painted once. *)
 let burst () =
   let loop = loop_setup ~pause:(fun () -> true) () in
-  let views = !(loop.views) and paints = !(loop.paints) in
+  let views = !(loop.views) in
+  let written = String.length (Matrix_test.written loop.t) in
   Matrix_test.feed loop.t (String.make 1000 'a');
   loop_resume loop;
   require (!(loop.views) - views = 1000) "a burst is not 1,000 views";
-  require (!(loop.paints) - paints = 1) "a burst is not one paint";
+  require
+    (paints ~from:written (Matrix_test.written loop.t) = 1)
+    "a burst is not one paint";
   loop
 
 let burst_sample loop =

@@ -1270,22 +1270,24 @@ end
 *)
 
 val run :
-  ?backend:Matrix.Backend.t ->
+  ?input:Unix.file_descr ->
+  ?output:Unix.file_descr ->
+  ?env:Matrix.Terminal.Caps.env ->
   ?config:Matrix.config ->
   ?process_perform:((unit -> unit) -> unit) ->
   ?probe:(Probe.t -> unit) ->
   ('model, 'msg) app ->
   unit
-(** [run ?backend ?config ?process_perform ?probe app] calls [app]'s [init],
-    then runs [app] in the terminal ({!Matrix.run}) until {!Cmd.val-quit}, a
-    Ctrl+C press no handler prevented ({!Event.Key.prevent_default}), the end of
-    the input, or a signal that ends the process. In raw mode Ctrl+C is a key:
-    quitting is its default, which an element or a listener that uses the key
-    prevents. The terminal is given back on every way out, an exception
-    included. [init] runs before the terminal is taken; its commands and the
-    first subscriptions run after.
+(** [run app] calls [app]'s [init], then runs [app] in the terminal
+    ({!Matrix.run}) until {!Cmd.val-quit}, a Ctrl+C press no handler prevented
+    ({!Event.Key.prevent_default}), the end of the input, or a signal that ends
+    the process. In raw mode Ctrl+C is a key: quitting is its default, which an
+    element or a listener that uses the key prevents. The terminal is given back
+    on every way out, an exception included. [init] runs before the terminal is
+    taken; its commands and the first subscriptions run after.
 
-    - [backend] -- the terminal to run in. Defaults to {!Matrix.Backend.unix}.
+    - [input], [output], [env] -- the terminal to run in and its session's
+      environment, as {!Matrix.run} takes them. Default to the process's.
     - [config] -- what the run sets up. Defaults to {!Matrix.config} with a
       hidden cursor.
     - [process_perform] -- the executor: it runs the work of {!Cmd.val-perform}
@@ -1314,7 +1316,9 @@ type 'msg running
     takes one must be called on that thread, except {!val-dispatch}. *)
 
 val start :
-  ?backend:Matrix.Backend.t ->
+  ?input:Unix.file_descr ->
+  ?output:Unix.file_descr ->
+  ?env:Matrix.Terminal.Caps.env ->
   ?config:Matrix.config ->
   ?process_perform:((unit -> unit) -> unit) ->
   ?probe:(Probe.t -> unit) ->
