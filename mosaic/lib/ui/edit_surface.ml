@@ -401,34 +401,49 @@ let caret_at_col t target_line target_col =
 
 (* The accepted value declares the viewport. The surface's offsets are its
    resolution against the current geometry, recomputed from the value alone,
-   so a remounted surface shows the same lines. *)
-let reveal_caret t =
-  let h = Renderable.height t.node in
-  if h > 0 then begin
-    let dl = find_cursor_display_line t in
-    let sy = Text_surface.scroll_y t.surface in
-    if dl < sy then Text_surface.set_scroll_y t.surface dl
-    else if dl >= sy + h then Text_surface.set_scroll_y t.surface (dl - h + 1)
-  end;
-  if Text_surface.wrap t.surface = `None then begin
-    let w = Renderable.width t.node in
-    if w > 0 then begin
-      let dl = find_cursor_display_line t in
-      let cc = cursor_visual_col t dl in
-      let sx = Text_surface.scroll_x t.surface in
-      if cc < sx then Text_surface.set_scroll_x t.surface cc
-      else if cc >= sx + w then
-        Text_surface.set_scroll_x_for_cursor t.surface (cc - w + 1)
-    end
-  end
-
+   so a remounted surface shows the same lines. A value that follows its caret
+   moves from its declared position as little as needed to show the caret.
+   Both offsets are resolved before either is set, so a paint that resolves
+   to the offsets already shown changes nothing and requests no render. *)
 let show_viewport t =
+  let s = t.surface in
   let x, y, follow = Editor.viewport t.props.state in
-  Text_surface.set_scroll_y t.surface y;
-  if Renderable.focused t.node && Text_surface.wrap t.surface = `None then
-    Text_surface.set_scroll_x_for_cursor t.surface x
-  else Text_surface.set_scroll_x t.surface x;
-  if follow then reveal_caret t
+  let clamp hi v = max 0 (min v hi) in
+  let max_x = Text_surface.max_scroll_x s in
+  let max_cursor_x = Text_surface.max_cursor_scroll_x s in
+  let max_y = Text_surface.max_scroll_y s in
+  let unwrapped = Text_surface.wrap s = `None in
+  let sx =
+    clamp
+      (if Renderable.focused t.node && unwrapped then max_cursor_x else max_x)
+      x
+  in
+  let sy = clamp max_y y in
+  let sx, sy =
+    if not follow then (sx, sy)
+    else
+      let w = Renderable.width t.node in
+      let h = Renderable.height t.node in
+      let dl = find_cursor_display_line t in
+      let sy =
+        if h <= 0 then sy
+        else if dl < sy then clamp max_y dl
+        else if dl >= sy + h then clamp max_y (dl - h + 1)
+        else sy
+      in
+      let sx =
+        if w <= 0 || not unwrapped then sx
+        else
+          let cc = cursor_visual_col t dl in
+          if cc < sx then clamp max_x cc
+          else if cc >= sx + w then clamp max_cursor_x (cc - w + 1)
+          else sx
+      in
+      (sx, sy)
+  in
+  Text_surface.set_scroll_y s sy;
+  (* [sx] is within the cursor's range, which this setter leaves as is. *)
+  Text_surface.set_scroll_x_for_cursor s sx
 
 let handle_resize t _node = show_viewport t
 

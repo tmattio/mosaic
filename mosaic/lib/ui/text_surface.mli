@@ -93,6 +93,10 @@ val scroll_width : t -> int
 val max_scroll_x : t -> int
 (** [max_scroll_x t] is [max 0 ({!scroll_width} t - viewport_width)]. *)
 
+val max_cursor_scroll_x : t -> int
+(** [max_cursor_scroll_x t] is [max 0 ({!scroll_width} t - viewport_width + 1)],
+    the largest offset {!set_scroll_x_for_cursor} sets. *)
+
 val max_scroll_y : t -> int
 (** [max_scroll_y t] is [max 0 ({!scroll_height} t - viewport_height)]. *)
 

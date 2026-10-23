@@ -938,6 +938,23 @@ let mouse_wheel_scrolls_surface () =
   is_true ~msg:"scroll default prevented" (Event.Mouse.default_prevented ev);
   equal ~msg:"scroll_y" int 2 (Text_surface.scroll_y (Textarea.surface ta))
 
+(* A viewport that follows the caret resolves to the same offsets on every
+   paint, so once the caret is shown the editor asks for no further frame. *)
+let following_viewport_settles () =
+  let r = Renderer.create () in
+  let lines = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten" in
+  let ta =
+    create_editor ~parent:(Renderer.root r)
+      ~style:(sized_style ~width:20 ~height:3)
+      ~value:lines ()
+  in
+  update_editor ta (Editor.with_viewport ~x:0 ~y:0 ~follow:true);
+  render_frame r ~width:20 ~height:3;
+  equal ~msg:"the caret's line is shown" int 7
+    (Text_surface.scroll_y (Textarea.surface ta));
+  render_frame r ~width:20 ~height:3;
+  is_false ~msg:"no frame is owed" (Renderer.needs_render r)
+
 let wheel_down ta delta =
   let ev =
     Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier
@@ -1438,6 +1455,7 @@ let () =
           test "wheel scrolls surface" mouse_wheel_scrolls_surface;
           test "remounted surface keeps the wheel viewport"
             remounted_surface_keeps_wheel_viewport;
+          test "following viewport settles" following_viewport_settles;
           test "rejected wheel proposal does not scroll"
             rejected_wheel_proposal_does_not_scroll;
           test "resize after newline clamps scroll_y"
