@@ -25,14 +25,14 @@ type t
 type syntax
 (** The type for source-code syntax settings.
 
-    Syntax settings are values: their language, style, ranges and flags compare
-    by value, so a view may rebuild them on every render. Only the
-    {!Highlighter.t} inside compares by identity (see {!Highlighter.t}).
+    Syntax settings are values: their language, style and ranges compare by
+    value, so a view may rebuild them on every render. Only the {!Highlighter.t}
+    inside compares by identity (see {!Highlighter.t}).
 
-    [style] and [conceal] only present captures: a change of either alone
-    restyles the result already received for the content without highlighting it
-    again, and a pending result is styled with the settings current when it
-    arrives. *)
+    [style] only presents captures: a change of style alone restyles the result
+    already received for the content without highlighting it again, and a
+    pending result is styled with the settings current when it arrives. The same
+    holds for the view's [conceal] property (see {!Props.make}). *)
 
 module Highlighter : sig
   type request = { content : string; language : string }
@@ -110,11 +110,7 @@ module Highlighter : sig
 end
 
 val syntax :
-  ?language:string ->
-  ?style:Syntax_style.t ->
-  ?conceal:bool ->
-  Syntax_highlight.t ->
-  syntax
+  ?language:string -> ?style:Syntax_style.t -> Syntax_highlight.t -> syntax
 (** [syntax highlights] is a syntax configuration.
 
     - [language] names the source language when known.
@@ -122,15 +118,10 @@ val syntax :
       {!Syntax_style.default}.
     - [highlights] are bound to the exact content they describe. Mismatched
       content falls back to plain text, even when byte lengths agree. Omit
-      [syntax] to render plain text.
-    - [conceal] enables conceal metadata in [highlights]. Defaults to [true]. *)
+      [syntax] to render plain text. *)
 
 val with_highlighter :
-  language:string ->
-  ?style:Syntax_style.t ->
-  ?conceal:bool ->
-  Highlighter.t ->
-  syntax
+  language:string -> ?style:Syntax_style.t -> Highlighter.t -> syntax
 (** [with_highlighter ~language highlighter] is a syntax configuration that
     derives highlight ranges from [highlighter], which receives [language] and
     the whole content in each request. Empty content is shown without a request.
@@ -158,6 +149,7 @@ module Props : sig
   val make :
     ?content:string ->
     ?syntax:syntax ->
+    ?conceal:bool ->
     ?text_style:Ansi.Style.t ->
     ?wrap:Text_surface.wrap ->
     ?tab_width:int ->
@@ -170,6 +162,9 @@ module Props : sig
   (** [make ()] is a code props value with:
       - [content] is the plain source code text. Defaults to [""].
       - [syntax] is the source-code syntax configuration. Defaults to [None].
+      - [conceal] applies the captures' conceal metadata (see
+        {!Syntax_highlight.to_annotations}): read-only code may hide or replace
+        the bytes a capture conceals. Defaults to [true].
       - [text_style] is the base text style. Defaults to {!Ansi.Style.default}.
       - [wrap] is the wrapping mode. Defaults to [`None].
       - [tab_width] is the tab stop width in columns. Defaults to [4].
@@ -198,6 +193,7 @@ val create :
   ?opacity:float ->
   ?content:string ->
   ?syntax:syntax ->
+  ?conceal:bool ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
   ?tab_width:int ->
@@ -218,6 +214,7 @@ val create :
     - [opacity] is the opacity. Defaults to [1.0].
     - [content] is the plain source code text. Defaults to [""].
     - [syntax] configures source-code highlighting.
+    - [conceal] applies the captures' conceal metadata. Defaults to [true].
     - [text_style] is the base text style. Defaults to {!Ansi.Style.default}.
     - [wrap] is the wrapping mode. Defaults to [`None].
     - [tab_width] is the tab stop width in columns. Defaults to [4].

@@ -939,6 +939,7 @@ val code :
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?syntax:Code.syntax ->
+  ?conceal:bool ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
   ?tab_width:int ->
@@ -954,6 +955,7 @@ val code :
 
     Code-specific attributes:
     - [syntax] configures source-code highlighting. Defaults to plain text.
+    - [conceal] applies the captures' conceal metadata. Defaults to [true].
     - [text_style] is the base ANSI style applied to the text. Defaults to
       {!Ansi.Style.default}.
     - [wrap] is the line-wrapping mode. Defaults to [`None].

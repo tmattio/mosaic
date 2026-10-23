@@ -100,16 +100,13 @@ type syntax = {
   language : string option;
   style : Syntax_style.t;
   source : source;
-  conceal : bool;
 }
 
-let syntax ?language ?(style = Syntax_style.default) ?(conceal = true)
-    highlights =
-  { language; style; source = Ranges highlights; conceal }
+let syntax ?language ?(style = Syntax_style.default) highlights =
+  { language; style; source = Ranges highlights }
 
-let with_highlighter ~language ?(style = Syntax_style.default) ?(conceal = true)
-    highlighter =
-  { language = Some language; style; source = Highlighter highlighter; conceal }
+let with_highlighter ~language ?(style = Syntax_style.default) highlighter =
+  { language = Some language; style; source = Highlighter highlighter }
 
 let source_equal a b =
   match (a, b) with
@@ -124,7 +121,6 @@ let syntax_equal a b =
   Option.equal String.equal a.language b.language
   && Syntax_style.equal a.style b.style
   && source_equal a.source b.source
-  && Bool.equal a.conceal b.conceal
 
 (* Two settings with the same producer yield the same captures for the same
    content; they may differ only in presentation. *)
@@ -138,6 +134,7 @@ module Props = struct
   type t = {
     content : string;
     syntax : syntax option;
+    conceal : bool;
     text_style : Ansi.Style.t;
     wrap : Text_surface.wrap;
     tab_width : int;
@@ -147,12 +144,13 @@ module Props = struct
     selection_fg : Ansi.Color.t option;
   }
 
-  let make ?(content = "") ?syntax ?(text_style = Ansi.Style.default)
-      ?(wrap = `None) ?(tab_width = 4) ?(truncate = false) ?(selectable = true)
-      ?selection_bg ?selection_fg () =
+  let make ?(content = "") ?syntax ?(conceal = true)
+      ?(text_style = Ansi.Style.default) ?(wrap = `None) ?(tab_width = 4)
+      ?(truncate = false) ?(selectable = true) ?selection_bg ?selection_fg () =
     {
       content;
       syntax;
+      conceal;
       text_style;
       wrap;
       tab_width;
@@ -167,6 +165,7 @@ module Props = struct
   let equal a b =
     String.equal a.content b.content
     && Option.equal syntax_equal a.syntax b.syntax
+    && Bool.equal a.conceal b.conceal
     && Ansi.Style.equal a.text_style b.text_style
     && a.wrap = b.wrap && a.tab_width = b.tab_width && a.truncate = b.truncate
     && a.selectable = b.selectable
@@ -238,7 +237,7 @@ let paint t content syntax captures =
     if content != captured && not (String.equal content captured) then
       invalid_arg "Code: highlights do not match source";
     let annotations =
-      Syntax_highlight.to_annotations ~conceal:syntax.conceal
+      Syntax_highlight.to_annotations ~conceal:t.props.conceal
         ~style:syntax.style captures
     in
     Text_renderable.set_annotations t.text annotations;
@@ -312,7 +311,8 @@ let show_pending t content syntax =
   match t.latest with
   | Some captures ->
       ignore
-        (paint t content syntax (carry ~conceal:syntax.conceal captures content)
+        (paint t content syntax
+           (carry ~conceal:t.props.conceal captures content)
           : bool)
   | None -> apply_plain t content
 
@@ -416,10 +416,10 @@ let render_before t _node _grid ~delta:_ = poll_job t
 (* Construction *)
 
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?content ?syntax
-    ?text_style ?wrap ?tab_width ?truncate ?selectable ?selection_bg
+    ?conceal ?text_style ?wrap ?tab_width ?truncate ?selectable ?selection_bg
     ?selection_fg ?on_selection () =
   let props =
-    Props.make ?content ?syntax ?text_style ?wrap ?tab_width ?truncate
+    Props.make ?content ?syntax ?conceal ?text_style ?wrap ?tab_width ?truncate
       ?selectable ?selection_bg ?selection_fg ()
   in
   let text =
@@ -472,6 +472,7 @@ let apply_props t (props : Props.t) =
   let content_changed =
     (not (String.equal t.props.content props.content))
     || (not (Option.equal syntax_equal t.props.syntax props.syntax))
+    || (not (Bool.equal t.props.conceal props.conceal))
     || style_changed
   in
 

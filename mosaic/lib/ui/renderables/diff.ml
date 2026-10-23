@@ -130,7 +130,10 @@ let syntax_equal a b =
 
 let code_syntax syntax =
   Code.with_highlighter ~language:syntax.language ~style:syntax.style
-    ~conceal:syntax.conceal syntax.highlighter
+    syntax.highlighter
+
+(* A pane without syntax has nothing to conceal. *)
+let code_conceal = function Some syntax -> syntax.conceal | None -> true
 
 type highlight = { old : syntax; new_ : syntax }
 
@@ -1028,13 +1031,16 @@ let decorate_pane (props : Props.t) side code ~text rows =
   pane
 
 let code_props (props : Props.t) ~content ?syntax () =
-  Code.Props.make ~content ?syntax ~text_style:props.text_style ~wrap:props.wrap
+  Code.Props.make ~content
+    ?syntax:(Option.map code_syntax syntax)
+    ~conceal:(code_conceal syntax) ~text_style:props.text_style ~wrap:props.wrap
     ~selectable:props.selectable ()
 
 let make_code ~parent (props : Props.t) ~content ?syntax () =
-  Code.create ~parent ~style:full_style ~content ?syntax
-    ~text_style:props.text_style ~wrap:props.wrap ~selectable:props.selectable
-    ()
+  Code.create ~parent ~style:full_style ~content
+    ?syntax:(Option.map code_syntax syntax)
+    ~conceal:(code_conceal syntax) ~text_style:props.text_style ~wrap:props.wrap
+    ~selectable:props.selectable ()
 
 let make_or_update_code existing ~parent (props : Props.t) ~content ?syntax () =
   match existing with
@@ -1046,8 +1052,6 @@ let make_or_update_code existing ~parent (props : Props.t) ~content ?syntax () =
 
 let old_syntax = function Some { old; _ } -> Some old | None -> None
 let new_syntax = function Some { new_; _ } -> Some new_ | None -> None
-let old_code_syntax highlight = Option.map code_syntax (old_syntax highlight)
-let new_code_syntax highlight = Option.map code_syntax (new_syntax highlight)
 
 let make_or_update_side existing ~parent ~style ~theme =
   match existing with
@@ -1104,7 +1108,7 @@ let build_unified_view t (props : Props.t) =
   let code =
     make_or_update_code t.left_code ~parent:(Line_number.node side) props
       ~content:text
-      ?syntax:(new_code_syntax props.highlight)
+      ?syntax:(new_syntax props.highlight)
       ()
   in
   t.left_pane <- Some (decorate_pane props side code ~text rows);
@@ -1168,7 +1172,7 @@ let build_split_view t (props : Props.t) =
     make_or_update_code t.left_code
       ~parent:(Line_number.node left_side)
       props ~content:installed_left_text
-      ?syntax:(old_code_syntax props.highlight)
+      ?syntax:(old_syntax props.highlight)
       ()
   in
   let right_side =
@@ -1179,7 +1183,7 @@ let build_split_view t (props : Props.t) =
     make_or_update_code t.right_code
       ~parent:(Line_number.node right_side)
       props ~content:installed_right_text
-      ?syntax:(new_code_syntax props.highlight)
+      ?syntax:(new_syntax props.highlight)
       ()
   in
   set_code_rows_callback t left_code;
@@ -1219,11 +1223,11 @@ let build_split_view t (props : Props.t) =
   let right_text = View.text right_rows in
   Code.apply_props left_code
     (code_props props ~content:left_text
-       ?syntax:(old_code_syntax props.highlight)
+       ?syntax:(old_syntax props.highlight)
        ());
   Code.apply_props right_code
     (code_props props ~content:right_text
-       ?syntax:(new_code_syntax props.highlight)
+       ?syntax:(new_syntax props.highlight)
        ());
   t.left_pane <-
     Some (decorate_pane props left_side left_code ~text:left_text left_rows);

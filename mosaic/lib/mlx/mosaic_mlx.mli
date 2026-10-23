@@ -398,6 +398,7 @@ val code :
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?focused:bool ->
   ?syntax:Code.syntax ->
+  ?conceal:bool ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
   ?tab_width:int ->

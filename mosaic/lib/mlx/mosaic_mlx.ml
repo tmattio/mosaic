@@ -126,8 +126,8 @@ let code ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?focused ?syntax ?text_style ?wrap
-    ?tab_width ?selectable ?selection_bg ?selection_fg ?on_selection
+    ?on_click ?on_focus_request ?on_size ?focused ?syntax ?conceal ?text_style
+    ?wrap ?tab_width ?selectable ?selection_bg ?selection_fg ?on_selection
     ?(children = []) () =
   Mosaic.code ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items
@@ -137,8 +137,8 @@ let code ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?focused ?syntax ?text_style ?wrap
-    ?tab_width ?selectable ?selection_bg ?selection_fg ?on_selection
+    ?on_click ?on_focus_request ?on_size ?focused ?syntax ?conceal ?text_style
+    ?wrap ?tab_width ?selectable ?selection_bg ?selection_fg ?on_selection
     (String.concat "" children)
 
 let markdown ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width

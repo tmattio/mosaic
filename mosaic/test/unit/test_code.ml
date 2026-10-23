@@ -377,6 +377,26 @@ let conceal_metadata_applies () =
   equal ~msg:"concealed text" string "* x = 1"
     (Text_buffer.plain_text (Code.buffer code))
 
+let conceal_is_a_view_property () =
+  let meta = { Syntax_highlight.default_meta with conceal = Some "*" } in
+  let highlights =
+    Syntax_highlight.make ~content:"let x = 1"
+      [
+        Syntax_highlight.range ~meta ~start_byte:0 ~end_byte:3 ~scope:"keyword"
+          ();
+      ]
+  in
+  let syntax = Code.syntax ~style:(syntax_style red) highlights in
+  let _ctx, code = make_code ~content:"let x = 1" ~syntax () in
+  Code.apply_props code
+    (Code.Props.make ~content:"let x = 1" ~syntax ~conceal:false ());
+  equal ~msg:"every byte shown" string "let x = 1"
+    (Text_buffer.plain_text (Code.buffer code));
+  is_true ~msg:"the capture still styles" (is_red code 0);
+  Code.apply_props code (Code.Props.make ~content:"let x = 1" ~syntax ());
+  equal ~msg:"concealed again" string "* x = 1"
+    (Text_buffer.plain_text (Code.buffer code))
+
 let set_content_reapplies_syntax () =
   let syntax = Code.syntax ~style:(syntax_style red) highlights in
   let ctx, code = make_code ~content:"let x" ~syntax () in
@@ -732,6 +752,7 @@ let () =
           test "invalid highlights fall back to plain text"
             invalid_highlights_fall_back_to_plain_text;
           test "conceal metadata applies" conceal_metadata_applies;
+          test "conceal is a view property" conceal_is_a_view_property;
         ];
       group "Workers"
         [

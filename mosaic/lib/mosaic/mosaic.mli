@@ -695,7 +695,6 @@ module Code : sig
   val syntax :
     ?language:string ->
     ?style:Mosaic_ui.Syntax_style.t ->
-    ?conceal:bool ->
     Mosaic_ui.Syntax_highlight.t ->
     syntax
   (** [syntax highlights] is a source-code syntax configuration. *)
@@ -703,7 +702,6 @@ module Code : sig
   val with_highlighter :
     language:string ->
     ?style:Mosaic_ui.Syntax_style.t ->
-    ?conceal:bool ->
     Highlighter.t ->
     syntax
   (** [with_highlighter ~language highlighter] is a source-code syntax
@@ -2493,6 +2491,7 @@ val code :
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?focused:bool ->
   ?syntax:Code.syntax ->
+  ?conceal:bool ->
   ?text_style:Ansi.Style.t ->
   ?wrap:Text_surface.wrap ->
   ?tab_width:int ->

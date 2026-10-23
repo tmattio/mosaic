@@ -725,12 +725,12 @@ let table ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
 let code ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
     ?(opacity = 1.0) ?(focusable = false) ?(focused = false) ?(buffered = false)
     ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
-    ?on_size ?syntax ?text_style ?wrap ?tab_width ?truncate ?selectable
+    ?on_size ?syntax ?conceal ?text_style ?wrap ?tab_width ?truncate ?selectable
     ?selection_bg ?selection_fg ?on_selection content =
   let kind =
     Code
-      (Code.Props.make ~content ?syntax ?text_style ?wrap ?tab_width ?truncate
-         ?selectable ?selection_bg ?selection_fg ())
+      (Code.Props.make ~content ?syntax ?conceal ?text_style ?wrap ?tab_width
+         ?truncate ?selectable ?selection_bg ?selection_fg ())
   in
   let attrs =
     {

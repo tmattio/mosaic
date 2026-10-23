@@ -191,8 +191,10 @@ val syntax :
   syntax
 (** [syntax ~language highlighter] is a diff syntax configuration. Each side is
     a {!Code} view configured by {!Code.with_highlighter}, which states what a
-    side shows while a result is pending. Wrapped split views align their rows
-    once both sides have their results, since highlighting may conceal text. *)
+    side shows while a result is pending, and [conceal] is the sides' [conceal]
+    property (see {!Code.Props.make}). Defaults to [true]. Wrapped split views
+    align their rows once both sides have their results, since highlighting may
+    conceal text. *)
 
 type highlight = { old : syntax; new_ : syntax }
 (** Syntax configurations for old and new content.
