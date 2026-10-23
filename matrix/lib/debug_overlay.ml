@@ -14,7 +14,7 @@ type theme = {
   accent : Ansi.Color.t;
 }
 
-type t = {
+type panel = {
   mutable sections : section list;
   theme : theme;
   padding : int;
@@ -32,9 +32,13 @@ let default_theme =
     accent = Ansi.Color.of_rgb 150 200 255;
   }
 
-let create ?(sections = []) ?(theme = default_theme) ?(padding = 1) ?(gap = 1)
-    () =
-  { sections; theme; padding = clamp_nonneg padding; gap = clamp_nonneg gap }
+let panel ?(theme = default_theme) ?(padding = 1) ?(gap = 1) () =
+  {
+    sections = [];
+    theme;
+    padding = clamp_nonneg padding;
+    gap = clamp_nonneg gap;
+  }
 
 let set_sections t sections = t.sections <- sections
 let section ?title rows = { title; rows }
@@ -198,91 +202,95 @@ let fmt_mb value = Printf.sprintf "%.2f MB" value
 let fmt_words_mb words =
   if words <= 0 then "0.00 MB" else fmt_mb (words_to_mb words)
 
-let on_frame ?(corner = `Bottom_right) ?(padding = 1) ?(gap = 1)
-    ?(capacity = 120) () : Screen.t -> render_start:int -> render_ns:int -> unit
-    =
-  let frame_ring = Avg_ring.create capacity in
-  let interval_ring = Avg_ring.create capacity in
-  let overlay = create ~padding ~gap () in
-  (* Initialize to None to detect first frame; avoids showing misleading "delta
-     since program start" on the first render. *)
-  let last_minor_words = ref None in
-  let last_major_words = ref None in
-  let last_start = ref None in
-  fun (screen : Screen.t) ~render_start ~render_ns ->
-    let metrics = Screen.last_metrics screen in
-    let render_ms = Float.of_int render_ns *. 1e-6 in
-    let interval_ms =
-      match !last_start with
-      | Some start when render_start > start ->
-          Float.of_int (render_start - start) *. 1e-6
-      | _ -> 0.
-    in
-    last_start := Some render_start;
-    Avg_ring.push frame_ring render_ms;
-    Avg_ring.push interval_ring interval_ms;
-    let frame_ms = if interval_ms > 0. then interval_ms else render_ms in
-    let fps = if frame_ms > 0. then 1000. /. frame_ms else 0. in
-    let base_rows =
+type t = {
+  corner : corner;
+  panel : panel;
+  render_ring : Avg_ring.t;
+  interval_ring : Avg_ring.t;
+  (* The last frame recorded: when it started and how long it took, and the
+     time since the frame before it, 0. for the first. *)
+  mutable render_ms : float;
+  mutable interval_ms : float;
+  mutable last_start : int option;
+  (* The collector's counts at the last draw, to show what each frame
+     allocated. *)
+  mutable last_minor_words : float option;
+  mutable last_major_words : float option;
+}
+
+let create ?(corner = `Bottom_right) ?(capacity = 120) () =
+  {
+    corner;
+    panel = panel ();
+    render_ring = Avg_ring.create capacity;
+    interval_ring = Avg_ring.create capacity;
+    render_ms = 0.;
+    interval_ms = 0.;
+    last_start = None;
+    last_minor_words = None;
+    last_major_words = None;
+  }
+
+let record t ~start ~ns =
+  let render_ms = Float.of_int ns *. 1e-6 in
+  let interval_ms =
+    match t.last_start with
+    | Some last when start > last -> Float.of_int (start - last) *. 1e-6
+    | _ -> 0.
+  in
+  t.last_start <- Some start;
+  t.render_ms <- render_ms;
+  t.interval_ms <- interval_ms;
+  Avg_ring.push t.render_ring render_ms;
+  Avg_ring.push t.interval_ring interval_ms
+
+let draw t ~(metrics : Screen.frame_metrics) ~(gc : Gc.stat) grid =
+  let frame_ms = if t.interval_ms > 0. then t.interval_ms else t.render_ms in
+  let fps = if frame_ms > 0. then 1000. /. frame_ms else 0. in
+  let frame_rows =
+    [
+      ("frames", string_of_int metrics.frame_count);
+      ("fps", Printf.sprintf "%.1f" fps);
+      ("frame", fmt_ms frame_ms);
+      ("draw", fmt_ms t.render_ms);
+      ("cells", string_of_int metrics.cells);
+      ("output", Printf.sprintf "%d bytes" metrics.bytes);
+      ("cursor", if metrics.cursor_visible then "visible" else "hidden");
+    ]
+  in
+  let perf_rows =
+    List.concat
       [
-        ("frames", string_of_int metrics.frame_count);
-        ("fps", Printf.sprintf "%.1f" fps);
-        ("frame", fmt_ms frame_ms);
-        ("render", fmt_ms render_ms);
-        ("cells", string_of_int metrics.cells);
-        ("output", Printf.sprintf "%d bytes" metrics.bytes);
-        ("cursor", if metrics.cursor_visible then "visible" else "hidden");
+        (match Avg_ring.average t.render_ring with
+        | Some avg -> [ ("avg draw", fmt_ms avg) ]
+        | None -> []);
+        (match Avg_ring.average t.interval_ring with
+        | Some avg_interval when avg_interval > 0. ->
+            [
+              ("avg frame", fmt_ms avg_interval);
+              ("avg fps", Printf.sprintf "%.1f" (1000. /. avg_interval));
+            ]
+        | _ -> []);
       ]
-    in
-    let frame_rows = base_rows in
-    let perf_rows =
-      List.concat
-        [
-          (match Avg_ring.average frame_ring with
-          | Some avg -> [ ("avg render", fmt_ms avg) ]
-          | None -> []);
-          (match Avg_ring.average interval_ring with
-          | Some avg_interval when avg_interval > 0. ->
-              [
-                ("avg frame", fmt_ms avg_interval);
-                ("avg fps", Printf.sprintf "%.1f" (1000. /. avg_interval));
-              ]
-          | _ -> []);
-        ]
-    in
-    let sections = [ section ~title:"frame" frame_rows ] in
-    let sections =
-      match perf_rows with
-      | [] -> sections
-      | _ -> sections @ [ section ~title:"perf" perf_rows ]
-    in
-    let sections =
-      let stats = Gc.quick_stat () in
-      (* Compute deltas only if we have a previous sample *)
-      let delta_minor_mb, delta_major_mb =
-        match (!last_minor_words, !last_major_words) with
-        | Some prev_minor, Some prev_major ->
-            let dm = max 0. (stats.minor_words -. prev_minor) in
-            let dM = max 0. (stats.major_words -. prev_major) in
-            (Some (words_to_mb_f dm), Some (words_to_mb_f dM))
-        | _ -> (None, None)
-      in
-      last_minor_words := Some stats.minor_words;
-      last_major_words := Some stats.major_words;
-      let gc_rows =
-        [
-          ("heap", fmt_words_mb stats.heap_words);
-          ("live", fmt_words_mb stats.live_words);
-        ]
-        @ List.map
-            (fun mb -> ("minor Δ", fmt_mb mb))
-            (Option.to_list delta_minor_mb)
-        @ List.map
-            (fun mb -> ("major Δ", fmt_mb mb))
-            (Option.to_list delta_major_mb)
-      in
-      sections @ [ section ~title:"gc" gc_rows ]
-    in
-    set_sections overlay sections;
-    let grid = Screen.next_grid screen in
-    render ~corner overlay grid
+  in
+  let delta previous now =
+    Option.map
+      (fun previous -> words_to_mb_f (max 0. (now -. previous)))
+      previous
+  in
+  let minor = delta t.last_minor_words gc.minor_words
+  and major = delta t.last_major_words gc.major_words in
+  t.last_minor_words <- Some gc.minor_words;
+  t.last_major_words <- Some gc.major_words;
+  let gc_rows =
+    [
+      ("heap", fmt_words_mb gc.heap_words); ("live", fmt_words_mb gc.live_words);
+    ]
+    @ List.map (fun mb -> ("minor Δ", fmt_mb mb)) (Option.to_list minor)
+    @ List.map (fun mb -> ("major Δ", fmt_mb mb)) (Option.to_list major)
+  in
+  set_sections t.panel
+    ([ section ~title:"frame" frame_rows ]
+    @ (match perf_rows with [] -> [] | rows -> [ section ~title:"perf" rows ])
+    @ [ section ~title:"gc" gc_rows ]);
+  render ~corner:t.corner t.panel grid

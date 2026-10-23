@@ -5,7 +5,7 @@
   (backend ppx_windtrap.mutate))
  (name matrix)
  (public_name matrix)
- (private_modules primary debug_overlay frame_dump)
+ (private_modules primary frame_dump)
  (libraries
   matrix.ansi
   matrix.grid

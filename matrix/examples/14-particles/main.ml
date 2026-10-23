@@ -322,10 +322,21 @@ let create_state ~cols ~rows =
     paused = false;
   }
 
+(* The debug overlay over each frame: the time each frame takes to draw,
+   recorded after it, and the collector's statistics. *)
+let draw_with_overlay overlay app view =
+  let start = Matrix.clock () in
+  Matrix.draw app (fun grid ->
+      view grid;
+      Matrix.Debug_overlay.draw overlay
+        ~metrics:(Matrix.Screen.last_metrics (Matrix.screen app))
+        ~gc:(Gc.quick_stat ()) grid);
+  Matrix.Debug_overlay.record overlay ~start ~ns:(Matrix.clock () - start)
+
 let () =
   Random.self_init ();
-  let config = Matrix.config ~debug_overlay:true () in
-  Matrix.run ~config @@ fun app ->
+  let overlay = Matrix.Debug_overlay.create () in
+  Matrix.run @@ fun app ->
   let cols, rows = Matrix.size app in
   let state = create_state ~cols ~rows in
   let rec loop last =
@@ -342,7 +353,7 @@ let () =
         let dt = Float.min (Float.of_int (now - last) *. 1e-9) 0.1 in
         spawn_from_emitters state dt;
         update_particles state dt;
-        Matrix.draw app (fun grid ->
+        draw_with_overlay overlay app (fun grid ->
             let _, rows = Matrix.size app in
             Grid.clear ~color:(Color.of_rgb 10 10 20) grid;
             draw_particles grid state;

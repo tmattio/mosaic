@@ -1292,8 +1292,7 @@ val run :
       environment, as {!Matrix.run} takes them. Default to the process's.
     - [stop] -- ends the program from elsewhere, before it has begun or while it
       runs ({!Matrix.Stop}), as the end of its input does.
-    - [config] -- what the run sets up. Defaults to {!Matrix.config} with a
-      hidden cursor.
+    - [config] -- what the run sets up. Defaults to {!Matrix.val-config}[ ()].
     - [process_perform] -- the executor: it runs the work of {!Cmd.val-perform}
       and {!Sub.val-worker} off the loop, each given as a function that has the
       dispatch wired in and raises nothing. By default each runs on a thread of

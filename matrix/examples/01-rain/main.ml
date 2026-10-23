@@ -124,8 +124,20 @@ let draw_state grid (state : state) =
 
 let fps = 1. /. 0.075
 
+(* The debug overlay over each frame: the time each frame takes to draw,
+   recorded after it, and the collector's statistics. *)
+let draw_with_overlay overlay app view =
+  let start = Matrix.clock () in
+  Matrix.draw app (fun grid ->
+      view grid;
+      Matrix.Debug_overlay.draw overlay
+        ~metrics:(Matrix.Screen.last_metrics (Matrix.screen app))
+        ~gc:(Gc.quick_stat ()) grid);
+  Matrix.Debug_overlay.record overlay ~start ~ns:(Matrix.clock () - start)
+
 let () =
-  let config = Matrix.config ~fps ~mouse:`Off ~debug_overlay:true () in
+  let config = Matrix.config ~fps ~mouse:`Off () in
+  let overlay = Matrix.Debug_overlay.create () in
   Matrix.run ~config @@ fun app ->
   let rec loop state =
     match Matrix.next app with
@@ -139,7 +151,7 @@ let () =
     | Frame ->
         (* Each frame steps the rain and asks for the next. *)
         let state = step state in
-        Matrix.draw app (fun grid -> draw_state grid state);
+        draw_with_overlay overlay app (fun grid -> draw_state grid state);
         Matrix.request_redraw app;
         loop state
     | Event _ | Timer _ | Posted _ -> loop state

@@ -1,38 +1,50 @@
-(** Debug overlay with runtime telemetry.
+(** A panel of a run's frame timing and memory, drawn in a corner of a frame.
 
-    Paints a semi-transparent box in a screen corner showing frame metrics from
-    {!Matrix_screen.last_metrics}, the render times the runtime measured with
-    rolling averages of them and of the interval between renders, and per-frame
-    GC statistics from {!Gc.quick_stat}.
+    An overlay keeps the timing of the frames an application records
+    ({!record}): the last frame's, and the averages over the last frames. It
+    draws them in a corner of a frame's grid ({!draw}), with the metrics of the
+    last frame the screen presented and the statistics of the garbage collector,
+    and the memory allocated since it last drew. It reads no clock and asks the
+    collector nothing itself: the application gives it the times and the
+    statistics, and draws it in the frames it owns.
 
-    Internal to the Matrix runtime: reachable through
-    {!Matrix.set_debug_overlay} and {!Matrix.toggle_debug_overlay}, not exported
-    as a standalone module. *)
-
-(** {1:types Types} *)
+    An application times each frame it draws and draws the overlay over its
+    view:
+    {[
+    let draw_frame overlay app view =
+      let start = Matrix.clock () in
+      Matrix.draw app (fun grid ->
+          view grid;
+          Matrix.Debug_overlay.draw overlay
+            ~metrics:(Matrix.Screen.last_metrics (Matrix.screen app))
+            ~gc:(Gc.quick_stat ()) grid);
+      Matrix.Debug_overlay.record overlay ~start ~ns:(Matrix.clock () - start)
+    ]} *)
 
 type corner = [ `Top_left | `Top_right | `Bottom_left | `Bottom_right ]
-(** The type for overlay anchor corners. *)
+(** The type for the corners of a grid. *)
 
-(** {1:rendering Rendering} *)
+type t
+(** The type for overlays. *)
 
-val on_frame :
-  ?corner:corner ->
-  ?padding:int ->
-  ?gap:int ->
-  ?capacity:int ->
-  unit ->
-  Matrix_screen.t ->
-  render_start:int ->
-  render_ns:int ->
+val create : ?corner:corner -> ?capacity:int -> unit -> t
+(** [create ()] is an overlay with no frame recorded, drawn in [corner] (default
+    [`Bottom_right]), whose averages are over the last [capacity] frames
+    recorded (default [120]). With a [capacity] of [0] or less it shows no
+    average. *)
+
+val record : t -> start:int -> ns:int -> unit
+(** [record o ~start ~ns] records a frame drawn from the time [start] for [ns]
+    nanoseconds. The time between two recorded frames' [start]s is the frame
+    interval [o] shows, from which it shows the frame rate. *)
+
+val draw :
+  t ->
+  metrics:Matrix_screen.frame_metrics ->
+  gc:Gc.stat ->
+  Matrix_grid.t ->
   unit
-(** [on_frame ()] is a callback that draws the overlay onto [screen]'s grid.
-    Call once per frame after the UI has painted, with the start of the last
-    render on the runtime's clock and its duration, in nanoseconds.
-
-    The callback keeps internal state (rolling averages, GC deltas); reuse the
-    same callback for the overlay's lifetime.
-    - [corner] anchor position. Defaults to [`Bottom_right].
-    - [padding] outer padding in cells.
-    - [gap] gap between metric lines.
-    - [capacity] maximum number of metric samples retained. *)
+(** [draw o ~metrics ~gc grid] draws [o]'s panel in its corner of [grid]: the
+    last frame recorded and the averages, the screen's [metrics] and the
+    collector's [gc], with what the collector allocated since the last [draw] of
+    [o]. *)

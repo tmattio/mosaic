@@ -454,7 +454,5 @@ let subscriptions model =
 (* ── Entry point ── *)
 
 let () =
-  let config =
-    Matrix.config ~mode:`Primary ~fps:30. ~cursor_visible:false ~mouse:`Off ()
-  in
+  let config = Matrix.config ~mode:`Primary ~fps:30. ~mouse:`Off () in
   run ~config { init; update; view; subscriptions }

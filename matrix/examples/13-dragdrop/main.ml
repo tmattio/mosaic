@@ -392,9 +392,20 @@ let create_state () =
     workspace_height;
   }
 
+(* The debug overlay over each frame: the time each frame takes to draw,
+   recorded after it, and the collector's statistics. *)
+let draw_with_overlay overlay app view =
+  let start = Matrix.clock () in
+  Matrix.draw app (fun grid ->
+      view grid;
+      Matrix.Debug_overlay.draw overlay
+        ~metrics:(Matrix.Screen.last_metrics (Matrix.screen app))
+        ~gc:(Gc.quick_stat ()) grid);
+  Matrix.Debug_overlay.record overlay ~start ~ns:(Matrix.clock () - start)
+
 let () =
-  let config = Matrix.config ~debug_overlay:true () in
-  Matrix.run ~config @@ fun app ->
+  let overlay = Matrix.Debug_overlay.create () in
+  Matrix.run @@ fun app ->
   let state = create_state () in
   let rec loop () =
     match Matrix.next app with
@@ -406,7 +417,7 @@ let () =
             Matrix.request_redraw app;
             loop ())
     | Frame ->
-        Matrix.draw app (fun grid ->
+        draw_with_overlay overlay app (fun grid ->
             let _, rows = Matrix.size app in
             Grid.clear ~color:(Color.of_rgb 12 14 22) grid;
             draw_header grid;

@@ -1296,9 +1296,7 @@ end
 
 let start ?input ?output ?env ?stop ?config ?process_perform ?probe app f =
   let config =
-    match config with
-    | Some config -> config
-    | None -> Matrix.config ~cursor_visible:false ()
+    match config with Some config -> config | None -> Matrix.config ()
   in
   let init = app.init () in
   let within process_perform =

@@ -11,7 +11,6 @@ module Tty = Tty
 
 type kitty_keyboard = [ `Auto | `Off ]
 type mode = [ `Alt | `Primary ]
-type debug_overlay_corner = Debug_overlay.corner
 
 type event =
   | Key of Input.Keystroke.t
@@ -238,25 +237,14 @@ type config = {
   kitty_keyboard : kitty_keyboard;
   key_releases : bool;
   fps : float;
-  cursor_visible : bool option;
   explicit_width : bool;
   min_tui_height : int;
   caps : Terminal.capabilities option;
-  debug_overlay : bool;
-  debug_overlay_corner : debug_overlay_corner;
-  debug_overlay_capacity : int;
-  frame_dump_every : int;
-  frame_dump_dir : string option;
-  frame_dump_pattern : string option;
-  frame_dump_hits : bool;
 }
 
 let config ?(mode = `Alt) ?(raw_mode = true) ?(mouse = `Sgr_any)
     ?(bracketed_paste = true) ?(kitty_keyboard = `Auto) ?(key_releases = false)
-    ?(fps = 60.) ?cursor_visible ?(explicit_width = false) ?(min_tui_height = 1)
-    ?caps ?(debug_overlay = false) ?(debug_overlay_corner = `Bottom_right)
-    ?(debug_overlay_capacity = 120) ?(frame_dump_every = 0) ?frame_dump_dir
-    ?frame_dump_pattern ?(frame_dump_hits = false) () =
+    ?(fps = 60.) ?(explicit_width = false) ?(min_tui_height = 1) ?caps () =
   if (not (Float.is_finite fps)) || fps <= 0. then
     invalid_arg "Matrix.config: fps must be positive and finite";
   {
@@ -267,17 +255,9 @@ let config ?(mode = `Alt) ?(raw_mode = true) ?(mouse = `Sgr_any)
     kitty_keyboard;
     key_releases;
     fps;
-    cursor_visible;
     explicit_width;
     min_tui_height;
     caps;
-    debug_overlay;
-    debug_overlay_corner;
-    debug_overlay_capacity;
-    frame_dump_every = max 0 frame_dump_every;
-    frame_dump_dir;
-    frame_dump_pattern;
-    frame_dump_hits;
   }
 
 (* Queries sent together, which the terminal answers in order. A batch of
@@ -421,19 +401,6 @@ type 'msg app = {
   mutable tstp_ignored : bool;
   (* Undos of the steps that took the terminal, latest first. *)
   mutable undo : (exiting:bool -> unit) list;
-  (* Diagnostics *)
-  mutable debug_overlay_enabled : bool;
-  mutable debug_overlay_cb :
-    Screen.t -> render_start:int -> render_ns:int -> unit;
-  (* The last render of the screen: when it started and how long it took,
-     on the backend's clock. The screen reads no clock. *)
-  mutable render_start : int;
-  mutable render_ns : int;
-  mutable frame_dump_every : int;
-  mutable frame_dump_dir : string option;
-  mutable frame_dump_pattern : string option;
-  mutable frame_dump_hits : bool;
-  mutable frame_dump_counter : int;
 }
 
 (* The runs, latest first, under [runs_lock]: runs may start on several
@@ -1117,9 +1084,6 @@ let apply_cursor_state t ~buf ~(cursor : Screen.cursor) ~position =
 (* All frame output is accumulated into a single buffer and flushed as one
    write. Skips the write entirely when nothing changed. *)
 let submit t =
-  if t.debug_overlay_enabled then
-    t.debug_overlay_cb t.screen ~render_start:t.render_start
-      ~render_ns:t.render_ns;
   let cursor = Screen.cursor t.screen in
   let caps = Terminal.capabilities t.terminal in
   let use_sync = Terminal.tty t.terminal && caps.sync in
@@ -1162,10 +1126,7 @@ let submit t =
             if height < live then Some (y + height + 1) else None )
         else (Some { Screen.y; height = live }, None)
   in
-  let start = t.backend.now () in
   Screen.render_into ~full:forced_full ?scroll_hint ?viewport t.screen buf;
-  t.render_start <- start;
-  t.render_ns <- t.backend.now () - start;
   Option.iter
     (fun row ->
       buf_cursor_position buf ~row ~col:1;
@@ -1192,13 +1153,7 @@ let submit t =
 
     t.frame_modes_armed <- true;
     t.backend.write_output (Ansi.Writer.buffer buf) 0 (Ansi.Writer.len buf)
-  end;
-
-  if t.frame_dump_every > 0 then (
-    t.frame_dump_counter <- t.frame_dump_counter + 1;
-    if t.frame_dump_counter mod t.frame_dump_every = 0 then
-      Frame_dump.snapshot ?dir:t.frame_dump_dir ?pattern:t.frame_dump_pattern
-        ~hits:t.frame_dump_hits t.screen)
+  end
 
 (* A frame drawn across a release is not presented: what the screen holds
    is unknown, and the next frame is drawn whole. *)
@@ -1807,11 +1762,8 @@ let make backend ?stop config =
      terminal reports one. *)
   let cols, rows = Option.value (backend.terminal_size ()) ~default:(80, 24) in
   let width = max 1 cols and height = max 1 rows in
-  let cursor_visible =
-    Option.value config.cursor_visible ~default:(config.mode = `Alt)
-  in
   let screen =
-    Screen.create ~cursor_visible ~explicit_width:config.explicit_width ()
+    Screen.create ~cursor_visible:false ~explicit_width:config.explicit_width ()
   in
   let now = backend.now () in
   {
@@ -1874,17 +1826,6 @@ let make backend ?stop config =
     kept = [];
     tstp_ignored = false;
     undo = [];
-    debug_overlay_enabled = config.debug_overlay;
-    debug_overlay_cb =
-      Debug_overlay.on_frame ~corner:config.debug_overlay_corner
-        ~capacity:config.debug_overlay_capacity ();
-    render_start = 0;
-    render_ns = 0;
-    frame_dump_every = config.frame_dump_every;
-    frame_dump_dir = config.frame_dump_dir;
-    frame_dump_pattern = config.frame_dump_pattern;
-    frame_dump_hits = config.frame_dump_hits;
-    frame_dump_counter = 0;
   }
 
 (* A terminal answers queries only on a raw input: the probe waits for its
@@ -2040,35 +1981,12 @@ let run ?input ?output ?env ?stop ?config f =
 
 (* Diagnostics *)
 
-let set_debug_overlay ?corner t ~enabled =
+module Debug_overlay = Debug_overlay
+
+(* The frame being drawn is in the screen's next grid until [draw]
+   presents it; after, that grid is the next frame's, cleared when next
+   read. *)
+let dump_frame ?(hits = false) ?dir ?pattern t =
   check t;
-  let previous = t.debug_overlay_enabled in
-  t.debug_overlay_enabled <- enabled;
-  Option.iter
-    (fun c ->
-      t.debug_overlay_cb <-
-        Debug_overlay.on_frame ~corner:c
-          ~capacity:t.config.debug_overlay_capacity ())
-    corner;
-  if previous <> enabled || Option.is_some corner then t.dirty <- true
-
-let toggle_debug_overlay ?corner t =
-  set_debug_overlay ?corner t ~enabled:(not t.debug_overlay_enabled)
-
-let configure_frame_dump ?every ?dir ?pattern ?hits t =
-  Option.iter
-    (fun ev ->
-      t.frame_dump_every <- max 0 ev;
-      t.frame_dump_counter <- 0)
-    every;
-  Option.iter (fun d -> t.frame_dump_dir <- Some d) dir;
-  Option.iter (fun p -> t.frame_dump_pattern <- Some p) pattern;
-  Option.iter (fun h -> t.frame_dump_hits <- h) hits
-
-let dump_frame ?hits ?dir ?pattern t =
-  let or_default a b = match a with Some _ -> a | None -> b in
-  Frame_dump.snapshot
-    ?dir:(or_default dir t.frame_dump_dir)
-    ?pattern:(or_default pattern t.frame_dump_pattern)
-    ~hits:(Option.value ~default:t.frame_dump_hits hits)
-    t.screen
+  if not t.drawing then invalid_arg "Matrix.dump_frame: no frame is being drawn";
+  Frame_dump.snapshot ?dir ?pattern ~hits t.screen

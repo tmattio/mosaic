@@ -2,7 +2,7 @@
 
     The runtime turns each frame, a grid of cells and a cursor, into the bytes a
     terminal receives. These properties draw random frame sequences, present
-    them through {!Matrix.run} over a backend whose output feeds a {!Vte} of the
+    them through {!Matrix.run} over a device whose output feeds a {!Vte} of the
     terminal's size, and check after every frame that the terminal shows what
     the frame asked for: each cell's text, width, colors, attributes and
     hyperlink, as far as they show (a space's foreground does not without an

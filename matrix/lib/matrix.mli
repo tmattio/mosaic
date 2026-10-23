@@ -156,10 +156,6 @@ end
 type config
 (** The type for what a run sets up. *)
 
-type debug_overlay_corner =
-  [ `Top_left | `Top_right | `Bottom_left | `Bottom_right ]
-(** The type for debug overlay anchor corners. *)
-
 val config :
   ?mode:mode ->
   ?raw_mode:bool ->
@@ -168,17 +164,9 @@ val config :
   ?kitty_keyboard:kitty_keyboard ->
   ?key_releases:bool ->
   ?fps:float ->
-  ?cursor_visible:bool ->
   ?explicit_width:bool ->
   ?min_tui_height:int ->
   ?caps:Terminal.capabilities ->
-  ?debug_overlay:bool ->
-  ?debug_overlay_corner:debug_overlay_corner ->
-  ?debug_overlay_capacity:int ->
-  ?frame_dump_every:int ->
-  ?frame_dump_dir:string ->
-  ?frame_dump_pattern:string ->
-  ?frame_dump_hits:bool ->
   unit ->
   config
 (** [config ()] is the configuration of a run.
@@ -188,12 +176,14 @@ val config :
     - [raw_mode] whether to switch the input into raw mode. Defaults to [true].
       In raw mode the terminal sends its interrupt and suspend characters as
       keys: Ctrl+C is a {!Key}, whose meaning is the application's.
-    - [cursor_visible] initial cursor visibility. Defaults to [true] in [`Alt]
-      mode, [false] in [`Primary].
     - [explicit_width] whether to use built-in wcwidth instead of querying the
       terminal. Defaults to [false].
     - [min_tui_height] the fewest rows the live region keeps in [`Primary] mode
-      as static rows are written. Defaults to [1].
+      as static rows are written and the terminal shrinks. Defaults to [1]. The
+      run keeps the floor between frames: {!size}, {!effective_size} and each
+      {!Resize} count it. A frame that requires its rows with {!draw}'s
+      [primary_required_rows] leaves the same screen, but only from that frame
+      on.
 
     {b Frames:}
     - [fps] the most frames per second. Defaults to [60.]. A terminal sends no
@@ -221,14 +211,9 @@ val config :
     and tmux's [input_csi_dispatch_sm_private] in input.c only log it), and the
     runtime resets them when it gives the terminal back.
 
-    {b Diagnostics:}
-    - [debug_overlay] show the debug overlay. Defaults to [false].
-    - [debug_overlay_corner] anchor corner. Defaults to [`Bottom_right].
-    - [debug_overlay_capacity] maximum metric samples retained.
-    - [frame_dump_every] dump every Nth frame. Defaults to [0] (disabled).
-    - [frame_dump_dir] directory for frame dumps.
-    - [frame_dump_pattern] filename pattern for frame dumps.
-    - [frame_dump_hits] include hit grid in dumps. Defaults to [false].
+    What a run's frames show is the application's to draw, its diagnostics
+    included ({{!diagnostics}Diagnostics}), and so is the cursor's visibility
+    ({!set_cursor}).
 
     Raises [Invalid_argument] if [fps] is not positive and finite. *)
 
@@ -693,7 +678,14 @@ val set_scroll_hint : 'msg app -> Screen.scroll_hint -> unit
 (** {1:cursor Cursor control} *)
 
 val set_cursor : ?visible:bool -> ?style:Ansi.cursor_style -> 'msg app -> unit
-(** [set_cursor ?visible ?style app] updates cursor visibility and/or style. *)
+(** [set_cursor ?visible ?style app] updates cursor visibility and/or style,
+    shown from the next frame on. A run begins with the cursor hidden; an
+    application that wants it shown from the first frame sets it before:
+    {[
+    Matrix.run @@ fun app ->
+    Matrix.set_cursor app ~visible:true;
+    loop app
+    ]} *)
 
 val set_cursor_style :
   'msg app -> style:Ansi.cursor_style -> blinking:bool -> unit
@@ -707,24 +699,35 @@ val set_cursor_color : 'msg app -> r:float -> g:float -> b:float -> unit
 (** [set_cursor_color app ~r ~g ~b] sets the cursor color. Components are in
     \[[0.];[1.]\]. *)
 
-(** {1:diagnostics Diagnostics} *)
+(** {1:diagnostics Diagnostics}
 
-val set_debug_overlay :
-  ?corner:debug_overlay_corner -> 'msg app -> enabled:bool -> unit
-(** [set_debug_overlay app ~enabled] shows or hides the debug overlay. [corner]
-    defaults to the value given to {!config}. *)
+    What a frame shows about the run is drawn by the application, which owns the
+    frame. {!Debug_overlay} draws the frames' timing and the collector's
+    statistics in a corner of a frame, and {!dump_frame} writes a frame to a
+    file. An application that dumps every thirtieth frame counts them:
+    {[
+    let frames = ref 0 in
+    let on_frame app view =
+      incr frames;
+      Matrix.draw app (fun grid ->
+          view grid;
+          if !frames mod 30 = 0 then Matrix.dump_frame ~dir:"dumps" app)
+    in
+    on_frame
+    ]} *)
 
-val toggle_debug_overlay : ?corner:debug_overlay_corner -> 'msg app -> unit
-(** [toggle_debug_overlay app] flips overlay visibility. *)
-
-val configure_frame_dump :
-  ?every:int -> ?dir:string -> ?pattern:string -> ?hits:bool -> 'msg app -> unit
-(** [configure_frame_dump app] updates the periodic frame-dump schedule. See the
-    diagnostics parameters of {!config}. *)
+module Debug_overlay = Debug_overlay
 
 val dump_frame :
   ?hits:bool -> ?dir:string -> ?pattern:string -> 'msg app -> unit
-(** [dump_frame app] writes the current frame to disk immediately. *)
+(** [dump_frame app] writes the frame being drawn, as the function given to
+    {!draw} has drawn it so far, to a new file of [dir] (default ["frames"],
+    made if missing), named [pattern] (default ["frame_"]) followed by a number
+    that grows with each dump of the process and [.ansi]. The file holds the
+    frame's cells as ANSI text and, if [hits] (default [false]), its hit grid.
+
+    Raises [Invalid_argument] if no {!Frame} is being drawn, [Failure] if [dir]
+    cannot be made, and [Sys_error] if the file cannot be written. *)
 
 (**/**)
 

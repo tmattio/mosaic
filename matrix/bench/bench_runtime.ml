@@ -28,7 +28,7 @@ let backend () : Matrix.Backend.t =
 
 let config =
   Matrix.config ~mode:`Alt ~raw_mode:false ~mouse:`Off ~bracketed_paste:false
-    ~kitty_keyboard:`Off ~cursor_visible:false ()
+    ~kitty_keyboard:`Off ()
 
 let frame app draw =
   Matrix.request_redraw app;
