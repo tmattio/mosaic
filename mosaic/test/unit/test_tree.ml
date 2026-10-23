@@ -501,6 +501,35 @@ let mouse_click_beyond_items_ignored () =
 
 (* ── Setter No-ops ── *)
 
+(* The default background is transparent: a tree's blank cells show what is
+   drawn beneath it. *)
+let default_background_is_transparent () =
+  let r = Renderer.create () in
+  let under =
+    Renderable.create ~parent:(Renderer.root r)
+      ~style:
+        (Toffee.Style.default
+        |> Toffee.Style.set_width (Toffee.Style.Dimension.length 10.)
+        |> Toffee.Style.set_height (Toffee.Style.Dimension.length 3.))
+      ()
+  in
+  Renderable.set_render under (fun _ grid ~delta:_ ->
+      Matrix_grid.fill_rect grid ~x:0 ~y:0 ~width:10 ~height:3
+        ~color:Ansi.Color.red);
+  let _tree =
+    Tree.create ~parent:under
+      ~style:
+        (Toffee.Style.default
+        |> Toffee.Style.set_width (Toffee.Style.Dimension.length 10.)
+        |> Toffee.Style.set_height (Toffee.Style.Dimension.length 3.))
+      ~items:[ Tree.item ~id:"a" "a" ]
+      ()
+  in
+  Renderer.render_frame r ~width:10 ~height:3 ~delta:0.;
+  let grid = Matrix_screen.next_grid (Renderer.screen r) in
+  is_true ~msg:"a blank cell shows the color beneath"
+    (Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_bg grid ((2 * 10) + 5)))
+
 let set_background_noop () =
   let t, tree = make_tree () in
   let before = !(t.schedule_count) in
@@ -782,6 +811,8 @@ let () =
         ];
       group "Setter no-ops"
         [
+          test "default background is transparent"
+            default_background_is_transparent;
           test "set_background no-op" set_background_noop;
           test "set_wrap_selection no-op" set_wrap_noop;
           test "set_indent_size no-op" set_indent_size_noop;

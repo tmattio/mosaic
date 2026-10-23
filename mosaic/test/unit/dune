@@ -240,6 +240,7 @@
   matrix.grid
   matrix.ansi
   matrix.input
+  matrix.screen
   test_harness))
 
 (test

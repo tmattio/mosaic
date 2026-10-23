@@ -587,12 +587,10 @@ let render t _self grid ~delta:_ =
   else
     let focused = Renderable.focused t.node in
 
-    (* Clear to opaque base so compositing fully replaces the screen grid, then
-       apply the user's background on top. *)
-    Matrix_grid.fill_rect grid ~x:0 ~y:0 ~width ~height
-      ~color:(Ansi.Color.of_rgb 0 0 0);
-    Matrix_grid.fill_rect grid ~x:0 ~y:0 ~width ~height
-      ~color:t.props.background;
+    (* Blanks on the background replace the last frame in the buffer, and a
+       transparent background lets what is beneath show through. *)
+    Matrix_grid.clear_rect ~color:t.props.background grid ~x:0 ~y:0 ~width
+      ~height;
 
     let start_index = scroll_offset t in
     let end_index = min (visible_count t) (start_index + max_visible t) in
