@@ -237,16 +237,13 @@ let cleanup_overwritten_cell t idx bg =
 let[@inline] write_cell t idx code bg =
   let old = Buf.get_cell t.chars idx in
   if old <> code then begin
-    let old_inline = Packed_cell.is_inline old in
-    let new_inline = Packed_cell.is_inline code in
-    if (not old_inline) || Packed_cell.cell_width old > 1 then
+    (* [code] is counted before the old grapheme's cells are released: it may
+       name the slot they hold, which their release would otherwise free. *)
+    if not (Packed_cell.is_inline code) then
+      Grapheme_tracker.add t.grapheme_tracker code;
+    if (not (Packed_cell.is_inline old)) || Packed_cell.cell_width old > 1 then
       cleanup_grapheme_at t idx bg;
-    (match (old_inline, new_inline) with
-    | true, true -> ()
-    | true, false -> Grapheme_tracker.add t.grapheme_tracker code
-    | false, true -> Grapheme_tracker.remove t.grapheme_tracker old
-    | false, false ->
-        Grapheme_tracker.replace t.grapheme_tracker ~old_id:old ~new_id:code);
+    Grapheme_tracker.remove t.grapheme_tracker old;
     Buf.set_cell t.chars idx code
   end
 
@@ -266,11 +263,7 @@ let make_cell_copier ~src_store ~dst_store =
               Hashtbl.add cache key g;
               g
         in
-        if Packed_cell.is_start code then start_cell
-        else
-          Packed_cell.make_continuation ~code:start_cell
-            ~left:(Packed_cell.left_extent code)
-            ~right:(Packed_cell.right_extent code)
+        start_cell
 
 (* {1 Creation & lifecycle} *)
 
@@ -663,7 +656,7 @@ let set_uchar t ~x ~y ~uchar ~fg ~bg ~attrs ?link ?(blend = false) () =
       let cell =
         if not fits then space_cell
         else if dx = 0 then code
-        else Packed_cell.make_continuation ~code ~left:dx ~right:(width - dx - 1)
+        else Packed_cell.make_continuation ~left:dx ~right:(width - dx - 1)
       in
       set_cell_internal t
         ~idx:((y * t.width) + x + dx)
@@ -702,9 +695,7 @@ let set_grapheme t ~x ~y ~width ~fg ~bg ~attrs ?(link = no_link)
   set_cell_internal t ~idx ~code ~fg_color ~bg_color ~attrs ~link
     ~blending:false;
   for i = 1 to width - 1 do
-    let code =
-      Packed_cell.make_continuation ~code ~left:i ~right:(width - 1 - i)
-    in
+    let code = Packed_cell.make_continuation ~left:i ~right:(width - 1 - i) in
     set_cell_internal t ~idx:(idx + i) ~code ~fg_color ~bg_color ~attrs ~link
       ~blending:false
   done
@@ -1190,7 +1181,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
                 let c_x = !cur_x + i in
                 let c_idx = (y * t.width) + c_x in
                 let cont =
-                  Packed_cell.make_continuation ~code ~left:i ~right:(w - 1 - i)
+                  Packed_cell.make_continuation ~left:i ~right:(w - 1 - i)
                 in
                 set_cell_internal t ~idx:c_idx ~code:cont ~fg_color ~bg_color
                   ~attrs ~link ~blending:true

@@ -6,10 +6,13 @@ type t = int
 let[@inline] to_int (x : t) = x
 let[@inline] unsafe_of_int (x : int) = x
 (* An inline cell holds a scalar (bits 0-20) and its width (bits 21-22). A
-   complex cell holds a grapheme store index (bits 0-17) and generation (bits
-   18-24), the distances to its span's first and last cells (bits 25-42 and
-   43-60), and its flags (bits 61-62). A span is therefore at most
-   [max_extent + 1] cells wide, which bounds the grid's width. *)
+   complex start cell holds a grapheme store slot (bits 0-35) and its
+   generation (bits 36-42), the distance to its span's last cell (bits 43-60)
+   and its flag (bit 62). A continuation cell holds the distances to its
+   span's first and last cells (bits 25-42 and 43-60) and its flags (bits
+   61-62); its text is its start cell's, so it names no slot. A span is
+   therefore at most [max_extent + 1] cells wide, which bounds the grid's
+   width. *)
 
 let empty = 0
 let flag_grapheme = if Sys.word_size = 64 then 1 lsl 62 else 0
@@ -18,9 +21,17 @@ let shift_right_extent = 43
 let shift_left_extent = 25
 let max_extent = (1 lsl 18) - 1
 let max_width = max_extent + 1
-let shift_generation = 18
-let mask_generation = 0x7F
-let mask_index = 0x3FFFF
+let shift_generation = Grapheme_store.index_bits
+let mask_generation = (1 lsl Grapheme_store.generation_bits) - 1
+let mask_index = (1 lsl Grapheme_store.index_bits) - 1
+
+let mask_payload =
+  (1 lsl (shift_generation + Grapheme_store.generation_bits)) - 1
+
+let () =
+  assert (
+    shift_generation + Grapheme_store.generation_bits <= shift_right_extent)
+
 let shift_width = 21
 let mask_codepoint = 0x1FFFFF
 let default_tab_width = 2
@@ -75,12 +86,6 @@ let[@inline] pack_start idx gen width =
   lor (right lsl shift_right_extent)
   lor (gen lsl shift_generation) lor (idx land mask_index)
 
-let[@inline] pack_continuation ~idx ~gen ~left ~right =
-  flag_grapheme lor flag_continuation
-  lor (clamp_extent left lsl shift_left_extent)
-  lor (clamp_extent right lsl shift_right_extent)
-  lor (gen lsl shift_generation) lor (idx land mask_index)
-
 let[@inline] pack_simple cp width = (width lsl shift_width) lor cp
 let[@inline] is_inline c = c land flag_grapheme = 0
 let[@inline] is_complex c = c land flag_grapheme <> 0
@@ -90,13 +95,26 @@ let[@inline] is_continuation c =
   (not (is_inline c)) && c land flag_continuation <> 0
 
 let[@inline] is_empty c = c = 0
-let[@inline] left_extent c = (c lsr shift_left_extent) land max_extent
+
+let[@inline] left_extent c =
+  if c land flag_continuation = 0 then 0
+  else (c lsr shift_left_extent) land max_extent
+
 let[@inline] right_extent c = (c lsr shift_right_extent) land max_extent
 let[@inline] codepoint c = c land mask_codepoint
-let[@inline] store_index c = c land mask_index
-let[@inline] store_payload c = c land 0x01FFFFFF
-let[@inline] unpack_idx c = c land mask_index
-let[@inline] unpack_gen c = (c lsr shift_generation) land mask_generation
+
+(* The slot and generation of a complex start cell, and [0] for any other
+   cell, whose low bits hold a scalar or extents. *)
+let[@inline] names_slot c =
+  c land (flag_grapheme lor flag_continuation) = flag_grapheme
+
+let[@inline] store_index c = if names_slot c then c land mask_index else 0
+let[@inline] store_payload c = if names_slot c then c land mask_payload else 0
+let[@inline] unpack_idx c = store_index c
+
+let[@inline] unpack_gen c =
+  if names_slot c then (c lsr shift_generation) land mask_generation else 0
+
 let space = pack_simple 0x20 1
 
 let[@inline] grapheme_width ?(tab_width = default_tab_width) c =
@@ -126,9 +144,8 @@ let[@inline] store_key c =
     let idx = store_index c in
     if idx = 0 then None else Some (store_payload c)
 
-let make_continuation ~code ~left ~right =
-  let payload = if is_inline code then 0 else store_payload code in
-  flag_grapheme lor flag_continuation lor payload
+let make_continuation ~left ~right =
+  flag_grapheme lor flag_continuation
   lor (clamp_extent left lsl shift_left_extent)
   lor (clamp_extent right lsl shift_right_extent)
 
@@ -140,11 +157,11 @@ let of_uchar uchar =
     if width <= 0 then empty else pack_simple cp width
 
 let incref store cell =
-  if not (is_inline cell) then
+  if is_start cell && not (is_inline cell) then
     Grapheme_store.incref store ~idx:(unpack_idx cell) ~gen:(unpack_gen cell)
 
 let decref store cell =
-  if not (is_inline cell) then
+  if is_start cell && not (is_inline cell) then
     Grapheme_store.decref store ~idx:(unpack_idx cell) ~gen:(unpack_gen cell)
 
 let pack_interned store idx width =
@@ -203,7 +220,7 @@ let blit store cell buf ~pos =
       ~pos
 
 let copy ~src cell ~dst =
-  if is_inline cell then cell
+  if is_inline cell || is_continuation cell then cell
   else
     match
       Grapheme_store.copy ~src ~idx:(unpack_idx cell) ~gen:(unpack_gen cell)
@@ -211,11 +228,7 @@ let copy ~src cell ~dst =
     with
     | None -> empty
     | Some idx ->
-        let gen = Grapheme_store.generation dst idx in
-        if is_continuation cell then
-          pack_continuation ~idx ~gen ~left:(left_extent cell)
-            ~right:(right_extent cell)
-        else pack_start idx gen (grapheme_width cell)
+        pack_start idx (Grapheme_store.generation dst idx) (grapheme_width cell)
 
 let to_string store cell =
   if is_inline cell then
@@ -226,7 +239,7 @@ let to_string store cell =
 let equal store1 c1 store2 c2 =
   if is_inline c1 || is_inline c2 then c1 = c2
   else
-    c1 land lnot 0x01FFFFFF = c2 land lnot 0x01FFFFFF
+    c1 land lnot mask_payload = c2 land lnot mask_payload
     &&
     if unpack_idx c1 = 0 || unpack_idx c2 = 0 then unpack_idx c1 = unpack_idx c2
     else

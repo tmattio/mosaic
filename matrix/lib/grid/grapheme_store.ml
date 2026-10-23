@@ -20,8 +20,10 @@ type t = {
   mutable live_hashes : int array;
 }
 
-let mask_generation = 0x7F
-let mask_index = 0x3FFFF
+let generation_bits = 7
+let index_bits = 36
+let mask_generation = (1 lsl generation_bits) - 1
+let max_slots = (1 lsl index_bits) - 1
 let initial_ids = 4096
 let initial_bytes = 4096 * 8
 let initial_live_buckets = 1024
@@ -69,8 +71,9 @@ let ensure_id_capacity t =
   let cap = Array.length t.offsets in
   if t.next_id >= cap then (
     let new_cap = cap * 2 in
-    if new_cap > mask_index + 1 then
-      failwith "Matrix_grid.Grapheme_store: ID exhaustion";
+    if t.next_id > max_slots then
+      failwith "Matrix_grid.Grapheme_store: every slot is taken";
+    let new_cap = min new_cap (max_slots + 1) in
     let resize arr def =
       let next = Array.make new_cap def in
       Array.blit ~src:arr ~src_pos:0 ~dst:next ~dst_pos:0 ~len:cap;

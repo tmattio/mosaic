@@ -42,8 +42,9 @@
     Grids made with {!create_like} share their grapheme storage, which makes
     comparing and copying cells between them cheaper. A grapheme of more than
     one scalar, or of one scalar more than three cells wide, takes a slot in the
-    storage while a cell holds it, and a write that needs a slot when 262,143
-    are taken raises [Failure].
+    storage while a cell holds it. Equal graphemes share a slot, and the storage
+    holds [2{^ 36} - 1] slots, more than memory can hold the cells for, so only
+    memory limits how many distinct graphemes the grids hold.
 
     Unless a function's doc says otherwise, the parts of a write outside the
     grid are left out, and a function that takes an index does not check it. An

@@ -1992,8 +1992,30 @@ let cell_text_of_empty_and_continuation_cells () =
     [ ("inline continuation", 1); ("stored continuation", 3); ("empty", 4) ];
   equal ~msg:"nothing written" string (String.make 16 'x') (Bytes.to_string buf)
 
+(* A grid holds as many distinct graphemes as it has cells. Each cell here
+   holds "a" and three combining marks that spell its index, 300,000 in all,
+   more than the 262,143 a store once held. *)
+let many_distinct_graphemes () =
+  let width = 1000 and height = 300 in
+  let grid = Grid.create ~width ~height () in
+  let mark n =
+    let b = Buffer.create 2 in
+    Buffer.add_utf_8_uchar b (Uchar.of_int (0x300 + n));
+    Buffer.contents b
+  in
+  let text i =
+    "a" ^ mark (i mod 100) ^ mark (i / 100 mod 100) ^ mark (i / 10000)
+  in
+  for i = 0 to (width * height) - 1 do
+    Grid.draw_text grid ~x:(i mod width) ~y:(i / width) ~text:(text i)
+  done;
+  let last = (width * height) - 1 in
+  equal ~msg:"first cell" string (text 0) (Grid.get_text grid 0);
+  equal ~msg:"last cell" string (text last) (Grid.get_text grid last)
+
 let tests =
   [
+    test "many distinct graphemes" many_distinct_graphemes;
     test "cell text of empty and continuation cells"
       cell_text_of_empty_and_continuation_cells;
     test "span of every cell" span_of_every_cell;

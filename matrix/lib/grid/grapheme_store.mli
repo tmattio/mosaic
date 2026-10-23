@@ -4,10 +4,11 @@
     A store holds UTF-8 {e payloads} in {e slots}, numbered from 1. A slot has a
     {e generation}, which changes each time the slot is freed and reused, and
     the pair [(idx, gen)] of a slot and its generation is a {e handle}. A handle
-    is {e stale} once its slot is freed, and reads nothing. A generation has 7
-    bits, so a stale handle names its slot again after 128 reuses, and a caller
-    that counts its handles never keeps a stale one. A slot is {e live} while
-    its reference count is positive, and {!intern} shares live payloads.
+    is {e stale} once its slot is freed, and reads nothing. A generation has
+    {!generation_bits} bits, so a stale handle names its slot again after 128
+    reuses, and a caller that counts its handles never keeps a stale one. A slot
+    is {e live} while its reference count is positive, and {!intern} shares live
+    payloads.
 
     A caller that stores a handle in cells counts it with {!incref} and
     {!decref}, which must balance. A slot whose count falls to [0] is freed.
@@ -15,11 +16,19 @@
     A store is mutable and must not be used by two domains in parallel, except
     {!defer_release}, which a finaliser may call from any thread.
 
-    A store holds at most 262,143 slots. An operation that allocates a slot when
-    all are taken raises [Failure]. *)
+    A store holds at most [2{^ 36} - 1] slots, the most a packed cell can name
+    ({!index_bits}). The store's own arrays take 64 bytes a slot, 4 TiB for that
+    many, so memory runs out first on every machine with less. An operation that
+    allocates a slot when all are taken raises [Failure]. *)
 
 type t
 (** The type for grapheme stores. *)
+
+val index_bits : int
+(** [index_bits] is [36], the number of bits of a slot number. *)
+
+val generation_bits : int
+(** [generation_bits] is [7], the number of bits of a generation. *)
 
 val create : unit -> t
 (** [create ()] is a new empty grapheme store. *)
