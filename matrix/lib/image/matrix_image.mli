@@ -197,8 +197,8 @@ val with_hit_rect :
   id:hit_id -> x:int -> y:int -> width:int -> height:int -> t -> t
 (** [with_hit_rect ~id ~x ~y ~width ~height img] is [img] with a hit region of
     [id] on the [width] by [height] rectangle at [(x, y)] in [img]'s
-    coordinates. The rectangle may reach past [img]'s edges, and only a clip
-    limits it. It is [img] when [id <= 0], [width <= 0] or [height <= 0]. *)
+    coordinates, clipped to [img] as {!crop} clips. It is [img] when [id <= 0]
+    or the clipped rectangle is empty. *)
 
 (** {1:drawing Drawing} *)
 

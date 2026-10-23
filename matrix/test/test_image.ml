@@ -92,6 +92,31 @@ let custom_hits_follow_crop () =
   Screen.Hit_grid.add hits ~x:0 ~y:0 ~width:7 ~height:1 ~id:8;
   equal ~msg:"custom clip is popped" int 8 (Screen.Hit_grid.get hits ~x:0 ~y:0)
 
+let hit_rect_is_clipped_to_the_image () =
+  let image =
+    Image.void 3 2 |> Image.with_hit_rect ~id:4 ~x:(-1) ~y:1 ~width:6 ~height:3
+  in
+  let hits = Screen.Hit_grid.create ~width:7 ~height:5 in
+  Image.draw ~hits ~x:2 ~y:1 image (Grid.create ~width:7 ~height:5 ());
+  for y = 0 to 4 do
+    for x = 0 to 6 do
+      let inside = x >= 2 && x < 5 && y = 2 in
+      equal
+        ~msg:(Printf.sprintf "hit at (%d, %d)" x y)
+        int
+        (if inside then 4 else Screen.Hit_grid.empty_id)
+        (Screen.Hit_grid.get hits ~x ~y)
+    done
+  done;
+  let outside =
+    Image.void 3 2 |> Image.with_hit_rect ~id:4 ~x:3 ~y:0 ~width:2 ~height:2
+  in
+  let hits = Screen.Hit_grid.create ~width:7 ~height:5 in
+  Image.draw ~hits outside (Grid.create ~width:7 ~height:5 ());
+  equal ~msg:"a rectangle beside the image adds nothing" int
+    Screen.Hit_grid.empty_id
+    (Screen.Hit_grid.get hits ~x:3 ~y:0)
+
 let hsnap_defaults_to_center () =
   let grid = Grid.create ~width:3 ~height:1 () in
   let img = Image.hsnap 3 (Image.text "x") in
@@ -131,6 +156,8 @@ let () =
           test "cropped padding stays empty" cropped_padding_stays_empty;
           test "composed clips stay empty" composed_clips_stay_empty;
           test "custom hits follow crop" custom_hits_follow_crop;
+          test "a hit rectangle is clipped to the image"
+            hit_rect_is_clipped_to_the_image;
         ];
       group "defaults"
         [

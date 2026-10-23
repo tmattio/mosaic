@@ -456,13 +456,26 @@ let with_hit ~id image =
     { image with ops }
 
 let with_hit_rect ~id ~x ~y ~width ~height image =
-  let width = clamp_nonneg width and height = clamp_nonneg height in
-  if id <= 0 || width = 0 || height = 0 then image
+  let r =
+    intersect_rect
+      { Grid.x; y; width = clamp_nonneg width; height = clamp_nonneg height }
+      { Grid.x = 0; y = 0; width = image.width; height = image.height }
+  in
+  if id <= 0 || r.width = 0 || r.height = 0 then image
   else
     let len = Array.length image.ops in
     let ops = Array.make (len + 1) dummy_primitive in
     Array.blit image.ops 0 ops 0 len;
-    ops.(len) <- P_hit { x; y; width; height; id; clip = None };
+    ops.(len) <-
+      P_hit
+        {
+          x = r.x;
+          y = r.y;
+          width = r.width;
+          height = r.height;
+          id;
+          clip = None;
+        };
     { image with ops }
 
 let custom ~width ~height draw =
