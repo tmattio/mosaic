@@ -43,7 +43,7 @@ type t = {
   mutable color_scheme_reports_enabled : bool;
   mutable resize_reports_enabled : bool;
   mutable meta_sends_escape_enabled : bool;
-  mutable unicode_mode_enabled : bool;
+  mutable grapheme_mode_enabled : bool;
   (* [*_armed] is not a duplicate of [*_enabled]: armed is set {e before} the
      enable sequence is written, enabled only after. When the output callback
      raises mid-enable the sequence may have reached the terminal even though
@@ -147,7 +147,7 @@ let make ~output ?(tty = true) caps =
     color_scheme_reports_enabled = false;
     resize_reports_enabled = false;
     meta_sends_escape_enabled = false;
-    unicode_mode_enabled = false;
+    grapheme_mode_enabled = false;
     mouse_armed = false;
     bracketed_paste_armed = false;
     focus_armed = false;
@@ -307,13 +307,10 @@ let enable_meta_sends_escape t enable =
 
 (* Unicode width *)
 
-let set_unicode_width t width =
-  let enable =
-    match width with `Unicode | `Unicode_wide -> true | `Wcwidth -> false
-  in
+let enable_grapheme_mode t enable =
   toggle t
-    ~current:(fun () -> t.unicode_mode_enabled)
-    ~set:(fun v -> t.unicode_mode_enabled <- v)
+    ~current:(fun () -> t.grapheme_mode_enabled)
+    ~set:(fun v -> t.grapheme_mode_enabled <- v)
     ~enable ~on_seq:unicode_on ~off_seq:unicode_off
 
 (* Alternate screen *)
@@ -508,7 +505,7 @@ let reset_state t =
   if t.meta_sends_escape_armed then send t meta_sends_escape_off;
   t.meta_sends_escape_enabled <- false;
   t.meta_sends_escape_armed <- false;
-  if t.unicode_mode_enabled then set_unicode_width t `Wcwidth;
+  if t.grapheme_mode_enabled then enable_grapheme_mode t false;
   if t.scroll_region <> None then clear_scroll_region t;
   if t.alt_screen then leave_alternate_screen t
   else if Sys.win32 then (

@@ -48,6 +48,7 @@ let show_caps (c : Matrix.Terminal.capabilities) =
       | `Unicode -> "unicode"
       | `Unicode_wide -> "unicode_wide"
       | `Wcwidth -> "wcwidth" );
+    ("grapheme_mode", opt b c.grapheme_mode);
     ("sgr_pixels", b c.sgr_pixels);
     ("color_scheme_updates", b c.color_scheme_updates);
     ("explicit_width", b c.explicit_width);
@@ -167,6 +168,7 @@ let expected_caps ~decid =
     ("bracketed_paste", "true");
     ("focus_tracking", "true");
     ("unicode_width", "wcwidth");
+    ("grapheme_mode", "none");
     ("sgr_pixels", "true");
     ("color_scheme_updates", "false");
     ("explicit_width", "false");

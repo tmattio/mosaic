@@ -547,8 +547,13 @@ let width_method t =
   if t.config.explicit_width then `Wcwidth
   else (Terminal.capabilities t.terminal).unicode_width
 
+(* The runtime sets the terminal's grapheme mode only where the terminal
+   answered it reset, and resets it when it gives the terminal back: a
+   terminal is left with the mode as it was found. *)
 let set_width_method t m =
-  Terminal.set_unicode_width t.terminal m;
+  let caps = Terminal.capabilities t.terminal in
+  Terminal.enable_grapheme_mode t.terminal
+    (m <> `Wcwidth && caps.grapheme_mode = Some false);
   if Grid.width_method (Screen.current_grid t.screen) <> m then (
     Screen.set_width_method t.screen m;
     force_full_redraw t)
@@ -559,9 +564,7 @@ let refresh_capabilities t =
   Screen.apply_capabilities t.screen ~explicit_width:caps.explicit_width
     ~explicit_cursor_positioning:caps.explicit_cursor_positioning
     ~hyperlinks:caps.hyperlinks ~color_depth;
-  let m = width_method t in
-  if m <> Grid.width_method (Screen.current_grid t.screen) then
-    set_width_method t m
+  set_width_method t (width_method t)
 
 (* A batch's queries are sent, and what they are owed is added to the
    decoder's counts until the batch is answered or given up. *)
@@ -1382,6 +1385,7 @@ let reset_modes t ~exiting =
         (fun () -> Terminal.enable_color_scheme_reports t.terminal false);
         (fun () -> Terminal.enable_resize_reports t.terminal false);
         (fun () -> Terminal.enable_meta_sends_escape t.terminal false);
+        (fun () -> Terminal.enable_grapheme_mode t.terminal false);
         (fun () -> Terminal.send t.terminal cursor_show_seq);
       ]
 

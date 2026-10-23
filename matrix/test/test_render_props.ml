@@ -567,6 +567,7 @@ let capabilities case : Matrix.Terminal.capabilities =
       | None, m -> m
       | Some _, `Wcwidth -> `Unicode
       | Some _, (`Unicode | `Unicode_wide) -> `Wcwidth);
+    grapheme_mode = None;
     sgr_pixels = false;
     color_scheme_updates = false;
     explicit_width = false;

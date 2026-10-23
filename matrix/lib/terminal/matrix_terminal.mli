@@ -211,10 +211,10 @@ val enable_meta_sends_escape : t -> bool -> unit
 
 (** {2:unicode_w Unicode width} *)
 
-val set_unicode_width : t -> Matrix_text.width_method -> unit
-(** [set_unicode_width t w] sets the terminal's grapheme mode (mode 2027) for
-    [w]: set for [`Unicode] and [`Unicode_wide], reset for [`Wcwidth].
-    Idempotent. *)
+val enable_grapheme_mode : t -> bool -> unit
+(** [enable_grapheme_mode t b] sets or resets the terminal's grapheme cluster
+    mode (mode 2027). Set it only where it was reset ({!Caps.t.grapheme_mode}),
+    so that {!reset_state} restores what was there. Idempotent. *)
 
 (** {2:alt_screen Alternate screen} *)
 

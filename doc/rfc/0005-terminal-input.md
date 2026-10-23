@@ -18,16 +18,17 @@
 - Amended 2026-10-23 (the width method; settles §6 questions 8 and 9): a DECRQM 2027 answer of 0
   (not recognized), or none, means `Wcwidth` unless the terminal's identity says it places
   clusters (kitty, which answers 0). 1 and 3 mean `Unicode`. 2 (reset) says the terminal has
-  grapheme clustering and it is off: the runtime sets the mode, as it already did for `Unicode`,
-  resets it on exit, and measures by `Unicode`. 4 means `Wcwidth`. Readings: DECRPM's settings
-  (VT510), and mode 2027's specification, under which a terminal with the mode off behaves "as
-  if this specification was not implemented at all". The default width method is `Wcwidth`.
-  Measured, by a cursor report after each of 50 clusters written in the terminal as it starts:
-  xterm 398 and VTE 0.80.1 answer 0 and st 0.9.2 nothing, and all three place every cluster as
-  `Wcwidth` does (50/50, 50/50, 36/36; `Unicode` 24/50), where matrix chose `Unicode`; kitty
-  0.49.2 answers 0 and places them as `Unicode` does on 48/50 (`Wcwidth` 22/50); WezTerm
-  20240203 answers 3 and foot 1.21.0 answers 1. No measured terminal answered 2; iTerm2 answers
-  4 by its source (unmeasured) and gets `Wcwidth`.
+  grapheme clustering and it is off: the runtime sets the mode, resets it when it gives the
+  terminal back, and measures by `Unicode`; only then does it touch the mode, so a terminal that
+  answered 1 keeps it set after exit (`Caps.t.grapheme_mode`, as 1036). 4 means `Wcwidth`.
+  Readings: DECRPM's settings (VT510), and mode 2027's specification, under which a terminal with
+  the mode off behaves "as if this specification was not implemented at all". The default width
+  method is `Wcwidth`. Measured, by a cursor report after each of 50 clusters written in the
+  terminal as it starts: xterm 398 and VTE 0.80.1 answer 0 and st 0.9.2 nothing, and all three
+  place every cluster as `Wcwidth` does (50/50, 50/50, 36/36; `Unicode` 24/50), where matrix chose
+  `Unicode`; kitty 0.49.2 answers 0 and places them as `Unicode` does on 48/50 (`Wcwidth` 22/50);
+  WezTerm 20240203 answers 3 and foot 1.21.0 answers 1. No measured terminal answered 2; iTerm2
+  answers 4 by its source (unmeasured) and gets `Wcwidth`.
 
 ## Summary
 

@@ -169,15 +169,15 @@ let test_mouse_validation () =
     | `Sgr_any -> "Sgr_any");
   T.close term
 
-(* The grapheme mode follows the width method; the capabilities are the
+(* The grapheme mode is set and reset as asked; the capabilities are the
    runtime's to set. *)
-let test_set_unicode_width () =
+let test_enable_grapheme_mode () =
   with_tty_terminal ~caps:{ plain with unicode_width = `Unicode }
   @@ fun term buf ->
-  T.set_unicode_width term `Unicode;
-  T.set_unicode_width term `Unicode_wide;
+  T.enable_grapheme_mode term true;
+  T.enable_grapheme_mode term true;
   equal ~msg:"set once" string "\027[?2027h" (Buffer.contents buf);
-  T.set_unicode_width term `Wcwidth;
+  T.enable_grapheme_mode term false;
   equal ~msg:"reset" string "\027[?2027h\027[?2027l" (Buffer.contents buf);
   equal ~msg:"capabilities untouched" width_method `Unicode
     (T.capabilities term).unicode_width;
@@ -258,7 +258,7 @@ let test_reset_state () =
   T.enable_modify_other_keys term true;
   T.set_mouse_mode term `Sgr_any;
   T.enter_alternate_screen term;
-  T.set_unicode_width term `Unicode;
+  T.enable_grapheme_mode term true;
 
   T.reset_state term;
 
@@ -538,6 +538,7 @@ type fact =
   | Rgb of bool
   | Hyperlinks of bool
   | Meta of bool option
+  | Grapheme of bool option
   | Repositions of bool
 
 let check_fact (c : Caps.t) fact =
@@ -573,6 +574,10 @@ let check_fact (c : Caps.t) fact =
       equal ~msg:"meta sends escape"
         (Testable.make ~equal:( = ) ~pp:(opt Format.pp_print_bool))
         m c.meta_sends_escape
+  | Grapheme m ->
+      equal ~msg:"grapheme mode"
+        (Testable.make ~equal:( = ) ~pp:(opt Format.pp_print_bool))
+        m c.grapheme_mode
   | Repositions b ->
       equal ~msg:"explicit cursor positioning" bool b
         c.explicit_cursor_positioning
@@ -647,6 +652,23 @@ let precedence_cases =
       [ mode 1036 Permanently_set ],
       [ Meta (Some true) ] );
     ("no metaSendsEscape", [], [ mode 1036 Not_recognized ], [ Meta None ]);
+    ( "grapheme mode reset",
+      [],
+      [ mode 2027 Reset ],
+      [ Grapheme (Some false); Width `Unicode ] );
+    ( "grapheme mode set",
+      [],
+      [ mode 2027 Set ],
+      [ Grapheme (Some true); Width `Unicode ] );
+    ( "grapheme mode permanently set",
+      [],
+      [ mode 2027 Permanently_set ],
+      [ Grapheme (Some true) ] );
+    ("no grapheme mode", [], [ mode 2027 Not_recognized ], [ Grapheme None ]);
+    ( "grapheme mode that cannot be set",
+      [],
+      [ mode 2027 Permanently_reset ],
+      [ Grapheme None; Width `Wcwidth ] );
     ( "metaSendsEscape that cannot be set",
       [],
       [ mode 1036 Permanently_reset ],
@@ -1050,7 +1072,7 @@ let () =
           test "mouse mode on non-TTY" test_mouse_validation;
           test "X10 disable" test_x10_mouse_disable;
         ];
-      group "unicode" [ test "set_unicode_width" test_set_unicode_width ];
+      group "unicode" [ test "enable_grapheme_mode" test_enable_grapheme_mode ];
       group "keyboard"
         [ test "modifyOtherKeys toggle" test_modify_other_keys_toggle ];
       group "raw mode"

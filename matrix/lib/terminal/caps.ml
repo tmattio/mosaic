@@ -8,6 +8,7 @@ type t = {
   bracketed_paste : bool;
   focus_tracking : bool;
   unicode_width : Matrix_text.width_method;
+  grapheme_mode : bool option;
   sgr_pixels : bool;
   color_scheme_updates : bool;
   explicit_width : bool;
@@ -29,6 +30,7 @@ let defaults =
     bracketed_paste = false;
     focus_tracking = false;
     unicode_width = `Wcwidth;
+    grapheme_mode = None;
     sgr_pixels = false;
     color_scheme_updates = false;
     explicit_width = false;
@@ -329,6 +331,12 @@ let derive ev =
           when_ (contains env.term "kitty") `Unicode;
         ]
         d.unicode_width;
+    grapheme_mode =
+      (match List.assoc_opt 2027 ev.modes with
+      | Some (Set | Permanently_set) -> Some true
+      | Some Reset -> Some false
+      | Some (Not_recognized | Permanently_reset) -> None
+      | None -> d.grapheme_mode);
     sgr_pixels = first [ mode 1016 ] d.sgr_pixels;
     color_scheme_updates = first [ mode 2031 ] d.color_scheme_updates;
     explicit_width = first [ ev.explicit ] d.explicit_width;

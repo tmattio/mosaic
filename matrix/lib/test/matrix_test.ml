@@ -28,6 +28,7 @@ let capabilities : Matrix.Terminal.capabilities =
     bracketed_paste = true;
     focus_tracking = true;
     unicode_width = `Unicode;
+    grapheme_mode = None;
     sgr_pixels = false;
     color_scheme_updates = false;
     explicit_width = false;

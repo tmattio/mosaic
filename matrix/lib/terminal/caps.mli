@@ -69,15 +69,22 @@ type t = {
       (** How the terminal measures text, which its answer for mode 2027
           (grapheme cluster mode, "Unicode in Terminals") tells, as a DECRPM
           setting (VT510). Set or permanently set is [`Unicode]. Reset says that
-          the terminal has the mode and can set it, which the runtime does,
-          resetting it on exit: [`Unicode]. Permanently reset is [`Wcwidth]:
-          with the mode off a terminal behaves "as if this specification was not
+          the terminal has the mode and can set it, which the runtime does
+          ({!grapheme_mode}): [`Unicode]. Permanently reset is [`Wcwidth]: with
+          the mode off a terminal behaves "as if this specification was not
           implemented at all". The answer "not recognized", or none, says that
           the terminal does not have the mode, and such a terminal measures each
           character by itself, as wcwidth does: [`Wcwidth], unless its identity
           says otherwise. xterm and VTE answer "not recognized" and st does not
           answer, and they measure by character; kitty answers "not recognized"
           and places grapheme clusters, so its identity gives [`Unicode]. *)
+  grapheme_mode : bool option;
+      (** Mode 2027 as the terminal answered. [Some false] says it has the mode
+          and it is reset, and can be set: the runtime then sets it while it
+          measures by grapheme clusters, and resets it when it gives the
+          terminal back. [Some true] says it is set, and the runtime leaves it
+          so. [None] when the terminal does not have the mode, cannot change it,
+          or did not answer. *)
   sgr_pixels : bool;  (** SGR pixel mouse reports (mode 1016) are supported. *)
   color_scheme_updates : bool;
       (** Color scheme change reports (mode 2031) are supported. *)
