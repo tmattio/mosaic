@@ -10,6 +10,17 @@ module Annotations = struct
 
   let content t = t.content
 
+  (* [add_run runs first last style] appends a run, extending the last one
+     when it has the same style. *)
+  let add_run runs first last style =
+    if first < last then begin
+      let n = Dynarray.length runs in
+      if n > 0 && Ansi.Style.equal (Dynarray.get runs (n - 1)).style style then
+        Dynarray.set runs (n - 1)
+          { (Dynarray.get runs (n - 1)) with end_byte = last }
+      else Dynarray.add_last runs { start_byte = first; end_byte = last; style }
+    end
+
   let make ?(base_style = Ansi.Style.default) ~content ranges =
     let length = String.length content in
     let ordered = ref true and previous_end = ref 0 in
@@ -27,17 +38,7 @@ module Annotations = struct
         end)
       ranges;
     let runs = Dynarray.create () in
-    let emit first last style =
-      if first < last then begin
-        let n = Dynarray.length runs in
-        if n > 0 && Ansi.Style.equal (Dynarray.get runs (n - 1)).style style
-        then
-          Dynarray.set runs (n - 1)
-            { (Dynarray.get runs (n - 1)) with end_byte = last }
-        else
-          Dynarray.add_last runs { start_byte = first; end_byte = last; style }
-      end
-    in
+    let emit = add_run runs in
     if !ordered then begin
       let current = ref 0 in
       let default_base = Ansi.Style.equal base_style Ansi.Style.default in
@@ -93,6 +94,25 @@ module Annotations = struct
       if length > 0 then sweep 0 events
     end;
     { content; runs = Dynarray.to_array runs }
+
+  (* Both run arrays cover the content from its first byte to its last, so a
+     walk over both meets every boundary of either. *)
+  let merge ~base ~overlay =
+    if
+      base.content != overlay.content
+      && not (String.equal base.content overlay.content)
+    then invalid_arg "Text_buffer.Annotations.merge: sources differ";
+    let runs = Dynarray.create () in
+    let i = ref 0 and j = ref 0 and first = ref 0 in
+    while !i < Array.length base.runs && !j < Array.length overlay.runs do
+      let b = base.runs.(!i) and o = overlay.runs.(!j) in
+      let last = min b.end_byte o.end_byte in
+      add_run runs !first last (Ansi.Style.merge ~base:b.style ~overlay:o.style);
+      first := last;
+      if b.end_byte = last then incr i;
+      if o.end_byte = last then incr j
+    done;
+    { content = base.content; runs = Dynarray.to_array runs }
 
   let to_spans t =
     let content = t.content in

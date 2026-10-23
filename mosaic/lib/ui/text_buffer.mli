@@ -35,6 +35,15 @@ module Annotations : sig
   val content : t -> string
   (** [content t] is the annotated source. *)
 
+  val merge : base:t -> overlay:t -> t
+  (** [merge ~base ~overlay] styles each byte with {!Ansi.Style.merge} of its
+      style in [base] and its style in [overlay], so [overlay] wins conflicting
+      attributes, as a later range does in {!make}. Bytes [overlay] leaves at
+      the default style keep their style in [base].
+
+      Raises [Invalid_argument] if [base] and [overlay] annotate different
+      bytes. *)
+
   val to_spans : t -> span list
   (** [to_spans t] materializes styled fragments, copying source substrings.
       Rendering annotations directly avoids these copies. *)

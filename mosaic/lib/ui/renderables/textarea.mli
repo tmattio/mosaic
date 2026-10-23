@@ -165,20 +165,20 @@ module Props : sig
     t
   (** [make ~state ()] describes [state] with the widget's visual defaults.
 
-      Either [annotations] or [syntax] styles the text.
+      Two inputs style the text, and [annotations] go over [syntax] (see
+      {!Text_buffer.Annotations.merge}).
+      - [syntax] highlights the text as {!Code} does. A highlighter receives
+        each accepted text with the edit from the latest result, and while a
+        result is pending the text shows as {!Code.with_highlighter} states.
+        Editable text shows every byte, so captures never conceal.
       - [annotations] are styles the application resolved itself, such as search
         matches or diagnostics. They must describe the same bytes as
         [Editor.text state]. Omit them while awaiting a result for a changed
         source. They depend only on the source bytes, so the same annotations
         stay valid while the caret and selection move.
-      - [syntax] highlights the text as {!Code} does. A highlighter receives
-        each accepted text with the edit from the latest result, and while a
-        result is pending the text shows as {!Code.with_highlighter} states.
-        Editable text shows every byte, so captures never conceal.
 
       Raises [Invalid_argument] before applying any properties if [annotations]
-      describe other bytes than [Editor.text state], or if both [annotations]
-      and [syntax] are given. *)
+      describe other bytes than [Editor.text state]. *)
 
   val default : t
   (** [default] is [make ~state:Editor.empty ()]. *)

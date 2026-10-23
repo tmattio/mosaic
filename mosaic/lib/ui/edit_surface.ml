@@ -200,11 +200,7 @@ module Props = struct
         let accepted = Editor.text state in
         if content != accepted && not (String.equal content accepted) then
           invalid_arg
-            "Edit_surface.Props.make: annotations do not match editor source";
-        if Option.is_some syntax then
-          invalid_arg
-            "Edit_surface.Props.make: both annotations and syntax style the \
-             text");
+            "Edit_surface.Props.make: annotations do not match editor source");
     {
       state;
       annotations;
@@ -341,17 +337,21 @@ let propose t ~base next =
 
 (* Sync *)
 
-(* The paint of the accepted text: the given annotations, or the captures the
-   syntax shows for it, without concealment, as editable text shows every
-   byte. *)
+(* The paint of the accepted text: the captures the syntax shows for it, without
+   concealment as editable text shows every byte, with the given annotations
+   merged over them. *)
 let paint t =
-  match (t.props.annotations, t.props.syntax) with
-  | Some annotations, _ -> Some annotations
+  let syntax =
+    Option.bind t.props.syntax (fun syntax ->
+        Option.map
+          (Syntax_highlight.to_annotations ~style:(Syntax_session.style syntax))
+          (Syntax_session.shown t.session ~conceal:false))
+  in
+  match (syntax, t.props.annotations) with
+  | Some base, Some overlay ->
+      Some (Text_buffer.Annotations.merge ~base ~overlay)
+  | Some paint, None | None, Some paint -> Some paint
   | None, None -> None
-  | None, Some syntax ->
-      Option.map
-        (Syntax_highlight.to_annotations ~style:(Syntax_session.style syntax))
-        (Syntax_session.shown t.session ~conceal:false)
 
 let sync_content t =
   let source = Editor.source t.props.state in

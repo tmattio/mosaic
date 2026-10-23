@@ -1236,13 +1236,34 @@ let syntax_mismatch_shows_plain () =
   is_true ~msg:"captures of other bytes show plain"
     (Ansi.Color.equal Ansi.Color.white (Matrix_grid.get_fg grid 0))
 
-let annotations_and_syntax_exclude_each_other () =
+let annotations_go_over_syntax () =
+  let ctx = make_ctx () in
+  let root = make_root ctx in
   let state = Editor.of_string "hello" in
-  let annotations = Text_buffer.Annotations.make ~content:"hello" [] in
-  let syntax = Code.syntax (Syntax_highlight.make ~content:"hello" []) in
-  raises_match ~msg:"both style the text"
-    (function Invalid_argument _ -> true | _ -> false)
-    (fun () -> ignore (Textarea.Props.make ~state ~annotations ~syntax ()))
+  let syntax =
+    Code.syntax ~style:keyword_style
+      (Syntax_highlight.of_triples ~content:"hello" [ (0, 5, "keyword") ])
+  in
+  let annotations =
+    Text_buffer.Annotations.make ~content:"hello"
+      [
+        {
+          start_byte = 1;
+          end_byte = 3;
+          style = Ansi.Style.make ~bg:Ansi.Color.blue ();
+        };
+      ]
+  in
+  let ta =
+    Textarea.create ~parent:root ~state ~syntax ~annotations ~on_change:ignore
+      ~show_cursor:false ()
+  in
+  let grid = render_textarea ta ~width:10 ~height:1 in
+  let red x = Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_fg grid x) in
+  let blue x = Ansi.Color.equal Ansi.Color.blue (Matrix_grid.get_bg grid x) in
+  is_true ~msg:"syntax alone" (red 0 && not (blue 0));
+  is_true ~msg:"annotation over syntax" (red 1 && blue 1 && red 2 && blue 2);
+  is_true ~msg:"syntax after the annotation" (red 3 && not (blue 3))
 
 let () =
   run "mosaic.textarea"
@@ -1280,8 +1301,7 @@ let () =
           test "highlights and shows pending edits"
             syntax_highlights_and_shows_pending_edits;
           test "a mismatch shows plain" syntax_mismatch_shows_plain;
-          test "annotations and syntax exclude each other"
-            annotations_and_syntax_exclude_each_other;
+          test "annotations go over syntax" annotations_go_over_syntax;
         ];
       group "Paint"
         [

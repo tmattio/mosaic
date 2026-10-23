@@ -278,6 +278,55 @@ let conceal_projection_is_reused_across_themes () =
   is_true ~msg:"themes retain visible source index"
     (source == Text_buffer.source buffer)
 
+let merge_puts_the_overlay_over_the_base () =
+  let base =
+    Text_buffer.Annotations.make ~content:"abcd"
+      [
+        {
+          start_byte = 0;
+          end_byte = 3;
+          style = Ansi.Style.make ~bold:true ~fg:Ansi.Color.red ();
+        };
+      ]
+  in
+  let overlay =
+    Text_buffer.Annotations.make ~content:"abcd"
+      [
+        {
+          start_byte = 2;
+          end_byte = 4;
+          style = Ansi.Style.make ~fg:Ansi.Color.green ();
+        };
+      ]
+  in
+  let spans =
+    Text_buffer.Annotations.to_spans
+      (Text_buffer.Annotations.merge ~base ~overlay)
+  in
+  let at i =
+    let rec find offset = function
+      | (span : Text_buffer.span) :: rest ->
+          if i < offset + String.length span.text then span.style
+          else find (offset + String.length span.text) rest
+      | [] -> fail "byte out of the spans"
+    in
+    find 0 spans
+  in
+  equal ~msg:"text" string "abcd" (text_of_spans spans);
+  is_true ~msg:"the base where the overlay is default"
+    (Ansi.Style.equal (Ansi.Style.make ~bold:true ~fg:Ansi.Color.red ()) (at 0));
+  is_true ~msg:"the overlay wins its attributes, the base keeps the others"
+    (Ansi.Style.equal
+       (Ansi.Style.make ~bold:true ~fg:Ansi.Color.green ())
+       (at 2));
+  is_true ~msg:"the overlay alone"
+    (Ansi.Style.equal (Ansi.Style.make ~fg:Ansi.Color.green ()) (at 3));
+  raises_match ~msg:"other bytes"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      Text_buffer.Annotations.merge ~base
+        ~overlay:(Text_buffer.Annotations.make ~content:"abce" []))
+
 let annotations_validate_bounds () =
   List.iter
     (fun (start_byte, end_byte) ->
@@ -629,6 +678,8 @@ let () =
           test "conceal projection is reused across themes"
             conceal_projection_is_reused_across_themes;
           test "bounds are validated" annotations_validate_bounds;
+          test "merge puts the overlay over the base"
+            merge_puts_the_overlay_over_the_base;
           test "unordered annotations preserve overlay order"
             unordered_annotations_preserve_overlay_order;
         ];

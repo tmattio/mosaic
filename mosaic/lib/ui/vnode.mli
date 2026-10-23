@@ -822,9 +822,8 @@ val textarea :
 
     [annotations] styles source byte ranges without copying text. Its source
     bytes must match [state]; stale annotations raise [Invalid_argument] before
-    changing the widget. [syntax] highlights the text instead, as {!Code} does;
-    giving both raises [Invalid_argument]. Other visual options follow
-    {!Textarea}. *)
+    changing the widget. [syntax] highlights the text as {!Code} does, and
+    [annotations] go over it. Other visual options follow {!Textarea}. *)
 
 val table :
   ?key:string ->

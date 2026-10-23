@@ -107,7 +107,8 @@ let editor_view highlighter state =
 ```
 
 Styles the application resolves itself, such as search matches or
-diagnostics, go in `~annotations` instead.
+diagnostics, go in `~annotations`, which the textarea shows over the syntax
+styles.
 
 ## Where the rules live
 
