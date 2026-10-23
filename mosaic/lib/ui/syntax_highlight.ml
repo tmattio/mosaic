@@ -14,8 +14,16 @@ let default_meta =
   }
 
 type range = { start_byte : int; end_byte : int; scope : string; meta : meta }
-type segment = { start_byte : int; end_byte : int; scopes : string list }
-type projection = { content : string; segments : segment list }
+
+(* A run of visible bytes that one set of scopes styles. [scopes] indexes the
+   projection's [scope_sets], so a theme resolves each distinct set once. *)
+type segment = { start_byte : int; end_byte : int; scopes : int }
+
+type projection = {
+  content : string;
+  segments : segment array;
+  scope_sets : string list array;
+}
 
 type t = {
   content : string;
@@ -44,11 +52,6 @@ let specificity scope =
 let should_suppress_in_injection range =
   (not range.meta.is_injection) && String.equal range.scope "markup.raw.block"
 
-type indexed_range = { range : range; index : int }
-type boundary = Start of int * int | End of int * int
-
-let boundary_pos = function Start (pos, _) | End (pos, _) -> pos
-
 let validate ~content (ranges : range list) =
   let len = String.length content in
   List.iter
@@ -60,32 +63,6 @@ let validate ~content (ranges : range list) =
               of length %d"
              r.start_byte r.end_byte len))
     ranges
-
-let index_ranges ranges =
-  ranges
-  |> List.mapi (fun index range -> { range; index })
-  |> List.filter (fun item -> item.range.start_byte <> item.range.end_byte)
-
-let range_table ranges =
-  let table = Hashtbl.create (List.length ranges) in
-  List.iter (fun item -> Hashtbl.add table item.index item.range) ranges;
-  table
-
-let collect_injection_containers ranges =
-  List.filter_map
-    (fun item ->
-      if item.range.meta.contains_injection then
-        Some (item.range.start_byte, item.range.end_byte)
-      else None)
-    ranges
-
-let active_ranges table active =
-  List.map (fun id -> (id, Hashtbl.find table id)) active
-
-let inside_injection_container containers pos =
-  List.exists
-    (fun (start_byte, end_byte) -> pos >= start_byte && pos < end_byte)
-    containers
 
 let conceal_replacement range =
   match range.meta.conceal with
@@ -99,54 +76,60 @@ let conceal_replacement range =
         else Some ""
       else None
 
-let concealed_text ~conceal ranges =
-  if conceal then
-    List.find_map
-      (fun (_, range) ->
-        match conceal_replacement range with
-        | Some replacement -> Some replacement
-        | None -> None)
-      ranges
-  else None
+(* A range open at the sweep's position, with its declaration index. *)
+type open_range = { index : int; specificity : int; range : range }
 
-let active_scopes ~injection_containers ~pos ranges =
-  let inside_injection = inside_injection_container injection_containers pos in
-  let ranges =
-    ranges
-    |> List.filter (fun (_, range) ->
-        (not inside_injection) || not (should_suppress_in_injection range))
-    |> List.sort (fun (index_a, range_a) (index_b, range_b) ->
-        let c =
-          Int.compare (specificity range_a.scope) (specificity range_b.scope)
-        in
-        if c <> 0 then c else Int.compare index_a index_b)
+(* [insert before x l] puts [x] into [l], kept ordered by [before]. *)
+let insert before x l =
+  let rec go = function
+    | y :: rest when not (before x y) -> y :: go rest
+    | l -> x :: l
   in
-  List.map (fun (_, range) -> range.scope) ranges
+  go l
 
-let sorted_boundaries ranges =
-  let boundaries = ref [] in
-  List.iter
-    (fun item ->
-      if item.range.start_byte <> item.range.end_byte then begin
-        boundaries := Start (item.range.start_byte, item.index) :: !boundaries;
-        boundaries := End (item.range.end_byte, item.index) :: !boundaries
-      end)
-    ranges;
-  List.sort
-    (fun a b ->
-      let pos_a = boundary_pos a and pos_b = boundary_pos b in
-      if pos_a <> pos_b then Int.compare pos_a pos_b
-      else
-        match (a, b) with End _, Start _ -> -1 | Start _, End _ -> 1 | _ -> 0)
-    !boundaries
+(* Scopes apply least specific first, then in declaration order. *)
+let applies_before a b =
+  a.specificity < b.specificity
+  || (a.specificity = b.specificity && a.index < b.index)
 
+(* The concealing range that wins is the latest to start, then the first
+   declared. *)
+let conceals_before a b =
+  a.range.start_byte > b.range.start_byte
+  || (a.range.start_byte = b.range.start_byte && a.index < b.index)
+
+(* [prepare] sweeps the ranges once in start order. Between two consecutive
+   range boundaries the open ranges are constant, so each such segment gets
+   one set of scopes, or the replacement of the concealing range that wins. *)
 let prepare ~conceal content ranges =
   let len = String.length content in
-  let indexed = index_ranges ranges in
-  let by_index = range_table indexed in
-  let injection_containers = collect_injection_containers indexed in
-  let boundaries = sorted_boundaries indexed in
-  let active = ref [] and segments = ref [] and current = ref 0 in
+  let ranges : range array = Array.of_list ranges in
+  let order =
+    Array.of_list
+      (List.filter
+         (fun i -> ranges.(i).start_byte < ranges.(i).end_byte)
+         (List.init (Array.length ranges) Fun.id))
+  in
+  (* Producers usually list ranges by start already; sort only if not. *)
+  let by_start i j = Int.compare ranges.(i).start_byte ranges.(j).start_byte in
+  let sorted = ref true in
+  for k = 1 to Array.length order - 1 do
+    if by_start order.(k - 1) order.(k) > 0 then sorted := false
+  done;
+  if not !sorted then Array.stable_sort by_start order;
+  let scope_sets = Dynarray.create () and set_ids = Hashtbl.create 64 in
+  let scope_set scopes =
+    match Hashtbl.find_opt set_ids scopes with
+    | Some id -> id
+    | None ->
+        let id = Dynarray.length scope_sets in
+        Dynarray.add_last scope_sets scopes;
+        Hashtbl.add set_ids scopes id;
+        id
+  in
+  let unstyled = scope_set [] in
+  let active = ref [] and concealing = ref [] in
+  let segments = Dynarray.create () and current = ref 0 in
   (* Allocate output storage only when concealment changes the source. *)
   let output = ref None and written = ref 0 and visible = ref 0 in
   let output_buffer () =
@@ -172,20 +155,34 @@ let prepare ~conceal content ranges =
           size
     in
     if visible_size > 0 then
-      segments :=
-        { start_byte = !visible; end_byte = !visible + visible_size; scopes }
-        :: !segments;
+      Dynarray.add_last segments
+        { start_byte = !visible; end_byte = !visible + visible_size; scopes };
     visible := !visible + visible_size;
     written := last
   in
   let flush_until pos =
     if pos > !current then begin
-      let ranges = active_ranges by_index !active in
-      let replacement = concealed_text ~conceal ranges in
+      let replacement =
+        match !concealing with
+        | open_range :: _ -> conceal_replacement open_range.range
+        | [] -> None
+      in
       let scopes =
         match replacement with
-        | Some _ -> []
-        | None -> active_scopes ~injection_containers ~pos:!current ranges
+        | Some _ -> unstyled
+        | None ->
+            let inside_injection =
+              List.exists
+                (fun open_range -> open_range.range.meta.contains_injection)
+                !active
+            in
+            scope_set
+              (List.filter_map
+                 (fun { range; _ } ->
+                   if inside_injection && should_suppress_in_injection range
+                   then None
+                   else Some range.scope)
+                 !active)
       in
       emit !current pos scopes replacement;
       current := pos
@@ -198,31 +195,65 @@ let prepare ~conceal content ranges =
       written := pos + 1
     end
   in
-  List.iter
-    (fun boundary ->
-      let pos = boundary_pos boundary in
+  let close pos range =
+    if conceal then begin
+      if range.meta.conceal_lines then skip_char_at pos '\n';
+      match range.meta.conceal with
+      | Some " " -> skip_char_at pos ' '
+      | Some ""
+        when String.equal range.scope "conceal" && not range.meta.is_injection
+        ->
+          skip_char_at pos ' '
+      | _ -> ()
+    end
+  in
+  let next = ref 0 in
+  let rec sweep () =
+    let next_start =
+      if !next < Array.length order then ranges.(order.(!next)).start_byte
+      else max_int
+    in
+    let next_end =
+      List.fold_left
+        (fun m open_range -> min m open_range.range.end_byte)
+        max_int !active
+    in
+    let pos = min next_start next_end in
+    if pos < max_int then begin
       flush_until pos;
-      match boundary with
-      | Start (_, id) -> active := id :: !active
-      | End (_, id) ->
-          active := List.filter (fun active_id -> active_id <> id) !active;
-          if conceal then begin
-            let range = Hashtbl.find by_index id in
-            if range.meta.conceal_lines then skip_char_at pos '\n';
-            match range.meta.conceal with
-            | Some " " -> skip_char_at pos ' '
-            | Some ""
-              when String.equal range.scope "conceal"
-                   && not range.meta.is_injection ->
-                skip_char_at pos ' '
-            | _ -> ()
-          end)
-    boundaries;
-  if !current < len then emit !current len [] None;
+      if next_end = pos then begin
+        let ends open_range = open_range.range.end_byte = pos in
+        let closing = List.filter ends !active in
+        active := List.filter (fun r -> not (ends r)) !active;
+        concealing := List.filter (fun r -> not (ends r)) !concealing;
+        List.iter (fun open_range -> close pos open_range.range) closing
+      end;
+      while
+        !next < Array.length order && ranges.(order.(!next)).start_byte = pos
+      do
+        let index = order.(!next) in
+        let range = ranges.(index) in
+        let open_range =
+          { index; specificity = specificity range.scope; range }
+        in
+        active := insert applies_before open_range !active;
+        if conceal && conceal_replacement range <> None then
+          concealing := insert conceals_before open_range !concealing;
+        incr next
+      done;
+      sweep ()
+    end
+  in
+  sweep ();
+  if !current < len then emit !current len unstyled None;
   let content =
     match !output with None -> content | Some buffer -> Buffer.contents buffer
   in
-  { content; segments = List.rev !segments }
+  {
+    content;
+    segments = Dynarray.to_array segments;
+    scope_sets = Dynarray.to_array scope_sets;
+  }
 
 let make ~content ranges =
   validate ~content ranges;
@@ -258,22 +289,25 @@ let projection ~conceal t =
 let to_annotations ?(conceal = false) ~style t =
   let projection = projection ~conceal t in
   let base_style = Syntax_style.base style in
+  let styles =
+    Array.map
+      (List.fold_left
+         (fun base scope ->
+           Ansi.Style.merge ~base
+             ~overlay:(Syntax_style.resolve_overlay style scope))
+         base_style)
+      projection.scope_sets
+  in
   let ranges =
-    List.map
-      (fun segment ->
-        let style =
-          List.fold_left
-            (fun base scope ->
-              Ansi.Style.merge ~base
-                ~overlay:(Syntax_style.resolve_overlay style scope))
-            base_style segment.scopes
-        in
+    Array.fold_right
+      (fun (segment : segment) ranges ->
         {
           Text_buffer.Annotations.start_byte = segment.start_byte;
           end_byte = segment.end_byte;
-          style;
-        })
-      projection.segments
+          style = styles.(segment.scopes);
+        }
+        :: ranges)
+      projection.segments []
   in
   Text_buffer.Annotations.make ~base_style ~content:projection.content ranges
 

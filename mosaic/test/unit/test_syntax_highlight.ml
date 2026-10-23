@@ -374,6 +374,240 @@ let unordered_annotations_preserve_overlay_order () =
   is_true ~msg:"uncovered suffix uses base style"
     (Ansi.Style.equal base_style (at 6))
 
+(* The resolution that preceded the sorted sweep, kept as the reference: a
+   boundary list sorted once, then per segment the open ranges sorted by
+   specificity. *)
+module Reference = struct
+  module H = Syntax_highlight
+
+  type boundary = Start of int * int | End of int * int
+
+  let pos = function Start (pos, _) | End (pos, _) -> pos
+
+  let specificity scope =
+    let n = ref 1 in
+    String.iter (fun c -> if c = '.' then incr n) scope;
+    !n
+
+  let replacement range =
+    match (H.meta range).conceal with
+    | Some text -> Some text
+    | None ->
+        let scope = H.scope range in
+        if
+          String.equal scope "conceal"
+          || String.starts_with ~prefix:"conceal." scope
+        then
+          if String.equal scope "conceal.with.space" then Some " " else Some ""
+        else None
+
+  let spans ~conceal ~style captures =
+    let content = H.content captures in
+    let len = String.length content in
+    let indexed =
+      List.filter
+        (fun (_, r) -> H.start_byte r <> H.end_byte r)
+        (List.mapi (fun i r -> (i, r)) (H.ranges captures))
+    in
+    let by_index = Hashtbl.create 16 in
+    List.iter (fun (i, r) -> Hashtbl.add by_index i r) indexed;
+    let containers =
+      List.filter_map
+        (fun (_, r) ->
+          if (H.meta r).contains_injection then
+            Some (H.start_byte r, H.end_byte r)
+          else None)
+        indexed
+    in
+    let boundaries =
+      List.fold_left
+        (fun acc (i, r) ->
+          End (H.end_byte r, i) :: Start (H.start_byte r, i) :: acc)
+        [] indexed
+      |> List.stable_sort (fun a b ->
+          if pos a <> pos b then Int.compare (pos a) (pos b)
+          else
+            match (a, b) with
+            | End _, Start _ -> -1
+            | Start _, End _ -> 1
+            | _ -> 0)
+    in
+    let active = ref [] and out = Buffer.create len and spans = ref [] in
+    let current = ref 0 in
+    let base = Syntax_style.base style in
+    let emit first last scopes replacement =
+      let text =
+        match replacement with
+        | Some text -> text
+        | None -> String.sub content first (last - first)
+      in
+      Buffer.add_string out text;
+      if text <> "" then
+        let style =
+          List.fold_left
+            (fun base scope ->
+              Ansi.Style.merge ~base
+                ~overlay:(Syntax_style.resolve_overlay style scope))
+            base scopes
+        in
+        spans := (text, style) :: !spans
+    in
+    let flush pos =
+      if pos > !current then begin
+        let ranges = List.map (fun i -> (i, Hashtbl.find by_index i)) !active in
+        let replacement =
+          if conceal then List.find_map (fun (_, r) -> replacement r) ranges
+          else None
+        in
+        let scopes =
+          match replacement with
+          | Some _ -> []
+          | None ->
+              let inside =
+                List.exists
+                  (fun (s, e) -> !current >= s && !current < e)
+                  containers
+              in
+              ranges
+              |> List.filter (fun (_, r) ->
+                  (not inside) || (H.meta r).is_injection
+                  || not (String.equal (H.scope r) "markup.raw.block"))
+              |> List.sort (fun (i, a) (j, b) ->
+                  let c =
+                    Int.compare
+                      (specificity (H.scope a))
+                      (specificity (H.scope b))
+                  in
+                  if c <> 0 then c else Int.compare i j)
+              |> List.map (fun (_, r) -> H.scope r)
+        in
+        emit !current pos scopes replacement;
+        current := pos
+      end
+    in
+    let skip pos c =
+      if pos < len && content.[pos] = c then current := pos + 1
+    in
+    List.iter
+      (fun boundary ->
+        flush (pos boundary);
+        match boundary with
+        | Start (_, i) -> active := i :: !active
+        | End (p, i) ->
+            active := List.filter (( <> ) i) !active;
+            if conceal then begin
+              let r = Hashtbl.find by_index i in
+              let meta = H.meta r in
+              if meta.conceal_lines then skip p '\n';
+              match meta.conceal with
+              | Some " " -> skip p ' '
+              | Some "" when H.scope r = "conceal" && not meta.is_injection ->
+                  skip p ' '
+              | _ -> ()
+            end)
+      boundaries;
+    if !current < len then emit !current len [] None;
+    (Buffer.contents out, List.rev !spans)
+end
+
+(* Equal styles over equal bytes: span boundaries between equal styles are
+   not part of the result. *)
+let styled_bytes (text, spans) =
+  ignore text;
+  List.concat_map
+    (fun (text, style) ->
+      List.init (String.length text) (fun i -> (text.[i], style)))
+    spans
+
+let random_captures random =
+  let pick a = a.(Random.State.int random (Array.length a)) in
+  let content =
+    String.concat ""
+      (List.init (Random.State.int random 40) (fun _ ->
+           pick [| "a"; "b"; " "; "\n"; "\195\169" |]))
+  in
+  let len = String.length content in
+  let range () =
+    let start_byte = Random.State.int random (len + 1) in
+    let end_byte =
+      start_byte + Random.State.int random (len - start_byte + 1)
+    in
+    let meta =
+      {
+        Syntax_highlight.is_injection = Random.State.int random 4 = 0;
+        contains_injection = Random.State.int random 4 = 0;
+        conceal =
+          (if Random.State.int random 3 = 0 then
+             Some (pick [| ""; " "; "*"; "<>" |])
+           else None);
+        conceal_lines = Random.State.int random 5 = 0;
+      }
+    in
+    Syntax_highlight.range ~meta ~start_byte ~end_byte
+      ~scope:
+        (pick
+           [|
+             "keyword";
+             "keyword.control";
+             "string";
+             "markup.raw.block";
+             "conceal";
+             "conceal.with.space";
+             "conceal.other";
+             "x.y.z";
+           |])
+      ()
+  in
+  let ranges = List.init (Random.State.int random 12) (fun _ -> range ()) in
+  let ranges =
+    if Random.State.bool random then
+      List.stable_sort
+        (fun a b ->
+          Int.compare
+            (Syntax_highlight.start_byte a)
+            (Syntax_highlight.start_byte b))
+        ranges
+    else ranges
+  in
+  Syntax_highlight.make ~content ranges
+
+let resolution_matches_reference () =
+  let style =
+    Syntax_style.make ~base:bold
+      [
+        ("keyword", red);
+        ("keyword.control", green);
+        ("string", Ansi.Style.make ~underline:true ());
+        ("markup.raw.block", Ansi.Style.make ~bg:Ansi.Color.blue ());
+        ("x", Ansi.Style.make ~italic:true ());
+        ("x.y.z", Ansi.Style.make ~fg:Ansi.Color.cyan ());
+      ]
+  in
+  let random = Random.State.make [| 8 |] in
+  for case = 1 to 5_000 do
+    let captures = random_captures random in
+    List.iter
+      (fun conceal ->
+        let spans = Syntax_highlight.to_spans ~conceal ~style captures in
+        let ((text, _) as expected) =
+          Reference.spans ~conceal ~style captures
+        in
+        let actual =
+          ( text_of_spans spans,
+            List.map (fun s -> (span_text s, span_style s)) spans )
+        in
+        if
+          not
+            (String.equal text (fst actual)
+            && List.equal
+                 (fun (c, a) (d, b) -> Char.equal c d && Ansi.Style.equal a b)
+                 (styled_bytes expected) (styled_bytes actual))
+        then
+          failf "case %d (conceal %b): %S over %S" case conceal (fst actual)
+            (Syntax_highlight.content captures))
+      [ false; true ]
+  done
+
 let () =
   run "mosaic.syntax_highlight"
     [
@@ -402,6 +636,8 @@ let () =
           test "specificity cascades from parent to child"
             specificity_cascades_from_parent_to_child;
           test "invalid range raises" invalid_range_raises;
+          test "resolution matches the reference on random overlaps"
+            resolution_matches_reference;
         ];
       group "Metadata"
         [
