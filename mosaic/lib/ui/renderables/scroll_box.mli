@@ -5,15 +5,21 @@
     {1:keys Keys}
 
     When focused, the scroll box's behavior (see {!Renderable.set_key_behavior})
-    acts on the keys of its two scroll bars ({!Scroll_bar.handle_key}) and
-    consumes them: they reach neither its ancestors nor any listener after the
-    elements, such as an application's shortcuts. Every other key passes on.
-    - Up, k, Down, j — scroll up or down by a fifth of the viewport.
-    - Left, h, Right, l — scroll left or right by a fifth of the viewport.
-    - PageUp, PageDown — scroll up or down by half the viewport.
-    - Home, End — scroll to the top or the bottom.
+    acts on the keys of the scroll bar of each axis it scrolls
+    ({!Scroll_bar.handle_key}) and consumes them: they reach neither its
+    ancestors nor any listener after the elements, such as an application's
+    shortcuts. Every other key passes on.
+    - Up, k, Down, j — if it scrolls vertically, scroll up or down by a fifth of
+      the viewport.
+    - Left, h, Right, l — if it scrolls horizontally, scroll left or right by a
+      fifth of the viewport.
+    - PageUp, PageDown, Home, End — scroll by half the viewport, or to the start
+      or the end, vertically if it scrolls vertically, otherwise horizontally if
+      it scrolls horizontally.
 
-    It acts on them along an axis it does not scroll, and at an edge too. *)
+    A key it uses stays consumed at the edge, where it changes nothing, as a
+    full text input still takes letters. A box that scrolls along neither axis
+    acts on no key. *)
 
 module Scroll_accel : sig
   type t

@@ -42,6 +42,7 @@
 - `Cmd.perform` messages can no longer be lost to a cross-thread race
 - `Sub.on_mouse` and `Sub.on_paste` now see event consumption (they behaved like the `_all` variants)
 - A mouse event a widget stopped reached only the first `Sub.on_mouse_all` listener; every capture listener now sees it
+- A focused `scroll_box` took arrows and h/j/k/l along an axis it does not scroll; those keys now pass on to shortcuts
 - Left-click focuses selectable widgets even when it starts a selection; wheel over dead space reaches the focused scrollable
 - Tree and `select` mouse handling uses widget-local coordinates; `scroll_bar` applies orientation and arrow-color prop updates
 - Reconciler tracks id changes on reused fibers, keys duplicates first-occurrence-wins, and places children in linear time

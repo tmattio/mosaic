@@ -316,10 +316,56 @@ let consumed_keys =
             ctrl 'j';
           ]
         ~passes:[ char 'q'; plain Key.Escape; plain Key.Page_up ] );
-    ( "scroll_box",
+    (* The content fits: arrows at the edge stay consumed along a scrolled
+       axis, and pass on along the other. *)
+    ( "scroll_box, vertical",
       consumes
         (Mosaic.scroll_box ~size ~focused:true ~scroll:(Mosaic.Scroll.at 0)
            ~on_scroll:ignore
+           [ Mosaic.text "content" ])
+        ~acts:
+          [
+            plain Key.Up;
+            char 'k';
+            plain Key.Down;
+            char 'j';
+            plain Key.Page_up;
+            plain Key.Page_down;
+            plain Key.Home;
+            plain Key.End;
+          ]
+        ~passes:
+          [
+            plain Key.Left;
+            char 'h';
+            plain Key.Right;
+            char 'l';
+            char 'q';
+            plain Key.Escape;
+            plain Key.Enter;
+          ] );
+    ( "scroll_box, horizontal",
+      consumes
+        (Mosaic.scroll_box ~size ~focused:true ~scroll_x:true ~scroll_y:false
+           ~scroll:(Mosaic.Scroll.at 0) ~on_scroll:ignore
+           [ Mosaic.text "content" ])
+        ~acts:
+          [
+            plain Key.Left;
+            char 'h';
+            plain Key.Right;
+            char 'l';
+            plain Key.Page_up;
+            plain Key.Page_down;
+            plain Key.Home;
+            plain Key.End;
+          ]
+        ~passes:[ plain Key.Up; char 'k'; plain Key.Down; char 'j'; char 'q' ]
+    );
+    ( "scroll_box, both axes",
+      consumes
+        (Mosaic.scroll_box ~size ~focused:true ~scroll_x:true
+           ~scroll:(Mosaic.Scroll.at 0) ~on_scroll:ignore
            [ Mosaic.text "content" ])
         ~acts:
           [
@@ -332,11 +378,18 @@ let consumed_keys =
             plain Key.Right;
             char 'l';
             plain Key.Page_up;
-            plain Key.Page_down;
             plain Key.Home;
-            plain Key.End;
           ]
         ~passes:[ char 'q'; plain Key.Escape; plain Key.Enter ] );
+    ( "scroll_box, no axis",
+      consumes
+        (Mosaic.scroll_box ~size ~focused:true ~scroll_y:false
+           ~scroll:(Mosaic.Scroll.at 0) ~on_scroll:ignore
+           [ Mosaic.text "content" ])
+        ~acts:[]
+        ~passes:
+          [ plain Key.Up; plain Key.Left; plain Key.Page_down; plain Key.End ]
+    );
     ( "input",
       consumes
         (Mosaic.input ~size ~focused:true ~state:Mosaic.Editor.empty

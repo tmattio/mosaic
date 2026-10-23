@@ -409,9 +409,16 @@ let on_mouse t (event : Event.mouse) =
 
 (* ───── Keyboard ───── *)
 
+(* Only the bar of an axis the box scrolls takes keys: a key the box has no
+   use for passes on. *)
 let handle_key t (event : Event.key) =
-  let consumed = Scroll_bar.handle_key t.vertical_bar event in
-  let consumed = consumed || Scroll_bar.handle_key t.horizontal_bar event in
+  let consumed =
+    t.props.scroll_y && Scroll_bar.handle_key t.vertical_bar event
+  in
+  let consumed =
+    consumed
+    || (t.props.scroll_x && Scroll_bar.handle_key t.horizontal_bar event)
+  in
   if consumed then (
     Scroll_accel.reset t.scroll_accel;
     t.wheel_acc_x <- 0.;
