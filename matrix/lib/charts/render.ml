@@ -481,31 +481,6 @@ let draw_grid (layout : Layout.t) (grid : G.t) =
 
 (* {1 Axes} *)
 
-(* The arms of a cell of an axis line, and whether a line through it runs
-   across or down, which decides the glyph of a cell with no arm. *)
-let arm_up = 1
-let arm_down = 2
-let arm_left = 4
-let arm_right = 8
-let horizontal = 16
-let vertical = 32
-
-let junction_glyph (ch : Layout.Charset.t) bits =
-  let f = ch.frame in
-  match bits land 15 with
-  | 0 -> if bits land vertical <> 0 then ch.axis_v else ch.axis_h
-  | 4 | 8 | 12 -> ch.axis_h
-  | 1 | 2 | 3 -> ch.axis_v
-  | 10 -> f.tl
-  | 6 -> f.tr
-  | 9 -> f.bl
-  | 5 -> f.br
-  | 14 -> f.tee_down
-  | 13 -> f.tee_up
-  | 11 -> f.tee_right
-  | 7 -> f.tee_left
-  | _ -> f.cross
-
 let draw_axes (layout : Layout.t) (grid : G.t) =
   let r = layout.plot in
   (* Ticks, labels and titles are drawn only within the chart's region. *)
@@ -515,36 +490,15 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
   let ip = layout.frame_inner_padding in
   let ch = layout.theme.charset in
   (* Axis lines, frame edges and the tick marks that touch them meet in
-     junctions. Each cell of a line records its arms, the directions in which
-     a line or a tick leaves it, and is drawn last with the glyph its arms
-     give. A cell keeps the style of the first line through it. *)
-  let cells = Hashtbl.create 64 in
-  let add ~st x y bits =
-    match Hashtbl.find_opt cells (x, y) with
-    | Some (arms, _) -> arms := !arms lor bits
-    | None -> Hashtbl.add cells (x, y) (ref bits, st)
-  in
+     junctions, drawn last with the glyph their arms give in the charset. A
+     tick mark adds an arm to the cell of its axis line. A cell keeps the
+     style of the first line through it. *)
+  let lines = G.Lines.create ~width:(G.width grid) ~height:(G.height grid) in
   let hline ~st y x1 x2 =
-    for x = x1 to x2 do
-      add ~st x y
-        (horizontal
-        lor (if x > x1 then arm_left else 0)
-        lor if x < x2 then arm_right else 0)
-    done
+    G.Lines.hline ~style:st lines ~x:x1 ~y ~length:(x2 - x1 + 1)
   in
   let vline ~st x y1 y2 =
-    for y = y1 to y2 do
-      add ~st x y
-        (vertical
-        lor (if y > y1 then arm_up else 0)
-        lor if y < y2 then arm_down else 0)
-    done
-  in
-  let tick ~length x y arm =
-    if length > 0 then
-      match Hashtbl.find_opt cells (x, y) with
-      | Some (arms, _) -> arms := !arms lor arm
-      | None -> ()
+    G.Lines.vline ~style:st lines ~x ~y:y1 ~length:(y2 - y1 + 1)
   in
   let top = r.y and bottom = r.y + r.height - 1 in
   let first = r.x and last = r.x + r.width - 1 in
@@ -579,12 +533,21 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
     if layout.x_axis.line = `Frame then (
       vline ~st last top ay;
       if not layout.y_axis.show then vline ~st first top ay));
+  let x_from = if y_line then ax else first in
+  let x_to = if y2_line then ax2 else last in
+  let tick ~length ~on x y dir =
+    if length > 0 && on then G.Lines.arm lines ~x ~y dir
+  in
+  let on_y_line line y = line && y >= top && y <= y_end in
 
   (* Y axis *)
   (if layout.y_axis.show then
      let tick_st = Option.get layout.y_axis.tick_style in
      let label_st = Option.get layout.y_axis.label_style in
-     let tick py = tick ~length:layout.y_axis.tick_length ax py arm_left in
+     let tick py =
+       tick ~length:layout.y_axis.tick_length ~on:(on_y_line y_line py) ax py
+         `Left
+     in
      match layout.y_scale with
      | Numeric _ ->
          List.iteri
@@ -655,7 +618,11 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
   (if layout.x_axis.show then
      let tick_st = Option.get layout.x_axis.tick_style in
      let label_st = Option.get layout.x_axis.label_style in
-     let tick px = tick ~length:layout.x_axis.tick_length px ay arm_down in
+     let tick px =
+       tick ~length:layout.x_axis.tick_length
+         ~on:(x_line && px >= x_from && px <= x_to)
+         px ay `Down
+     in
      match layout.x_scale with
      | Numeric _ ->
          let last_label_right = ref min_int in
@@ -748,7 +715,8 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
                 Layout.y_to_px ~minv:y2_view.min ~maxv:y2_view.max
                   ~extent:r.height ~origin:r.y ~clamp:true v
               in
-              tick ~length:y2_ax.tick_length ax2 py arm_right;
+              tick ~length:y2_ax.tick_length ~on:(on_y_line y2_line py) ax2 py
+                `Right;
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < right then
@@ -766,7 +734,8 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
                 Layout.y_to_px_log ~base ~minv:view.min ~maxv:view.max
                   ~extent:r.height ~origin:r.y ~clamp:true v
               in
-              tick ~length:y2_ax.tick_length ax2 py arm_right;
+              tick ~length:y2_ax.tick_length ~on:(on_y_line y2_line py) ax2 py
+                `Right;
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < right then
@@ -786,7 +755,8 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
               let band_h = max 1 (int_of_float (Float.max 1. (bw -. 1.))) in
               let y0 = r.y + int_of_float (offset +. (float i *. bw)) in
               let py = y0 + (band_h / 2) in
-              tick ~length:y2_ax.tick_length ax2 py arm_right;
+              tick ~length:y2_ax.tick_length ~on:(on_y_line y2_line py) ax2 py
+                `Right;
               for k = 1 to y2_ax.tick_length do
                 let x = ax2 + k in
                 if x < right then
@@ -798,10 +768,22 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
             categories)
   | _ -> ());
 
-  Hashtbl.iter
-    (fun (x, y) (arms, st) ->
-      draw_text grid ~x ~y ~style:st (junction_glyph ch !arms))
-    cells;
+  G.draw_lines grid lines
+    ~glyphs:
+      (G.Lines.Set
+         {
+           horizontal = ch.axis_h;
+           vertical = ch.axis_v;
+           top_left = ch.frame.tl;
+           top_right = ch.frame.tr;
+           bottom_left = ch.frame.bl;
+           bottom_right = ch.frame.br;
+           top_t = ch.frame.tee_down;
+           bottom_t = ch.frame.tee_up;
+           left_t = ch.frame.tee_right;
+           right_t = ch.frame.tee_left;
+           cross = ch.frame.cross;
+         });
 
   (* Y-axis title *)
   (match layout.y_axis.title with

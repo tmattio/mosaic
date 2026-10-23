@@ -347,6 +347,15 @@ val draw_box :
     Raises [Invalid_argument] if a character of [border] is wider than one cell.
 *)
 
+module Lines = Lines
+(** Lines that join where they meet. *)
+
+val draw_lines : ?glyphs:Lines.glyphs -> t -> Lines.t -> unit
+(** [draw_lines ~glyphs g l] draws each cell of [l] that a line passes through
+    at the same column and row of [g], with its glyph in [glyphs]
+    ({!Lines.Unicode} by default) and its line's style, as {!draw_text} draws a
+    text in a style. The cells of [l] outside [g] are left out. *)
+
 type line_symbols = {
   h : string;  (** Horizontal segment. *)
   v : string;  (** Vertical segment. *)

@@ -112,6 +112,7 @@ end
 (* {1 Public types} *)
 
 module Border = Border
+module Lines = Lines
 
 type region = Rect.t = { x : int; y : int; width : int; height : int }
 
@@ -1390,6 +1391,55 @@ let draw_box t ~x ~y ~width ~height ?(border = Border.single)
             draw_text t ~x:(x + pad) ~y ~text:txt ~style:title_s
       | _ -> ()
     end
+
+(* {1 Joined lines} *)
+
+(* Draws scalar [u] at [(x, y)] as [draw_text] draws a text of it alone, for
+   a scalar one cell wide that makes a unit of its own under every width
+   method. A line set's glyphs are drawn every frame, and this writes them
+   without allocating. *)
+let draw_scalar t ~x ~y ~(style : Ansi.Style.t) u =
+  if x >= 0 && y >= 0 && x < t.width && y < t.height && not (is_clipped t x y)
+  then
+    let color c default =
+      Option.value c ~default |> Color_packed.encode |> apply_opacity t
+    in
+    set_cell_internal t
+      ~idx:((y * t.width) + x)
+      ~code:(Packed_cell.of_uchar u)
+      ~fg_color:(color style.fg default_fg)
+      ~bg_color:(color style.bg default_bg)
+      ~attrs:(Ansi.Attr.pack style.attrs)
+      ~link:(Option.value style.link ~default:no_link)
+      ~write:Draw
+
+let draw_glyph t ~x ~y ~style s =
+  let len = String.length s in
+  if len > 0 then
+    let d = String.get_utf_8_uchar s 0 in
+    let u = Uchar.utf_decode_uchar d in
+    if
+      Uchar.utf_decode_is_valid d
+      && Uchar.utf_decode_length d = len
+      && Text.uchar_width ~tab_width:1 u = 1
+      && Text.grapheme_cluster_break u = `XX
+    then draw_scalar t ~x ~y ~style u
+    else draw_text ~style t ~x ~y ~text:s
+
+let draw_lines ?(glyphs = Lines.Unicode) t lines =
+  let lw = Lines.width lines in
+  for y = 0 to min (Lines.height lines) t.height - 1 do
+    for x = 0 to min lw t.width - 1 do
+      let c = Lines.code lines ((y * lw) + x) in
+      if c <> 0 then
+        let style = Lines.style lines c in
+        match glyphs with
+        | Lines.Unicode ->
+            draw_scalar t ~x ~y ~style (Lines.scalar ~rounded:false c)
+        | Rounded -> draw_scalar t ~x ~y ~style (Lines.scalar ~rounded:true c)
+        | Set set -> draw_glyph t ~x ~y ~style (Lines.glyph set c)
+    done
+  done
 
 (* {1 Line drawing} *)
 

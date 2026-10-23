@@ -2042,6 +2042,200 @@ let spaces_draw_and_layers_composite () =
   equal ~msg:"a layer's blanks keep the cells under them" string "XbZ"
     (Grid.to_text grid)
 
+(* ───── Joined lines ───── *)
+
+module Lines = Grid.Lines
+
+let lines_text ?glyphs ~width ~height f =
+  let l = Lines.create ~width ~height in
+  f l;
+  let g = Grid.create ~width ~height () in
+  Grid.draw_lines ?glyphs g l;
+  Grid.to_text g
+
+(* A frame of weight [outer] around four rows, with light rules between them
+   and light column lines broken where a row's cell spans columns. *)
+let frame_with_spans ~outer =
+  lines_text ~width:23 ~height:9 (fun l ->
+      Lines.hline ~weight:outer l ~x:0 ~y:0 ~length:23;
+      Lines.hline ~weight:outer l ~x:0 ~y:8 ~length:23;
+      Lines.vline ~weight:outer l ~x:0 ~y:0 ~length:9;
+      Lines.vline ~weight:outer l ~x:22 ~y:0 ~length:9;
+      List.iter (fun y -> Lines.hline l ~x:0 ~y ~length:23) [ 2; 4; 6 ];
+      (* Row 1 has three cells, row 3 two (the last spans two columns), row 5
+         one, row 7 three. *)
+      Lines.vline l ~x:7 ~y:0 ~length:5;
+      Lines.vline l ~x:16 ~y:0 ~length:3;
+      Lines.vline l ~x:7 ~y:6 ~length:3;
+      Lines.vline l ~x:16 ~y:6 ~length:3)
+
+let lines_tests =
+  [
+    test "inner tees under a double frame are single" (fun () ->
+        equal ~msg:"frame" string
+          "╔══════╤════════╤═════╗\n\
+           ║      │        │     ║\n\
+           ╟──────┼────────┴─────╢\n\
+           ║      │              ║\n\
+           ╟──────┴──────────────╢\n\
+           ║                     ║\n\
+           ╟──────┬────────┬─────╢\n\
+           ║      │        │     ║\n\
+           ╚══════╧════════╧═════╝"
+          (frame_with_spans ~outer:`Double));
+    test "inner tees under a heavy frame are light" (fun () ->
+        equal ~msg:"frame" string
+          "┏━━━━━━┯━━━━━━━━┯━━━━━┓\n\
+           ┃      │        │     ┃\n\
+           ┠──────┼────────┴─────┨\n\
+           ┃      │              ┃\n\
+           ┠──────┴──────────────┨\n\
+           ┃                     ┃\n\
+           ┠──────┬────────┬─────┨\n\
+           ┃      │        │     ┃\n\
+           ┗━━━━━━┷━━━━━━━━┷━━━━━┛"
+          (frame_with_spans ~outer:`Heavy));
+    test "every combination of arms has a box-drawing character" (fun () ->
+        let weights = [ None; Some `Light; Some `Heavy; Some `Double ] in
+        List.iter
+          (fun up ->
+            List.iter
+              (fun down ->
+                List.iter
+                  (fun left ->
+                    List.iter
+                      (fun right ->
+                        let l = Lines.create ~width:1 ~height:1 in
+                        let add dir = function
+                          | None -> ()
+                          | Some weight -> Lines.arm ~weight l ~x:0 ~y:0 dir
+                        in
+                        add `Up up;
+                        add `Down down;
+                        add `Left left;
+                        add `Right right;
+                        let g = Grid.create ~width:1 ~height:1 () in
+                        Grid.draw_lines g l;
+                        let cp = Grid.get_codepoint g 0 in
+                        if
+                          List.exists Option.is_some [ up; down; left; right ]
+                          && (cp < 0x2500 || cp > 0x257F)
+                        then failf "no box-drawing character: U+%04X" cp)
+                      weights)
+                  weights)
+              weights)
+          weights);
+    test "mixed weights take Unicode's mixed characters" (fun () ->
+        equal ~msg:"light rule into a heavy edge" string "┠──┨"
+          (lines_text ~width:4 ~height:1 (fun l ->
+               Lines.vline ~weight:`Heavy l ~x:0 ~y:(-1) ~length:3;
+               Lines.vline ~weight:`Heavy l ~x:3 ~y:(-1) ~length:3;
+               Lines.hline l ~x:0 ~y:0 ~length:4));
+        equal ~msg:"double rule across a single line" string "═╪═"
+          (lines_text ~width:3 ~height:1 (fun l ->
+               Lines.vline l ~x:1 ~y:(-1) ~length:3;
+               Lines.hline ~weight:`Double l ~x:0 ~y:0 ~length:3));
+        equal ~msg:"heavy meets double as double" string "═╬═"
+          (lines_text ~width:3 ~height:1 (fun l ->
+               Lines.vline ~weight:`Heavy l ~x:1 ~y:(-1) ~length:3;
+               Lines.hline ~weight:`Double l ~x:0 ~y:0 ~length:3));
+        equal ~msg:"a line light on one side and heavy on the other" string
+          "─╼━"
+          (lines_text ~width:3 ~height:1 (fun l ->
+               Lines.hline l ~x:0 ~y:0 ~length:2;
+               Lines.hline ~weight:`Heavy l ~x:1 ~y:0 ~length:2)));
+    test "a line's ends and a one-cell line are drawn whole" (fun () ->
+        equal ~msg:"ends" string "──\n │\n │"
+          (lines_text ~width:2 ~height:3 (fun l ->
+               Lines.hline l ~x:0 ~y:0 ~length:2;
+               Lines.vline l ~x:1 ~y:1 ~length:2));
+        equal ~msg:"one cell" string "─\n│"
+          (lines_text ~width:1 ~height:2 (fun l ->
+               Lines.hline l ~x:0 ~y:0 ~length:1;
+               Lines.vline l ~x:0 ~y:1 ~length:1)));
+    test "rounded and ASCII sets" (fun () ->
+        let box l =
+          Lines.hline l ~x:0 ~y:0 ~length:3;
+          Lines.hline l ~x:0 ~y:2 ~length:3;
+          Lines.vline l ~x:0 ~y:0 ~length:3;
+          Lines.vline l ~x:2 ~y:0 ~length:3;
+          Lines.hline l ~x:0 ~y:1 ~length:3;
+          Lines.vline l ~x:1 ~y:0 ~length:3
+        in
+        equal ~msg:"rounded" string "╭┬╮\n├┼┤\n╰┴╯"
+          (lines_text ~glyphs:Lines.Rounded ~width:3 ~height:3 box);
+        equal ~msg:"ascii" string "+++\n+++\n+++"
+          (lines_text ~glyphs:Lines.ascii ~width:3 ~height:3 box);
+        equal ~msg:"heavy is never rounded" string "┏━┓\n┃ ┃\n┗━┛"
+          (lines_text ~glyphs:Lines.Rounded ~width:3 ~height:3 (fun l ->
+               Lines.hline ~weight:`Heavy l ~x:0 ~y:0 ~length:3;
+               Lines.hline ~weight:`Heavy l ~x:0 ~y:2 ~length:3;
+               Lines.vline ~weight:`Heavy l ~x:0 ~y:0 ~length:3;
+               Lines.vline ~weight:`Heavy l ~x:2 ~y:0 ~length:3)));
+    test "a border's set draws a box as draw_box does" (fun () ->
+        let border = Grid.Border.double in
+        let expected = Grid.create ~width:5 ~height:3 () in
+        Grid.draw_box expected ~x:0 ~y:0 ~width:5 ~height:3 ~border ();
+        equal ~msg:"box" string (Grid.to_text expected)
+          (lines_text ~glyphs:(Lines.of_border border) ~width:5 ~height:3
+             (fun l ->
+               Lines.hline l ~x:0 ~y:0 ~length:5;
+               Lines.hline l ~x:0 ~y:2 ~length:5;
+               Lines.vline l ~x:0 ~y:0 ~length:3;
+               Lines.vline l ~x:4 ~y:0 ~length:3)));
+    test "an arm joins a line to a mark beside it" (fun () ->
+        equal ~msg:"tick" string " │\n─┤\n │"
+          (lines_text ~width:2 ~height:3 (fun l ->
+               Lines.vline l ~x:1 ~y:0 ~length:3;
+               Lines.arm l ~x:1 ~y:1 `Left;
+               Lines.hline l ~x:0 ~y:1 ~length:1)));
+    test "a cell takes the style of the first line through it" (fun () ->
+        let red = Ansi.Style.make ~fg:Ansi.Color.red ()
+        and blue = Ansi.Style.make ~fg:Ansi.Color.blue () in
+        let l = Lines.create ~width:3 ~height:3 in
+        Lines.hline ~style:red l ~x:0 ~y:1 ~length:3;
+        Lines.vline ~style:blue l ~x:1 ~y:0 ~length:3;
+        let g = Grid.create ~width:3 ~height:3 () in
+        Grid.draw_lines g l;
+        let fg x y = Grid.get_fg g (idx g x y) in
+        is_true ~msg:"crossing" (Ansi.Color.equal (fg 1 1) Ansi.Color.red);
+        is_true ~msg:"vertical" (Ansi.Color.equal (fg 1 0) Ansi.Color.blue);
+        Lines.clear l;
+        Lines.vline ~style:blue l ~x:1 ~y:0 ~length:3;
+        Lines.hline ~style:red l ~x:0 ~y:1 ~length:3;
+        let g = Grid.create ~width:3 ~height:3 () in
+        Grid.draw_lines g l;
+        is_true ~msg:"after clear"
+          (Ansi.Color.equal (Grid.get_fg g (idx g 1 1)) Ansi.Color.blue));
+    test "lines leaving the rectangle keep their arms" (fun () ->
+        equal ~msg:"cut" string "┼"
+          (lines_text ~width:1 ~height:1 (fun l ->
+               Lines.hline l ~x:(-2) ~y:0 ~length:5;
+               Lines.vline l ~x:0 ~y:(-2) ~length:5)));
+    test "a wide or composed glyph is drawn as text" (fun () ->
+        let set =
+          {
+            Lines.horizontal = "=";
+            vertical = "🟦";
+            top_left = "+";
+            top_right = "+";
+            bottom_left = "+";
+            bottom_right = "+";
+            top_t = "+";
+            bottom_t = "+";
+            left_t = "+";
+            right_t = "+";
+            cross = "+";
+          }
+        in
+        equal ~msg:"wide" string "🟦\n🟦"
+          (lines_text ~glyphs:(Lines.Set set) ~width:2 ~height:2 (fun l ->
+               Lines.vline l ~x:0 ~y:0 ~length:2)));
+    test "create rejects a negative size" (fun () ->
+        raises_match (Exn.invalid_arg ~substring:"Lines.create") (fun () ->
+            ignore (Lines.create ~width:(-1) ~height:1)));
+  ]
+
 let tests =
   [
     test "spaces draw, layers composite" spaces_draw_and_layers_composite;
@@ -2440,4 +2634,4 @@ let tests =
           (Grid.active_height grid));
   ]
 
-let () = run "matrix.grid" [ group "grid" tests ]
+let () = run "matrix.grid" [ group "grid" tests; group "lines" lines_tests ]
