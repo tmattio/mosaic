@@ -202,6 +202,14 @@ CAMLprim value matrix_tty_unhold(value id) {
   (void)id;
   return Val_unit;
 }
+CAMLprim value matrix_tty_check(value id) {
+  (void)id;
+  return Val_unit;
+}
+CAMLprim value matrix_tty_wake(value id) {
+  (void)id;
+  return Val_unit;
+}
 CAMLprim value matrix_tty_received(value id, value s) {
   (void)id;
   (void)s;
@@ -249,7 +257,9 @@ CAMLprim value matrix_tty_restore_all(value u) {
    The list only grows, from its head, under [holders_lock]; a holder that
    ends leaves its node to the next one. A handler walks it without the lock:
    it reads the head once, and a node's fields are set before the node is
-   published or marked active.
+   published or marked active. A holder is known by its id, which no other
+   holder has, the next one on the same node included, so that a holder used
+   after its release is found to be released.
 
    The reset bytes are as long as the holder needs, so they are allocated,
    and a handler may be writing them when the holder replaces them: new bytes
@@ -266,7 +276,7 @@ struct reset {
 
 struct holder {
   struct holder *next;
-  int id;
+  intnat id;
   volatile sig_atomic_t active;
   volatile sig_atomic_t controlling;
   int wake_r, wake;
@@ -280,24 +290,38 @@ struct holder {
 };
 
 static struct holder *holders = NULL;
-static int holders_count = 0;
+static intnat holds = 0;
 static pthread_mutex_t holders_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static struct holder *holders_head(void) {
   return __atomic_load_n(&holders, __ATOMIC_ACQUIRE);
 }
 
-static struct holder *find_holder(value id) {
-  int n = Int_val(id);
+/* The holder [id], which must not be released. */
+static struct holder *find(intnat id) {
   for (struct holder *h = holders_head(); h != NULL; h = h->next)
-    if (h->id == n) return h;
-  caml_invalid_argument("Tty.Signal: unknown holder");
+    if (__atomic_load_n(&h->id, __ATOMIC_ACQUIRE) == id &&
+        __atomic_load_n(&h->active, __ATOMIC_ACQUIRE))
+      return h;
+  return NULL;
+}
+
+static struct holder *find_holder(value id) {
+  struct holder *h = find(Long_val(id));
+  if (h == NULL) caml_invalid_argument("Tty.Signal: a released holder");
+  return h;
+}
+
+CAMLprim value matrix_tty_check(value id) {
+  find_holder(id);
+  return Val_unit;
 }
 
 /* Registers a holder whose reset bytes go to [output], if [Some], and
-   gives its id and its wake pipe's ends, [(id, read, write)]. A node is reused once its holder has ended, with its pipe,
-   emptied: a pipe is never closed, so a handler that wakes a holder as it
-   ends never writes to a descriptor reused since. */
+   gives its id and its wake pipe's read end, [(id, read)]. A node is reused
+   once its holder has ended, with its pipe, emptied: a pipe is never closed,
+   so a handler that wakes a holder as it ends never writes to a descriptor
+   reused since. */
 CAMLprim value matrix_tty_hold(value controlling, value output) {
   CAMLparam2(controlling, output);
   CAMLlocal1(result);
@@ -315,7 +339,6 @@ CAMLprim value matrix_tty_hold(value controlling, value output) {
     }
     h->wake_r = fds[0];
     h->wake = fds[1];
-    h->id = holders_count++;
     h->next = holders;
     __atomic_store_n(&holders, h, __ATOMIC_RELEASE);
   } else {
@@ -328,13 +351,14 @@ CAMLprim value matrix_tty_hold(value controlling, value output) {
   h->in = -1;
   h->out = Is_some(output) ? Int_val(Some_val(output)) : -1;
   h->controlling = Bool_val(controlling);
+  intnat id = holds++;
+  __atomic_store_n(&h->id, id, __ATOMIC_RELEASE);
   __atomic_store_n(&h->active, 1, __ATOMIC_RELEASE);
-  int id = h->id, rd = h->wake_r, wr = h->wake;
+  int rd = h->wake_r;
   pthread_mutex_unlock(&holders_lock);
-  result = caml_alloc_tuple(3);
-  Store_field(result, 0, Val_int(id));
+  result = caml_alloc_tuple(2);
+  Store_field(result, 0, Val_long(id));
   Store_field(result, 1, Val_int(rd));
-  Store_field(result, 2, Val_int(wr));
   CAMLreturn(result);
 }
 
@@ -361,6 +385,21 @@ CAMLprim value matrix_tty_unhold(value id) {
   h->active = 0;
   h->have_settings = 0;
   publish_reset(h, NULL);
+  pthread_mutex_unlock(&holders_lock);
+  return Val_unit;
+}
+
+/* Wakes the holder [id], unless it is released. Under the lock, its node
+   cannot pass to the next holder meanwhile. The pipe is non-blocking: a full
+   one has a wake owed already. */
+CAMLprim value matrix_tty_wake(value id) {
+  pthread_mutex_lock(&holders_lock);
+  struct holder *h = find(Long_val(id));
+  if (h != NULL) {
+    char byte = 0;
+    ssize_t n = write(h->wake, &byte, 1);
+    (void)n;
+  }
   pthread_mutex_unlock(&holders_lock);
   return Val_unit;
 }

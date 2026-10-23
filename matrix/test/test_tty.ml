@@ -393,6 +393,34 @@ let test_holders_concerned () =
                   && Signal.received own Sys.sighup);
                 is_false ~msg:"taken" (Signal.terminating served))))
 
+(* A holder used after its release is known for what it is, though the next
+   holder has its slot: its calls raise, and its wake wakes nobody. *)
+let test_released_holder () =
+  if Sys.unix then (
+    let old = Signal.hold ~controlling:true ~output:None in
+    Signal.release old;
+    with_holder ~controlling:true @@ fun next ->
+    is_true ~msg:"taken" (Signal.take Sys.sigwinch);
+    Fun.protect ~finally:(fun () -> Signal.give_back Sys.sigwinch) @@ fun () ->
+    Unix.kill (Unix.getpid ()) Sys.sigwinch;
+    is_true ~msg:"the next holder is woken" (readable (Signal.wake_fd next));
+    drain (Signal.wake_fd next);
+    let released what f =
+      match f () with
+      | _ -> failf "%s: a released holder is used" what
+      | exception Invalid_argument _ -> ()
+    in
+    released "received" (fun () -> Signal.received old Sys.sigwinch);
+    released "terminating" (fun () -> Signal.terminating old);
+    released "wake_fd" (fun () -> Signal.wake_fd old);
+    released "set_reset" (fun () -> Signal.set_reset old "x");
+    released "forget_settings" (fun () -> Signal.forget_settings old);
+    released "release" (fun () -> Signal.release old);
+    Signal.wake old;
+    is_false ~msg:"its wake wakes nobody" (readable_now (Signal.wake_fd next));
+    is_true ~msg:"the next holder's signal is its own"
+      (Signal.received next Sys.sigwinch))
+
 let test_wake () =
   if Sys.unix then
     with_holder ~controlling:false (fun h ->
@@ -509,6 +537,7 @@ let () =
             test_received_keeps_a_signal_that_lands;
           test "the holders a signal concerns" test_holders_concerned;
           test "wake" test_wake;
+          test "a released holder" test_released_holder;
           test "a write cut by termination" test_write_cut_by_termination;
           test "restore_all" test_restore_all;
           test "restore_all with long reset bytes" test_restore_all_long;

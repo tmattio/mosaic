@@ -224,9 +224,9 @@ module Signal : sig
 
   (** {1:holders Holders}
 
-      A holder is valid from {!hold} to {!release}, and a holder must not be
-      used after its release, since {!hold} may give its slot to the next
-      holder. *)
+      A holder is valid from {!hold} to {!release}. Every function below that is
+      given a holder after its release raises [Invalid_argument], except
+      {!wake}, which then does nothing. *)
 
   type holder
   (** The type for holders of a terminal. *)
@@ -252,7 +252,8 @@ module Signal : sig
 
   val wake : holder -> unit
   (** [wake h] makes {!wake_fd} readable. It may be called from any thread or
-      domain. *)
+      domain, and does nothing once [h] is released, so a thread may wake a
+      holder that another thread releases. *)
 
   val received : holder -> int -> bool
   (** [received h s] is [true] iff [s] has been received for [h] since [h] was
