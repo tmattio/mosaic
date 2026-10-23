@@ -316,16 +316,45 @@ let test_reset_state_restores_touched_appearance () =
   let out = Buffer.contents buf in
   contains ~msg:"touched title is cleared" ~sub:"\027]0;" out;
   contains ~msg:"touched cursor style is reset" ~sub:"\027[0 q" out;
-  contains ~msg:"touched cursor color is reset" ~sub:"\027]112" out
+  not_contains ~msg:"untouched cursor color is not reset" ~sub:"\027]112" out
+
+(* Each of the cursor's style and color is written alone: setting one
+   leaves the other as the terminal has it. *)
+let test_cursor_style_and_color_alone () =
+  with_tty_terminal @@ fun term buf ->
+  T.set_cursor_style term `Line ~blinking:false;
+  equal ~msg:"the style alone" string "\027[6 q" (Buffer.contents buf);
+  Buffer.clear buf;
+  T.set_cursor_color term ~r:1. ~g:0. ~b:0. ~a:1.;
+  let out = Buffer.contents buf in
+  contains ~msg:"the color" ~sub:"\027]12;" out;
+  not_contains ~msg:"the color alone" ~sub:" q" out
+
+(* A change made while the cursor is hidden reaches the terminal, which
+   shows it with the cursor, and is put back. *)
+let test_hidden_cursor_change_reaches_the_terminal () =
+  with_tty_terminal @@ fun term buf ->
+  T.set_cursor_visible term false;
+  Buffer.clear buf;
+  T.set_cursor_style term `Line ~blinking:true;
+  T.set_cursor_color term ~r:1. ~g:0. ~b:0. ~a:1.;
+  T.set_cursor_visible term true;
+  let out = Buffer.contents buf in
+  contains ~msg:"the style" ~sub:"\027[5 q" out;
+  contains ~msg:"the color" ~sub:"\027]12;" out;
+  Buffer.clear buf;
+  T.reset_state term;
+  let out = Buffer.contents buf in
+  contains ~msg:"the style is put back" ~sub:"\027[0 q" out;
+  contains ~msg:"the color is put back" ~sub:"\027]112" out
 
 let test_cursor_batch_matches_immediate_output () =
   with_tty_terminal @@ fun term output ->
   T.set_cursor_style term `Line ~blinking:true;
-  Buffer.clear output;
   T.set_cursor_color term ~r:2.5 ~g:Float.nan ~b:0.5 ~a:0.25;
   let writer = Ansi.Writer.create 128 in
-  T.write_cursor_color term (Some (255, 0, 128)) writer;
   T.write_cursor_style term ~shape:`Blinking_bar writer;
+  T.write_cursor_color term (Some (255, 0, 128)) writer;
   equal ~msg:"immediate and batched cursor output agree" string
     (Buffer.contents output)
     (Ansi.Writer.contents writer);
@@ -380,20 +409,6 @@ let test_cursor_reset_survives_partial_output () =
             ~sub:"\027]12;default\007\027]112\007" (Buffer.contents output))
         [ 0; 7; 14 ])
     [ false; true ]
-
-let test_hidden_cursor_visuals_remain_deferred () =
-  with_tty_terminal @@ fun term output ->
-  T.set_cursor_visible term false;
-  Buffer.clear output;
-  T.set_cursor_style term `Line ~blinking:true;
-  T.set_cursor_color term ~r:1. ~g:0. ~b:0. ~a:1.;
-  let bytes = Buffer.contents output in
-  not_contains ~msg:"hidden cursor does not emit style" ~sub:" q" bytes;
-  not_contains ~msg:"hidden cursor does not emit color" ~sub:"\027]12;" bytes;
-  Buffer.clear output;
-  T.reset_state term;
-  not_contains ~msg:"deferred visuals need no restoration" ~sub:"\027]112"
-    (Buffer.contents output)
 
 let test_reset_state_resets_cursor_metadata () =
   with_terminal @@ fun term _buf ->
@@ -1132,8 +1147,9 @@ let () =
             test_cursor_batch_matches_immediate_output;
           test "cursor reset survives partial output"
             test_cursor_reset_survives_partial_output;
-          test "hidden cursor visuals remain deferred"
-            test_hidden_cursor_visuals_remain_deferred;
+          test "cursor style and color alone" test_cursor_style_and_color_alone;
+          test "a change while the cursor is hidden"
+            test_hidden_cursor_change_reaches_the_terminal;
           test "reset state resets cursor metadata"
             test_reset_state_resets_cursor_metadata;
         ];

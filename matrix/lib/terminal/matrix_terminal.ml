@@ -374,34 +374,21 @@ let write_cursor_color t color writer =
          until [reset_cursor_color] confirms the output succeeded. *)
       Ansi.Writer.write_string writer reset_cursor_color_seq
 
-let set_cursor_visuals t =
-  if not t.tty then ()
-  else if t.cursor.visible then
-    let r, g, b, _ = t.cursor.color in
-    let color =
-      Some
-        ( clamp_color_component r,
-          clamp_color_component g,
-          clamp_color_component b )
-    in
-    let shape =
-      Ansi.cursor_shape_of_style ~style:t.cursor.style
-        ~blinking:t.cursor.blinking
-    in
-    send t
-      (Ansi.to_string (fun writer ->
-           write_cursor_color t color writer;
-           write_cursor_style t ~shape writer))
-  else send t cursor_hide
-
+(* Each writes what it sets alone. The terminal keeps the style and the color
+   while the cursor is hidden and shows them with it. *)
 let set_cursor_style t style ~blinking =
   t.cursor.style <- style;
   t.cursor.blinking <- blinking;
-  set_cursor_visuals t
+  let shape = Ansi.cursor_shape_of_style ~style ~blinking in
+  send t (Ansi.to_string (fun writer -> write_cursor_style t ~shape writer))
 
 let set_cursor_color t ~r ~g ~b ~a =
   t.cursor.color <- (r, g, b, a);
-  set_cursor_visuals t
+  let color =
+    Some
+      (clamp_color_component r, clamp_color_component g, clamp_color_component b)
+  in
+  send t (Ansi.to_string (fun writer -> write_cursor_color t color writer))
 
 let reset_cursor_color t =
   t.cursor.color <- (1., 1., 1., 1.);

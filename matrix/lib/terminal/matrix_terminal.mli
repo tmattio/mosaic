@@ -278,10 +278,9 @@ val cursor_position : t -> cursor_position
 
 val set_cursor_style : t -> Ansi.cursor_style -> blinking:bool -> unit
 (** [set_cursor_style t style ~blinking] records the cursor's style and
-    blinking. While the cursor is visible, it writes them (DECSCUSR) with the
-    color {!cursor_color} records, which is white until {!set_cursor_color}, and
-    {!reset_state} then puts back both. While the cursor is hidden, it writes
-    the control function that hides it. It writes every time. *)
+    blinking, writes them (DECSCUSR), and has {!reset_state} put back the
+    default shape. A terminal keeps the style while the cursor is hidden and
+    shows it with the cursor. It writes every time. *)
 
 val cursor_style_state : t -> Ansi.cursor_style * bool
 (** [cursor_style_state t] is the cursor's style and blinking last recorded,
@@ -289,11 +288,10 @@ val cursor_style_state : t -> Ansi.cursor_style * bool
 
 val set_cursor_color : t -> r:float -> g:float -> b:float -> a:float -> unit
 (** [set_cursor_color t ~r ~g ~b ~a] records the cursor's color, with components
-    from [0.0] to [1.0]. While the cursor is visible, it writes the color (OSC
-    12), each component clamped to that range and [nan] taken as [0.0], with the
-    recorded style ({!set_cursor_style}), and {!reset_state} then puts back
-    both. While the cursor is hidden, it writes the control function that hides
-    it. [a] is recorded and never written. It writes every time. *)
+    from [0.0] to [1.0], writes it (OSC 12), each component clamped to that
+    range and [nan] taken as [0.0], and has {!reset_state} put back the default
+    color. A terminal keeps the color while the cursor is hidden and shows it
+    with the cursor. [a] is recorded and never written. It writes every time. *)
 
 val cursor_color : t -> float * float * float * float
 (** [cursor_color t] is the cursor's color last recorded, [(r, g, b, a)] as
