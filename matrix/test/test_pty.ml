@@ -316,6 +316,48 @@ let test_spawn_output_then_eof () =
   Pty.close pty;
   equal ~msg:"output, then the end of output" string "hello\r\n" output
 
+(* Regression: spawn forked with [Unix.fork], which OCaml 5 refuses while
+   another domain runs, as when an application runs work on a helper
+   domain. *)
+let test_spawn_while_a_domain_runs () =
+  let stop = Atomic.make false in
+  let domain =
+    Domain.spawn (fun () ->
+        while not (Atomic.get stop) do
+          Unix.sleepf 0.001
+        done)
+  in
+  let output =
+    Fun.protect
+      ~finally:(fun () ->
+        Atomic.set stop true;
+        Domain.join domain)
+      (fun () ->
+        let pty = Pty.spawn ~prog:"echo" ~args:[ "hello" ] () in
+        let output = read_to_eof pty in
+        Pty.close pty;
+        output)
+  in
+  equal ~msg:"the child ran" string "hello\r\n" output
+
+(* As with execvp, a file that the kernel cannot execute, here a script
+   without #!, runs under /bin/sh. *)
+let test_spawn_script_without_shebang () =
+  let script = Filename.temp_file "matrix_pty" ".sh" in
+  Out_channel.with_open_bin script (fun oc ->
+      output_string oc "echo script \"$1\"\n");
+  Unix.chmod script 0o755;
+  let output =
+    Fun.protect
+      ~finally:(fun () -> Sys.remove script)
+      (fun () ->
+        let pty = Pty.spawn ~prog:script ~args:[ "ran" ] () in
+        let output = read_to_eof pty in
+        Pty.close pty;
+        output)
+  in
+  equal ~msg:"the script ran with its argument" string "script ran\r\n" output
+
 let test_failed_spawn_does_not_run_parent_at_exit () =
   let parent_pid = Unix.getpid () in
   let marker_read, marker_write = Unix.pipe () in
@@ -508,6 +550,8 @@ let tests =
       test "spawn output read late" test_spawn_output_read_late;
       test "slave not inherited" test_slave_not_inherited;
       test "slave on a std fd" test_slave_on_std_fd;
+      test "spawn while a domain runs" test_spawn_while_a_domain_runs;
+      test "spawn script without shebang" test_spawn_script_without_shebang;
       test "failed spawn skips parent at_exit"
         test_failed_spawn_does_not_run_parent_at_exit;
       (* Non-blocking I/O *)

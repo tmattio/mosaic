@@ -13,10 +13,12 @@
 #ifdef MATRIX_HAS_POSIX_PTY
 #define _GNU_SOURCE  // For ptsname on Linux
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -167,16 +169,92 @@ CAMLprim value ocaml_pty_set_winsize(value fd, value ws_val) {
   return ocaml_pty_set_winsize_byte(fd, ws_val);
 }
 
-CAMLprim value ocaml_pty_setsid_and_setctty(value slave_fd) {
-  CAMLparam1(slave_fd);
-  if (setsid() == -1) {
-    uerror("setsid", Nothing);
+// What the child of spawn needs between fork and exec, built by the parent.
+struct child {
+  int slave;
+  const char *cwd;      // NULL to stay in the parent's directory
+  char **paths;         // where to look for the program, in order
+  char **argv, **envp;  // NULL-terminated
+  char **sh_argv;       // {"/bin/sh", NULL, argv[1], ...}
+};
+
+// The child's side of spawn. The parent may run other threads, among them
+// OCaml domains, whose locks the fork copied in whatever state they were in:
+// POSIX lets the child of a multithreaded process call only async-signal-safe
+// functions until it execs. Every call here is one, except ioctl, a system
+// call that POSIX does not define. Nothing here allocates: the parent built
+// the strings and arrays.
+static void exec_child(struct child *c) {
+  if (setsid() == -1 || ioctl(c->slave, TIOCSCTTY, 0) == -1) return;
+  // The slave is close-on-exec. dup2 clears the flag on a copy, but does
+  // nothing when the slave already is that std fd.
+  for (int fd = 0; fd <= 2; fd++)
+    if ((c->slave == fd ? fcntl(fd, F_SETFD, 0) : dup2(c->slave, fd)) == -1)
+      return;
+  if (c->cwd != NULL && chdir(c->cwd) == -1) return;
+  // As execvp does: a directory without the program, or that is not a
+  // directory, moves on to the next; a file without permission is
+  // remembered; any other failure ends the search. A file the kernel cannot
+  // execute (ENOEXEC) is a script without #!, which /bin/sh runs.
+  int err = ENOENT;
+  for (char **path = c->paths; *path != NULL; path++) {
+    execve(*path, c->argv, c->envp);
+    if (errno == ENOEXEC) {
+      c->sh_argv[1] = *path;
+      execve("/bin/sh", c->sh_argv, c->envp);
+    }
+    if (errno == EACCES)
+      err = EACCES;
+    else if (errno != ENOENT && errno != ENOTDIR) {
+      err = errno;
+      break;
+    }
   }
-  // The flag `0` for ioctl on TIOCSCTTY is what's typically used.
-  if (ioctl(Int_val(slave_fd), TIOCSCTTY, 0) == -1) {
-    uerror("ioctl(TIOCSCTTY)", Nothing);
+  errno = err;
+}
+
+static void check_strings(value v, const char *cmd) {
+  for (mlsize_t i = 0; i < Wosize_val(v); i++)
+    if (!caml_string_is_c_safe(Field(v, i)))
+      caml_unix_error(EINVAL, cmd, Field(v, i));
+}
+
+CAMLprim value ocaml_pty_fork_exec(value slave, value paths, value argv,
+                                   value env, value cwd) {
+  CAMLparam5(slave, paths, argv, env, cwd);
+  check_strings(paths, "execv");
+  check_strings(argv, "execv");
+  check_strings(env, "execv");
+  if (Is_some(cwd)) caml_unix_check_path(Some_val(cwd), "chdir");
+
+  struct child c;
+  c.slave = Int_val(slave);
+  c.cwd = Is_some(cwd) ? caml_stat_strdup(String_val(Some_val(cwd))) : NULL;
+  c.paths = caml_unix_cstringvect(paths, "execv");
+  c.argv = caml_unix_cstringvect(argv, "execv");
+  c.envp = caml_unix_cstringvect(env, "execv");
+  mlsize_t argc = Wosize_val(argv);
+  c.sh_argv = caml_stat_alloc((argc + 2) * sizeof(char *));
+  c.sh_argv[0] = "/bin/sh";
+  c.sh_argv[1] = NULL;
+  for (mlsize_t i = 1; i <= argc; i++) c.sh_argv[i + 1] = c.argv[i];
+
+  // A child that fails before exec exits with 127, as a shell reports a
+  // command it cannot run, and without running anything of the parent's.
+  pid_t pid = fork();
+  if (pid == 0) {
+    exec_child(&c);
+    _exit(127);
   }
-  CAMLreturn(Val_unit);
+  int fork_errno = errno;
+
+  caml_stat_free((char *)c.cwd);
+  caml_unix_cstringvect_free(c.paths);
+  caml_unix_cstringvect_free(c.argv);
+  caml_unix_cstringvect_free(c.envp);
+  caml_stat_free(c.sh_argv);
+  if (pid == -1) caml_unix_error(fork_errno, "fork", Nothing);
+  CAMLreturn(Val_int(pid));
 }
 
 #else  // Unsupported platforms, including Windows: fail loudly.
@@ -203,9 +281,14 @@ CAMLprim value ocaml_pty_set_winsize_byte(value fd, value ws_val) {
 CAMLprim value ocaml_pty_set_winsize(value fd, value ws_val) {
   return ocaml_pty_set_winsize_byte(fd, ws_val);
 }
-CAMLprim value ocaml_pty_setsid_and_setctty(value slave_fd) {
-  (void)slave_fd;
-  return pty_unsupported("setsid_and_setctty");
+CAMLprim value ocaml_pty_fork_exec(value slave, value paths, value argv,
+                                   value env, value cwd) {
+  (void)slave;
+  (void)paths;
+  (void)argv;
+  (void)env;
+  (void)cwd;
+  return pty_unsupported("spawn");
 }
 
 #endif  // MATRIX_HAS_POSIX_PTY

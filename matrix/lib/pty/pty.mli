@@ -134,6 +134,10 @@ val spawn :
     stdin/stdout/stderr to the slave, and executes [prog]. The child's PID is
     available via {!pid}.
 
+    The child runs no OCaml code between the fork and the exec, only system
+    calls that are safe in the child of a multithreaded process. So, unlike
+    [Unix.fork], [spawn] works while other domains run, and after they have run.
+
     {b Read before waiting.} What the child writes stays readable from the
     master until it is read. As with a pipe, the child blocks in a write while
     the terminal's buffer is full. On macOS, OpenBSD and NetBSD its exit also

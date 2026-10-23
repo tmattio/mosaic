@@ -20,8 +20,13 @@ external get_winsize_raw : Unix.file_descr -> winsize = "ocaml_pty_get_winsize"
 external set_winsize_raw : Unix.file_descr -> winsize -> unit
   = "ocaml_pty_set_winsize_byte" "ocaml_pty_set_winsize"
 
-external setsid_and_setctty : Unix.file_descr -> unit
-  = "ocaml_pty_setsid_and_setctty"
+external fork_exec :
+  Unix.file_descr ->
+  string array ->
+  string array ->
+  string array ->
+  string option ->
+  int = "ocaml_pty_fork_exec"
 
 (* Why, and on which platforms, is in pty_stubs.c. *)
 external hold_slave : unit -> bool = "ocaml_pty_hold_slave"
@@ -112,49 +117,34 @@ let open_pty ?winsize () =
   | None -> ());
   (master, slave)
 
+(* Where [execvp] looks for [prog], in order: [prog] itself when it names a
+   path, else [prog] in each directory of the parent's [PATH], where an empty
+   directory is the current one. *)
+let search_path prog =
+  if String.contains prog '/' then [| prog |]
+  else
+    let path = Option.value (Sys.getenv_opt "PATH") ~default:"/bin:/usr/bin" in
+    String.split_on_char ':' path
+    |> List.map (fun dir -> if dir = "" then prog else Filename.concat dir prog)
+    |> Array.of_list
+
 let spawn ?env ?cwd ?winsize ~prog ~args () =
-  let pty_master, pty_slave = open_pty ?winsize () in
+  let master, slave = open_pty ?winsize () in
+  let env = match env with Some env -> env | None -> Unix.environment () in
   let argv = Array.of_list (prog :: args) in
-  (* [Unix.fork] never returns -1: on failure it raises [Unix_error]. Close
-     both PTY ends before propagating so a failed fork does not leak them. *)
-  let pid =
-    try Unix.fork ()
-    with exn ->
-      close pty_master;
-      close pty_slave;
-      raise exn
-  in
-  match pid with
-  | 0 -> (
-      (* Child process. No exception may escape this branch: ordinary OCaml
-         termination would run the parent's inherited [at_exit] handlers. *)
-      try
-        Unix.close pty_master.fd;
-        setsid_and_setctty pty_slave.fd;
-        (* The slave is close-on-exec. [dup2] clears the flag on the copy,
-           but does nothing when the slave already is that std fd. *)
-        Unix.dup2 ~cloexec:false pty_slave.fd Unix.stdin;
-        Unix.dup2 ~cloexec:false pty_slave.fd Unix.stdout;
-        Unix.dup2 ~cloexec:false pty_slave.fd Unix.stderr;
-        if
-          pty_slave.fd <> Unix.stdin
-          && pty_slave.fd <> Unix.stdout
-          && pty_slave.fd <> Unix.stderr
-        then Unix.close pty_slave.fd;
-        (match cwd with Some dir -> Unix.chdir dir | None -> ());
-        match env with
-        | None -> Unix.execvp prog argv
-        | Some env_array -> Unix.execvpe prog argv env_array
-      with _ -> Unix._exit 127)
+  match fork_exec slave.fd (search_path prog) argv env cwd with
   | pid ->
-      (* Parent process *)
       let slave =
-        if hold_slave then Some pty_slave.fd
+        if hold_slave then Some slave.fd
         else (
-          close pty_slave;
+          close slave;
           None)
       in
-      { pty_master with pid = Some pid; slave }
+      { master with pid = Some pid; slave }
+  | exception e ->
+      close master;
+      close slave;
+      raise e
 
 let with_pty ?winsize f =
   let master, slave = open_pty ?winsize () in
