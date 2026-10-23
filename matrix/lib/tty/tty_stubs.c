@@ -116,14 +116,30 @@ CAMLprim value matrix_tty_set_iexten(value fd, value on) {
 #endif
 }
 
-/* Whether [fd] is the process's controlling terminal: only that terminal
-   has a foreground process group the process can read. */
+/* Whether [fd] is the process's controlling terminal, the one terminal
+   associated with its session. POSIX.1-2024, tcgetsid(): it "shall obtain
+   the process group ID of the session for which the terminal specified by
+   fildes is the controlling terminal", and fails with ENOTTY when "the file
+   is not the controlling terminal". Linux answers tcgetsid() and tcgetpgrp()
+   for the master of a pseudo-terminal with its slave's session and group, so
+   a master whose slave controls the process's session would pass: a master
+   is never a controlling terminal, and ptsname() names a slave only for a
+   master. */
 CAMLprim value matrix_tty_is_controlling(value fd) {
 #ifdef _WIN32
   (void)fd;
   return Val_false;
 #else
-  return Val_bool(tcgetpgrp(Int_val(fd)) != -1);
+  int f = Int_val(fd);
+  pid_t sid = tcgetsid(f);
+  if (sid == -1 || sid != getsid(0)) return Val_false;
+#ifdef __GLIBC__
+  char name[128];
+  int master = ptsname_r(f, name, sizeof name) == 0;
+#else
+  int master = ptsname(f) != NULL;
+#endif
+  return Val_bool(!master);
 #endif
 }
 

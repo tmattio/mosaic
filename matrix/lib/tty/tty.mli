@@ -41,13 +41,12 @@ val is_tty : Unix.file_descr -> bool
     a closed descriptor. *)
 
 val is_controlling : Unix.file_descr -> bool
-(** [is_controlling fd] is [true] iff the system gives [fd]'s foreground process
-    group to the process (tcgetpgrp(3)). It does so for the process's
-    {e controlling terminal}, the terminal whose job the process runs in. The
-    shell stops and continues the job through it, and its window is the one
-    SIGWINCH reports. On Linux the system also gives it for the master side of a
-    pseudo-terminal, so [is_controlling] is [true] there too. The slave side of
-    a pseudo-terminal the process opened is [false], and so is every descriptor
+(** [is_controlling fd] is [true] iff [fd] is the process's
+    {e controlling terminal}, the terminal associated with the process's session
+    (tcgetsid(3)), whose job the process runs in. The shell stops and continues
+    the job through it, and its window is the one SIGWINCH reports. The master
+    side of a pseudo-terminal is [false], even when its slave is the controlling
+    terminal. So is a pseudo-terminal the process opened, and every descriptor
     on Windows. *)
 
 val window : Unix.file_descr -> (int * int) option

@@ -75,6 +75,9 @@
  (name test_tty)
  (package matrix)
  (modules test_tty)
+ (foreign_stubs
+  (language c)
+  (names test_tty_stubs))
  (deps
   (source_tree data/terminfo))
  (libraries

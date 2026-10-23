@@ -20,11 +20,35 @@ let test_is_tty () =
   with_pty (fun _ fd -> is_true ~msg:"a pseudo-terminal" (Tty.is_tty fd));
   with_pipe (fun r _ -> is_false ~msg:"a pipe" (Tty.is_tty r))
 
-(* A pseudo-terminal the process opened is not the one its job runs in. *)
+external set_controlling : Unix.file_descr -> unit = "test_tty_set_controlling"
+
+(* A pseudo-terminal the process opened is not the one its job runs in, on
+   either side. A process whose session the slave controls has the slave as
+   its controlling terminal, and the master still is not. *)
 let test_is_controlling () =
-  with_pty (fun _ fd ->
-      is_false ~msg:"an opened pseudo-terminal" (Tty.is_controlling fd));
-  with_pipe (fun r _ -> is_false ~msg:"a pipe" (Tty.is_controlling r))
+  with_pty (fun master fd ->
+      is_false ~msg:"an opened pseudo-terminal" (Tty.is_controlling fd);
+      is_false ~msg:"its master" (Tty.is_controlling (Pty.file_descr master)));
+  with_pipe (fun r _ -> is_false ~msg:"a pipe" (Tty.is_controlling r));
+  with_pty @@ fun master slave ->
+  match Unix.fork () with
+  | 0 ->
+      let code =
+        try
+          ignore (Unix.setsid () : int);
+          set_controlling slave;
+          (if Tty.is_controlling slave then 0 else 1)
+          + if Tty.is_controlling (Pty.file_descr master) then 2 else 0
+        with _ -> 4
+      in
+      Unix._exit code
+  | pid -> (
+      match Unix.waitpid [] pid with
+      | _, WEXITED 0 -> ()
+      | _, WEXITED 1 -> fail "the slave is the child's controlling terminal"
+      | _, WEXITED 2 -> fail "the master is not a controlling terminal"
+      | _, WEXITED 3 -> fail "both answers are wrong"
+      | _ -> fail "the child could not take the slave")
 
 let size = Testable.(option (pair int int))
 
