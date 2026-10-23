@@ -73,6 +73,193 @@ let test_raw_not_a_terminal () =
       | _ -> fail "a pipe has no settings"
       | exception Unix.Unix_error _ -> ())
 
+(* Signals *)
+
+module Signal = Matrix_tty.Signal
+
+(* Linux's view of what the process catches, from /proc/self/status:
+   [Sys.signal] reads a handler installed in C as the default, and putting
+   that back would remove it. *)
+let linux = Sys.file_exists "/proc/self/status"
+
+let caught signo =
+  let line =
+    In_channel.with_open_text "/proc/self/status" In_channel.input_lines
+    |> List.find (String.starts_with ~prefix:"SigCgt:")
+  in
+  let mask =
+    Int64.of_string
+      ("0x" ^ String.trim (String.sub line 7 (String.length line - 7)))
+  in
+  Int64.logand mask (Int64.shift_left 1L (signo - 1)) <> 0L
+
+let sighup = 1
+
+let with_handler s f =
+  let called = ref 0 in
+  let previous = Sys.signal s (Sys.Signal_handle (fun _ -> incr called)) in
+  Fun.protect
+    ~finally:(fun () -> ignore (Sys.signal s previous : Sys.signal_behavior))
+    (fun () -> f called)
+
+let with_holder ~controlling f =
+  let h = Signal.hold ~controlling in
+  Fun.protect ~finally:(fun () -> Signal.release h) (fun () -> f h)
+
+let readable_now fd =
+  match Unix.select [ fd ] [] [] 0. with [], _, _ -> false | _ -> true
+
+let readable fd =
+  match Unix.select [ fd ] [] [] 1. with [], _, _ -> false | _ -> true
+
+let drain fd =
+  let buf = Bytes.create 64 in
+  let rec go () =
+    match Unix.read fd buf 0 64 with
+    | 0 -> ()
+    | _ -> go ()
+    | exception Unix.Unix_error ((EAGAIN | EWOULDBLOCK), _, _) -> ()
+  in
+  go ()
+
+(* Which signals a holder takes: the window and job control only on the
+   controlling terminal. *)
+let test_signals () =
+  let names = List.map string_of_int in
+  let ending =
+    [ Sys.sigabrt; Sys.sigint; Sys.sigterm; Sys.sighup; Sys.sigquit ]
+  in
+  equal ~msg:"another terminal" (list string) (names ending)
+    (names (Signal.signals ~controlling:false));
+  equal ~msg:"the controlling terminal" (list string)
+    (names ([ Sys.sigwinch; Sys.sigcont; Sys.sigtstp ] @ ending))
+    (names (Signal.signals ~controlling:true))
+
+(* A signal that ends the process is taken only at its default action, and
+   given back to it. *)
+let test_take_at_default () =
+  if linux && not (caught sighup) then (
+    is_true ~msg:"taken at its default" (Signal.take Sys.sighup);
+    is_true ~msg:"caught" (caught sighup);
+    is_true ~msg:"a second holder takes it too" (Signal.take Sys.sighup);
+    Signal.give_back Sys.sighup;
+    is_true ~msg:"still caught for the other" (caught sighup);
+    Signal.give_back Sys.sighup;
+    is_false ~msg:"the default again" (caught sighup);
+    with_handler Sys.sighup (fun _ ->
+        is_false ~msg:"the program's own action is kept"
+          (Signal.take Sys.sighup)))
+
+(* SIGWINCH is taken whatever its action, and the handler installed before
+   is still called. *)
+let test_take_always () =
+  if Sys.unix then
+    with_handler Sys.sigwinch (fun called ->
+        with_holder ~controlling:true (fun h ->
+            is_true ~msg:"taken over a handler" (Signal.take Sys.sigwinch);
+            Unix.kill (Unix.getpid ()) Sys.sigwinch;
+            is_true ~msg:"the holder is woken" (readable (Signal.wake_fd h));
+            drain (Signal.wake_fd h);
+            is_true ~msg:"received" (Signal.received h Sys.sigwinch);
+            is_false ~msg:"received once" (Signal.received h Sys.sigwinch);
+            Signal.give_back Sys.sigwinch;
+            (* The OCaml handler runs at the next safe point. *)
+            Unix.sleepf 0.01;
+            equal ~msg:"the handler before was called" int 1 !called))
+
+let test_take_outside_the_policy () =
+  if Sys.unix then
+    match Signal.take Sys.sigusr1 with
+    | _ -> fail "SIGUSR1 is no terminal's signal"
+    | exception Invalid_argument _ -> ()
+
+(* The window signal concerns the controlling terminal's holders alone; a
+   signal that ends the process concerns every holder, and says so. *)
+let test_holders_concerned () =
+  if linux && not (caught sighup) then
+    with_holder ~controlling:false (fun served ->
+        with_holder ~controlling:true (fun own ->
+            ignore (Signal.take Sys.sigwinch : bool);
+            ignore (Signal.take Sys.sighup : bool);
+            Fun.protect
+              ~finally:(fun () ->
+                Signal.give_back Sys.sigwinch;
+                Signal.give_back Sys.sighup)
+              (fun () ->
+                Unix.kill (Unix.getpid ()) Sys.sigwinch;
+                is_true ~msg:"woken" (readable (Signal.wake_fd own));
+                is_true ~msg:"the controlling terminal's"
+                  (Signal.received own Sys.sigwinch);
+                is_false ~msg:"not a served one's"
+                  (Signal.received served Sys.sigwinch);
+                Unix.kill (Unix.getpid ()) Sys.sighup;
+                is_true ~msg:"woken" (readable (Signal.wake_fd served));
+                is_true ~msg:"terminating" (Signal.terminating served);
+                is_true ~msg:"received by every holder"
+                  (Signal.received served Sys.sighup
+                  && Signal.received own Sys.sighup);
+                is_false ~msg:"taken" (Signal.terminating served))))
+
+let test_wake () =
+  if Sys.unix then
+    with_holder ~controlling:false (fun h ->
+        is_false ~msg:"quiet" (readable_now (Signal.wake_fd h));
+        Signal.wake h;
+        is_true ~msg:"woken" (readable (Signal.wake_fd h)))
+
+(* A signal that ends the process cuts a write the terminal is not taking
+   for good: the write returns, the rest unwritten. *)
+let test_write_cut_by_termination () =
+  if linux && not (caught sighup) then
+    with_holder ~controlling:false (fun h ->
+        with_pipe (fun r w ->
+            ignore (Signal.take Sys.sighup : bool);
+            let mask = Thread.sigmask SIG_BLOCK [ Sys.sighup ] in
+            Fun.protect
+              ~finally:(fun () ->
+                ignore (Thread.sigmask SIG_SETMASK mask : int list);
+                Signal.give_back Sys.sighup)
+              (fun () ->
+                let n = 200_000 in
+                let writer =
+                  Thread.create
+                    (fun () ->
+                      ignore
+                        (Thread.sigmask SIG_UNBLOCK [ Sys.sighup ] : int list);
+                      Signal.write h w (Bytes.make n 'x') 0 n)
+                    ()
+                in
+                Thread.delay 0.2;
+                Unix.kill (Unix.getpid ()) Sys.sighup;
+                Thread.join writer;
+                Unix.set_nonblock r;
+                let got = ref 0 and buf = Bytes.create 65536 in
+                (try
+                   while true do
+                     got := !got + Unix.read r buf 0 65536
+                   done
+                 with Unix.Unix_error ((EAGAIN | EWOULDBLOCK), _, _) -> ());
+                equal ~msg:"what the pipe took, and no more" int 65536 !got)))
+
+(* What an abort writes and puts back, for a holder whose process ends where
+   no OCaml code runs. *)
+let test_restore_all () =
+  if Sys.unix then
+    with_pty (fun _ input ->
+        with_pipe (fun r output ->
+            with_holder ~controlling:false (fun h ->
+                Signal.keep_settings h ~input ~output;
+                let _ = Matrix_tty.raw input in
+                Signal.set_reset h "\027[?25h";
+                Signal.restore_all ();
+                let buf = Bytes.create 64 in
+                let n = Unix.read r buf 0 64 in
+                equal ~msg:"the reset bytes" string "\027[?25h"
+                  (Bytes.sub_string buf 0 n);
+                is_true ~msg:"cooked again" (Unix.tcgetattr input).c_icanon;
+                Signal.set_reset h "";
+                Signal.forget_settings h)))
+
 let () =
   run "matrix.tty"
     [
@@ -87,5 +274,16 @@ let () =
         [
           test "raw and restore" test_raw_and_restore;
           test "raw on a pipe" test_raw_not_a_terminal;
+        ];
+      group "signals"
+        [
+          test "which a holder takes" test_signals;
+          test "taken at the default" test_take_at_default;
+          test "taken over a handler" test_take_always;
+          test "outside the policy" test_take_outside_the_policy;
+          test "the holders a signal concerns" test_holders_concerned;
+          test "wake" test_wake;
+          test "a write cut by termination" test_write_cut_by_termination;
+          test "restore_all" test_restore_all;
         ];
     ]

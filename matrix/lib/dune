@@ -15,7 +15,4 @@
   matrix.text
   matrix.tty
   threads.posix
-  unix)
- (foreign_stubs
-  (language c)
-  (names matrix_stubs)))
+  unix))

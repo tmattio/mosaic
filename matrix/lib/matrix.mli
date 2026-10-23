@@ -506,18 +506,16 @@ val stop_job : 'msg app -> unit
 
 (** {1:signals Signals}
 
-    Ending the process is the process's affair; the window and job control are
-    its controlling terminal's. So a run on a terminal, whichever, takes SIGINT,
-    SIGTERM, SIGHUP, SIGQUIT and SIGABRT, and a run on the controlling terminal
-    ({!Backend.t}'s [controlling]) also SIGTSTP, if their action is the default
-    when it begins, as X/Open Curses allows; an application that installed its
-    own action keeps it. A run on the controlling terminal takes SIGWINCH and
-    SIGCONT always, and a handler installed before is still called. The handlers
-    record the signal for each run it concerns and wake it ({!Backend.wake_fd}):
-    SIGWINCH, SIGCONT and SIGTSTP concern the runs on the controlling terminal,
-    the others every run of the process, such as the sessions a server runs. The
-    loop acts on it in its next turn. Runs side by side take a signal together,
-    and the action it had comes back when the last of them ends.
+    A run holds its terminal's signals as {!Matrix_tty.Signal} says every holder
+    of a terminal in the process does: a run on a terminal, whichever, takes the
+    signals that end the process, SIGINT, SIGTERM, SIGHUP, SIGQUIT and SIGABRT,
+    and a run on the controlling terminal ({!Backend.t}'s [controlling]) also
+    SIGTSTP, SIGWINCH and SIGCONT. All but SIGWINCH and SIGCONT are taken only
+    if their action is the default when the run begins, as X/Open Curses allows:
+    an application that installed its own action keeps it. The handlers record
+    the signal for each run it concerns and wake it ({!Backend.wake_fd}), and
+    the loop acts on it in its next turn. Runs side by side take a signal
+    together, and the action it had comes back when the last of them ends.
 
     - SIGINT, SIGTERM, SIGHUP, SIGQUIT end the process, and every run with it.
       The run whose loop acts on the signal first gives its terminal back, as

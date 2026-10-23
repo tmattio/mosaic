@@ -44,31 +44,7 @@ let pp_event ppf = function
   | Invalid s -> Format.fprintf ppf "Invalid %S" s
   | Reply r -> Format.fprintf ppf "Reply %a" Input.Reply.pp r
 
-(* The signal handlers, in C (matrix_stubs.c). *)
-
-(* [signal_take s always restart] takes [s] if its action is the default,
-   or whatever it is when [always], and says whether it did. *)
-external signal_take : int -> bool -> bool -> bool = "matrix_signal_take"
-external signal_restore : int -> unit = "matrix_signal_restore"
-external signal_ignored : int -> bool = "matrix_signal_ignored"
-external signal_raise : int -> unit = "matrix_signal_raise"
-external signal_stop_group : unit -> unit = "matrix_signal_stop_group"
-
-(* The runs the handlers know: [run_register controlling] is a run's id and
-   its wake pipe's read and write ends. *)
-external run_register : bool -> int * Unix.file_descr * Unix.file_descr
-  = "matrix_run_register"
-
-external run_unregister : int -> unit = "matrix_run_unregister"
-external run_pending : int -> int -> bool = "matrix_run_pending"
-external run_terminating : int -> bool = "matrix_run_terminating"
-
-external run_settings : int -> Unix.file_descr -> Unix.file_descr -> unit
-  = "matrix_run_settings"
-
-external run_forget_settings : int -> unit = "matrix_run_forget_settings"
-external run_reset_bytes : int -> string -> unit = "matrix_run_reset_bytes"
-external fatal_restore : unit -> unit = "matrix_fatal_restore"
+module Signal = Matrix_tty.Signal
 
 module Backend = struct
   type signal = Winch | Cont | Tstp | Terminate of int
@@ -102,8 +78,6 @@ module Backend = struct
     | Some fd -> fd
     | None -> invalid_arg "Matrix.Backend.wake_fd: not a backend unix made"
 
-  let wake_byte = Bytes.of_string "w"
-
   let drain fd =
     let buf = Bytes.create 64 in
     let rec go () =
@@ -114,11 +88,11 @@ module Backend = struct
     in
     go ()
 
-  (* The signals the runtime's handlers recorded for run [id], in the order
-     of this list. *)
-  let signals_from_handlers id () =
+  (* The signals the handlers recorded for holder [h], in the order of this
+     list. *)
+  let signals_from_handlers h () =
     let take acc (s, signal) =
-      if run_pending id s then signal :: acc else acc
+      if Signal.received h s then signal :: acc else acc
     in
     List.rev
       (List.fold_left take []
@@ -132,22 +106,6 @@ module Backend = struct
            (Sys.sigquit, Terminate Sys.sigquit);
          ])
 
-  (* [Unix.write] goes on past its first [write(2)] and, interrupted there,
-     raises without saying how much went: each call here is one
-     [write(2)], and the write goes on from where it stopped. *)
-  let rec write_all id fd buf off len =
-    if len > 0 then
-      match Unix.single_write fd buf off len with
-      | n -> write_all id fd buf (off + n) (len - n)
-      | exception Unix.Unix_error (Unix.EAGAIN, _, _) ->
-          (try ignore (Unix.select [] [ fd ] [] (-1.))
-           with Unix.Unix_error (Unix.EINTR, _, _) -> ());
-          write_all id fd buf off len
-      | exception Unix.Unix_error (Unix.EINTR, _, _) ->
-          (* A termination signal interrupts a write the terminal is not
-             taking: the rest is dropped, and the loop acts on the signal. *)
-          if not (run_terminating id) then write_all id fd buf off len
-
   let rec read_input fd buf off len =
     match Unix.read fd buf off len with
     | n -> n
@@ -160,17 +118,15 @@ module Backend = struct
     let controlling =
       Matrix_tty.is_controlling input || Matrix_tty.is_controlling output
     in
-    let id, wake_r, wake_w = run_register controlling in
-    let wake () =
-      try ignore (Unix.write wake_w wake_byte 0 1 : int)
-      with Unix.Unix_error _ -> ()
-    in
+    let holder = Signal.hold ~controlling in
+    let wake_r = Signal.wake_fd holder in
+    let wake () = Signal.wake holder in
     Mutex.protect pipes_lock (fun () -> pipes := (wake, wake_r) :: !pipes);
     let saved = ref None in
     let set_raw_mode raw =
       match (raw, !saved) with
       | true, None when input_is_tty ->
-          run_settings id input output;
+          Signal.keep_settings holder ~input ~output;
           saved := Some (Matrix_tty.raw input)
       | false, Some termios ->
           saved := None;
@@ -180,7 +136,7 @@ module Backend = struct
           Fun.protect
             ~finally:(fun () -> ignore (Thread.sigmask SIG_SETMASK mask))
             (fun () -> Matrix_tty.restore input termios);
-          run_forget_settings id
+          Signal.forget_settings holder
       | _ -> ()
     in
     let wait ~until ~reading =
@@ -202,9 +158,9 @@ module Backend = struct
       now = Matrix_tty.now;
       wait;
       wake;
-      take_signals = signals_from_handlers id;
+      take_signals = signals_from_handlers holder;
       read_input = read_input input;
-      write_output = write_all id output;
+      write_output = Signal.write holder output;
       (* A descriptor with no window, a pipe or a file, is given the size
          of a classic terminal. *)
       terminal_size =
@@ -215,14 +171,14 @@ module Backend = struct
       input_is_tty;
       output_is_tty;
       controlling;
-      on_fatal = run_reset_bytes id;
+      on_fatal = Signal.set_reset holder;
       protect = (fun f -> f ());
       cleanup =
         (fun () ->
           Fun.protect
             (fun () -> set_raw_mode false)
             ~finally:(fun () ->
-              run_unregister id;
+              Signal.release holder;
               Mutex.protect pipes_lock (fun () ->
                   pipes := List.filter (fun (w, _) -> w != wake) !pipes)));
       env = Terminal.Caps.env Sys.getenv_opt ~win32:Sys.win32;
@@ -1309,37 +1265,22 @@ let run_undos t ~exiting =
         undos);
   Option.iter (fun (exn, bt) -> Printexc.raise_with_backtrace exn bt) !first
 
-(* Signals. The runtime takes the signals that end or stop the process only
-   at their default action, as X/Open Curses allows, and the window and
-   continue signals always, chaining a handler installed before. A signal
-   that ends the process does not resume a system call it interrupts: a
-   write the terminal is not taking would otherwise keep the run from
-   ending. *)
+(* Signals, which the runtime takes as Matrix_tty.Signal's policy says, for
+   a run on a terminal. *)
 
 let stopping_signals = [ Sys.sigtstp; Sys.sigterm; Sys.sighup ]
 let interrupting_signals = [ Sys.sigint; Sys.sigquit ]
+let take_signal t s = if Signal.take s then t.taken <- s :: t.taken
 
-let take_signal t s ~always ~restart =
-  if signal_take s always restart then t.taken <- s :: t.taken
-
-(* The signals that end the process concern every run on a terminal; the
-   window and job-control signals come from the controlling terminal
-   only. *)
 let take_signals t =
-  t.tstp_ignored <- signal_ignored Sys.sigtstp;
-  if t.backend.controlling then (
-    take_signal t Sys.sigwinch ~always:true ~restart:true;
-    take_signal t Sys.sigcont ~always:true ~restart:true;
-    take_signal t Sys.sigtstp ~always:false ~restart:true);
+  t.tstp_ignored <- Signal.ignored Sys.sigtstp;
   if t.backend.input_is_tty || t.backend.output_is_tty || t.backend.controlling
-  then (
-    take_signal t Sys.sigabrt ~always:false ~restart:true;
-    List.iter
-      (fun s -> take_signal t s ~always:false ~restart:false)
-      [ Sys.sigint; Sys.sigterm; Sys.sighup; Sys.sigquit ]);
+  then
+    List.iter (take_signal t)
+      (Signal.signals ~controlling:t.backend.controlling);
   push_undo t (fun ~exiting ->
       if exiting then (
-        List.iter signal_restore t.taken;
+        List.iter Signal.give_back t.taken;
         t.taken <- []))
 
 (* Raw mode. Leaving it waits for the output to be sent and keeps input not
@@ -1525,12 +1466,10 @@ let release t f =
      signals; the interrupt and quit characters reach the parent too, which
      ignores them. *)
   let stopping = List.filter (fun s -> List.mem s t.taken) stopping_signals in
-  List.iter signal_restore stopping;
+  List.iter Signal.give_back stopping;
   t.taken <- List.filter (fun s -> not (List.mem s stopping)) t.taken;
   let take_back () =
-    List.iter
-      (fun s -> take_signal t s ~always:false ~restart:(s = Sys.sigtstp))
-      stopping;
+    List.iter (take_signal t) stopping;
     t.kept <-
       t.kept
       @ List.filter
@@ -1554,7 +1493,7 @@ let release t f =
 let stop_job t =
   check t;
   if t.backend.controlling && not t.tstp_ignored then
-    release t signal_stop_group
+    release t Signal.stop_group
 
 (* The loop *)
 
@@ -1619,11 +1558,11 @@ let rec end_run t s =
   if Atomic.compare_and_set ending false true then (
     t.now <- t.backend.now ();
     (try give_back t ~exiting:true with _ -> ());
-    List.iter signal_restore t.taken;
+    List.iter Signal.give_back t.taken;
     t.taken <- [];
     (* The other runs' terminals, as an abort restores them. *)
-    fatal_restore ();
-    signal_raise s;
+    Signal.restore_all ();
+    Signal.raise_default s;
     (* The default action ends the process; nothing returns here. *)
     exit 2)
   else
@@ -1655,7 +1594,7 @@ and on_signals t signals =
       | Cont -> continued t
       | Tstp ->
           if not t.released then (
-            release t (fun () -> signal_raise Sys.sigtstp);
+            release t (fun () -> Signal.raise_default Sys.sigtstp);
             (* The SIGCONT that ended the stop is this one's. *)
             on_signals t
               (List.filter

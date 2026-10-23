@@ -60,7 +60,7 @@
  (name test_tty)
  (package matrix)
  (modules test_tty)
- (libraries windtrap matrix.tty matrix.pty unix))
+ (libraries windtrap matrix.tty matrix.pty unix threads.posix))
 
 (test
  (name test_screen)
