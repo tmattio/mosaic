@@ -563,6 +563,32 @@ let spinner_follows_declared_live () =
   do_frame renderer;
   is_false ~msg:"released onto a single frame" (live ())
 
+(* A table that replaces another at the same position without a key reports
+   its own row under the still pointer, at the old table's index. *)
+let unkeyed_table_reports_its_own_hover () =
+  let renderer, reconciler = make () in
+  let log = ref [] in
+  let table name =
+    Vnode.table ~show_header:false
+      ~columns:[ Table.column "c" ]
+      ~rows:
+        (List.init 4 (fun i -> [| Table.cell (Printf.sprintf "%s%d" name i) |]))
+      ~on_hover:(fun row ->
+        log :=
+          Option.fold ~none:"none" ~some:(Printf.sprintf "%s%d" name) row
+          :: !log;
+        None)
+      ()
+  in
+  render_view reconciler (table "a");
+  do_frame renderer;
+  ignore (Renderer.render ~full:true renderer : string);
+  let move = Test_harness.mouse_report ~x:1 ~y:2 (Motion None) in
+  ignore (Test_harness.dispatch_mouse renderer move : Event.mouse);
+  render_view reconciler (table "b");
+  do_frame renderer;
+  equal ~msg:"the new table's row" (list string) [ "b1"; "a1" ] !log
+
 let render_single_progress_bar () =
   let renderer, reconciler = make () in
   render_view reconciler (Vnode.progress_bar ());
@@ -1098,6 +1124,8 @@ let () =
             declared_scroll_survives_rerender_and_remount;
           test "single spinner" render_single_spinner;
           test "spinner follows declared live" spinner_follows_declared_live;
+          test "unkeyed table reports its own hover"
+            unkeyed_table_reports_its_own_hover;
           test "single progress_bar" render_single_progress_bar;
           test "scroll_bar orientation applies at mount"
             scroll_bar_orientation_applies_at_mount;

@@ -237,8 +237,11 @@ type t = {
   mutable col_specs : column array;
   mutable data_rows : cell array array;
   mutable selected_row : int;
-  mutable hovered : (int * int) option;
-      (* The hovered data row, and the first visible row it was found under. *)
+  mutable pointer : (int * int) option;
+      (* The pointer's last position over the table, in terminal cells, or
+         [None] once it has left. *)
+  mutable hovered : (int * cell array) option;
+      (* The data row last reported under the pointer, and its cells. *)
   mutable auto_widths : (Matrix.Text.width_method * int array) option;
       (* Cached per-column content widths for [`Auto] columns, excluding
          padding, tagged with the width method used to measure them. Reset to
@@ -383,18 +386,20 @@ let scroll_offset t =
   let max_off = max 0 (row_count t - max_visible) in
   max 0 (min (t.selected_row - (max_visible / 2)) max_off)
 
-let set_hovered_row_internal t row =
-  if not (Option.equal Int.equal row (Option.map fst t.hovered)) then (
-    t.hovered <- Option.map (fun row -> (row, scroll_offset t)) row;
+(* Reports [row] as the hovered row when it differs from the last report, by
+   its index or by its cells: after the rows change, an index can name a row
+   with other content. Rows rebuilt equal report nothing. *)
+let report_hover t row =
+  let hovered = Option.map (fun index -> (index, t.data_rows.(index))) row in
+  let same (i, a) (j, b) =
+    Int.equal i j
+    && Array.length a = Array.length b
+    && Array.for_all2 cell_equal a b
+  in
+  if not (Option.equal same hovered t.hovered) then (
+    t.hovered <- hovered;
     (match t.on_hover with None -> () | Some f -> f row);
     request t)
-
-(* A row stays hovered only while the view under the pointer has not moved. *)
-let forget_scrolled_hover t =
-  match t.hovered with
-  | Some (_, offset) when offset <> scroll_offset t ->
-      set_hovered_row_internal t None
-  | None | Some _ -> ()
 
 let set_selected_row_internal t idx =
   let len = row_count t in
@@ -425,6 +430,17 @@ let data_row_at t ~x ~y =
         let index = scroll_offset t + (row_y / row_height) in
         if index < row_count t then Some index else None
 
+(* The row under the pointer's last position. The rows, the selection that
+   scrolls them and the table's geometry can all change under a still
+   pointer, so each change reports this again. *)
+let row_under_pointer t =
+  match t.pointer with
+  | None -> None
+  | Some (x, y) ->
+      data_row_at t ~x:(x - Renderable.x t.node) ~y:(y - Renderable.y t.node)
+
+let refresh_hover t = report_hover t (row_under_pointer t)
+
 (* ───── Public Accessors ───── *)
 
 let columns t = Array.to_list t.col_specs
@@ -443,10 +459,7 @@ let set_rows t data =
   t.data_rows <- Array.of_list data;
   t.auto_widths <- None;
   t.selected_row <- clamp_index t t.selected_row;
-  (match t.hovered with
-  | Some (index, _) when index >= row_count t -> set_hovered_row_internal t None
-  | None | Some _ -> ());
-  forget_scrolled_hover t;
+  refresh_hover t;
   Renderable.mark_dirty t.node;
   request t
 
@@ -454,7 +467,7 @@ let set_selected_row t idx =
   let idx = clamp_index t idx in
   if idx <> t.selected_row then (
     t.selected_row <- idx;
-    forget_scrolled_hover t;
+    refresh_hover t;
     request t)
 
 (* ───── Navigation ───── *)
@@ -637,11 +650,12 @@ let handle_key t (event : Event.key) =
 (* ───── Mouse Handling ───── *)
 
 let handle_mouse t (event : Event.mouse) =
-  let x = Event.Mouse.x event - Renderable.x t.node in
-  let y = Event.Mouse.y event - Renderable.y t.node in
+  (match Event.Mouse.kind event with
+  | Out -> t.pointer <- None
+  | _ -> t.pointer <- Some (Event.Mouse.x event, Event.Mouse.y event));
   match Event.Mouse.kind event with
   | Down { button = Left } -> (
-      let row = data_row_at t ~x ~y in
+      let row = row_under_pointer t in
       let selected_row = t.selected_row in
       let on_change = t.on_change in
       let on_activate =
@@ -649,7 +663,7 @@ let handle_mouse t (event : Event.mouse) =
       in
       (* Callbacks may replace rows and callbacks synchronously. Keep the
          original row and its mapping for the whole press. *)
-      set_hovered_row_internal t row;
+      report_hover t row;
       match row with
       | None -> ()
       | Some index ->
@@ -660,8 +674,7 @@ let handle_mouse t (event : Event.mouse) =
               Option.iter (fun f -> f index) on_activate
           end;
           Event.Mouse.stop_propagation event)
-  | Move | Over _ -> set_hovered_row_internal t (data_row_at t ~x ~y)
-  | Out -> set_hovered_row_internal t None
+  | Move | Over _ | Out -> refresh_hover t
   | Scroll { direction; delta } when t.props.wheel_navigation -> (
       match direction with
       | Event.Mouse.Scroll_up when delta > 0 ->
@@ -804,7 +817,7 @@ let render t _self grid ~delta:_ =
     let border_left = if border then 1 else 0 in
     let cur_y = ref 0 in
 
-    forget_scrolled_hover t;
+    refresh_hover t;
     let show_scroll_indicator = scroll_indicator_visible t in
     let table_width = width - if show_scroll_indicator then 1 else 0 in
     let col_widths =
@@ -981,7 +994,7 @@ let render t _self grid ~delta:_ =
 (* ───── Resize ───── *)
 
 let on_resize t _node =
-  forget_scrolled_hover t;
+  refresh_hover t;
   request t
 
 (* ───── Measure ───── *)
@@ -1081,6 +1094,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
       col_specs;
       data_rows;
       selected_row = initial_selected;
+      pointer = None;
       hovered = None;
       auto_widths = None;
       on_change = None;

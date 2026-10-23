@@ -371,6 +371,40 @@ let%expect_test "a transparent table realigns every row when it widens" =
     |   session-visual-2                      active    idle  1 turn just now today
     |}]
 
+(* A hover handler that dispatches a message, in a view that rebuilds the
+   rows on every update: the hovered row is rebuilt equal while another row
+   counts the updates. The table reports a hover only when the hovered row
+   differs, by index or by value, so the run settles after one report. *)
+let%expect_test "a hover message with rebuilt rows settles" =
+  let base = app () in
+  let application =
+    {
+      base with
+      Mosaic.view =
+        (fun model ->
+          Mosaic.table
+            ~size:(Mosaic.size ~width:20 ~height:3)
+            ~columns:[ Mosaic.Table.column "c" ]
+            ~rows:
+              [
+                Mosaic.Table.row "a" [| Mosaic.Table.cell "a" |];
+                Mosaic.Table.row "b" [| Mosaic.Table.cell "b" |];
+                Mosaic.Table.row "n"
+                  [| Mosaic.Table.cell (string_of_int model.ticks) |];
+              ]
+            ~border:false ~show_header:false ~equal:String.equal ~selected:None
+            ~on_change:(fun _ -> Ignored)
+            ~on_hover:(fun _ -> Some Tick)
+            ());
+    }
+  in
+  drive ~width:20 ~height:3 application [ `Feed "\027[<35;2;1M"; `Snap ];
+  [%expect {|
+    |a
+    |b
+    |1
+    |}]
+
 let%expect_test "probe reports perform and message quiescence" =
   let pending : (unit -> unit) Queue.t = Queue.create () in
   let probe = ref None in

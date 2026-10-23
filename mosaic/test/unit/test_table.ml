@@ -455,7 +455,9 @@ let mouse_hover_and_click_exclude_table_chrome () =
     [ None; Some 0 ] !hover_log;
   equal ~msg:"chrome does not activate" (list int) [] !activate_log
 
-let scrolling_clears_stale_hover () =
+(* Hover is the row under the pointer: a selection that scrolls the rows
+   under a still pointer reports the row now there. *)
+let scrolling_reports_row_under_pointer () =
   let _t, tbl =
     make_table ~columns:sample_columns ~rows:sample_rows ~border:false
       ~show_header:false ()
@@ -465,9 +467,28 @@ let scrolling_clears_stale_hover () =
   Table.set_on_hover tbl (Some (fun row -> log := row :: !log));
   emit_mouse tbl (mouse_move ~x:5 ~y:0);
   Table.set_selected_row tbl 4;
-  equal ~msg:"viewport movement clears hover"
+  equal ~msg:"the row scrolled under the pointer"
     (list (option int))
-    [ None; Some 0 ] !log
+    [ Some 3; Some 0 ] !log
+
+(* New rows under a still pointer are reported when another row comes under
+   it, even at the index last reported. Equal rows report nothing. *)
+let changed_rows_report_row_under_pointer () =
+  let _t, tbl =
+    make_table ~columns:sample_columns ~rows:sample_rows ~border:false
+      ~show_header:false ()
+  in
+  with_layout tbl ~width:40 ~height:5;
+  let log = ref [] in
+  Table.set_on_hover tbl (Some (fun row -> log := row :: !log));
+  emit_mouse tbl (mouse_move ~x:5 ~y:3);
+  Table.set_rows tbl (List.tl sample_rows);
+  Table.set_rows tbl (List.map Array.copy (List.tl sample_rows));
+  Table.set_rows tbl (List.tl (List.tl sample_rows));
+  emit_mouse tbl (mouse_move ~x:8 ~y:3);
+  equal ~msg:"a report for each new data set"
+    (list (option int))
+    [ None; Some 3; Some 3 ] !log
 
 let mouse_scroll_down_moves () =
   let _t, tbl = make_table ~columns:sample_columns ~rows:sample_rows () in
@@ -884,7 +905,10 @@ let () =
           test "hover excludes separators" mouse_hover_excludes_row_separators;
           test "hover and click exclude table chrome"
             mouse_hover_and_click_exclude_table_chrome;
-          test "scrolling clears stale hover" scrolling_clears_stale_hover;
+          test "scrolling reports the row under the pointer"
+            scrolling_reports_row_under_pointer;
+          test "changed rows report the row under the pointer"
+            changed_rows_report_row_under_pointer;
           test "scroll down moves" mouse_scroll_down_moves;
           test "scroll up moves" mouse_scroll_up_moves;
           test "scroll can bubble" mouse_scroll_can_bubble;

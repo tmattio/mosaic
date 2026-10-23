@@ -409,7 +409,11 @@ val set_on_hover : t -> (int option -> unit) option -> unit
     identifies the row under the pointer in the complete data set, after
     applying the current scroll offset. [None] reports table chrome, blank table
     space, or the pointer leaving the table. Repeated movement within the same
-    row does not invoke [cb]. Pass [None] to remove the callback. *)
+    row does not invoke [cb]. A still pointer is reported again when the row
+    under it changes, by index or by cells, as when a selection scrolls the
+    rows, the table moves, or new rows put another row at the same index. Rows
+    replaced by equal rows report nothing. Pass [None] to remove the callback.
+*)
 
 (** {1:layout Layout} *)
 
