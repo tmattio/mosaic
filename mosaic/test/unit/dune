@@ -51,7 +51,14 @@
  (name test_text)
  (modules test_text)
  (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.ansi matrix.grid test_harness))
+ (libraries
+  windtrap
+  mosaic.ui
+  toffee
+  matrix.ansi
+  matrix.grid
+  matrix.screen
+  test_harness))
 
 (test
  (name test_code)

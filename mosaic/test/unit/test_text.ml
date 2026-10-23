@@ -586,6 +586,34 @@ let rich_props_keep_geometry_and_accept_plain_transitions () =
   Text.apply_props txt (Text.Props.make_rich []);
   equal string "" (Text.plain_text txt)
 
+(* A wide grapheme whose second cell falls past a clipping box's edge is not
+   drawn in part: its visible cell is a blank and the border stays. *)
+let wide_grapheme_cut_by_clip_leaves_border () =
+  let r = Renderer.create () in
+  let hidden =
+    Toffee.Geometry.Point.
+      { x = Toffee.Style.Overflow.Hidden; y = Toffee.Style.Overflow.Hidden }
+  in
+  let box =
+    Box.create ~parent:(Renderer.root r) ~border:true
+      ~style:
+        (Toffee.Style.default
+        |> Toffee.Style.set_width (Toffee.Style.Dimension.length 7.)
+        |> Toffee.Style.set_height (Toffee.Style.Dimension.length 3.)
+        |> Toffee.Style.set_overflow hidden)
+      ()
+  in
+  let _text =
+    Text.create ~parent:(Box.node box)
+      ~style:(Toffee.Style.default |> Toffee.Style.set_flex_shrink 0.)
+      ~content:"\u{65E5}\u{672C}\u{8A9E}" ()
+  in
+  Renderer.render_frame r ~width:7 ~height:3 ~delta:0.;
+  let grid = Matrix_screen.next_grid (Renderer.screen r) in
+  let cell x = Matrix_grid.get_text grid (7 + x) in
+  equal ~msg:"the last inner cell" string " " (cell 5);
+  equal ~msg:"the right border" string "\u{2502}" (cell 6)
+
 let () =
   run "mosaic.text"
     [
@@ -635,6 +663,11 @@ let () =
         ];
       group "Content — set_text_style"
         [ test "changes default style" set_text_style_changes_default ];
+      group "Clipping"
+        [
+          test "wide grapheme cut by a clip leaves the border"
+            wide_grapheme_cut_by_clip_leaves_border;
+        ];
       group "Wrapping"
         [
           test "set_wrap delegates" set_wrap_delegates;

@@ -283,7 +283,7 @@ let render t _self grid ~delta:_ =
       Layout.iter_cells geometry ~row
         ~first_column:(t.scroll_x + x0 - ox)
         ~last_column:(t.scroll_x + x1 - ox)
-        (fun ~first ~last ~column ~width:_ ~ellipsis ->
+        (fun ~first ~last ~column ~width ~ellipsis ->
           if first >= !style_end then begin
             let style, stop = Text_buffer.style_at t.buffer first in
             base_style := style;
@@ -307,6 +307,15 @@ let render t _self grid ~delta:_ =
             flush ();
             Matrix_grid.draw_text ~style ~tab_width ~width_method grid ~x ~y
               ~text:"…"
+          end
+          else if x + width > x1 then begin
+            (* The grid would write the cells of a grapheme past the clip to
+               keep it whole, over a clipping box's border. A grapheme the
+               visible columns cut shows blanks in its style instead, as a
+               terminal shows a cut wide character. *)
+            flush ();
+            Matrix_grid.draw_text ~style grid ~x ~y
+              ~text:(String.make (x1 - x) ' ')
           end
           else begin
             let a = Layout.Source.byte_offset src first in
