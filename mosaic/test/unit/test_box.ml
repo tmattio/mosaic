@@ -92,6 +92,62 @@ let create_border_sides_subset () =
   is_true ~msg:"left zero" (lp zero_lp b.left);
   is_true ~msg:"right zero" (lp zero_lp b.right)
 
+(* Each side with a border takes its border width in layout, and a side of
+   width 0 draws no line. A side without a border takes no cells, as a CSS
+   border whose style is none. *)
+let border_width_sets_insets_and_lines () =
+  let t = make_ctx () in
+  let root = make_root t in
+  let cells n = Toffee.Style.Length_percentage.length (Float.of_int n) in
+  let width ~left =
+    { (Toffee.Geometry.Rect.all (cells 2)) with left = cells left }
+  in
+  let box =
+    Box.create ~parent:root ~border:true ~border_width:(width ~left:0) ()
+  in
+  let node = Box.node box in
+  let b = border_of node in
+  is_true ~msg:"a side takes its width" (lp (cells 2) b.top);
+  is_true ~msg:"a side of width 0 takes nothing" (lp zero_lp b.left);
+  layout_node node ~x:0 ~y:0 ~width:6 ~height:5;
+  let grid = make_grid ~width:6 ~height:5 () in
+  Renderable.Private.render_full node ~grid ~delta:0.;
+  let cell x y = Matrix_grid.get_text grid ((y * 6) + x) in
+  equal ~msg:"a side of width 0 draws no line" string " " (cell 0 2);
+  equal ~msg:"a wide side draws its line outermost" string "\u{2502}" (cell 5 2);
+  equal ~msg:"and leaves the cells inside it blank" string " " (cell 4 2);
+  Box.set_border box false;
+  is_true ~msg:"no border takes no cells" (lp zero_lp (border_of node).top);
+  raises_match ~msg:"a part of a cell"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () ->
+      ignore
+        (Box.Props.make
+           ~border_width:
+             (Toffee.Geometry.Rect.all
+                (Toffee.Style.Length_percentage.length 0.5))
+           ()
+          : Box.Props.t))
+
+let child_clip_inside_border_width () =
+  let t = make_ctx () in
+  let root = make_root t in
+  let box =
+    Box.create ~parent:root ~border:true
+      ~border_width:
+        (Toffee.Geometry.Rect.all (Toffee.Style.Length_percentage.length 2.))
+      ()
+  in
+  let node = Box.node box in
+  layout_node node ~x:0 ~y:0 ~width:10 ~height:8;
+  match Renderable.Private.child_clip node with
+  | Some clip ->
+      equal ~msg:"x" int 2 clip.x;
+      equal ~msg:"y" int 2 clip.y;
+      equal ~msg:"width" int 6 clip.width;
+      equal ~msg:"height" int 4 clip.height
+  | None -> fail "expected clip"
+
 (* ── Border Setters ── *)
 
 let set_border_enables_disables () =
@@ -388,6 +444,9 @@ let () =
           test "with border has insets" create_with_border_has_insets;
           test "without border has no insets" create_without_border_no_insets;
           test "border_sides subset" create_border_sides_subset;
+          test "border width sets insets and lines"
+            border_width_sets_insets_and_lines;
+          test "child clip inside border width" child_clip_inside_border_width;
         ];
       group "Border setters"
         [

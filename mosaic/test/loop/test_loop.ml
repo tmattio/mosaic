@@ -371,6 +371,29 @@ let%expect_test "a transparent table realigns every row when it widens" =
     |   session-visual-2                      active    idle  1 turn just now today
     |}]
 
+(* A box lays its border out from [border_width]: a side of width 0 draws no
+   line and takes no cell, and a side of width 2 leaves a blank cell inside
+   its line. *)
+let%expect_test "a box draws the border widths it is given" =
+  let base = app () in
+  let application =
+    {
+      base with
+      Mosaic.view =
+        (fun _ ->
+          Mosaic.box ~border:true
+            ~border_width:(Mosaic.padding_lrtb 0 2 1 1)
+            ~size:(Mosaic.size ~width:6 ~height:3)
+            [ Mosaic.text "x" ]);
+    }
+  in
+  drive ~width:8 ~height:3 application [ `Snap ];
+  [%expect {|
+    |─────┐
+    |x    │
+    |─────┘
+    |}]
+
 (* A hover handler that dispatches a message, in a view that rebuilds the
    rows on every update: the hovered row is rebuilt equal while another row
    counts the updates. The table reports a hover only when the hovered row

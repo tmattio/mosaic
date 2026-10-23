@@ -209,12 +209,13 @@ let viewport_switch ~at_least_width ~wide ~narrow =
 let box ?key ?(style = Toffee.Style.default) ?(visible = true) ?(z_index = 0)
     ?(opacity = 1.0) ?(focusable = false) ?(focused = false) ?(buffered = false)
     ?(live = false) ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request
-    ?on_size ?border ?border_style ?border_sides ?border_color
+    ?on_size ?border ?border_style ?border_sides ?border_width ?border_color
     ?focused_border_color ?background ?fill ?title ?title_alignment children =
   let kind =
     Box
-      (Box.Props.make ?border ?border_style ?border_sides ?border_color
-         ?focused_border_color ?background ?fill ?title ?title_alignment ())
+      (Box.Props.make ?border ?border_style ?border_sides ?border_width
+         ?border_color ?focused_border_color ?background ?fill ?title
+         ?title_alignment ())
   in
   let attrs =
     {

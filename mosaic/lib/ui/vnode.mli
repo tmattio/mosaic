@@ -237,6 +237,7 @@ val box :
   ?border:bool ->
   ?border_style:Matrix_grid.Border.t ->
   ?border_sides:Matrix_grid.Border.side list ->
+  ?border_width:Toffee.Style.Length_percentage.t Toffee.Geometry.Rect.t ->
   ?border_color:Ansi.Color.t ->
   ?focused_border_color:Ansi.Color.t ->
   ?background:Ansi.Color.t ->
@@ -268,6 +269,9 @@ val box :
       {!Matrix_grid.Border.single}.
     - [border_sides] is the set of sides on which the border is drawn. Defaults
       to all four sides.
+    - [border_width] is the border width of each side, in whole cells, as
+      {!Box.val-create} lays it out. Defaults to one cell on each side. The box
+      replaces the border of [style] with its border widths.
     - [border_color] is the border color when unfocused.
     - [focused_border_color] is the border color when focused.
     - [background] is the background fill color.

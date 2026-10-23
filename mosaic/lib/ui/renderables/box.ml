@@ -1,10 +1,22 @@
 (* Props *)
 
+module Lp = Toffee.Style.Length_percentage
+
+let cells_of_border_width w =
+  let cells = Lp.value w in
+  if Lp.is_length w && Float.is_integer cells && cells >= 0. then
+    Float.to_int cells
+  else
+    invalid_arg
+      (Format.asprintf "Box: border width %a is not a whole number of cells"
+         Lp.pp w)
+
 module Props = struct
   type t = {
     border : bool;
     border_style : Matrix_grid.Border.t;
     border_sides : Matrix_grid.Border.side list;
+    border_width : int Toffee.Geometry.Rect.t option;
     border_color : Ansi.Color.t;
     focused_border_color : Ansi.Color.t option;
     background : Ansi.Color.t option;
@@ -16,9 +28,12 @@ module Props = struct
   let default_focused_border_color = Ansi.Color.bright_cyan
 
   let make ?(border = false) ?(border_style = Matrix_grid.Border.single)
-      ?(border_sides = Matrix_grid.Border.all)
+      ?(border_sides = Matrix_grid.Border.all) ?border_width
       ?(border_color = Ansi.Color.white) ?focused_border_color ?background
       ?(fill = true) ?title ?(title_alignment = `Left) () =
+    let border_width =
+      Option.map (Toffee.Geometry.Rect.map cells_of_border_width) border_width
+    in
     let has_border_opts =
       Option.is_some focused_border_color
       || border_style <> Matrix_grid.Border.single
@@ -34,6 +49,7 @@ module Props = struct
       border;
       border_style;
       border_sides;
+      border_width;
       border_color;
       focused_border_color;
       background;
@@ -48,6 +64,7 @@ module Props = struct
     a.border = b.border
     && a.border_style = b.border_style
     && a.border_sides = b.border_sides
+    && a.border_width = b.border_width
     && Ansi.Color.equal a.border_color b.border_color
     && Option.equal Ansi.Color.equal a.focused_border_color
          b.focused_border_color
@@ -64,22 +81,31 @@ let node t = t.node
 
 (* Border geometry *)
 
-let effective_sides t = if t.props.border then t.props.border_sides else []
-let fold_sides t ~init ~f = List.fold_left f init (effective_sides t)
+(* The cells a side's border takes: its border width, one cell by default,
+   while the box has a border on that side, and none otherwise, as a CSS
+   border whose style is none has width 0. A side of width 0 draws no line. *)
+let side_width t side =
+  if t.props.border && List.mem side t.props.border_sides then
+    match t.props.border_width with
+    | None -> 1
+    | Some r -> (
+        match side with
+        | `Top -> r.top
+        | `Right -> r.right
+        | `Bottom -> r.bottom
+        | `Left -> r.left)
+  else 0
 
-let calculate_insets t =
-  fold_sides t ~init:(0, 0, 0, 0) ~f:(fun (top, right, bottom, left) -> function
-    | `Top -> (1, right, bottom, left)
-    | `Right -> (top, 1, bottom, left)
-    | `Bottom -> (top, right, 1, left)
-    | `Left -> (top, right, bottom, 1))
+let drawn_sides t =
+  List.filter (fun s -> side_width t s > 0) t.props.border_sides
 
 (* Child clipping *)
 
 let child_clip t _node =
   let x = Renderable.x t.node and y = Renderable.y t.node in
   let w = Renderable.width t.node and h = Renderable.height t.node in
-  let top, right, bottom, left = calculate_insets t in
+  let top = side_width t `Top and right = side_width t `Right in
+  let bottom = side_width t `Bottom and left = side_width t `Left in
   Some
     {
       Matrix_grid.x = x + left;
@@ -91,17 +117,15 @@ let child_clip t _node =
 (* Border style *)
 
 let style_with_border t style =
-  let module Lp = Toffee.Style.Length_percentage in
-  let one = Lp.length 1. in
-  let border_rect =
-    fold_sides t ~init:(Toffee.Geometry.Rect.all Lp.zero)
-      ~f:(fun rect -> function
-      | `Top -> { rect with Toffee.Geometry.Rect.top = one }
-      | `Right -> { rect with right = one }
-      | `Bottom -> { rect with bottom = one }
-      | `Left -> { rect with left = one })
-  in
-  Toffee.Style.set_border border_rect style
+  let width side = Lp.length (Float.of_int (side_width t side)) in
+  Toffee.Style.set_border
+    {
+      Toffee.Geometry.Rect.top = width `Top;
+      right = width `Right;
+      bottom = width `Bottom;
+      left = width `Left;
+    }
+    style
 
 let apply_border_style t =
   let updated = style_with_border t (Renderable.style t.node) in
@@ -126,20 +150,20 @@ let render t _self grid ~delta:_ =
       Ansi.Style.make ~fg:(resolve_border_color t) ~bg:transparent ()
     in
     Matrix_grid.draw_box grid ~x:(Renderable.x t.node) ~y:(Renderable.y t.node)
-      ~width:w ~height:h ~border:t.props.border_style ~sides:(effective_sides t)
+      ~width:w ~height:h ~border:t.props.border_style ~sides:(drawn_sides t)
       ~style:border_style ?fill ?title:t.props.title
       ~title_alignment:t.props.title_alignment ()
 
 (* Construction *)
 
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?border
-    ?border_style ?border_sides ?border_color ?focused_border_color ?background
-    ?fill ?title ?title_alignment () =
+    ?border_style ?border_sides ?border_width ?border_color
+    ?focused_border_color ?background ?fill ?title ?title_alignment () =
   let node =
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let props =
-    Props.make ?border ?border_style ?border_sides ?border_color
+    Props.make ?border ?border_style ?border_sides ?border_width ?border_color
       ?focused_border_color ?background ?fill ?title ?title_alignment ()
   in
   let t = { node; props } in

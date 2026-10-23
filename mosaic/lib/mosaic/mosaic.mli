@@ -1556,8 +1556,12 @@ val box :
   'msg t list ->
   'msg t
 (** [box children] is a container for [children]. Widget-specific visual options
-    follow {!Mosaic_ui.Box}; layout and paint use the labelled arguments above.
-*)
+    follow {!Mosaic_ui.Box}; layout and paint use the labelled arguments above,
+    except [border_width], which sets the box's border widths as
+    {!Mosaic_ui.Box} lays them out.
+
+    Raises [Invalid_argument] if a border width is not a length of a whole
+    number of cells, [0] or more. *)
 
 val button :
   ?key:string ->

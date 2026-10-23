@@ -1343,20 +1343,21 @@ let box ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?on_click ?on_focus_request ?on_size ?focused ?border ?border_style
     ?border_sides ?border_color ?focused_border_color ?background ?fill ?title
     ?title_alignment children =
+  (* The box owns its border widths, so [border_width] goes to the box. *)
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
-      ?padding ?border_width ?gap ?align_items ?align_self ?align_content
-      ?justify_items ?justify_self ?justify_content ?flex_direction ?flex_wrap
-      ?flex_grow ?flex_shrink ?flex_basis ?grid_template_rows
-      ?grid_template_columns ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow
-      ?grid_template_areas ?grid_template_column_names ?grid_template_row_names
-      ?grid_row ?grid_column ()
+      ?padding ?gap ?align_items ?align_self ?align_content ?justify_items
+      ?justify_self ?justify_content ?flex_direction ?flex_wrap ?flex_grow
+      ?flex_shrink ?flex_basis ?grid_template_rows ?grid_template_columns
+      ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
+      ?grid_template_column_names ?grid_template_row_names ?grid_row
+      ?grid_column ()
   in
   Vnode.box ?key ~style ?visible ?z_index ?opacity ?buffered ?live ?on_mouse
     ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused ?border
-    ?border_style ?border_sides ?border_color ?focused_border_color ?background
-    ?fill ?title ?title_alignment children
+    ?border_style ?border_sides ?border_width ?border_color
+    ?focused_border_color ?background ?fill ?title ?title_alignment children
 
 let text ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?text_align ?inset ?flex_direction ?flex_wrap ?justify_content ?align_items

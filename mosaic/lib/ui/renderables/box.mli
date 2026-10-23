@@ -1,8 +1,15 @@
 (** Bordered container with background fill and optional title.
 
     A box wraps a {!Renderable.t} with border drawing, background filling, and
-    child clipping. Each active border side consumes one terminal cell in
-    layout; children are clipped to the content area inside borders.
+    child clipping. While the box has a border, each of its border sides takes
+    its {e border width} in layout, one cell unless [border_width] says
+    otherwise. A side of width [0] draws no line. A wider side draws its line in
+    its outermost cell and leaves the cells inside it blank. A side without a
+    border takes no cells, whatever its border width, as a CSS border whose
+    style is [none] has width [0] (CSS Backgrounds and Borders Level 3, §3.2).
+    Children are clipped to the area inside the border widths. The box sets the
+    border of its layout style from these widths, replacing the one the style
+    gives.
 
     Setting a border-related property ({!set_border_style}, {!set_border_color},
     {!set_focused_border_color}) auto-enables borders. *)
@@ -23,6 +30,7 @@ val create :
   ?border:bool ->
   ?border_style:Matrix_grid.Border.t ->
   ?border_sides:Matrix_grid.Border.side list ->
+  ?border_width:Toffee.Style.Length_percentage.t Toffee.Geometry.Rect.t ->
   ?border_color:Ansi.Color.t ->
   ?focused_border_color:Ansi.Color.t ->
   ?background:Ansi.Color.t ->
@@ -36,12 +44,17 @@ val create :
       [border_color], or [focused_border_color] implicitly enables it.
     - [border_style] defaults to {!Matrix_grid.Border.single}.
     - [border_sides] defaults to {!Matrix_grid.Border.all} (all four sides).
+    - [border_width] is the border width of each side, in whole cells. Defaults
+      to one cell on each side.
     - [border_color] defaults to {!Ansi.Color.white}.
     - [focused_border_color] defaults to {!Ansi.Color.bright_cyan}.
     - [background] defaults to [None] (transparent).
     - [fill] defaults to [true].
     - [title] defaults to [None].
-    - [title_alignment] defaults to [`Left]. *)
+    - [title_alignment] defaults to [`Left].
+
+    Raises [Invalid_argument] if a border width is not a length of a whole
+    number of cells, [0] or more. *)
 
 val node : t -> Renderable.t
 (** [node t] is [t]'s underlying renderable. *)
@@ -56,6 +69,7 @@ module Props : sig
     ?border:bool ->
     ?border_style:Matrix_grid.Border.t ->
     ?border_sides:Matrix_grid.Border.side list ->
+    ?border_width:Toffee.Style.Length_percentage.t Toffee.Geometry.Rect.t ->
     ?border_color:Ansi.Color.t ->
     ?focused_border_color:Ansi.Color.t ->
     ?background:Ansi.Color.t ->
@@ -65,7 +79,9 @@ module Props : sig
     unit ->
     t
   (** [make ()] is a property set with the same defaults as {!val-create}.
-      Border-related options auto-enable borders when present. *)
+      Border-related options auto-enable borders when present.
+
+      Raises [Invalid_argument] as {!val-create} does. *)
 
   val default : t
   (** [default] is [make ()]. *)
@@ -123,8 +139,8 @@ val set_title_alignment : t -> [ `Left | `Center | `Right ] -> unit
 (** {1:layout Layout} *)
 
 val set_style : t -> Toffee.Style.t -> unit
-(** [set_style t style] updates the layout style. Border insets are applied
-    automatically on top of [style]. *)
+(** [set_style t style] updates the layout style. The box replaces [style]'s
+    border with its border widths. *)
 
 (** {1:fmt Formatting} *)
 
