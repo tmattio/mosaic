@@ -298,10 +298,9 @@ module Axis : sig
       [tick_length] cells long and, [label_padding] cells beyond it, a label. An
       x-axis label that would overlap the previous one is left out.
 
-      An axis's styles left [None] take the chart's theme when the chart takes
-      the axis ({!Matrix_charts.empty}, {!Matrix_charts.make},
-      {!Matrix_charts.with_axes}, {!Matrix_charts.with_y2_axis}). The line and
-      tick marks take {!Theme.t.axes}, and the labels {!Theme.t.labels}. *)
+      An axis's styles left [None] take the theme the chart has when it is laid
+      out or drawn ({!Matrix_charts.with_theme}). The line and tick marks take
+      {!Theme.t.axes}, and the labels {!Theme.t.labels}. *)
 
   type formatter = int -> float -> string
   (** The type for tick label formatters, applied to the tick's index, from 0,
@@ -385,8 +384,9 @@ module Gridlines : sig
       none. Minor gridlines divide the space between two major gridlines of a
       numeric or logarithmic axis without a step.
 
-      A gridline style equal to {!Ansi.Style.default} takes {!Theme.t.grid} when
-      the chart takes the gridlines ({!Matrix_charts.with_grid}). *)
+      A gridline style equal to {!Ansi.Style.default} takes {!Theme.t.grid} of
+      the theme the chart has when it is laid out or drawn
+      ({!Matrix_charts.with_theme}). *)
 
   type t = {
     show : bool;  (** Whether any gridline is drawn. *)
@@ -1223,7 +1223,7 @@ val make : ?theme:Theme.t -> ?title:string -> Mark.t list -> t
 
 val with_theme : Theme.t -> t -> t
 (** [with_theme theme c] is [c] in [theme]. The styles its axes and gridlines
-    left unset become [theme]'s. *)
+    leave unset are [theme]'s, whichever theme [c] had when it took them. *)
 
 val with_frame : frame -> t -> t
 (** [with_frame f c] is [c] with frame [f]. *)

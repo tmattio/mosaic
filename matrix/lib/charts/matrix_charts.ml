@@ -442,6 +442,9 @@ let default_frame = Auto
 let manual_frame ?(margins = (0, 0, 0, 0)) ?(inner_padding = 0) () =
   Manual { margins; inner_padding }
 
+(* A chart keeps its axes and gridlines as the program gave them, and the
+   styles they leave unset take the chart's theme when it is laid out, so a
+   later with_theme restyles them. *)
 let apply_theme_defaults (theme : Theme.t) (a : Axis.t) =
   {
     a with
@@ -460,10 +463,10 @@ let create_chart theme ~marks_rev ~title =
     x_scale = Scale.Auto;
     y_scale = Scale.Auto;
     y2_scale = None;
-    x_axis = apply_theme_defaults theme Axis.default;
-    y_axis = apply_theme_defaults theme Axis.default;
+    x_axis = Axis.default;
+    y_axis = Axis.default;
     y2_axis = None;
-    grid = apply_grid_theme theme Gridlines.hidden;
+    grid = Gridlines.hidden;
     marks_rev;
     title;
   }
@@ -475,14 +478,7 @@ let make ?(theme = Theme.default) ?title marks =
   let title = Option.map (fun text -> { text; style = None }) title in
   create_chart theme ~marks_rev:(List.rev marks) ~title
 
-let with_theme theme t =
-  {
-    t with
-    theme;
-    x_axis = apply_theme_defaults theme t.x_axis;
-    y_axis = apply_theme_defaults theme t.y_axis;
-    grid = apply_grid_theme theme t.grid;
-  }
+let with_theme theme t = { t with theme }
 
 let with_frame frame t =
   let frame =
@@ -498,18 +494,12 @@ let with_y_scale y_scale t = { t with y_scale }
 let with_y2_scale y2_scale t = { t with y2_scale = Some y2_scale }
 
 let with_axes ?x ?y t =
-  let x_axis =
-    match x with None -> t.x_axis | Some a -> apply_theme_defaults t.theme a
-  in
-  let y_axis =
-    match y with None -> t.y_axis | Some a -> apply_theme_defaults t.theme a
-  in
+  let x_axis = Option.value x ~default:t.x_axis in
+  let y_axis = Option.value y ~default:t.y_axis in
   { t with x_axis; y_axis }
 
-let with_y2_axis y2_axis t =
-  { t with y2_axis = Some (apply_theme_defaults t.theme y2_axis) }
-
-let with_grid g t = { t with grid = apply_grid_theme t.theme g }
+let with_y2_axis y2_axis t = { t with y2_axis = Some y2_axis }
+let with_grid grid t = { t with grid }
 let add m t = { t with marks_rev = m :: t.marks_rev }
 
 (* {1 Convenience wrappers} *)
@@ -581,10 +571,10 @@ let to_config t : Layout.config =
     x_scale = t.x_scale;
     y_scale = t.y_scale;
     y2_scale = t.y2_scale;
-    x_axis = t.x_axis;
-    y_axis = t.y_axis;
-    y2_axis = t.y2_axis;
-    grid = t.grid;
+    x_axis = apply_theme_defaults t.theme t.x_axis;
+    y_axis = apply_theme_defaults t.theme t.y_axis;
+    y2_axis = Option.map (apply_theme_defaults t.theme) t.y2_axis;
+    grid = apply_grid_theme t.theme t.grid;
     marks = marks t;
     title;
   }

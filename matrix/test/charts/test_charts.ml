@@ -829,3 +829,42 @@ let%expect_test "a `Y2 mark needs a second y scale" =
     Invalid_argument
     drawn with a second y scale
     |}]
+
+(* The styles a chart gives its axis line and its gridlines come from its
+   theme when it is drawn, whichever theme it was made with, while a style the
+   program set stays. *)
+let%expect_test "with_theme restyles what the program left unset" =
+  let red = Style.make ~fg:Ansi.Color.red () in
+  let green = Style.make ~fg:Ansi.Color.green () in
+  let theme = { Theme.dark with axes = red; grid = green } in
+  let fg grid ~x ~y = Grid.get_fg grid (Grid.idx grid ~x ~y) in
+  let show name chart =
+    let grid = Grid.create ~width:20 ~height:7 () in
+    let l = draw chart grid ~width:20 ~height:7 in
+    let r = Layout.plot_rect l in
+    let axis = fg grid ~x:(r.x - 1) ~y:r.y in
+    let gridline = fg grid ~x:(r.x + r.width - 1) ~y:(r.y + r.height - 1) in
+    Printf.printf "%s: axis %b, gridline %b\n" name
+      (Ansi.Color.equal axis Ansi.Color.red)
+      (Ansi.Color.equal gridline Ansi.Color.green)
+  in
+  let chart ?theme () =
+    empty ?theme ()
+    |> with_grid (Gridlines.default |> Gridlines.with_style Style.default)
+    |> line ~x:fst ~y:snd simple_points
+  in
+  show "made in the theme" (chart ~theme ());
+  show "themed later" (with_theme theme (chart ()));
+  let blue = Style.make ~fg:Ansi.Color.blue () in
+  let own =
+    chart ()
+    |> with_axes ~y:(Axis.default |> Axis.with_style blue)
+    |> with_theme theme
+  in
+  show "own axis style" own;
+  [%expect
+    {|
+    made in the theme: axis true, gridline true
+    themed later: axis true, gridline true
+    own axis style: axis false, gridline true
+    |}]
