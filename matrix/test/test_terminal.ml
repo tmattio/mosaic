@@ -348,6 +348,23 @@ let test_hidden_cursor_change_reaches_the_terminal () =
   contains ~msg:"the style is put back" ~sub:"\027[0 q" out;
   contains ~msg:"the color is put back" ~sub:"\027]112" out
 
+(* The title the handle replaced is pushed on the terminal's title stack
+   with the first title set, once, and popped by reset_state. *)
+let test_title_comes_back () =
+  with_tty_terminal @@ fun term buf ->
+  T.set_title term "one";
+  T.set_title term "two";
+  equal ~msg:"pushed once, before the first title" string
+    "\027[22;0t\027]0;one\027\\\027]0;two\027\\" (Buffer.contents buf);
+  Buffer.clear buf;
+  T.reset_state term;
+  let out = Buffer.contents buf in
+  contains ~msg:"popped" ~sub:"\027]0;\027\\\027[23;0t" out;
+  Buffer.clear buf;
+  T.set_title term "three";
+  contains ~msg:"pushed again after a reset" ~sub:"\027[22;0t"
+    (Buffer.contents buf)
+
 (* On the primary screen the cells are the shell's as much as the
    program's: reset_state erases none of them, wherever the cursor is. *)
 let test_reset_state_erases_nothing () =
@@ -1155,6 +1172,7 @@ let () =
           test "reset state restores touched appearance"
             test_reset_state_restores_touched_appearance;
           test "reset state erases nothing" test_reset_state_erases_nothing;
+          test "the title comes back" test_title_comes_back;
           test "cursor batch matches immediate output"
             test_cursor_batch_matches_immediate_output;
           test "cursor reset survives partial output"

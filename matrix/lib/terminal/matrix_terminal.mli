@@ -315,10 +315,13 @@ val write_cursor_color : t -> (int * int * int) option -> Ansi.Writer.t -> unit
     terminal. *)
 
 val set_title : t -> string -> unit
-(** [set_title t s] sets the window title and the icon name to [s] (OSC 0), and
-    has {!reset_state} set them to [""]. [s] must hold no control character,
-    since [s] is written as it is and one would end the control function early.
-*)
+(** [set_title t s] sets the window title and the icon name to [s] (OSC 0). The
+    first [set_title] of a handle, or the first after {!reset_state}, first
+    pushes the title and icon name the terminal has on its title stack (XTWINOPS
+    [CSI 22 ; 0 t]), and has {!reset_state} pop them back ([CSI 23 ; 0 t]). A
+    terminal without the stack keeps the empty title that {!reset_state} sets
+    before it pops. [s] must hold no control character, since [s] is written as
+    it is and one would end the control function early. *)
 
 val copy_to_clipboard : t -> string -> unit
 (** [copy_to_clipboard t s] asks the terminal to set the clipboard to [s] (OSC
@@ -365,7 +368,8 @@ val reset_state : t -> unit
     handle's kitty keyboard flags, sets modifyOtherKeys to 0, and resets mouse
     tracking, bracketed paste, focus reporting, color scheme reports, resize
     reports, metaSendsEscape and grapheme cluster mode. It makes the whole
-    screen the scrolling region and leaves the alternate screen. It sets the
-    window title to [""] if the handle set it. The handle then tracks the state
-    {!make} gives, but for its capabilities, its pixel resolution and its cursor
+    screen the scrolling region and leaves the alternate screen. If the handle
+    set the window title, it sets the title to [""], then pops the one the
+    handle replaced ({!set_title}). The handle then tracks the state {!make}
+    gives, but for its capabilities, its pixel resolution and its cursor
     position. *)

@@ -58,8 +58,9 @@ type t = {
   mutable scroll_region : (int * int) option;
   mutable pixel_resolution : (int * int) option;
   (* Appearance the handle actually emitted. [reset_state] restores only what
-     was touched: blanking a title or resetting cursor colour/style the app
-     never set would clobber user- or shell-configured terminal state. *)
+     was touched: popping a title or resetting cursor colour/style the app
+     never set would clobber user- or shell-configured terminal state. The
+     title is pushed on the terminal's title stack while [title_sent]. *)
   mutable title_sent : bool;
   mutable cursor_style_sent : bool;
   mutable cursor_color_sent : bool;
@@ -89,6 +90,8 @@ let unicode_on = "\027[?2027h"
 let unicode_off = "\027[?2027l"
 let reset_sgr = "\027[0m"
 let cursor_default = "\027[0 q"
+let title_push = "\027[22;0t"
+let title_pop = "\027[23;0t"
 
 let reset_cursor_color_seq =
   Ansi.to_string (fun writer ->
@@ -394,8 +397,14 @@ let reset_cursor_color t =
   send t reset_cursor_color_seq;
   t.cursor_color_sent <- false
 
+(* The first title pushes the one it replaces on xterm's title stack
+   (XTWINOPS, "CSI 22 ; 0 t": "Save xterm icon and window title on stack"),
+   and [reset_state] pops it ("CSI 23 ; 0 t"), so the shell's title comes
+   back. *)
 let set_title t title =
-  t.title_sent <- true;
+  if not t.title_sent then (
+    t.title_sent <- true;
+    send t title_push);
   send t Ansi.(to_string (set_title ~title))
 
 let copy_to_clipboard t text =
@@ -489,8 +498,10 @@ let reset_state t =
   if t.grapheme_mode_enabled then enable_grapheme_mode t false;
   if t.scroll_region <> None then clear_scroll_region t;
   if t.alt_screen then leave_alternate_screen t;
+  (* A terminal without the stack keeps the empty title. *)
   if t.title_sent then (
-    set_title t "";
+    send t Ansi.(to_string (set_title ~title:""));
+    send t title_pop;
     t.title_sent <- false);
   send t cursor_show;
   t.cursor.visible <- true;
