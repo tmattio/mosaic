@@ -1032,14 +1032,20 @@ module Layout = struct
       let last = Source.line_end source line in
       if wrap = `None || width <= 0 || first = last then begin
         let natural = p.(last) - p.(first) in
+        (* A truncated line shows the prefix that fits in the cells before the
+           last one, which the ellipsis takes. A width of 0 or less has no
+           cell for either, and the row shows only the clusters of width 0
+           that begin the line. *)
         let visible_last =
-          if wrap = `None && truncate && width > 0 && natural > width then
+          if wrap = `None && truncate && natural > width then
             max first
-              (upper_bound p first (last + 1) (p.(first) + width - 1) - 1)
+              (upper_bound p first (last + 1) (p.(first) + max 0 (width - 1))
+              - 1)
           else last
         in
+        let ellipsis = visible_last < last && width > 0 in
         let columns =
-          p.(visible_last) - p.(first) + if visible_last < last then 1 else 0
+          p.(visible_last) - p.(first) + if ellipsis then 1 else 0
         in
         emit first last visible_last columns line 0
       end
@@ -1092,6 +1098,12 @@ module Layout = struct
   let row_start t i = (row t i).first
   let row_end t i = (row t i).last
   let row_width t i = (row t i).columns
+
+  (* The width of the clusters [r] shows before its ellipsis or its end. A
+     row has an ellipsis iff it is wider than that. *)
+  let prefix t r =
+    t.metrics.columns.(r.visible_last) - t.metrics.columns.(r.first)
+
   let logical_line t i = (row t i).line
   let continuation t i = (row t i).continuation
 
@@ -1121,7 +1133,7 @@ module Layout = struct
     let col =
       if g = r.last && g > r.visible_last then r.columns
       else if g > r.visible_last then
-        r.columns - if affinity = Upstream then 1 else 0
+        if affinity = Upstream then prefix t r else r.columns
       else t.metrics.columns.(g) - t.metrics.columns.(r.first)
     in
     (i, col)
@@ -1140,7 +1152,7 @@ module Layout = struct
       in
       let column = max 0 column in
       let g =
-        if r.visible_last < r.last && column >= r.columns - 1 then
+        if r.visible_last < r.last && column >= prefix t r then
           if column < r.columns then snap r.visible_last else r.last
         else
           let target = p.(r.first) + column in
@@ -1167,7 +1179,7 @@ module Layout = struct
       (n, n)
     else if column < 0 then (r.first, r.first)
     else if column >= r.columns then (r.last, r.last)
-    else if r.visible_last < r.last && column = r.columns - 1 then
+    else if r.visible_last < r.last && column = prefix t r then
       (r.visible_last, r.last)
     else
       let p = t.metrics.columns in
@@ -1199,12 +1211,8 @@ module Layout = struct
           f ~first:!g ~last:(!g + 1) ~column ~width ~ellipsis:false;
         g := next (!g + 1)
       done;
-      if
-        r.visible_last < r.last
-        && r.columns - 1 >= first_column
-        && r.columns - 1 < last_column
-      then
-        f ~first:r.visible_last ~last:r.last ~column:(r.columns - 1) ~width:1
-          ~ellipsis:true
+      let column = prefix t r in
+      if r.columns > column && column >= first_column && column < last_column
+      then f ~first:r.visible_last ~last:r.last ~column ~width:1 ~ellipsis:true
     end
 end

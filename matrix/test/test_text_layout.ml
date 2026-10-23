@@ -84,12 +84,21 @@ let columns c l ~first ~last =
   Layout.Source.columns ~width_method:c.width_method ~tab_width:c.tab_width
     (Layout.source l) ~first ~last
 
-(* The last boundary before a row's ellipsis, or the row's end. *)
-let visible_last l row =
-  let last = ref (Layout.row_end l row) in
+(* The last boundary before a row's omitted suffix, or the row's end. A row
+   narrower than its clusters without an ellipsis was truncated at a width of
+   0 or less, and shows only the clusters of width 0 that begin it. *)
+let visible_last c l row =
+  let first = Layout.row_start l row and last = ref (Layout.row_end l row) in
   Layout.iter_cells l ~row ~first_column:0 ~last_column:(Layout.row_width l row)
     (fun ~first ~last:_ ~column:_ ~width:_ ~ellipsis ->
       if ellipsis then last := first);
+  if Layout.row_width l row < columns c l ~first ~last:!last then begin
+    let end_ = !last in
+    last := first;
+    while !last < end_ && columns c l ~first ~last:(!last + 1) = 0 do
+      incr last
+    done
+  end;
   !last
 
 let column_of c l row g = columns c l ~first:(Layout.row_start l row) ~last:g
@@ -116,12 +125,14 @@ let position = pair int int
 (* ───── Exact round trip ───── *)
 
 (* Visible: not past the row's ellipsis. Unambiguous: neither neighbor on the
-   row sits at the same column. *)
+   row sits at the same column, and the row shows a cell, since a row that
+   shows none puts every boundary at column 0, with its end. *)
 let round_trips c l (k : Layout.caret) =
   let row, _ = Layout.locate l k in
   let g = k.grapheme in
-  let first = Layout.row_start l row and last = visible_last l row in
+  let first = Layout.row_start l row and last = visible_last c l row in
   g <= last
+  && (last = Layout.row_end l row || Layout.row_width l row > 0)
   && (g = first || columns c l ~first:(g - 1) ~last:g > 0)
   && (g = last || columns c l ~first:g ~last:(g + 1) > 0)
 
@@ -159,7 +170,7 @@ let canonical_snapping c =
             equal ~msg:"keeps the clicked row" int row row';
             (* Nearest to the cell's left edge, ties forward, among the
                boundaries before any ellipsis. *)
-            let last = visible_last l row in
+            let last = visible_last c l row in
             if last = Layout.row_end l row then begin
               let target = max 0 column in
               for g = Layout.row_start l row to last do
@@ -203,7 +214,7 @@ let locate_is_monotonic c =
 let cells_skip_zero_width c =
   let l = layout c in
   for row = 0 to Layout.row_count l - 1 do
-    let first = Layout.row_start l row and last = visible_last l row in
+    let first = Layout.row_start l row and last = visible_last c l row in
     let row_width = Layout.row_width l row in
     for first_column = 0 to row_width - 1 do
       let expected =
@@ -263,6 +274,25 @@ let omitted_suffix_end_locates_after_ellipsis () =
   equal position (0, 2)
     (Layout.locate l Layout.{ grapheme = 4; affinity = Upstream })
 
+(* At a width of 0 or less a truncated line has no cell for its clusters or
+   for the ellipsis, so its row shows nothing. *)
+let truncation_without_cells () =
+  List.iter
+    (fun width ->
+      let msg what = Printf.sprintf "%s at width %d" what width in
+      let l = plain ~width ~truncate:true (zwsp ^ "abc\nd") in
+      equal ~msg:(msg "rows") int 2 (Layout.row_count l);
+      equal ~msg:(msg "max width") int 0 (Layout.max_width l);
+      equal ~msg:(msg "row width") int 0 (Layout.row_width l 0);
+      equal ~msg:(msg "row end") int 4 (Layout.row_end l 0);
+      Layout.iter_cells l ~row:0 ~first_column:(-2) ~last_column:2
+        (fun ~first:_ ~last:_ ~column:_ ~width:_ ~ellipsis:_ ->
+          fail (msg "a cell"));
+      equal ~msg:(msg "locate") position (0, 0)
+        (Layout.locate l Layout.{ grapheme = 2; affinity = Upstream });
+      equal ~msg:(msg "hit") int 4 (Layout.hit l ~row:0 ~column:0).grapheme)
+    [ 0; -2 ]
+
 (* A row out of range stands for the start or the end of the source, in
    coverage as in hit. *)
 let coverage_maps_rows_outside () =
@@ -292,6 +322,7 @@ let () =
             omitted_suffix_end_locates_after_ellipsis;
           test "coverage maps rows outside as hit does"
             coverage_maps_rows_outside;
+          test "truncation without cells" truncation_without_cells;
         ];
       group "Hit and locate"
         [

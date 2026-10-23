@@ -326,7 +326,9 @@ module Layout : sig
       own. Without wrapping, a layout may {e truncate} a line wider than the
       width, which then shows the prefix that fits in one cell less, and an
       {e ellipsis}, a cell that stands for the clusters left out, its
-      {e omitted suffix}. The program draws the ellipsis.
+      {e omitted suffix}. The program draws the ellipsis. At a width of [0] or
+      less the ellipsis does not fit either, and a truncated line shows only the
+      clusters of width [0] that begin it.
 
       A {e caret} is a boundary with an {e affinity}. A boundary where a line
       wraps is both the end of a row and the start of the next, and one inside
