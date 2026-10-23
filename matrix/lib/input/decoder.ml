@@ -293,6 +293,9 @@ type t = {
   mutable cursor_reports : int;
   mutable string_replies : int;
   mutable on_token : P.token -> unit;
+  (* Whether [feed], [idle], [finish] or [cut_paste] is running, and so may be
+     calling back. *)
+  mutable decoding : bool;
 }
 
 let create () =
@@ -316,6 +319,7 @@ let create () =
       cursor_reports = 0;
       string_replies = 0;
       on_token = ignore;
+      decoding = false;
     }
   in
   d.on_token <-
@@ -342,7 +346,14 @@ let take d =
   d.token <- None;
   t
 
-let reset d =
+(* A callback runs in the middle of a step, so what changes the state must
+   wait until the decoding function that called it has returned. *)
+let check_free d name =
+  if d.decoding then
+    invalid_arg
+      ("Matrix_input.Decoder." ^ name ^ ": called from the decoder's callback")
+
+let drop d =
   P.reset d.p;
   d.st <- Ground;
   d.token <- None;
@@ -1040,10 +1051,24 @@ let parameter_run d b i stop emit =
     step d (Char.code (Bytes.unsafe_get b i)) emit;
     i + 1)
 
-let feed d b ~off ~len emit =
-  if off < 0 || len < 0 || off > Bytes.length b - len then
-    invalid_arg "Matrix_input.Decoder.feed";
-  let stop = off + len in
+let reset d =
+  check_free d "reset";
+  drop d
+
+(* [decode d name step emit] is [step d emit], with [d] marked as decoding
+   while it runs. A callback that raises leaves the step half done, so what
+   [d] holds is dropped, the one state that is then defined. *)
+let decode d name step emit =
+  check_free d name;
+  d.decoding <- true;
+  match step d emit with
+  | () -> d.decoding <- false
+  | exception e ->
+      d.decoding <- false;
+      drop d;
+      raise e
+
+let feed_bytes d b off stop emit =
   let i = ref off in
   while !i < stop do
     match d.st with
@@ -1055,6 +1080,18 @@ let feed d b ~off ~len emit =
         incr i
   done
 
+let feed d b ~off ~len emit =
+  if off < 0 || len < 0 || off > Bytes.length b - len then
+    invalid_arg "Matrix_input.Decoder.feed";
+  check_free d "feed";
+  d.decoding <- true;
+  match feed_bytes d b off (off + len) emit with
+  | () -> d.decoding <- false
+  | exception e ->
+      d.decoding <- false;
+      drop d;
+      raise e
+
 let pending d =
   match d.st with
   | Ground -> if d.u8_len > 0 then Sequence else Nothing
@@ -1062,7 +1099,7 @@ let pending d =
   | Header _ | X10 _ | Linux _ -> Sequence
   | String _ | String_esc _ | Paste _ -> Nothing
 
-let idle d emit =
+let silence d emit =
   match d.st with
   | Ground -> if d.u8_len > 0 then flush_invalid d emit
   | Esc pre ->
@@ -1082,7 +1119,7 @@ let idle d emit =
       emit (Cut `Mouse)
   | String _ | String_esc _ | Paste _ -> ()
 
-let cut_paste d emit =
+let end_paste d emit =
   match d.st with
   | Paste m ->
       if m > 0 then emit (Paste_data (String.sub paste_end 0 m));
@@ -1090,13 +1127,17 @@ let cut_paste d emit =
       emit (Paste_end `Cut)
   | _ -> ()
 
-let finish d emit =
-  idle d emit;
+let end_input d emit =
+  silence d emit;
   (match d.st with
   | String _ | String_esc _ -> emit (Cut `String)
-  | Paste _ -> cut_paste d emit
+  | Paste _ -> end_paste d emit
   | _ -> ());
-  reset d
+  drop d
+
+let idle d emit = decode d "idle" silence emit
+let cut_paste d emit = decode d "cut_paste" end_paste emit
+let finish d emit = decode d "finish" end_input emit
 
 (* Owed replies *)
 

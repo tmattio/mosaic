@@ -33,7 +33,16 @@
 
     Unless a function's doc says otherwise, a function that takes a callback [f]
     calls it on each event in order before it returns, and no function blocks or
-    does I/O.
+    does I/O. [f] may call {!expect}, {!settle} and {!val-pending} on the
+    decoder that calls it, and the bytes after the event then decode with the
+    new counts, as when the reply that ends a batch of queries settles it. A
+    call from [f] to {!feed}, {!idle}, {!finish}, {!cut_paste} or {!reset} on
+    that decoder raises [Invalid_argument], since [f] runs in the middle of
+    decoding. If [f] raises, the exception passes through the function that
+    called [f], which first drops what the decoder holds of the stream, as
+    {!reset} does. What it held from earlier calls is dropped with the bytes of
+    that call it had not yet decoded. The decoder is then usable again, at the
+    start of a stream and owed what it was owed.
 
     This loop reads the terminal's input [fd] and passes each event to [handle].
     It waits with a timeout only while the decoder holds bytes, so {!idle} runs

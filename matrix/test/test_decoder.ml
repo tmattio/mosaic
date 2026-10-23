@@ -824,6 +824,67 @@ let owed_tests =
         let d = D.create () in
         raises_match (Exn.invalid_arg ~substring:"feed") (fun () ->
             D.feed d (Bytes.create 2) ~off:1 ~len:2 ignore));
+    test "the callback may settle, and the next bytes see it" (fun () ->
+        let d = D.create () in
+        D.expect d (owed ~cursor:1 ());
+        let out = ref [] in
+        let emit e =
+          out := show e :: !out;
+          match e with
+          | D.Reply (I.Reply.Primary_attributes _) ->
+              D.settle d (owed ~cursor:1 ())
+          | _ -> ()
+        in
+        let s = "\x1b[?62c\x1b[1;2R" in
+        D.feed d (Bytes.of_string s) ~off:0 ~len:(String.length s) emit;
+        equal events
+          [ "Reply Primary_attributes 62"; "Key Shift+F 3" ]
+          (List.rev !out));
+    test "the callback must not decode with its decoder" (fun () ->
+        let feed d s f =
+          D.feed d (Bytes.of_string s) ~off:0 ~len:(String.length s) f
+        in
+        List.iter
+          (fun (name, call) ->
+            let d = D.create () in
+            raises_match ~msg:name (Exn.invalid_arg ~substring:name) (fun () ->
+                feed d "\x1b[200~ab" (fun _ -> call d));
+            (* The decoder is free again once the exception has left it. *)
+            let out = ref [] in
+            feed d "x" (fun e -> out := show e :: !out);
+            equal ~msg:(name ^ ", then") events [ "Key 'x' text \"x\"" ]
+              (List.rev !out))
+          [
+            ("feed", fun d -> feed d "x" ignore);
+            ("idle", fun d -> D.idle d ignore);
+            ("finish", fun d -> D.finish d ignore);
+            ("cut_paste", fun d -> D.cut_paste d ignore);
+            ("reset", D.reset);
+          ]);
+    test "a callback that raises drops what the decoder holds" (fun () ->
+        let feed d s f =
+          D.feed d (Bytes.of_string s) ~off:0 ~len:(String.length s) f
+        in
+        let fail_on_first _ = raise Exit in
+        let after d s =
+          let out = ref [] in
+          feed d s (fun e -> out := show e :: !out);
+          List.rev !out
+        in
+        (* A paste begun by an earlier call, and the rest of this call. *)
+        let d = D.create () in
+        D.expect d (owed ~cursor:1 ());
+        feed d "\x1b[200~" ignore;
+        raises ~msg:"feed" Exit (fun () -> feed d "ab\x1b[201~c" fail_on_first);
+        equal ~msg:"nothing held" bool true (D.pending d = D.Nothing);
+        equal ~msg:"input again, still owed" events
+          [ "Key 'z' text \"z\""; "Reply Cursor 0,1" ]
+          (after d "z\x1b[1;2R");
+        (* An ESC held by an earlier call, which idle decides. *)
+        let d = D.create () in
+        feed d "\x1b" ignore;
+        raises ~msg:"idle" Exit (fun () -> D.idle d fail_on_first);
+        equal ~msg:"after idle" events [ "Key 'x' text \"x\"" ] (after d "x"));
   ]
 
 (* Regressions --------------------------------------------------------------- *)
