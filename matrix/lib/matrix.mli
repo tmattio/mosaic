@@ -330,7 +330,8 @@ val run : ?backend:Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
       read. So a flood of one kind delays the others by at most a frame, and
       within a kind everything comes in order;
     + returns a {!Frame} if one was asked for ({!request_redraw}), one frame
-      interval has passed since the last, and the runtime waits for no answer
+      interval has passed since the last when the work ends (work that took the
+      budget may have taken the interval), and the runtime waits for no answer
       from the terminal (the place of the live region after a resize or a
       release). Before it, if the terminal's size changed, a {!Resize}.
 

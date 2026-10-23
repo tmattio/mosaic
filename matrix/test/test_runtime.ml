@@ -276,8 +276,10 @@ let test_frame_requests () =
 
 (* A turn: one step of each kind that has some, in kind order, then the
    events, the timers and the posts, until all are done or one frame interval
-   has passed since the clock was read; then the frame. Each step here costs
-   10 ms; the interval is 16.7 ms. *)
+   has passed since the clock was read; then the frame, once its interval
+   has passed when the work ends. Each step here costs 10 ms; the interval is
+   16.7 ms: the second turn's work ends at 1,050 ms, past the frame due at
+   1,046.7 ms. *)
 let test_turn_order () =
   let f = fake ~input:[] () in
   let log = Buffer.create 64 in
@@ -322,7 +324,7 @@ let test_turn_order () =
         | Event _ -> loop ()
       in
       loop ());
-  equal string "a timer p1 frame@1030 b p2 c frame@1060 stopped "
+  equal string "a timer p1 frame@1030 b p2 frame@1050 c stopped "
     (Buffer.contents log)
 
 (* While an event decoded is still waiting, the input is not read: the rest

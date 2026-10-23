@@ -1527,9 +1527,13 @@ let render_blocked t =
       false
   | None -> false
 
+(* A frame is due once its interval has passed by the clock as the turn's
+   work ends: work that took the turn's budget may have taken the interval
+   with it. *)
 let frame_due t =
   t.dirty && (not t.released)
-  && t.now >= t.last_frame + t.interval
+  && (t.now >= t.last_frame + t.interval
+     || t.backend.now () >= t.last_frame + t.interval)
   && not (render_blocked t)
 
 (* The time the turn waits until: now when work is left, otherwise the
