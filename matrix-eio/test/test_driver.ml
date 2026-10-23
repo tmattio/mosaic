@@ -82,6 +82,12 @@ let assert_signal_handler ~msg number expected =
   | Sys.Signal_handle actual -> is_true ~msg (actual == expected)
   | Sys.Signal_default | Sys.Signal_ignore -> fail msg
 
+(* Whether a read of [fd], with no input, returns at once. The byte that
+   ends a read that blocks is written only once the read has had a minute:
+   a read that returns at once has returned by then on any host, and one
+   that blocks would wait forever. A shorter wait misreports a read whose
+   thread had not run yet, and knowing that it started would not do, as it
+   may still be between starting and reading. *)
 let nonblocking_read_returns_without_input ~master fd =
   let outcome = Atomic.make `Pending in
   let byte = Bytes.create 1 in
@@ -98,7 +104,7 @@ let nonblocking_read_returns_without_input ~master fd =
         Atomic.set outcome result)
       ()
   in
-  let deadline = Unix.gettimeofday () +. 0.1 in
+  let deadline = Unix.gettimeofday () +. 60. in
   while Atomic.get outcome = `Pending && Unix.gettimeofday () < deadline do
     Thread.delay 0.001
   done;
