@@ -39,12 +39,12 @@ type t = {
   mutable resize_reports_enabled : bool;
   mutable meta_sends_escape_enabled : bool;
   mutable grapheme_mode_enabled : bool;
-  (* [*_armed] is not a duplicate of [*_enabled]: armed is set {e before} the
-     enable sequence is written, enabled only after. When the output callback
-     raises mid-enable the sequence may have reached the terminal even though
-     the enable never completed — [reset_state] keys its disable sequences off
-     armed so a partially-enabled protocol is still unwound, while the
-     [*_enabled] accessors keep reporting the confirmed steady state. *)
+  (* [*_armed] is set before the enable sequence is written, and [*_enabled]
+     only after. When the output callback raises during an enable, the
+     sequence may have reached the terminal although the enable never
+     completed. [reset_state] writes its disable sequences by armed, so a
+     protocol enabled in part is still unwound, while the [*_enabled]
+     accessors report the state confirmed. *)
   mutable mouse_armed : bool;
   mutable bracketed_paste_armed : bool;
   mutable focus_armed : bool;

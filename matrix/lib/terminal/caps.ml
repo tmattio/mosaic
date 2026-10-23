@@ -381,10 +381,11 @@ let derive ev =
           | Some (Set | Reset | Permanently_set) -> Some `Unicode
           | Some Permanently_reset -> Some `Wcwidth
           | Some Not_recognized | None -> None);
-          (* kitty answers mode 2027 as not recognized, and places grapheme
-             clusters (measured: 0.49.2 as [`Unicode] does; 0.41.1, older than
-             its cell splitting algorithm of 0.42, nearer [`Unicode] than
-             [`Wcwidth]). *)
+          (* xterm and VTE answer mode 2027 as not recognized and st does not
+             answer, and the three measure by character. kitty answers not
+             recognized too, and places grapheme clusters (measured: 0.49.2 as
+             [`Unicode] does; 0.41.1, older than its cell splitting algorithm
+             of 0.42, nearer [`Unicode] than [`Wcwidth]). *)
           when_ (is "kitty") `Unicode;
           when_ (tmux || is "apple_terminal" || is "termux") `Wcwidth;
           when_ (Option.is_some mux) `Wcwidth;

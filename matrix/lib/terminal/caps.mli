@@ -1,124 +1,170 @@
 (** Terminal capabilities, derived from evidence.
 
-    What a terminal can do is learned from three sources: its answers to
-    queries, its identity (the name and version it reports, or that the
-    environment names), and guesses from the environment. They disagree, and an
-    answer can arrive late, so the capabilities are not accumulated: they are a
-    function, {!derive}, of the evidence gathered so far, and a later answer can
-    take back what an earlier guess gave.
+    The {e capabilities} of a terminal ({!t}) are the facts a program needs
+    about it, such as whether it shows 24-bit color or reports focus changes.
+    They are learned from three sources. An {e answer} is what the
+    {e terminal that does the work}, the one that draws the screen and reads the
+    keyboard, replies to a query. Inside a multiplexer that is the multiplexer.
+    An {e identity} is the name and version of the terminal, which it reports or
+    the environment names. A {e guess} comes from the environment alone. The
+    sources disagree, and an answer can arrive late, so the capabilities are a
+    function, {!derive}, of the {e evidence} gathered so far ({!type-evidence}),
+    and a later answer can take back what an earlier guess gave.
+
+    A program learns the capabilities in these steps:
+    + {!val-env} reads the environment once, and {!val-evidence} makes the
+      evidence before any answer.
+    + {!ask} gives the bytes of the first {e batch} of queries, {!Probe}, which
+      the program writes to the terminal.
+    + The program adds each reply to the evidence with {!add}, {!val-cursor} and
+      {!answered}, and {!derive} gives the capabilities so far.
+    + {!next} gives the batch to send after an answered one, until it is [None].
+
+    This is what the environment alone gives, before the terminal answers:
+    {[
+    let caps =
+      Matrix_terminal.Caps.(
+        derive (evidence (env Sys.getenv_opt ~win32:Sys.win32)))
+    ]}
 
     {1:precedence Precedence}
 
     Each fact is taken from the first source that has it:
-    + {b user policy}, which the person running the program decides:
+    + {b User policy}, which the person running the program decides.
       [MATRIX_FORCE_UNICODE] and [MATRIX_FORCE_WCWIDTH] set the width method,
       and [VHS_RECORD] (a recording) asks for the plain widths and no kitty
-      protocols;
-    + {b corrections} keyed on the terminal's identity, for a terminal that
-      answers but is known to do otherwise, each with its reason: Ghostty from
-      1.3 widens graphemes past what mode 2027 describes;
-    + {b the answer} of the terminal that does the work;
-    + {b identity}: what a terminal of that name and version is known to do;
-    + {b guesses} from the environment: [TERM], [COLORTERM], the platform, and
-      the description the terminfo database has for [TERM] ({!env}), which only
-      ever adds a fact: direct colour ([RGB], [Tc], or [setrgbf] with
-      [setrgbb]), bracketed paste ([BE]), focus reports ([fe]) and synchronized
-      output ([Sync] as mode 2026). A description leaves out direct colour and
-      synchronized output for most terminals that have them, and a terminal that
-      is not the one [TERM] names (ssh, a multiplexer) may have no description
-      here at all, so its silence says nothing;
-    + the default, which a caller may supply in place of the environment
-      ({!assume}).
+      protocols.
+    + {b Corrections} keyed on the terminal's identity, for a terminal that
+      answers but is known to do otherwise, each with its reason. Ghostty from
+      1.3 widens graphemes past what mode 2027 describes.
+    + {b The answer} of the terminal that does the work.
+    + {b Identity}, what a terminal of that name and version is known to do.
+    + {b Guesses} from the environment, [TERM], [COLORTERM], the platform and
+      the description the terminfo database has for [TERM] ({!val-env}). A
+      description only ever adds a fact, direct color ([RGB], [Tc], or [setrgbf]
+      with [setrgbb]), bracketed paste ([BE]), focus reporting ([fe]) or
+      synchronized output ([Sync] as mode 2026). Descriptions leave out direct
+      color and synchronized output for most terminals that have them, and a
+      terminal other than the one [TERM] names (over ssh, or in a multiplexer)
+      may have no description here, so a description's silence takes nothing
+      away.
+    + The default, [false], [None] or [`Wcwidth], or the facts the caller
+      assumes in place of the environment ({!assume}).
 
-    A question is asked of the terminal that does the work. Inside tmux, tmux
-    draws the screen and reads the keyboard, so questions about drawing and keys
-    go to tmux itself, which answers or stays silent. tmux answers no mode query
-    before 3.6, and none for mode 2026 before 3.7, so its facts then come from
-    its identity, by version. It brackets the pastes it passes to a pane from
-    1.7, and passes focus reports to a pane from 1.8 while its [focus-events]
-    option is on. It synchronizes a pane's output from 3.7, and it has no mode
-    2027. Only a question about the terminal outside, such as kitty graphics,
+    Inside tmux, questions about drawing and keys go to tmux itself, which
+    answers or stays silent. tmux answers no mode query before 3.6, and none for
+    mode 2026 before 3.7, so its facts then come from its identity, by version.
+    It brackets the pastes it passes to a pane from 1.7 and handles focus
+    reporting from 1.8, and it synchronizes a pane's output from 3.7. It has no
+    mode 2027. A question about the terminal outside, such as kitty graphics,
     which tmux passes through untouched, is wrapped for tmux's passthrough, and
-    only once passthrough is known to be on: tmux drops wrapped queries unless
+    only once passthrough is known to be on. tmux drops wrapped queries unless
     its [allow-passthrough] option is set, which it is not by default since 3.3.
 
     The environment describes the terminal the process started in, which is not
-    always the one it talks to: [TERM_PROGRAM] survives into ssh sessions, GNU
-    screen, zellij and tmux. The environment gives an identity only when the
-    terminal is directly attached, with none of [SSH_CONNECTION], [SSH_CLIENT],
-    [SSH_TTY], [TMUX], [STY] or [ZELLIJ] set. An identity the terminal reports
+    always the one it talks to. [TERM_PROGRAM] survives into ssh sessions, GNU
+    screen, zellij and tmux. So the environment gives an identity only when the
+    terminal is {e directly attached}, that is, when none of [SSH_CONNECTION],
+    [SSH_CLIENT], [SSH_TTY], [TMUX], [STY] and [ZELLIJ] is set and [TERM] starts
+    with none of [tmux], [screen] and [zellij]. An identity the terminal reports
     itself (XTVERSION) is an answer and holds everywhere.
 
     {1:batches Batches}
 
     Queries go in batches, each ending with a primary device attributes query
     (DA1), which every terminal answers. A terminal answers in order, so the DA1
-    reply says that the batch has been answered: "If an answer for the device
-    attributes is received without getting back an answer for the progressive
-    enhancement the terminal does not support this protocol" (kitty keyboard
-    protocol, "Detection of support"). A query that is silent before its batch's
-    DA1 reply is answered "no" where its protocol says so (kitty graphics) and
-    stays unknown otherwise: a terminal without DECRQM says nothing of its
-    modes. The caller sends the batches, settles them and routes their replies;
-    {!ask} gives each batch's bytes, {!next} the batch that follows. *)
+    reply says that the batch has been answered. The kitty keyboard protocol
+    states it as "If an answer for the device attributes is received without
+    getting back an answer for the progressive enhancement the terminal does not
+    support this protocol" ("Detection of support"). A query still silent when
+    its batch's DA1 reply comes is answered "no" where its protocol says so
+    (kitty graphics), and stays unknown otherwise, since a terminal without
+    DECRQM says nothing of its modes. The program writes the batches, waits for
+    their DA1 replies and passes the replies here. *)
 
 (** {1:caps Capabilities} *)
 
 type t = {
-  rgb : bool;  (** 24-bit color is safe. *)
+  rgb : bool;
+      (** The terminal shows 24-bit color. No query tells it. It comes from
+          kitty's identity, a [COLORTERM] of [truecolor] or [24bit], a Windows
+          console, or the description's direct color. *)
   kitty_keyboard : int option;
-      (** [Some flags] when the terminal speaks the kitty keyboard protocol,
-          with the enhancement flags it last reported in effect; [None] when it
-          has not answered the protocol's query. *)
-  kitty_graphics : bool;  (** The kitty graphics protocol is supported. *)
-  bracketed_paste : bool;  (** Bracketed paste (mode 2004) is supported. *)
-  focus_tracking : bool;  (** Focus reports (mode 1004) are supported. *)
+      (** [Some flags] when the terminal has answered the kitty keyboard
+          protocol's query, with the enhancement flags it last reported. It is
+          [None] under [VHS_RECORD]. *)
+  kitty_graphics : bool;
+      (** The kitty graphics protocol, from the answer to its query or kitty's
+          identity. Silence before the DA1 reply of the batch that asked says
+          the terminal does not have it. *)
+  bracketed_paste : bool;
+      (** Bracketed paste (mode 2004), from the mode's report, kitty's identity,
+          tmux from 1.7, a Windows console, or the description's [BE]. *)
+  focus_tracking : bool;
+      (** The terminal handles focus reporting (mode 1004), from the mode's
+          report, tmux from 1.8, or the description's [fe]. When reports come is
+          up to the terminal. tmux sends a pane the focus changes only while its
+          [focus-events] option is on. *)
   unicode_width : Matrix_text.width_method;
       (** How the terminal measures text, which its answer for mode 2027
           (grapheme cluster mode, "Unicode in Terminals") tells, as a DECRPM
-          setting (VT510). Set or permanently set is [`Unicode]. Reset says that
-          the terminal has the mode and can set it, which the runtime does
-          ({!grapheme_mode}): [`Unicode]. Permanently reset is [`Wcwidth]: with
-          the mode off a terminal behaves "as if this specification was not
-          implemented at all". The answer "not recognized", or none, says that
-          the terminal does not have the mode, and such a terminal measures each
-          character by itself, as wcwidth does: [`Wcwidth], unless its identity
-          says otherwise. xterm and VTE answer "not recognized" and st does not
-          answer, and they measure by character; kitty answers "not recognized"
-          and places grapheme clusters, so its identity gives [`Unicode]. *)
+          setting (VT510). Set, permanently set and reset give [`Unicode], since
+          a terminal that answers reset has the mode and a program can set it
+          ({!grapheme_mode}). Permanently reset gives [`Wcwidth], since with the
+          mode off a terminal behaves "as if this specification was not
+          implemented at all". A terminal that answers "not recognized", or does
+          not answer, does not have the mode and measures each character by
+          itself, as wcwidth does, so it gets [`Wcwidth] unless its identity or
+          [TERM] says otherwise. kitty answers "not recognized" and places
+          grapheme clusters, so its identity gives [`Unicode]. *)
   grapheme_mode : bool option;
-      (** Mode 2027 as the terminal answered. [Some false] says it has the mode
-          and it is reset, and can be set: the runtime then sets it while it
-          measures by grapheme clusters, and resets it when it gives the
-          terminal back. [Some true] says it is set, and the runtime leaves it
-          so. [None] when the terminal does not have the mode, cannot change it,
-          or did not answer. *)
-  sgr_pixels : bool;  (** SGR pixel mouse reports (mode 1016) are supported. *)
+      (** Mode 2027 as the terminal answered. [Some false] says the mode is
+          reset and a program can set it. A program must set it only then, since
+          [Matrix_terminal.reset_state] resets it. [Some true] says the mode is
+          set or permanently set. [None] when the terminal does not have the
+          mode, has it permanently reset, or has not answered. *)
+  sgr_pixels : bool;
+      (** SGR pixel mouse reports (mode 1016), from the mode's report. *)
   color_scheme_updates : bool;
-      (** Color scheme change reports (mode 2031) are supported. *)
+      (** Color scheme change reports (mode 2031), from the mode's report. *)
   explicit_width : bool;
-      (** The terminal sizes text as OSC 66 says: [w=1] moves the cursor one
-          cell. *)
+      (** The terminal sizes text as OSC 66 says, as {!Probe} measures ([w=1]
+          moves the cursor one cell). *)
   explicit_cursor_positioning : bool;
-      (** The terminal may measure graphemes otherwise than the renderer, so the
-          renderer places the cursor after each wide one. *)
-  scaled_text : bool;  (** OSC 66 scaled text ([s=2]) is supported. *)
-  sixel : bool;  (** SIXEL graphics: DA1 attribute 4. *)
-  sync : bool;  (** Synchronized output (mode 2026) is supported. *)
-  hyperlinks : bool;  (** OSC 8 hyperlinks are supported. *)
+      (** The terminal may measure a grapheme otherwise than the program, so a
+          renderer places the cursor after each wide grapheme. It comes from the
+          identity of tmux or alacritty, or from any multiplexer. *)
+  scaled_text : bool;  (** OSC 66 scaled text ([s=2]), as {!Probe} measures. *)
+  sixel : bool;
+      (** SIXEL graphics, attribute 4 in the DA1 reply to {!Probe}. *)
+  sync : bool;
+      (** Synchronized output (mode 2026), from the mode's report, tmux from
+          3.7, the identity of Ghostty, kitty, WezTerm, Alacritty or iTerm, a
+          [TERM] that names one of them, or the description's [Sync]. *)
+  hyperlinks : bool;
+      (** OSC 8 hyperlinks. No query tells it. It comes from the identity of
+          tmux, Ghostty, kitty, WezTerm, Alacritty or iTerm, a [TERM] that names
+          one of the five terminals, a [COLORTERM] of [truecolor] or [24bit], or
+          a Windows console. *)
   meta_sends_escape : bool option;
       (** xterm's metaSendsEscape (mode 1036) as the terminal answered.
-          [Some false] says it has the mode and it is reset, and can be set: Alt
-          then arrives as the character with its high bit set, not as an ESC
-          before it. [None] when the terminal does not have the mode, cannot
-          change it, or did not answer. *)
+          [Some false] says the mode is reset and a program can set it. A
+          program must set it only then, since [Matrix_terminal.reset_state]
+          resets it. While the mode is reset, Alt sends the key's character with
+          its high bit set. [Some true] says the mode is set or permanently set.
+          [None] when the terminal does not have the mode, has it permanently
+          reset, or has not answered. *)
   multiplexer : [ `Tmux | `Screen ] option;
-      (** The multiplexer between the program and the terminal: tmux when it
-          reports itself (XTVERSION) or [TMUX] is set, GNU screen when [STY] is
-          set, else as [TERM]'s prefix says. *)
+      (** The multiplexer between the program and the terminal. When the
+          terminal has answered XTVERSION, it is tmux if the name reported
+          contains [tmux], and none otherwise. Before that it is tmux when
+          [TMUX] is set, GNU screen when [STY] is set, and else as [TERM]
+          starts, with [tmux] or [screen]. *)
   identity : (string * string) option;
-      (** The terminal's name and version, from XTVERSION, or from
-          [TERM_PROGRAM] and [TERM_PROGRAM_VERSION] when directly attached. *)
+      (** The terminal's name and version, from XTVERSION, or, when the terminal
+          is directly attached, from [TERM_PROGRAM] and [TERM_PROGRAM_VERSION],
+          ["kitty"] when [KITTY_WINDOW_ID] is set, or ["termux"] with
+          [TERMUX_VERSION]. *)
 }
 (** The type for capabilities. *)
 
@@ -129,15 +175,15 @@ type env
 
 val env :
   ?terminfo:Matrix_terminfo.t -> (string -> string option) -> win32:bool -> env
-(** [env ~terminfo getenv ~win32] reads the environment through [getenv], such
-    as [Sys.getenv_opt]; an empty value counts as unset. [terminfo] is the
-    description of [TERM], if there is one ([Tty.terminfo] finds it). [win32]
-    says the terminal is a Windows console. *)
+(** [env ~terminfo getenv ~win32] is the environment, read once through
+    [getenv], such as [Sys.getenv_opt], where an empty value counts as unset.
+    [terminfo] is the description of [TERM], if there is one ([Tty.terminfo]
+    finds it). [win32] says the terminal is a Windows console. *)
 
 (** {1:evidence Evidence} *)
 
 type evidence
-(** The type for what is known of a terminal: its environment and the answers
+(** The type for what is known of a terminal, its environment and the answers
     received so far. *)
 
 val evidence : env -> evidence
@@ -148,10 +194,11 @@ val assume : t -> evidence
     answer gives is as [caps] says. *)
 
 val add : evidence -> Matrix_input.Reply.t -> evidence
-(** [add ev r] is [ev] with the reply [r]: a mode report (DECRPM), the kitty
-    keyboard flags, XTVERSION or a kitty graphics reply. Other replies, and the
-    cursor reports and DA1 replies whose meaning depends on their batch
-    ({!cursor}, {!answered}), leave [ev] as it is. *)
+(** [add ev r] is [ev] with the reply [r], a report of a DEC private mode
+    (DECRPM), the kitty keyboard flags, XTVERSION or a reply to the kitty
+    graphics query. Other replies leave [ev] as it is, among them the cursor
+    reports and DA1 replies, whose meaning depends on their batch
+    ({!val-cursor}, {!answered}). *)
 
 val derive : evidence -> t
 (** [derive ev] is the capabilities [ev] gives, by the {!section-precedence}. *)
@@ -162,20 +209,23 @@ val derive : evidence -> t
 type batch =
   | Probe
       (** The startup batch, to the terminal that does the work. It starts with
-          S7C1T, so that no reply comes with 8-bit controls, then asks for the
-          mode reports, two OSC 66 widths, each written at the start of the
-          second row and followed by a cursor position report, XTVERSION, the
-          kitty keyboard flags, the kitty graphics query unless a multiplexer is
-          in the way, and DA1. *)
+          S7C1T, so that no reply comes with 8-bit controls, and saves the
+          cursor. It asks for the reports of modes 1016, 2027, 2031, 1004, 2004,
+          2026 and 1036. It writes two spaces with OSC 66 at the start of the
+          screen's second row, one of width 1 and one of scale 2, each followed
+          by a cursor position report. It then asks for XTVERSION, the kitty
+          keyboard flags, and, unless a multiplexer is in the way, kitty
+          graphics. It restores the cursor and ends with DA1. *)
   | Passthrough
-      (** DA1 alone, wrapped for tmux: answered only when tmux passes it on. *)
+      (** DA1 alone, wrapped for tmux, which is answered only when tmux passes
+          it on. *)
   | Outer
-      (** Questions about the terminal outside tmux, wrapped for tmux: the kitty
+      (** Questions about the terminal outside tmux, wrapped for tmux, the kitty
           graphics query, then DA1. *)
 
 val ask : evidence -> batch -> string * Matrix_input.Decoder.owed
-(** [ask ev b] is the bytes of [b] and the replies it owes the decoder (see
-    {!Matrix_input.Decoder.expect}). *)
+(** [ask ev b] is the bytes of [b] and the replies it owes the decoder
+    ({!Matrix_input.Decoder.expect}). *)
 
 val cursor : evidence -> batch -> index:int -> row:int -> col:int -> evidence
 (** [cursor ev b ~index ~row ~col] is [ev] with the [index]th cursor position
@@ -187,6 +237,6 @@ val answered : evidence -> batch -> attributes:int list -> evidence
     be there, where its protocol says that silence means so. *)
 
 val next : evidence -> batch -> batch option
-(** [next ev b] is the batch to send once [b] is answered, if any: inside tmux,
-    {!Passthrough} after {!Probe}, then {!Outer} once passthrough is known to be
-    on. *)
+(** [next ev b] is the batch to send once [b] is answered, if any. Inside tmux,
+    it is {!Passthrough} after {!Probe}, then {!Outer} once passthrough is known
+    to be on. *)
