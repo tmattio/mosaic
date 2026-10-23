@@ -106,4 +106,4 @@ let effective_region t = live_region (fst (flush_static t))
 let terminal_cursor_row t ~live_row =
   t.render_offset + clamp 0 (live_height t - 1) live_row + 1
 
-let map_mouse_y t y = if y <= t.render_offset then -1 else y - t.render_offset
+let map_mouse_y t y = if y < t.render_offset then -1 else y - t.render_offset

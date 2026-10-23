@@ -2240,6 +2240,26 @@ let test_primary_mouse_event_above_live_region_maps_to_minus_one () =
       equal ~msg:"mouse y above live region maps outside UI" int (-1) y
   | _ -> fail "expected one mouse press event"
 
+(* The live region starts at row 10, counted from 0: a report on that row is
+   the region's row 0. *)
+let test_primary_mouse_event_on_first_live_row () =
+  let app, _state =
+    make_app ~mode:`Primary ~startup_cursor:(11, 1) ~target_fps:None
+      ~input_timeout:(Some 0.)
+      ~events:[ mouse_press 4 10 ]
+      ()
+  in
+  let inputs = ref [] in
+  Matrix.run app
+    ~on_input:(fun app event ->
+      inputs := event :: !inputs;
+      Matrix.stop app)
+    ~on_render:(fun _app -> ());
+  match List.rev !inputs with
+  | [ Matrix.Mouse { y; kind = Press _; _ } ] ->
+      equal ~msg:"the first live row is row 0" int 0 y
+  | _ -> fail "expected one mouse press event"
+
 let test_primary_adjusts_all_mouse_like_events () =
   let cases =
     [
@@ -3040,6 +3060,8 @@ let () =
             test_primary_mouse_event_is_offset_into_live_region;
           test "mouse event above live region maps to -1"
             test_primary_mouse_event_above_live_region_maps_to_minus_one;
+          test "mouse event on the first live row is row 0"
+            test_primary_mouse_event_on_first_live_row;
           test "adjusts all mouse-like events"
             test_primary_adjusts_all_mouse_like_events;
         ];

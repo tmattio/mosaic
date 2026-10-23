@@ -107,6 +107,6 @@ val terminal_cursor_row : t -> live_row:int -> int
     zero-based live row [live_row], clamped to the live region. *)
 
 val map_mouse_y : t -> int -> int
-(** [map_mouse_y t y] maps a one-based terminal mouse row to the live region
-    coordinate Matrix input handlers expect. Rows above the live region map to
-    [-1]. *)
+(** [map_mouse_y t y] maps the zero-based terminal row [y] of a mouse report to
+    the zero-based row of the live region it is on: the live region's first row
+    is [0]. Rows above the live region map to [-1]. *)
