@@ -776,6 +776,10 @@ module Cmd : sig
         (** Execute an arbitrary side-effecting function. The function receives
             a {e dispatch} callback and may call it zero or more times, from any
             thread. See {!val-perform}. *)
+    | Exec of (unit -> 'msg)
+        (** Give the terminal to a function and dispatch its result. See
+            {!val-exec}. *)
+    | Suspend  (** Stop the job. See {!val-suspend}. *)
     | Quit  (** Request orderly termination of the application. *)
     | Set_title of string
         (** Set the terminal window title to the given string. *)
@@ -825,6 +829,28 @@ module Cmd : sig
       are recorded, {!Printexc.record_backtrace}). After the run, [dispatch]
       does nothing, and an exception from [f] has no run left to end: it is
       dropped. *)
+
+  val exec : (unit -> 'msg) -> 'msg t
+  (** [exec f] gives the terminal to [f] and dispatches [f ()]'s result once the
+      terminal is taken again ({!Matrix.release}): [f] can run another program
+      in the terminal, an editor or a pager, as a shell runs a command. The
+      program waits for [f] as POSIX [system()]'s caller does: nothing is drawn
+      or read, and timers, workers' messages and other commands wait. [f] finds
+      the terminal as a shell leaves it to a command: cooked, on the primary
+      screen, with the cursor shown and the keys typed for it, and the
+      terminal's suspend character stopping its program. The next frame is drawn
+      whole.
+
+      An exception [f] raises ends the run, once the terminal is taken again. *)
+
+  val suspend : 'msg t
+  (** [suspend] stops the program's job as the terminal's suspend character does
+      in a shell ({!Matrix.stop_job}): the terminal is given back, the job
+      stops, and when the shell continues it the terminal is taken again and the
+      next frame drawn whole. Raw mode turns the suspend character, Ctrl+Z, into
+      a key, so a program that wants it to suspend binds it to this command.
+      Nothing happens when the job cannot be stopped (SIGTSTP was ignored when
+      the run began). *)
 
   val quit : 'msg t
   (** [quit] requests orderly application termination after the current update

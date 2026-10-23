@@ -189,6 +189,8 @@ module Cmd = struct
     | None
     | Batch of 'msg t list
     | Perform of (('msg -> unit) -> unit)
+    | Exec of (unit -> 'msg)
+    | Suspend
     | Quit
     | Set_title of string
     | Copy_to_clipboard of string
@@ -204,6 +206,8 @@ module Cmd = struct
   let none = None
   let batch cmds = Batch cmds
   let perform f = Perform f
+  let exec f = Exec f
+  let suspend = Suspend
   let quit = Quit
   let set_title title = Set_title title
   let copy_to_clipboard text = Copy_to_clipboard text
@@ -221,6 +225,8 @@ module Cmd = struct
     | None -> None
     | Batch cmds -> Batch (List.map (map f) cmds)
     | Perform g -> Perform (fun dispatch -> g (fun msg -> dispatch (f msg)))
+    | Exec g -> Exec (fun () -> f (g ()))
+    | Suspend -> Suspend
     | Quit -> Quit
     | Set_title title -> Set_title title
     | Copy_to_clipboard text -> Copy_to_clipboard text
@@ -571,6 +577,8 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
   | Cmd.Batch cmds -> List.iter (process_cmd runtime) cmds
   | Cmd.Perform f ->
       off_loop runtime runtime.process_perform (fun () -> f (post_msg runtime))
+  | Cmd.Exec f -> push_msg runtime (Matrix.release runtime.matrix_app f)
+  | Cmd.Suspend -> Matrix.stop_job runtime.matrix_app
   | Cmd.Quit -> runtime.quit <- true
   | Cmd.Set_title title ->
       let term = Matrix.terminal runtime.matrix_app in

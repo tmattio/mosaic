@@ -2708,3 +2708,30 @@ let%expect_test "the run's end requests every worker's stop" =
   done;
   Printf.printf "stopped: %b\n" (Atomic.get stopped);
   [%expect {| stopped: true |}]
+
+let%expect_test
+    "exec gives the terminal to a function and dispatches its result" =
+  (* The key typed after [e] in the same read was typed for the child: the
+     release drops it. *)
+  let ran = ref 0 in
+  let application =
+    {
+      (app ()) with
+      Mosaic.update =
+        (fun msg model ->
+          match msg with
+          | Pressed "e" ->
+              ( { model with keys = model.keys @ [ "e" ] },
+                Mosaic.Cmd.exec (fun () ->
+                    incr ran;
+                    Note "back") )
+          | msg -> update msg model);
+      subscriptions = on_keys;
+    }
+  in
+  drive ~width:40 ~height:1 application [ `Feed "ex"; `Snap ];
+  Printf.printf "ran %d time\n" !ran;
+  [%expect {|
+    |keys:[e] ticks:0 size:- note:back
+    ran 1 time
+    |}]
