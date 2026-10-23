@@ -77,7 +77,7 @@
 
 #### Added
 
-- **Pluggable backends** – `Matrix.Backend` is a record of I/O primitives with a shared `bootstrap` handshake; `matrix-eio` provides an Eio runtime on top of it
+- **Pluggable backends** – `Matrix.Backend` is a record of I/O primitives with a shared `bootstrap` handshake
 - **Headless test backend (`matrix.test`)** – virtual clock, byte-level input through the real decoder, plain-text frame snapshots
 - **Unicode text layer (`matrix.text`)** – grapheme iteration, width measurement, wrap-break and line-break discovery, and position helpers, independent of cell storage
 - **Terminal charts (`matrix.charts`)** – declarative chart composition rendered into grids
@@ -180,12 +180,7 @@
 - The `matrix.input` `Keymap` API, superseded by `Mosaic.Shortcut`
 - `Ansi.Color.downgrade`, the legacy CSI-u toggles, and the obsolete color-scheme DSR query
 - `Input.equal_full`; `Input.equal` is now structural
-
-### matrix-eio
-
-- **A backend** – `Matrix_eio.backend ~clock ~stdin ~stdout` replaces `create`: its wait suspends only the loop's fiber and wakes on the process's wake pipe, which `Matrix.post` and the signal handlers write; the 50 ms poll goes
-- Termination signals are handled on the event loop, not inside the OCaml signal handler, so the terminal is restored on SIGTERM/SIGHUP
-- The idle wait races input, a level-triggered wake, and a deadline as peer fibers, so a wake arriving outside the wait can no longer strand the render loop under scheduler pressure
+- The `matrix-eio` package: an Eio program waits for the run with Eio itself, on a domain the program's `Domain_manager` gives the loop
 
 ### Toffee
 

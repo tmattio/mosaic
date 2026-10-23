@@ -63,24 +63,6 @@
   (css layout flexbox grid "css-grid" taffy "layout-engine")))
 
 (package
- (name matrix-eio)
- (allow_empty)
- (synopsis "Eio backend for the Matrix terminal library")
- (description
-  "Provides an Eio backend for Matrix terminal applications: while a run waits for the terminal, the domain runs the program's other fibers.")
- (depends
-  (ocaml
-   (>= 5.4))
-  dune
-  matrix
-  (eio
-   (>= 1.2))
-  (eio_main :with-test)
-  (windtrap :with-test))
- (tags
-  (terminal eio "structured-concurrency")))
-
-(package
  (name mosaic)
  (synopsis "Terminal UI framework for OCaml with The Elm Architecture")
  (description

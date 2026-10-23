@@ -27,8 +27,6 @@ Usable on its own for immediate-mode terminal apps.
 It computes Flexbox, Grid, and Block layout with no C stubs and no
 runtime dependencies.
 
-[matrix-eio](matrix-eio/) provides an Eio-based runtime for Matrix.
-
 Syntax highlighting is backend-neutral. See the [tree-sitter recipe](doc/highlighting.md)
 and the independent [Tree-sitter bindings](https://github.com/invariant-hq/ocaml-tree-sitter).
 

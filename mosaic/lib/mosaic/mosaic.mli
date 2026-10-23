@@ -1298,29 +1298,7 @@ val run :
     - [probe] -- receives a {!Probe.t} for this runtime before the loop starts.
       Test harnesses use it to settle deterministically (see the [matrix.test]
       library). When a probe is requested, every perform completion also posts
-      to the loop, so a blocked loop re-evaluates its quiescence.
-
-    {b Eio integration.} Pass a [backend] built with the [matrix_eio] library
-    and a [process_perform] that forks fibers:
-
-    {[
-    Eio_main.run @@ fun env ->
-    Eio.Switch.run @@ fun sw ->
-    let backend =
-      Matrix_eio.backend
-        ~clock:(Eio.Stdenv.mono_clock env)
-        ~stdin:env#stdin ~stdout:env#stdout ()
-    in
-    let process_perform thunk =
-      Eio.Fiber.fork_daemon ~sw (fun () ->
-          thunk ();
-          `Stop_daemon)
-    in
-    Mosaic.run ~backend ~process_perform { init; update; view; subscriptions }
-    ]}
-
-    Daemon fibers are cancelled when the switch completes, so long-running
-    perform operations do not block application shutdown. *)
+      to the loop, so a blocked loop re-evaluates its quiescence. *)
 
 (** {1:dim_helpers Dimension helpers} *)
 

@@ -51,11 +51,6 @@ jobs:
           opam exec -- dune build toffee
           opam exec -- dune build @toffee/runtest
 
-      - name: Build and test matrix-eio
-        run: |
-          opam exec -- dune build matrix-eio
-          opam exec -- dune build @matrix-eio/runtest
-
       - name: Build and test mosaic
         run: |
           opam exec -- dune build mosaic
