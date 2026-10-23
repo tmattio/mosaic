@@ -749,3 +749,21 @@ let%expect_test "stacked legend renders vertical list" =
 [0m│                  │[0m
 [0m│                  │[0m
 [0m└──────────────────┘[0m|}] [@@ocamlformat "disable"]
+
+let%expect_test "time labels before the epoch" =
+  List.iter
+    (fun v ->
+      Printf.printf "%.1f %s %s\n" v
+        (Label_format.mmdd_utc 0 v)
+        (Label_format.hhmmss_utc 0 v))
+    [ -1.; -0.5; -86400.; -31536000.; -2208988800.; 0.; 951782400.5 ];
+  [%expect
+    {|
+    -1.0 12/31 23:59:59
+    -0.5 12/31 23:59:59
+    -86400.0 12/31 00:00:00
+    -31536000.0 01/01 00:00:00
+    -2208988800.0 01/01 00:00:00
+    0.0 01/01 00:00:00
+    951782400.5 02/29 00:00:00
+    |}]

@@ -201,11 +201,13 @@ module Label_format : sig
 
   val mmdd_utc : int -> float -> string
   (** [mmdd_utc i v] formats the Unix time [v], in seconds, as its month and day
-      in UTC, [MM/DD]. [v] must be at least [0.]. *)
+      in UTC, [MM/DD]. A negative [v] is a time before 1970, so [-1.] is
+      [12/31]. *)
 
   val hhmmss_utc : int -> float -> string
   (** [hhmmss_utc i v] formats the Unix time [v], in seconds, as its time of day
-      in UTC, [HH:MM:SS]. [v] must be at least [0.]. *)
+      in UTC, [HH:MM:SS], rounded down to the second. A negative [v] is a time
+      before 1970, so [-1.] is [23:59:59]. *)
 end
 
 (** {1:transform Transform} *)

@@ -22,44 +22,27 @@ module Label_format = struct
   let float ?(precision = 3) () : int -> float -> string =
    fun _ v -> Printf.sprintf "%.*g" precision v
 
-  let days_in_month ~leap m =
-    match m with
-    | 1 -> 31
-    | 2 -> if leap then 29 else 28
-    | 3 -> 31
-    | 4 -> 30
-    | 5 -> 31
-    | 6 -> 30
-    | 7 -> 31
-    | 8 -> 31
-    | 9 -> 30
-    | 10 -> 31
-    | 11 -> 30
-    | 12 -> 31
-    | _ -> 30
-
-  let is_leap_year y = y mod 4 = 0 && (y mod 100 <> 0 || y mod 400 = 0)
-
+  (* The UTC date and time of the Unix time [v], in seconds, counted down to
+     the second with floor division so a time before the epoch falls in the
+     day and second before it. The date is the proleptic Gregorian calendar's,
+     by civil_from_days in Howard Hinnant's "chrono-Compatible Low-Level Date
+     Algorithms", which counts in 400-year eras of 146,097 days that begin on
+     March 1. *)
   let timestamp_to_date v =
-    let secs = int_of_float v in
-    let days = secs / 86400 in
-    let rem = secs mod 86400 in
-    let hour = rem / 3600 in
-    let min = rem mod 3600 / 60 in
-    let sec = rem mod 60 in
-    let rec find_year days year =
-      let days_in_year = if is_leap_year year then 366 else 365 in
-      if days < days_in_year then (year, days)
-      else find_year (days - days_in_year) (year + 1)
-    in
-    let year, day_of_year = find_year days 1970 in
-    let leap = is_leap_year year in
-    let rec find_month day month =
-      let dim = days_in_month ~leap month in
-      if day < dim then (month, day + 1) else find_month (day - dim) (month + 1)
-    in
-    let month, day = find_month day_of_year 1 in
-    (year, month, day, hour, min, sec)
+    let secs = int_of_float (Float.floor v) in
+    let fdiv a b = if a >= 0 then a / b else ((a + 1) / b) - 1 in
+    let days = fdiv secs 86400 in
+    let rem = secs - (days * 86400) in
+    let z = days + 719468 in
+    let era = fdiv z 146097 in
+    let doe = z - (era * 146097) in
+    let yoe = (doe - (doe / 1460) + (doe / 36524) - (doe / 146096)) / 365 in
+    let doy = doe - ((365 * yoe) + (yoe / 4) - (yoe / 100)) in
+    let mp = ((5 * doy) + 2) / 153 in
+    let day = doy - (((153 * mp) + 2) / 5) + 1 in
+    let month = if mp < 10 then mp + 3 else mp - 9 in
+    let year = yoe + (era * 400) + if month <= 2 then 1 else 0 in
+    (year, month, day, rem / 3600, rem mod 3600 / 60, rem mod 60)
 
   let mmdd_utc _ v =
     let _, month, day, _, _, _ = timestamp_to_date v in
