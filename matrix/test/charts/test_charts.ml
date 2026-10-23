@@ -951,3 +951,26 @@ let%expect_test "axis lines and their junctions" =
     |      0   1 1.5 2.5     |
     |                        |
     |}]
+
+let%expect_test "a manual frame draws the theme's border" =
+  let theme = Theme.with_charset Charset.ascii Theme.dark in
+  let chart =
+    empty ~theme ()
+    |> with_frame (manual_frame ~margins:(0, 1, 0, 1) ~border:true ())
+    |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+    |> line ~style:(Style.make ()) ~glyph:"." ~x:fst ~y:snd simple_points
+  in
+  let grid = Grid.create ~width:12 ~height:5 () in
+  ignore (draw chart grid ~width:12 ~height:5 : Layout.t);
+  print_cells grid;
+  let fg = Grid.get_fg grid (Grid.idx grid ~x:0 ~y:2) in
+  Printf.printf "border in Theme.border: %b\n"
+    (Ansi.Color.equal fg (Option.get theme.border.fg));
+  [%expect {|
+    |+----------+|
+    ||        . ||
+    ||   .  .   ||
+    || .        ||
+    |+----------+|
+    border in Theme.border: true
+    |}]

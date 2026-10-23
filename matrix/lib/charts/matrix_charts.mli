@@ -90,7 +90,8 @@ module Charset : sig
   type t = {
     frame : frame;
         (** The corners, tees and cross where axis lines meet each other or a
-            tick mark, and the lines drawn at [`Cell] resolution and arrows. *)
+            tick mark, the chart's border, and the lines drawn at [`Cell]
+            resolution and arrows. *)
     axis_h : string;  (** Horizontal axis lines and frame edges. *)
     axis_v : string;  (** Vertical axis lines and frame edges. *)
     tick_h : string;  (** Tick marks of the y axes. *)
@@ -152,8 +153,7 @@ module Theme : sig
             as they are. *)
     axes : Ansi.Style.t;  (** Axis lines and tick marks. *)
     border : Ansi.Style.t;
-        (** Style for a border around the chart. {!Matrix_charts.draw} draws no
-            such border. *)
+        (** The chart's border ({!Matrix_charts.frame_config}). *)
     grid : Ansi.Style.t;
         (** Gridlines whose style is {!Ansi.Style.default} ({!Gridlines}). *)
     grid_minor : Ansi.Style.t;  (** Minor gridlines. *)
@@ -1182,15 +1182,21 @@ module Sparkline = Sparkline
 type t
 (** The type for charts. *)
 
-type frame_config = { margins : int * int * int * int; inner_padding : int }
+type frame_config = {
+  margins : int * int * int * int;
+  inner_padding : int;
+  border : bool;
+}
 (** The type for frame settings. [margins] is [(top, right, bottom, left)] in
     cells around the chart's contents, and [inner_padding] is the number of
-    cells kept on every side of the plot, inside the axes. *)
+    cells kept on every side of the plot, inside the axes. With [border], a box
+    of {!Charset.t.frame}'s glyphs in {!Theme.t.border} is drawn on the outer
+    edge of the chart's region, outside the margins. *)
 
 (** The type for frames. *)
 type frame =
   | Auto  (** No margins and no padding. *)
-  | Manual of frame_config  (** The given margins and padding. *)
+  | Manual of frame_config  (** The given margins, padding and border. *)
 
 type title = { text : string; style : Ansi.Style.t option }
 (** The type for chart titles. A [style] of [None] is {!Theme.t.labels}. *)
@@ -1199,9 +1205,14 @@ val default_frame : frame
 (** [default_frame] is [Auto]. *)
 
 val manual_frame :
-  ?margins:int * int * int * int -> ?inner_padding:int -> unit -> frame
-(** [manual_frame ?margins ?inner_padding ()] is [Manual] with [margins],
-    [(0, 0, 0, 0)] by default, and [inner_padding], [0] by default. *)
+  ?margins:int * int * int * int ->
+  ?inner_padding:int ->
+  ?border:bool ->
+  unit ->
+  frame
+(** [manual_frame ?margins ?inner_padding ?border ()] is [Manual] with
+    [margins], [(0, 0, 0, 0)] by default, [inner_padding], [0] by default, and
+    [border], [false] by default. *)
 
 (** {2:constructors Constructors} *)
 
@@ -1458,6 +1469,6 @@ val draw :
   Layout.t
 (** [draw ?view ?x ?y c grid ~width ~height] draws [c] on [grid] and returns its
     layout. It fills the region with the theme's background, then draws the
-    gridlines, the marks in order, the axes and the title.
+    gridlines, the marks in order, the axes, the border and the title.
 
     Raises [Invalid_argument] as {!val-layout} does. *)

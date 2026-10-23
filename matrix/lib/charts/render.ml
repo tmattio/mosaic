@@ -302,6 +302,26 @@ let heatmap_bilinear_sampler ~agg ~xs ~ys ~xa ~ya ~va n =
 let draw_text ?style ?tab_width grid ~x ~y text =
   G.draw_text ?style ?tab_width grid ~x ~y ~text
 
+(* The box of [frame]'s glyphs on the edges of the [width] by [height]
+   rectangle at [(x, y)], drawn when the box is at least 2 by 2. *)
+let draw_frame grid ~style ~(frame : Layout.Charset.frame) ~x ~y ~width ~height
+    =
+  if width >= 2 && height >= 2 then begin
+    let right = x + width - 1 and bottom = y + height - 1 in
+    draw_text grid ~x ~y ~style frame.tl;
+    draw_text grid ~x:right ~y ~style frame.tr;
+    draw_text grid ~x ~y:bottom ~style frame.bl;
+    draw_text grid ~x:right ~y:bottom ~style frame.br;
+    for xx = x + 1 to right - 1 do
+      draw_text grid ~x:xx ~y ~style frame.h;
+      draw_text grid ~x:xx ~y:bottom ~style frame.h
+    done;
+    for yy = y + 1 to bottom - 1 do
+      draw_text grid ~x ~y:yy ~style frame.v;
+      draw_text grid ~x:right ~y:yy ~style frame.v
+    done
+  end
+
 (* {1 Grid Lines} *)
 
 let draw_grid (layout : Layout.t) (grid : G.t) =

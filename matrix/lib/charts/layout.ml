@@ -651,7 +651,12 @@ let make_band ~categories ~padding ~domain ~view =
 
 (* {1 Layout Type} *)
 
-type frame_config = { margins : int * int * int * int; inner_padding : int }
+type frame_config = {
+  margins : int * int * int * int;
+  inner_padding : int;
+  border : bool;
+}
+
 type frame = Auto | Manual of frame_config
 type rect = { x : int; y : int; width : int; height : int }
 type title_info = { text : string; style : Style.t }
@@ -1522,8 +1527,14 @@ let compute ?(view = View.empty) ?(x = 0) ?(y = 0) (cfg : config) ~width ~height
   let width = max 1 width and height = max 1 height in
   let mt, mr, mb, ml, ip =
     match cfg.frame with
-    | Manual { margins = mt, mr, mb, ml; inner_padding } ->
-        (max 0 mt, max 0 mr, max 0 mb, max 0 ml, max 0 inner_padding)
+    | Manual { margins = mt, mr, mb, ml; inner_padding; border } ->
+        (* A border takes the outermost ring of the region. *)
+        let b = if border then 1 else 0 in
+        ( max 0 mt + b,
+          max 0 mr + b,
+          max 0 mb + b,
+          max 0 ml + b,
+          max 0 inner_padding )
     | Auto -> (0, 0, 0, 0, 0)
   in
 

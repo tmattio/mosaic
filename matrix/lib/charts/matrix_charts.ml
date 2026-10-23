@@ -224,25 +224,6 @@ module Overlay = struct
     in
     best
 
-  let draw_tooltip_border grid ~style:bst ~charset ~x0 ~y0 ~box_w ~box_h =
-    if box_w >= 2 && box_h >= 2 then begin
-      let tf = charset.Layout.Charset.tooltip_frame in
-      let top = y0 and bot = y0 + box_h - 1 in
-      let left = x0 and right = x0 + box_w - 1 in
-      Render.draw_text grid ~x:left ~y:top ~style:bst tf.tl;
-      Render.draw_text grid ~x:right ~y:top ~style:bst tf.tr;
-      Render.draw_text grid ~x:left ~y:bot ~style:bst tf.bl;
-      Render.draw_text grid ~x:right ~y:bot ~style:bst tf.br;
-      for xx = left + 1 to right - 1 do
-        Render.draw_text grid ~x:xx ~y:top ~style:bst tf.h;
-        Render.draw_text grid ~x:xx ~y:bot ~style:bst tf.h
-      done;
-      for yy = top + 1 to bot - 1 do
-        Render.draw_text grid ~x:left ~y:yy ~style:bst tf.v;
-        Render.draw_text grid ~x:right ~y:yy ~style:bst tf.v
-      done
-    end
-
   let tooltip ?style ?(border = `Theme) ?(padding = 1) ?(anchor = `Auto)
       (layout : Layout.t) (grid : G.t) ~x ~y (lines : string list) =
     let style = Option.value style ~default:layout.theme.tooltip in
@@ -286,8 +267,9 @@ module Overlay = struct
         (* Draw border *)
         Option.iter
           (fun bst ->
-            draw_tooltip_border grid ~style:bst ~charset:layout.theme.charset
-              ~x0 ~y0 ~box_w ~box_h)
+            Render.draw_frame grid ~style:bst
+              ~frame:layout.theme.charset.tooltip_frame ~x:x0 ~y:y0 ~width:box_w
+              ~height:box_h)
           border;
         (* Draw content *)
         let inner_offset = (bsz / 2) + padding in
@@ -417,6 +399,7 @@ end
 type frame_config = Layout.frame_config = {
   margins : int * int * int * int;
   inner_padding : int;
+  border : bool;
 }
 
 type frame = Layout.frame = Auto | Manual of frame_config
@@ -439,8 +422,9 @@ type t = {
 let marks t = List.rev t.marks_rev
 let default_frame = Auto
 
-let manual_frame ?(margins = (0, 0, 0, 0)) ?(inner_padding = 0) () =
-  Manual { margins; inner_padding }
+let manual_frame ?(margins = (0, 0, 0, 0)) ?(inner_padding = 0)
+    ?(border = false) () =
+  Manual { margins; inner_padding; border }
 
 (* A chart keeps its axes and gridlines as the program gave them, and the
    styles they leave unset take the chart's theme when it is laid out, so a
@@ -589,6 +573,11 @@ let draw ?view ?(x = 0) ?(y = 0) t (grid : G.t) ~width ~height : Layout.t =
   Render.draw_grid lay grid;
   Render.draw_marks lay grid;
   Render.draw_axes lay grid;
+  (match t.frame with
+  | Manual { border = true; _ } ->
+      Render.draw_frame grid ~style:t.theme.border ~frame:t.theme.charset.frame
+        ~x ~y ~width ~height
+  | Auto | Manual _ -> ());
   (match lay.title with
   | None -> ()
   | Some { text; style } ->
