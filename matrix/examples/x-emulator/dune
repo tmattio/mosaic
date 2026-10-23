@@ -5,6 +5,7 @@
  (modules main)
  (libraries
   matrix.ansi
+  matrix.input
   matrix.pty
   matrix.vte
   matrix.grid

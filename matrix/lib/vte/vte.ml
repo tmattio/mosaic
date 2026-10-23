@@ -1,6 +1,7 @@
 module Grid = Matrix_grid
 module Text = Matrix_text
 module Params = Ansi.Parser.Params
+module Reply = Matrix_input.Reply
 
 (* {1:state State} *)
 
@@ -130,8 +131,9 @@ type t = {
   parser : Ansi.Parser.t;
   mutable osc : osc;
   osc_text : Buffer.t;
-  (* The replies owed while [feed] runs; empty between calls. *)
-  replies : Buffer.t;
+  (* The replies owed while [feed] runs, the latest first; empty between
+     calls. *)
+  mutable replies : Reply.t list;
   dirty : dirty;
 }
 
@@ -1085,7 +1087,7 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
       parser = Ansi.Parser.create ();
       osc = Osc_skip;
       osc_text = Buffer.create 64;
-      replies = Buffer.create 16;
+      replies = [];
       dirty = { any = false; cursor = false; rows = Bytes.make rows '\000' };
     }
   in
@@ -1143,22 +1145,24 @@ let ss t single = t.charsets <- { t.charsets with single }
 
 (* {1:replies Replies} *)
 
-let reply t s = Buffer.add_string t.replies s
-let da t = reply t "\027[?1;2c"
-let da2 t = reply t "\027[>0;0;0c"
+let reply t r = t.replies <- r :: t.replies
 
-(* The 1-based position cursor reports give: in origin mode the row counts
-   from the top margin. *)
-let report_row t =
-  t.cursor.row - (if t.modes.origin then t.margins.top else 0) + 1
+(* A VT100 with Advanced Video, and DA2's type 0, version 0, no options. *)
+let da t = reply t (Primary_attributes [ 1; 2 ])
+let da2 t = reply t (Secondary_attributes [ 0; 0; 0 ])
+
+(* The position cursor reports give: in origin mode the row counts from the
+   top margin. *)
+let report_row t = t.cursor.row - if t.modes.origin then t.margins.top else 0
 
 let dsr t = function
-  | 5 -> reply t "\027[0n"
-  | 6 -> Printf.bprintf t.replies "\027[%d;%dR" (report_row t) (t.cursor.col + 1)
+  | 5 -> reply t (Operating_status `Ok)
+  | 6 ->
+      reply t (Cursor { row = report_row t; col = t.cursor.col; page = None })
   | _ -> ()
 
 let decxcpr t =
-  Printf.bprintf t.replies "\027[?%d;%d;1R" (report_row t) (t.cursor.col + 1)
+  reply t (Cursor { row = report_row t; col = t.cursor.col; page = Some 1 })
 
 (* The state of the modes [set_ansi_mode] and [set_dec_mode] keep, [None] for
    a mode this terminal does not have. *)
@@ -1183,15 +1187,13 @@ let dec_mode t mode =
 (* DECRQM: DECRPM's Pm is 1 for set, 2 for reset and 0 for a mode not
    recognized (VT320 Programmer Information, Table 2). *)
 let decrqm t ~private_ mode =
-  let pm =
+  let setting : Reply.setting =
     match (if private_ then dec_mode else ansi_mode) t mode with
-    | Some true -> 1
-    | Some false -> 2
-    | None -> 0
+    | Some true -> Set
+    | Some false -> Reset
+    | None -> Not_recognized
   in
-  Printf.bprintf t.replies "\027[%s%d;%d$y"
-    (if private_ then "?" else "")
-    mode pm
+  reply t (Mode { dec = private_; mode; setting })
 
 (* {1:dispatch Dispatch}
 
@@ -1343,12 +1345,6 @@ let osc_hyperlink t text =
       let uri = String.sub text (i + 1) (String.length text - i - 1) in
       t.pen <- { t.pen with link = (if uri = "" then None else Some uri) }
 
-(* A colour as XParseColor reads it and xterm reports it: 16 bits a channel,
-   each 8-bit value [v] scaled to [v * 257], so 0xff is 0xffff. *)
-let rgb_spec c =
-  let r, g, b = Ansi.Color.to_rgb c in
-  Printf.sprintf "rgb:%04x/%04x/%04x" (r * 257) (g * 257) (b * 257)
-
 let decimal s =
   if s <> "" && String.for_all (function '0' .. '9' -> true | _ -> false) s
   then int_of_string_opt s
@@ -1359,16 +1355,14 @@ let decimal s =
    colour, answered as the OSC that would set it, with the query's
    terminator. Setting a colour has no effect: the cells hold the colours
    they were given. *)
-let osc_colours t n ending text =
-  let st = match ending with `Bel -> "\007" | `St -> "\027\\" in
-  let answer prefix colour =
-    Printf.bprintf t.replies "\027]%s;%s%s" prefix (rgb_spec colour) st
+let osc_colours t n terminator text =
+  let answer target colour =
+    reply t (Color { target; rgb = Ansi.Color.to_rgb colour; terminator })
   in
   let rec palette = function
     | c :: "?" :: rest ->
         (match decimal c with
-        | Some i when i <= 255 ->
-            answer (Printf.sprintf "4;%d" i) (Ansi.Color.indexed i)
+        | Some i when i <= 255 -> answer (`Palette i) (Ansi.Color.indexed i)
         | _ -> ());
         palette rest
     | _ :: _ :: rest -> palette rest
@@ -1377,8 +1371,8 @@ let osc_colours t n ending text =
   let rec dynamic n = function
     | spec :: rest ->
         (match (n, spec) with
-        | 10, "?" -> answer "10" t.default_fg
-        | 11, "?" -> answer "11" t.default_bg
+        | 10, "?" -> answer `Foreground t.default_fg
+        | 11, "?" -> answer `Background t.default_bg
         | _ -> ());
         dynamic (n + 1) rest
     | [] -> ()
@@ -1441,11 +1435,11 @@ let handle_token t = function
 
 let feed t bytes off len =
   Ansi.Parser.feed t.parser bytes ~off ~len (handle_token t);
-  if Buffer.length t.replies = 0 then ""
-  else
-    let replies = Buffer.contents t.replies in
-    Buffer.clear t.replies;
-    replies
+  match t.replies with
+  | [] -> []
+  | replies ->
+      t.replies <- [];
+      List.rev replies
 
 let feed_string t s = feed t (Bytes.unsafe_of_string s) 0 (String.length s)
 

@@ -1186,7 +1186,7 @@ let test_static_snapshots_scroll_exactly_once_per_row () =
           Matrix.static_write app (static_grid (String.concat "\n" lines));
           present app [ "live" ]);
       let terminal = Vte.create ~rows:3 ~cols:6 ~scrollback:32 () in
-      ignore (Vte.feed_string terminal (output f) : string);
+      ignore (Vte.feed_string terminal (output f) : _ list);
       equal
         ~msg:(Printf.sprintf "%d rows reach history once" rows)
         (list string) lines
@@ -1199,8 +1199,8 @@ let test_static_snapshot_clears_suffixes_and_keeps_blank_rows () =
       Matrix.static_write app (static_grid "A\n\nB");
       present app []);
   let terminal = Vte.create ~rows:3 ~cols:6 ~scrollback:16 () in
-  ignore (Vte.feed_string terminal "STALE!\r\nSTALE!\r\nSTALE!" : string);
-  ignore (Vte.feed_string terminal (output f) : string);
+  ignore (Vte.feed_string terminal "STALE!\r\nSTALE!\r\nSTALE!" : _ list);
+  ignore (Vte.feed_string terminal (output f) : _ list);
   equal (list string) [ "A"; ""; "B" ] (scrollback_lines terminal)
 
 let test_queued_static_snapshot_keeps_row_count_after_resize () =
@@ -1215,8 +1215,8 @@ let test_queued_static_snapshot_keeps_row_count_after_resize () =
       equal ~msg:"the resize applies before the frame" (pair int int) (3, 3)
         (Matrix.full_size app));
   let terminal = Vte.create ~rows:3 ~cols:3 ~scrollback:16 () in
-  ignore (Vte.feed_string terminal "old\r\nold\r\nold" : string);
-  ignore (Vte.feed_string terminal (output f) : string);
+  ignore (Vte.feed_string terminal "old\r\nold\r\nold" : _ list);
+  ignore (Vte.feed_string terminal (output f) : _ list);
   let history = scrollback_lines terminal in
   equal ~msg:"no extra transcript rows" int 2 (List.length history);
   List.iter (fun row -> not_contains ~sub:"old" row) history
@@ -1326,9 +1326,9 @@ type term = { vte : Vte.t; f : fake }
 
 let vte_term ?(shell = "") ~cols ~rows () =
   let vte = Vte.create ~scrollback:100 ~rows ~cols () in
-  ignore (Vte.feed_string vte shell : string);
+  ignore (Vte.feed_string vte shell : _ list);
   let f = fake ~tty:true ~size:(cols, rows) () in
-  f.answer <- Vte.feed_string vte;
+  f.answer <- (fun s -> Matrix_input.Reply.encode (Vte.feed_string vte s));
   { vte; f }
 
 let run_term ?(mode = `Primary) ?(min_tui_height = 1) term body =
@@ -1582,7 +1582,8 @@ let test_frame_waits_for_the_live_region_after_resize () =
       let held = Buffer.create 16 and delivered = ref false in
       term.f.answer <-
         (fun bytes ->
-          Buffer.add_string held (Vte.feed_string term.vte bytes);
+          Buffer.add_string held
+            (Matrix_input.Reply.encode (Vte.feed_string term.vte bytes));
           "");
       term.f.on_wait <-
         (fun f ~until:_ ->
@@ -2178,7 +2179,7 @@ let test_release_hands_over_below_the_transcript () =
           equal ~msg:"the cursor waits below it" (pair int int) (2, 0)
             (Vte.cursor_pos term.vte);
           is_true ~msg:"and shows" (Vte.modes term.vte).cursor_visible;
-          ignore (Vte.feed_string term.vte "$ make\r\nok\r\n" : string));
+          ignore (Vte.feed_string term.vte "$ make\r\nok\r\n" : _ list));
       present app [ "ui one"; "ui two" ];
       equal ~msg:"the program's output joins the transcript" (list string)
         [ "$ ls"; "done"; "$ make"; "ok" ]

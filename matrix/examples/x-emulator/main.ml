@@ -629,7 +629,10 @@ let main_loop state =
         in
         if bytes_read > 0 then (
           (* The program waits for the answers to its queries. *)
-          let replies = Vte.feed state.vte read_buffer 0 bytes_read in
+          let replies =
+            Matrix_input.Reply.encode
+              (Vte.feed state.vte read_buffer 0 bytes_read)
+          in
           write_all state.pty replies 0 (String.length replies);
           (* Auto-scroll to live terminal on new output (Alacritty behavior) *)
           state.display_offset <- 0)

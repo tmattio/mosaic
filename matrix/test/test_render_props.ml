@@ -764,7 +764,7 @@ let start_frame r app (frame : frame) =
           for _ = 1 to child do
             let line = Printf.sprintf "C%d" r.tag in
             r.tag <- r.tag + 1;
-            ignore (Vte.feed_string r.vte (line ^ "\r\n") : string);
+            ignore (Vte.feed_string r.vte (line ^ "\r\n") : _ list);
             if r.case.mode = `Primary then r.transcript <- line :: r.transcript
           done))
     frame.suspend;
@@ -854,11 +854,11 @@ let run_case case =
   let primary = case.mode = `Primary in
   if primary then begin
     for i = 0 to case.shell - 1 do
-      ignore (Vte.feed_string vte (shell_line i ^ "\r\n") : string);
+      ignore (Vte.feed_string vte (shell_line i ^ "\r\n") : _ list);
       r.transcript <- shell_line i :: r.transcript
     done;
     if case.prompt then begin
-      ignore (Vte.feed_string vte (shell_line case.shell) : string);
+      ignore (Vte.feed_string vte (shell_line case.shell) : _ list);
       r.transcript <- shell_line case.shell :: r.transcript
     end
   end;
@@ -866,7 +866,8 @@ let run_case case =
     Buffer.add_subbytes r.frame_bytes b off len;
     scan_shapes r b off len;
     let reply = Vte.feed vte b off len in
-    if primary then Buffer.add_string r.replies reply
+    if primary then
+      Buffer.add_string r.replies (Matrix_input.Reply.encode reply)
   in
   let read_input b off len =
     let n = min len (Buffer.length r.replies) in

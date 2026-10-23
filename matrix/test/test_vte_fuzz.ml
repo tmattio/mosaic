@@ -363,36 +363,25 @@ let program =
   let+ ops = list ~size:(int_range 1 12) op in
   { rows; cols; scrollback; width_method; ops }
 
-(* Replies are the answers this terminal gives, each whole: DA, DA2, DSR,
-   CPR, DECXCPR and DECRPM, control sequences, and the colour reports, OSCs
-   ended by BEL or ST. *)
-let check_replies r =
-  let n = String.length r in
-  let rec final j =
-    if j >= n then failf "replies %S: unfinished" r
-    else
-      match r.[j] with
-      | '0' .. '9' | ';' | '?' | '>' | '$' -> final (j + 1)
-      | 'c' | 'n' | 'R' | 'y' -> j + 1
-      | c -> failf "replies %S: %C" r c
-  in
-  let rec osc j =
-    if j >= n then failf "replies %S: unfinished OSC" r
-    else
-      match r.[j] with
-      | '\x07' -> j + 1
-      | '\x1b' when j + 1 < n && r.[j + 1] = '\\' -> j + 2
-      | '0' .. '9' | 'a' .. 'f' | ';' | ':' | '/' | 'r' | 'g' -> osc (j + 1)
-      | c -> failf "replies %S: %C in an OSC" r c
-  in
-  let rec go i =
-    if i < n then
-      if i + 1 < n && r.[i] = '\x1b' && r.[i + 1] = '[' then go (final (i + 2))
-      else if i + 1 < n && r.[i] = '\x1b' && r.[i + 1] = ']' then
-        go (osc (i + 2))
-      else failf "replies %S: no CSI or OSC at %d" r i
-  in
-  go 0
+(* Replies are the answers this terminal gives, each written whole: their
+   bytes read back, through a program's input decoder, as the same replies. *)
+let check_replies replies =
+  let module I = Matrix_input in
+  let count f = List.length (List.filter f replies) in
+  let d = I.Decoder.create () in
+  I.Decoder.expect d
+    {
+      cursor_reports = count (function I.Reply.Cursor _ -> true | _ -> false);
+      string_replies = count (function I.Reply.Color _ -> true | _ -> false);
+    };
+  let got = ref [] in
+  let emit e = got := e :: !got in
+  let bytes = I.Reply.encode replies in
+  I.Decoder.feed d (Bytes.of_string bytes) ~off:0 ~len:(String.length bytes)
+    emit;
+  I.Decoder.finish d emit;
+  if List.rev !got <> List.map (fun r -> I.Decoder.Reply r) replies then
+    failf "replies %S read back as others" bytes
 
 let run_op vte = function
   | Feed s ->
@@ -493,7 +482,7 @@ let fed s chunks =
     Vte.create ~scrollback:6 ~width_method:s.method_ ~rows:s.srows ~cols:s.scols
       ()
   in
-  let replies = String.concat "" (List.map (Vte.feed_string vte) chunks) in
+  let replies = List.concat_map (Vte.feed_string vte) chunks in
   state vte replies
 
 let prop_split s =

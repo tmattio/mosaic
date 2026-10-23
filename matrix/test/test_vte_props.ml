@@ -179,7 +179,7 @@ let check_invariants vte =
     if !expected > 0 then failf "row %d: wide span crosses the row edge" r
   done
 
-let feed vte s = ignore (Vte.feed_string vte s : string)
+let feed vte s = ignore (Vte.feed_string vte s : _ list)
 let feed_chunks vte chunks = List.iter (feed vte) chunks
 
 (* Properties ------------------------------------------------------------- *)

@@ -4,7 +4,10 @@ open Windtrap
 (** Test utilities *)
 
 (* Feed output whose replies the test does not read. *)
-let feed vte s = ignore (Vte.feed_string vte s : string)
+let feed vte s = ignore (Vte.feed_string vte s : _ list)
+
+(* The bytes of the replies to output, as a program reads them. *)
+let answers vte s = Matrix_input.Reply.encode (Vte.feed_string vte s)
 
 (* The scrollback's lines, oldest first. *)
 let scrollback_lines vte =
@@ -983,25 +986,67 @@ let osc_set_title () =
   feed vte "\x1b]2;New Title\x07";
   equal ~msg:"title set via OSC 2" string "New Title" (Vte.title vte)
 
-(* [feed] is the replies, in order; [""] when nothing is owed. The identity
+(* [feed] is the replies, in order; [[]] when nothing is owed. The identity
    is a constant: a VT100 with Advanced Video. *)
 let query_replies () =
   let vte = Vte.create ~rows:3 ~cols:5 () in
-  equal ~msg:"nothing owed" string "" (Vte.feed_string vte "ab\r\n");
+  let replies =
+    Testable.make ~equal:( = )
+      ~pp:
+        (Format.pp_print_list
+           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf "; ")
+           Matrix_input.Reply.pp)
+  in
+  equal ~msg:"typed replies" replies
+    [
+      Primary_attributes [ 1; 2 ];
+      Secondary_attributes [ 0; 0; 0 ];
+      Operating_status `Ok;
+      Cursor { row = 0; col = 0; page = None };
+      Cursor { row = 0; col = 0; page = Some 1 };
+      Mode { dec = true; mode = 7; setting = Set };
+      Color { target = `Background; rgb = (0, 0, 0); terminator = `Bel };
+    ]
+    (Vte.feed_string vte
+       "\x1b[c\x1b[>c\x1b[5n\x1b[6n\x1b[?6n\x1b[?7$p\x1b]11;?\x07");
+  equal ~msg:"nothing owed" string "" (answers vte "ab\r\n");
   equal ~msg:"DA1, DA2 and DSR 5" string "\x1b[?1;2c\x1b[>0;0;0c\x1b[0n"
-    (Vte.feed_string vte "\x1b[c\x1b[>c\x1b[5n");
+    (answers vte "\x1b[c\x1b[>c\x1b[5n");
   equal ~msg:"CPR and DECXCPR" string "\x1b[2;1R\x1b[?2;1;1R"
-    (Vte.feed_string vte "\x1b[6n\x1b[?6n");
+    (answers vte "\x1b[6n\x1b[?6n");
   equal ~msg:"CPR with the Last Column Flag" string "\x1b[2;5R"
-    (Vte.feed_string vte "abcde\x1b[6n");
+    (answers vte "abcde\x1b[6n");
   equal ~msg:"DA with parameter 0" string "\x1b[?1;2c\x1b[>0;0;0c"
-    (Vte.feed_string vte "\x1b[0c\x1b[>0c");
+    (answers vte "\x1b[0c\x1b[>0c");
   equal ~msg:"DECID, an obsolete form of DA" string "\x1b[?1;2c"
-    (Vte.feed_string vte "\x1bZ");
+    (answers vte "\x1bZ");
   equal ~msg:"a query split across feeds is answered by the last" string
     "\x1b[0n"
-    (ignore (Vte.feed_string vte "\x1b[5" : string);
-     Vte.feed_string vte "n")
+    (feed vte "\x1b[5";
+     answers vte "n")
+
+(* The identity is the terminal's, but the replies are the caller's to relay:
+   a recorder that passes for xterm.js answers DA2 as xterm.js 5 does, and
+   the program reads that answer. *)
+let rewritten_reply_reaches_the_program () =
+  let module I = Matrix_input in
+  let vte = Vte.create ~rows:3 ~cols:5 () in
+  let as_xterm_js : I.Reply.t -> I.Reply.t = function
+    | Secondary_attributes _ -> Secondary_attributes [ 0; 276; 0 ]
+    | r -> r
+  in
+  let bytes =
+    I.Reply.encode (List.map as_xterm_js (Vte.feed_string vte "\x1b[>c\x1b[c"))
+  in
+  equal ~msg:"the bytes relayed" string "\x1b[>0;276;0c\x1b[?1;2c" bytes;
+  let program = I.Decoder.create () in
+  let read = ref [] in
+  I.Decoder.feed program (Bytes.of_string bytes) ~off:0
+    ~len:(String.length bytes) (fun e ->
+      read := Format.asprintf "%a" I.Decoder.pp_event e :: !read);
+  equal ~msg:"what the program reads" (list string)
+    [ "Reply Secondary_attributes 0;276;0"; "Reply Primary_attributes 1;2" ]
+    (List.rev !read)
 
 (* LNM makes LF, VT and FF return to the first column, as a tty's ONLCR
    makes LF; it leaves IND alone, RIS resets it and DECSTR keeps it. *)
@@ -1027,7 +1072,7 @@ let line_feed_new_line_mode () =
   let vte = Vte.create ~rows:2 ~cols:4 () in
   is_false ~msg:"off at power-up" (Vte.modes vte).new_line;
   equal ~msg:"DECRQM 20" string "\x1b[20;2$y\x1b[20;1$y"
-    (Vte.feed_string vte "\x1b[20$p\x1b[20h\x1b[20$p");
+    (answers vte "\x1b[20$p\x1b[20h\x1b[20$p");
   is_true ~msg:"in the modes" (Vte.modes vte).new_line
 
 (* DECSCUSR sets the cursor's shape and blinking; RIS restores the blinking
@@ -1082,31 +1127,31 @@ let mode_and_colour_queries () =
   let vte = Vte.create ~rows:2 ~cols:10 () in
   equal ~msg:"DEC modes" string
     "\x1b[?2004;2$y\x1b[?7;1$y\x1b[?1049;2$y\x1b[?2026;0$y"
-    (Vte.feed_string vte "\x1b[?2004$p\x1b[?7$p\x1b[?1049$p\x1b[?2026$p");
+    (answers vte "\x1b[?2004$p\x1b[?7$p\x1b[?1049$p\x1b[?2026$p");
   equal ~msg:"DEC modes after setting them" string
     "\x1b[?2004;1$y\x1b[?7;2$y\x1b[?1049;1$y\x1b[?47;1$y"
-    (Vte.feed_string vte
+    (answers vte
        "\x1b[?2004h\x1b[?7l\x1b[?1049h\x1b[?2004$p\x1b[?7$p\x1b[?1049$p\x1b[?47$p");
   equal ~msg:"ANSI modes" string "\x1b[4;2$y\x1b[4;1$y\x1b[2;0$y"
-    (Vte.feed_string vte "\x1b[4$p\x1b[4h\x1b[4$p\x1b[2$p");
+    (answers vte "\x1b[4$p\x1b[4h\x1b[4$p\x1b[2$p");
   equal ~msg:"dynamic colours, BEL and ST" string
     "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x1b\\"
-    (Vte.feed_string vte "\x1b]10;?\x07\x1b]11;?\x1b\\");
+    (answers vte "\x1b]10;?\x07\x1b]11;?\x1b\\");
   equal ~msg:"successive dynamic colours" string
     "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x07"
-    (Vte.feed_string vte "\x1b]10;?;?;?\x07");
+    (answers vte "\x1b]10;?;?;?\x07");
   equal ~msg:"palette colours" string
     "\x1b]4;1;rgb:8080/0000/0000\x07\x1b]4;196;rgb:ffff/0000/0000\x07"
-    (Vte.feed_string vte "\x1b]4;1;?;2;red;196;?;256;?;+1;?\x07");
+    (answers vte "\x1b]4;1;?;2;red;196;?;256;?;+1;?\x07");
   equal ~msg:"no answer: cursor colour, a set, a query cut short" string ""
-    (Vte.feed_string vte "\x1b]12;?\x07\x1b]11;#ffffff\x07\x1b]10;?\x18");
+    (answers vte "\x1b]12;?\x07\x1b]11;#ffffff\x07\x1b]10;?\x18");
   let vte =
     Vte.create ~default_fg:(Ansi.Color.of_rgb 1 2 3)
       ~default_bg:Ansi.Color.default_bg ~rows:2 ~cols:10 ()
   in
   equal ~msg:"the default colours create was given" string
     "\x1b]10;rgb:0101/0202/0303\x07\x1b]11;rgb:0000/0000/0000\x07"
-    (Vte.feed_string vte "\x1b]10;?\x07\x1b]11;?\x07")
+    (answers vte "\x1b]10;?\x07\x1b]11;?\x07")
 
 (* An OSC acts only when it ends with ST or BEL; one cut short does nothing.
    Only OSC 0, 2 and 8 are kept, each up to 64 KiB. *)
@@ -1166,7 +1211,7 @@ let zero_counts_mean_one () =
 let replies_by_parameter_value () =
   let vte = Vte.create ~rows:3 ~cols:5 () in
   equal ~msg:"DA2 and DECXCPR" string "\x1b[>0;0;0c\x1b[?1;1;1R"
-    (Vte.feed_string vte "\x1b[>00c\x1b[?6;1n\x1b[>1c\x1b[?5n")
+    (answers vte "\x1b[>00c\x1b[?6;1n\x1b[>1c\x1b[?5n")
 
 (* In UTF-8, U+0080..U+009F are not controls: they do nothing. *)
 let utf8_c1_is_not_a_control () =
@@ -1522,7 +1567,7 @@ let unicode_malformed_utf8 () =
   (* Invalid UTF-8 byte *)
   Bytes.set malformed 3 'B';
   Bytes.set malformed 4 'C';
-  ignore (Vte.feed vte malformed 0 5 : string);
+  ignore (Vte.feed vte malformed 0 5 : _ list);
   let output = Vte.to_string vte in
   (* Invalid UTF-8 bytes are replaced with U+FFFD (replacement character) *)
   (* U+FFFD in UTF-8 is \xEF\xBF\xBD (\239\191\189) *)
@@ -2340,6 +2385,8 @@ let tests =
     test "combined mode sequence" combined_mode_sequence;
     test "OSC set title" osc_set_title;
     test "query replies" query_replies;
+    test "a rewritten reply reaches the program"
+      rewritten_reply_reaches_the_program;
     test "mode and colour queries" mode_and_colour_queries;
     test "line feed/new line mode" line_feed_new_line_mode;
     test "cursor style" cursor_style;

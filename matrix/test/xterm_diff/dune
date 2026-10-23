@@ -4,7 +4,7 @@
 (executable
  (name xterm_diff)
  (modules xterm_diff gen minimize norm screen vte_adapter xterm)
- (libraries unix matrix.vte matrix.grid matrix.ansi matrix.text))
+ (libraries unix matrix.vte matrix.input matrix.grid matrix.ansi matrix.text))
 
 (executable
  (name input_diff)

@@ -135,7 +135,7 @@ let rstrip_rows s =
 
 let screen_replays t ~width ~height =
   let vte = Vte.create ~rows:height ~cols:width () in
-  ignore (Vte.feed_string vte (Matrix_test.output t) : string);
+  ignore (Vte.feed_string vte (Matrix_test.output t) : _ list);
   equal ~msg:"replaying the emitted ANSI reconstructs the grid" text
     (rstrip_rows (Matrix_test.screen t))
     (rstrip_rows (Vte.to_string vte))

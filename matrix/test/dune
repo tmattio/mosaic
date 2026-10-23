@@ -29,7 +29,7 @@
  (name test_vte)
  (package matrix)
  (modules test_vte)
- (libraries windtrap matrix.vte matrix.grid matrix.ansi))
+ (libraries windtrap matrix.vte matrix.input matrix.grid matrix.ansi))
 
 (test
  (name test_vte_props)
@@ -74,7 +74,7 @@
  (name test_runtime)
  (package matrix)
  (modules test_runtime)
- (libraries windtrap matrix matrix.vte unix threads.posix))
+ (libraries windtrap matrix matrix.vte matrix.input unix threads.posix))
 
 (executable
  (name runtime_child)
@@ -106,13 +106,26 @@
  (name test_vte_fuzz)
  (package matrix)
  (modules test_vte_fuzz)
- (libraries windtrap matrix.vte matrix.grid matrix.ansi matrix.text))
+ (libraries
+  windtrap
+  matrix.vte
+  matrix.input
+  matrix.grid
+  matrix.ansi
+  matrix.text))
 
 (test
  (name test_render_props)
  (package matrix)
  (modules test_render_props)
- (libraries windtrap matrix matrix.vte matrix.ansi matrix.grid matrix.text))
+ (libraries
+  windtrap
+  matrix
+  matrix.vte
+  matrix.input
+  matrix.ansi
+  matrix.grid
+  matrix.text))
 
 (test
  (name test_decoder)

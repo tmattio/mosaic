@@ -28,7 +28,7 @@ let scrollback_append =
 
 let scrollback_render =
   let vte = Vte.create ~scrollback:512 ~rows:24 ~cols:80 () in
-  ignore (Vte.feed_string vte history_text : string);
+  ignore (Vte.feed_string vte history_text : _ list);
   let dst = Grid.create ~width:80 ~height:24 () in
   Thumper.bench "scrollback/render-styled" (fun () ->
       for y = 0 to 23 do

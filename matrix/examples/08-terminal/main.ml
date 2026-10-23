@@ -60,7 +60,7 @@ let read_pty_output state =
         match Pty.read pty buf 0 (Bytes.length buf) with
         | n when n > 0 ->
             (* The program waits for the answers to its queries. *)
-            let replies = Vte.feed state.vte buf 0 n in
+            let replies = Input.Reply.encode (Vte.feed state.vte buf 0 n) in
             write_all pty replies 0 (String.length replies);
             read_loop ()
         | _ -> ()

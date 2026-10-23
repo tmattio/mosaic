@@ -162,30 +162,39 @@
 
     {2:replies Replies}
 
-    The terminal answers:
+    A program asks the terminal questions, and the terminal answers on the
+    program's input. The answers are {!Matrix_input.Reply.t} values, the ones a
+    program's input decoder reads, which {!Matrix_input.Reply.encode} writes as
+    the terminal's bytes. The terminal answers:
     - DA ([CSI c]), and DECID ([ESC Z]), its obsolete form (ctlseqs), with
-      [CSI ? 1 ; 2 c], a VT100 with Advanced Video, and DA2 ([CSI > c]) with
-      [CSI > 0 ; 0 ; 0 c]. The identity is a promise: a VT220 (level 2) would
-      promise 8-bit controls and DECSCL, which this terminal lacks;
-    - DSR 5 with [CSI 0 n], and CPR (DSR 6) with [CSI r ; c R], the row counted
-      from the top margin in origin mode;
-    - DECXCPR ([CSI ? 6 n]) with [CSI ? r ; c ; 1 R]. The VT510 manual shows no
-      [?]; xterm sends it, as DEC's other answers to [CSI ? ... n] carry it, and
-      it keeps the answer apart from a modified F3 key ([CSI 1 ; 2 R]);
+      [Primary_attributes [1; 2]], [CSI ? 1 ; 2 c], a VT100 with Advanced Video,
+      and DA2 ([CSI > c]) with [Secondary_attributes [0; 0; 0]],
+      [CSI > 0 ; 0 ; 0 c]. The identity is a promise, and the same for every
+      terminal: a VT220 (level 2) would promise 8-bit controls and DECSCL, which
+      this terminal lacks. A caller that must pass for another terminal, such as
+      a recorder whose sessions are compared with that terminal's, rewrites the
+      reply before relaying it, where the promise is visibly its own;
+    - DSR 5 with [Operating_status `Ok], [CSI 0 n], and CPR (DSR 6) with a
+      [Cursor] with no page, [CSI r ; c R], the row counted from the top margin
+      in origin mode;
+    - DECXCPR ([CSI ? 6 n]) with a [Cursor] on page 1, [CSI ? r ; c ; 1 R]. The
+      VT510 manual shows no [?]; xterm sends it, as DEC's other answers to
+      [CSI ? ... n] carry it, and it keeps the answer apart from a modified F3
+      key ([CSI 1 ; 2 R]);
     - DECRQM, which asks for the state of one mode, [CSI Ps $ p] for an ANSI
-      mode and [CSI ? Ps $ p] for a DEC private one, with DECRPM,
-      [CSI Ps ; Pm $ y] and [CSI ? Ps ; Pm $ y]: [Pm] is 1 for set, 2 for reset,
-      and 0 for a mode this terminal does not recognize (VT320 Programmer
+      mode and [CSI ? Ps $ p] for a DEC private one, with DECRPM, a [Mode]:
+      [CSI Ps ; Pm $ y] and [CSI ? Ps ; Pm $ y], where [Pm] is 1 for set, 2 for
+      reset, and 0 for a mode this terminal does not recognize (VT320 Programmer
       Information, "Mode Settings"). The modes recognized are those of
       {!type-modes}; modes 47, 1047 and 1049 report the alternate screen;
     - OSC 10 and OSC 11 with [?], which ask for the default foreground and
       background, and OSC 4 [; c ; ?], which asks for palette colour [c], each
-      with the OSC that would set it, [OSC 11 ; rgb:0000/0000/0000], ended as
-      the query was, by BEL or ST (ctlseqs, "Operating System Commands"). The
-      default colours are those {!create} was given, and the palette colours
-      those {!Ansi.Color.indexed} gives. Setting a colour with these OSCs has no
-      effect, and the other colours they name, such as the cursor's (OSC 12),
-      have no answer.
+      with a [Color], the OSC that would set it, [OSC 11 ; rgb:0000/0000/0000],
+      ended as the query was, by BEL or ST (ctlseqs, "Operating System
+      Commands"). The default colours are those {!create} was given, and the
+      palette colours those {!Ansi.Color.indexed} gives. Setting a colour with
+      these OSCs has no effect, and the other colours they name, such as the
+      cursor's (OSC 12), have no answer.
 
     {2:resets Resets}
 
@@ -229,16 +238,18 @@ val create :
 
 (** {1:feeding Feeding output} *)
 
-val feed : t -> bytes -> int -> int -> string
+val feed : t -> bytes -> int -> int -> Matrix_input.Reply.t list
 (** [feed t b off len] applies the [len] bytes of [b] from [off] and is the
-    replies they asked for ({!section-replies}), in order: write them to the
-    program's input. It is [""], with no allocation, when there are none. A
-    sequence split across calls is answered by the call that completes it.
+    replies they asked for ({!section-replies}), in order: write
+    [Matrix_input.Reply.encode replies] to the program's input, after rewriting
+    or dropping any the caller answers otherwise. It is [[]], with no
+    allocation, when there are none. A sequence split across calls is answered
+    by the call that completes it.
 
     Raises [Invalid_argument] if [off] and [len] do not designate a range of
     [b]. *)
 
-val feed_string : t -> string -> string
+val feed_string : t -> string -> Matrix_input.Reply.t list
 (** [feed_string t s] is
     [feed t (Bytes.unsafe_of_string s) 0 (String.length s)]. *)
 

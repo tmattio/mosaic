@@ -342,7 +342,7 @@ let test_build_visual () =
 let test_resize_repaints_every_cell () =
   let r = create_renderer ~width:5 ~height:2 () in
   let vte = Vte.create ~rows:2 ~cols:6 () in
-  let show output = ignore (Vte.feed_string vte output : string) in
+  let show output = ignore (Vte.feed_string vte output : _ list) in
   show
     (Screen.render
        (build_screen r ~width:5 ~height:2 (fun grid _hits ->
@@ -365,7 +365,7 @@ let test_adjacent_cells_stay_apart () =
                Grid.draw_text grid ~x:1 ~y:0 ~text:second))
       in
       let vte = Vte.create ~rows:1 ~cols:4 () in
-      ignore (Vte.feed_string vte output : string);
+      ignore (Vte.feed_string vte output : _ list);
       let g = Vte.grid vte in
       equal ~msg:(first ^ " stays in its cell") string first (Grid.get_text g 0);
       equal
