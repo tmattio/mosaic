@@ -1849,6 +1849,23 @@ let vte_term ?(shell = "") ~cols ~rows () =
   f.answer <- (fun s -> Matrix_input.Reply.encode (Vte.feed_string vte s));
   { vte; f }
 
+(* The kitty protocol keeps a stack of flags for each screen ("The main and
+   alternate screens in the terminal emulator must maintain their own,
+   independent, keyboard mode stacks", kitty keyboard protocol, "Progressive
+   enhancement"): the run pushes its flags on the screen it draws on, and
+   pops them there, leaving the shell's screen as it found it. *)
+let test_kitty_flags_on_the_run's_screen () =
+  let term = vte_term ~cols:20 ~rows:4 () in
+  let flags () = (Vte.keyboard term.vte).kitty in
+  run ~config:(Matrix.config ~mouse:`Off ()) term.f (fun app ->
+      is_true ~msg:"the alternate screen" (Vte.modes term.vte).alternate_screen;
+      equal ~msg:"the run's flags, on its screen" int 5 (flags ());
+      ignore (Matrix.step app ~now:term.f.now : unit Matrix.step option);
+      is_true ~msg:"the capabilities say so, once read"
+        ((Matrix.capabilities app).kitty_keyboard = Some 5));
+  is_false ~msg:"the primary screen" (Vte.modes term.vte).alternate_screen;
+  equal ~msg:"the shell's flags" int 0 (flags ())
+
 let run_term ?(mode = `Primary) ?(min_tui_height = 1) term body =
   run ~config:(quiet ~mode ~min_tui_height ()) term.f body
 
@@ -3186,6 +3203,8 @@ let () =
         ];
       group "Lifecycle"
         [
+          test "kitty flags are pushed on the run's screen"
+            test_kitty_flags_on_the_run's_screen;
           test "the terminal is given back on an exception"
             test_run_gives_back_on_exception;
           test "end of input finalizes the parser"

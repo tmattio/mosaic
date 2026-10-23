@@ -452,6 +452,9 @@ type 'msg app = {
   mutable frame_modes_armed : bool;
   mutable restore_modes_on_next_focus : bool;
   mutable released : bool;
+  (* The modes are set once the screen is taken: the kitty keyboard
+     protocol's flags belong to the screen they are pushed on. *)
+  mutable modes_taken : bool;
   (* Signals the run took, to restore when it ends. *)
   mutable taken : int list;
   (* Signals received and not yet acted on, oldest first. *)
@@ -718,7 +721,7 @@ let update_capabilities t =
   if caps <> Terminal.capabilities t.terminal then (
     Terminal.set_capabilities t.terminal caps;
     if not t.released then (
-      apply_modes t;
+      if t.modes_taken then apply_modes t;
       refresh_capabilities t;
       force_full_redraw t;
       owe_frame t))
@@ -1459,6 +1462,7 @@ let reset_modes t ~exiting =
 
 let take_modes t =
   push_undo t (fun ~exiting -> reset_modes t ~exiting);
+  t.modes_taken <- true;
   refresh_capabilities t;
   apply_modes t;
   refresh_render_region t;
@@ -1917,6 +1921,7 @@ let make backend ?stop config =
     frame_modes_armed = false;
     restore_modes_on_next_focus = false;
     released = false;
+    modes_taken = false;
     taken = [];
     kept = [];
     tstp_ignored = false;
