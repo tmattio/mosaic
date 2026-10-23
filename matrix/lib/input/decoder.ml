@@ -937,6 +937,15 @@ let flush_invalid d emit =
   d.u8_alt <- false;
   emit (Invalid s)
 
+(* An introducer that begins nothing is a key: Alt and the introducer, or,
+   after ESC ESC, Alt+Escape and the introducer, as ESC ESC before any other
+   byte is. *)
+let intro_keys pre intro emit =
+  if pre then (
+    emit alt_ascii.(0x1B);
+    emit ascii.(Char.code intro))
+  else emit alt_ascii.(Char.code intro)
+
 let rec step d b emit =
   match d.st with
   | Ground -> ground d b emit
@@ -947,9 +956,8 @@ let rec step d b emit =
           d.st <- Esc false)
         else d.st <- Esc true
       else if b = 0x5B || b = 0x4F then d.st <- Intro (pre, Char.unsafe_chr b)
-      else if (b = 0x50 || b = 0x5D || b = 0x5F) && d.string_replies > 0 then (
-        if pre then emit escape;
-        d.st <- Intro (false, Char.unsafe_chr b))
+      else if (b = 0x50 || b = 0x5D || b = 0x5F) && d.string_replies > 0 then
+        d.st <- Intro (pre, Char.unsafe_chr b)
       else if pre then (
         emit alt_ascii.(0x1B);
         d.st <- Ground;
@@ -973,6 +981,7 @@ let rec step d b emit =
           d.st <- Header (intro = 'O', pre);
           header d (intro = 'O') pre b emit)
         else (
+          if pre then emit escape;
           P.reset d.p;
           forward d '\x1b';
           forward d intro;
@@ -980,9 +989,8 @@ let rec step d b emit =
           forward d (Char.unsafe_chr b);
           string_byte_done d intro emit)
       else (
-        if pre then emit escape;
-        emit alt_ascii.(Char.code intro);
         d.st <- Ground;
+        intro_keys pre intro emit;
         step d b emit)
   | Header (ss3, pre) -> header d ss3 pre b emit
   | X10 (header, pre) ->
@@ -1201,8 +1209,7 @@ let idle d emit =
       emit (if pre then alt_ascii.(0x1B) else escape)
   | Intro (pre, intro) ->
       d.st <- Ground;
-      if pre then emit escape;
-      emit alt_ascii.(Char.code intro)
+      intro_keys pre intro emit
   | Header (_, pre) | Linux (_, pre) ->
       P.reset d.p;
       d.st <- Ground;

@@ -23,15 +23,18 @@
       [ESC _] before [G] begin a control string, but only while a string reply
       is owed ({!section-owed}). Otherwise they are Alt keys at once.
     - Any other byte after an introducer makes Alt and the introducer, then that
-      byte.
+      byte. After ESC ESC it makes Alt+Escape and the introducer, as ESC ESC
+      before any byte that begins nothing does, whatever is owed: what is owed
+      decides only whether a string can begin.
 
     The bytes cannot decide whether ESC, ESC ESC, or ESC before an introducer
     was a whole keystroke when the terminal stops writing: it may not have
     finished. {!pending} says what is held; the caller, who knows the time,
     calls {!idle} once the terminal has been silent long enough, and the held
-    bytes become keys: Escape, Alt+Escape, or Alt and the introducer. With no
-    {!idle} in between, the events do not depend on how the bytes were split
-    across calls to {!feed}, once adjacent {!Paste_data} are joined.
+    bytes become keys: Escape, Alt+Escape, Alt and the introducer, or Alt+Escape
+    and the introducer. With no {!idle} in between, the events do not depend on
+    how the bytes were split across calls to {!feed}, once adjacent
+    {!Paste_data} are joined.
 
     {1:replies Replies are never keys}
 

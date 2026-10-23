@@ -618,7 +618,9 @@ let string_replies =
         ("\x1b]a", [ "Key Alt+']'"; "Key 'a' text \"a\"" ]);
         ("\x1bPa", [ "Key Alt+'P'"; "Key 'a' text \"a\"" ]);
         ("\x1b_a", [ "Key Alt+'_'"; "Key 'a' text \"a\"" ]);
-        ("\x1b\x1b]a", [ "Key Escape"; "Key Alt+']'"; "Key 'a' text \"a\"" ]);
+        ( "\x1b\x1b]a",
+          [ "Key Alt+Escape"; "Key ']' text \"]\""; "Key 'a' text \"a\"" ] );
+        ("\x1b\x1b]11;?\x07", [ "Key Escape"; "Reply Osc \"11;?\"" ]);
       ];
     test "silence never cuts a string" (fun () ->
         check_steps ~owed:strings
@@ -695,7 +697,10 @@ let silence =
             (owed (), "\x1b\x1b\x1b", [ "Key Alt+Escape"; "Key Escape" ]);
             (owed (), "\x1b[", [ "Key Alt+'['" ]);
             (owed (), "\x1bO", [ "Key Alt+'O'" ]);
-            (owed (), "\x1b\x1b[", [ "Key Escape"; "Key Alt+'['" ]);
+            (owed (), "\x1b\x1b[", [ "Key Alt+Escape"; "Key '[' text \"[\"" ]);
+            (strings, "\x1b\x1bP", [ "Key Alt+Escape"; "Key 'P' text \"P\"" ]);
+            (owed (), "\x1b\x1bP", [ "Key Alt+Escape"; "Key 'P' text \"P\"" ]);
+            (owed (), "\x1b\x1ba", [ "Key Alt+Escape"; "Key 'a' text \"a\"" ]);
             (strings, "\x1b]", [ "Key Alt+']'" ]);
             (strings, "\x1bP", [ "Key Alt+'P'" ]);
             (owed (), "\x1b[1;5", [ "Reply Cut sequence" ]);
