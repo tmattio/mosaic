@@ -50,19 +50,37 @@ let write_all_with_select pty data timeout =
   done;
   !written
 
+(* Blocking reads in these tests wait at most [timeout] seconds, so that a
+   regression which hides the end of output fails instead of hanging. *)
+let readable ~timeout fd =
+  let deadline = Unix.gettimeofday () +. timeout in
+  let rec wait () =
+    let left = deadline -. Unix.gettimeofday () in
+    left > 0.
+    &&
+    match Unix.select [ fd ] [] [] left with
+    | [], _, _ -> wait ()
+    | _ -> true
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> wait ()
+  in
+  wait ()
+
 (* Spawns [prog] and returns once it has closed its descriptors on exit,
    without reaping it: the child inherits the write end of a pipe. *)
 let spawn_and_await_exit ~prog ~args =
   let exited_r, exited_w = Unix.pipe () in
   let pty = Pty.spawn ~prog ~args () in
   Unix.close exited_w;
-  ignore (Unix.read exited_r (Bytes.create 1) 0 1 : int);
+  let exited = readable ~timeout:2. exited_r in
   Unix.close exited_r;
+  if not exited then failf "%s did not exit within 2s" prog;
   pty
 
 let read_to_eof pty =
   let buf = Bytes.create 256 and out = Buffer.create 64 in
   let rec loop () =
+    if not (readable ~timeout:2. (Pty.in_fd pty)) then
+      failf "no end of output within 2s, after %S" (Buffer.contents out);
     match Pty.read pty buf 0 (Bytes.length buf) with
     | 0 | (exception Unix.Unix_error (Unix.EIO, _, _)) -> Buffer.contents out
     | n ->
@@ -289,6 +307,15 @@ let test_slave_on_std_fd () =
   equal ~msg:"the child writes to its stdout and stderr" string "out\r\nerr\r\n"
     output
 
+(* The master reads the end of output once the child has exited, on every
+   platform. Holding the slave where the kernel does not hang up the terminal
+   when its session leader exits, as on Linux, would hide it. *)
+let test_spawn_output_then_eof () =
+  let pty = Pty.spawn ~prog:"echo" ~args:[ "hello" ] () in
+  let output = read_to_eof pty in
+  Pty.close pty;
+  equal ~msg:"output, then the end of output" string "hello\r\n" output
+
 let test_failed_spawn_does_not_run_parent_at_exit () =
   let parent_pid = Unix.getpid () in
   let marker_read, marker_write = Unix.pipe () in
@@ -393,14 +420,7 @@ let test_close_idempotent () =
 let test_close_reaps_exited_child_without_delay () =
   let pty = Pty.spawn ~prog:"sh" ~args:[ "-c"; "exit 0" ] () in
   (* EOF (or EIO) on the master means the child exited and is reapable. *)
-  let buf = Bytes.create 64 in
-  let rec drain () =
-    match Pty.read pty buf 0 64 with
-    | 0 -> ()
-    | _ -> drain ()
-    | exception Unix.Unix_error (Unix.EIO, _, _) -> ()
-  in
-  drain ();
+  ignore (read_to_eof pty : string);
   let start = Unix.gettimeofday () in
   Pty.close pty;
   let elapsed = Unix.gettimeofday () -. start in
@@ -484,6 +504,7 @@ let tests =
       test "spawn sh" test_spawn_sh;
       test "spawn with env" test_spawn_with_env;
       test "spawn with cwd" test_spawn_with_cwd;
+      test "spawn output then eof" test_spawn_output_then_eof;
       test "spawn output read late" test_spawn_output_read_late;
       test "slave not inherited" test_slave_not_inherited;
       test "slave on a std fd" test_slave_on_std_fd;
@@ -496,7 +517,8 @@ let tests =
       test "close idempotent" test_close_idempotent;
       test "close reaps exited child without delay"
         test_close_reaps_exited_child_without_delay;
-      test "close with unread output" test_close_with_unread_output;
+      (* The timeout bounds close, which would block in its reap. *)
+      test ~timeout:5. "close with unread output" test_close_with_unread_output;
       test "double close does not touch reused fd"
         test_double_close_does_not_touch_reused_fd;
       test "eof on close" test_eof_on_close;
