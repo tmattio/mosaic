@@ -17,12 +17,11 @@ cancels the program after that long.
 
 ## Highlights
 
-- The program runs on a domain of its own, as `Mosaic.run` runs it, so it
-  never holds up Lwt's thread; the work of `Cmd.perform` runs on Lwt's
-  thread through `Lwt_preemptive.run_in_main_dont_wait`.
-- A `Matrix.Stop` request is made before the program starts: cancelling the
-  promise requests the stop and resolves at once, even before the program
-  has begun.
-- The program gives the terminal back on its own domain; the domain closes a
-  pipe then, and code that must wait for the terminal awaits the pipe with
-  `Lwt_unix.wait_read`.
+- `Mosaic_lwt.run app` is the whole glue: the program runs on a domain of its
+  own, so it never holds up Lwt's thread, and the work of `Cmd.perform` runs
+  on Lwt's thread, where it starts its promises.
+- Cancelling the promise requests the program's stop, even before the
+  program has begun. The promise is rejected at once, and the program gives
+  the terminal back on its own domain; code that must wait for the terminal
+  requests the stop given to `Mosaic_lwt.run ~stop` and waits for the
+  promise instead.

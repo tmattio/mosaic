@@ -50,59 +50,7 @@ let subscriptions _ =
       (Shortcut.escape, Quit);
     ]
 
-(* The Lwt glue. Lwt runs its promises on one thread, which a program must
-   not hold up, so the program runs on a domain of its own, as Mosaic.run
-   runs it, and the work of [Cmd.perform] runs on Lwt's thread. *)
-
-type tui = {
-  stop : Matrix.Stop.t;
-  finished : unit Lwt.t;
-      (** Resolves once the terminal is given back, with what the program
-          raised. A program cancelled while it takes the terminal gives it back
-          once that is done: on a terminal that does not answer, after the wait
-          for its answers (up to max(500 ms, four round trips)). *)
-}
-
-(* Starts [app] on a domain of its own. The domain closes [ended] once the
-   terminal is given back, which makes its other end readable. *)
-let start app =
-  let stop = Matrix.Stop.create () in
-  let ended, closed = Unix.pipe ~cloexec:true () in
-  let process_perform work =
-    Lwt_preemptive.run_in_main_dont_wait
-      (fun () ->
-        work ();
-        Lwt.return_unit)
-      ignore
-  in
-  let domain =
-    Domain.spawn (fun () ->
-        Fun.protect
-          ~finally:(fun () -> Unix.close closed)
-          (fun () -> Mosaic.run ~stop ~process_perform app))
-  in
-  let ended = Lwt_unix.of_unix_file_descr ended in
-  let finished =
-    Lwt.finalize
-      (fun () ->
-        Lwt.map (fun () -> Domain.join domain) (Lwt_unix.wait_read ended))
-      (fun () -> Lwt_unix.close ended)
-  in
-  { stop; finished }
-
-(* [run tui] resolves once [tui] has ended. Cancelling it requests the
-   program's stop and resolves at once, without waiting for the terminal:
-   the program gives it back on its own domain, within the wait for an
-   answer the terminal owes, and the process's exit restores it if the
-   process ends first. Code that must wait for it waits for [finished]. *)
-let run tui =
-  Lwt.finalize
-    (fun () -> Lwt.protected tui.finished)
-    (fun () ->
-      Matrix.Stop.request tui.stop;
-      Lwt.return_unit)
-
-(* With [--for SECONDS], the program is cancelled after that long. *)
+(* With [--for SECONDS], [Lwt.pick] cancels the program after that long. *)
 let () =
   Random.self_init ();
   let limit =
@@ -110,15 +58,8 @@ let () =
     | [| _; "--for"; seconds |] -> Some (float_of_string seconds)
     | _ -> None
   in
+  let program = Mosaic_lwt.run { init; update; view; subscriptions } in
   Lwt_main.run
-    (let open Lwt.Syntax in
-     let tui = start { init; update; view; subscriptions } in
-     let* () =
-       match limit with
-       | None -> run tui
-       | Some seconds -> Lwt.pick [ run tui; Lwt_unix.sleep seconds ]
-     in
-     (* Writing before the terminal is given back would write on the
-        program's screen. *)
-     let* () = tui.finished in
-     Lwt_io.printl "The terminal is the shell's again.")
+    (match limit with
+    | None -> program
+    | Some seconds -> Lwt.pick [ program; Lwt_unix.sleep seconds ])
