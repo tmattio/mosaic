@@ -1,0 +1,8 @@
+; A program whose worker runs on fibers of Eio's mock scheduler, settled by
+; the test. Skipped when Eio is not installed.
+
+(test
+ (name test_eio_worker)
+ (package mosaic)
+ (build_if %{lib-available:eio.mock})
+ (libraries windtrap mosaic mosaic.test matrix matrix.test eio eio.mock))

@@ -12,7 +12,25 @@
 
     The session's functions ({!Matrix_test.input}, {!Matrix_test.advance}, ...)
     drive the program, and the terminal's readers ({!Matrix_test.Terminal}) show
-    what it did. *)
+    what it did.
+
+    A worker ({!Mosaic.Sub.val-worker}) runs as long as the program declares it,
+    so it runs on an executor of its own, with a [quiesce] that returns once
+    every piece of work waits. Under Eio's mock scheduler ([eio.mock]), work
+    runs on fibers, and a sleep of 1 ns returns only once every other fiber
+    waits:
+
+    {[
+    Eio_mock.Backend.run_full @@ fun env ->
+    Eio.Switch.run @@ fun sw ->
+    let process_perform job =
+      Eio.Fiber.fork_daemon ~sw (fun () ->
+          job ();
+          `Stop_daemon)
+    in
+    let quiesce () = Eio.Time.Mono.sleep env#mono_clock 1e-9 in
+    Mosaic_test.run ~process_perform ~quiesce term app @@ fun s -> ...
+    ]} *)
 
 val run :
   ?config:Matrix.config ->
