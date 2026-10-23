@@ -427,6 +427,7 @@ let test_cancelled_attachment_restores_terminal () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let output = ref [] in
+  let cancelled = ref false in
   let failure =
     try
       Eio.Cancel.sub (fun context ->
@@ -437,7 +438,10 @@ let test_cancelled_attachment_restores_terminal () =
                 let text = Cstruct.to_string buffer in
                 if !output = [] then
                   ignore (Pty.write_string master "x" 0 1 : int);
-                if text = "\027[14t" then (
+                (* Cancelled at the first write after the setup sets a
+                   mode. *)
+                if (not !cancelled) && List.mem "\027[?2004h" !output then (
+                  cancelled := true;
                   is_false ~msg:"raw mode acquired before cancellation"
                     (Unix.tcgetattr fd).c_echo;
                   Eio.Cancel.cancel context Injected_probe_failure;

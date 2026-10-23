@@ -24,6 +24,7 @@ type event =
   | Resize of int * int
   | Color_scheme of [ `Dark | `Light ]
   | Invalid of string
+  | Reply of Input.Reply.t
 
 let pp_event ppf = function
   | Key k -> Format.fprintf ppf "Key %a" Input.Keystroke.pp k
@@ -41,6 +42,7 @@ let pp_event ppf = function
   | Color_scheme `Dark -> Format.pp_print_string ppf "Color_scheme Dark"
   | Color_scheme `Light -> Format.pp_print_string ppf "Color_scheme Light"
   | Invalid s -> Format.fprintf ppf "Invalid %S" s
+  | Reply r -> Format.fprintf ppf "Reply %a" Input.Reply.pp r
 
 module Backend = struct
   type t = {
@@ -81,9 +83,14 @@ type config = {
 }
 
 (* Queries sent together, which the terminal answers in order. A batch of
-   capability queries ends with DA1; a cursor batch is one position report,
-   its own answer. *)
-type question = Capabilities of Terminal.Caps.batch | Cursor
+   capability queries, of the runtime's other queries or of the
+   application's ends with DA1; a cursor batch is one position report, its
+   own answer. *)
+type question =
+  | Capabilities of Terminal.Caps.batch
+  | Cursor
+  | Own  (** Queries whose replies the runtime takes as they come. *)
+  | Application
 
 type batch = {
   question : question;
@@ -335,8 +342,8 @@ let capabilities t = Terminal.capabilities t.terminal
 let running t = t.running
 let render_eligible t = t.running && t.lifecycle = `Ready
 
-(* A cursor report needs a terminal on the input side, in raw mode. *)
-let can_query_cursor t =
+(* A reply needs a terminal on the input side, in raw mode. *)
+let can_query t =
   t.backend.input_is_tty && t.config.raw_mode && not t.input_ended
 
 let cadence_active t =
@@ -396,6 +403,37 @@ let refresh_capabilities t =
   if m <> Grid.width_method (Screen.current_grid t.screen) then
     set_width_method t m
 
+(* A batch's queries are sent, and what they are owed is added to the
+   decoder's counts until the batch is answered or given up. *)
+let send_batch t question (bytes, owed) =
+  Terminal.send t.terminal bytes;
+  Input.Decoder.expect t.decoder owed;
+  let b =
+    {
+      question;
+      owed;
+      sent = now t;
+      reports = 0;
+      cursor = None;
+      answered = false;
+    }
+  in
+  t.batches <- t.batches @ [ b ];
+  b
+
+let da1 = Ansi.(to_string (query Device_attributes))
+
+(* A query whose reply the runtime takes as it comes, such as the pixel size,
+   is a batch closed by DA1 too, so that its reply is never taken for the
+   application's. *)
+let ask_own t q =
+  if can_query t then
+    ignore
+      (send_batch t Own
+         ( Ansi.(to_string (query q)) ^ da1,
+           { Input.Decoder.cursor_reports = 0; string_replies = 0 } )
+        : batch)
+
 (* Input modes follow the configuration and the capabilities, and are set
    again whenever the capabilities change: setting a mode a terminal has is
    idempotent, so this is the difference between what the modes were and what
@@ -405,7 +443,6 @@ let refresh_capabilities t =
    that the capabilities say which flags hold. *)
 
 let kitty_flags t = if t.config.key_releases then 0b11111 else 0b00101
-let keyboard_flags_query = Ansi.(to_string (query Csi_u_support))
 
 let apply_modes t =
   let terminal = t.terminal in
@@ -423,7 +460,7 @@ let apply_modes t =
   in
   if kitty && not (Terminal.kitty_keyboard_enabled terminal) then (
     Terminal.enable_kitty_keyboard ~flags:(kitty_flags t) terminal true;
-    Terminal.send terminal keyboard_flags_query)
+    ask_own t Csi_u_support)
   else if not kitty then Terminal.enable_kitty_keyboard terminal false;
   Terminal.enable_modify_other_keys terminal (not kitty);
   set_width_method t (width_method t)
@@ -489,22 +526,6 @@ let give_up t b =
     t.lost_reports + b.owed.Input.Decoder.cursor_reports - b.reports;
   close t b
 
-let send_batch t question (bytes, owed) =
-  Terminal.send t.terminal bytes;
-  Input.Decoder.expect t.decoder owed;
-  let b =
-    {
-      question;
-      owed;
-      sent = now t;
-      reports = 0;
-      cursor = None;
-      answered = false;
-    }
-  in
-  t.batches <- t.batches @ [ b ];
-  b
-
 let ask t batch =
   ignore
     (send_batch t (Capabilities batch) (Terminal.Caps.ask t.evidence batch)
@@ -535,19 +556,27 @@ let cursor_report t ~row ~col =
         | Cursor ->
             b.cursor <- Some (row, col);
             b.answered <- true;
-            close t b)
+            close t b
+        | Application -> push t (Reply (Cursor { row; col }))
+        | Own -> ())
+
+(* The oldest batch that ends with DA1, which the replies that are not cursor
+   reports answer. *)
+let replying t =
+  List.find_opt
+    (fun b ->
+      match b.question with
+      | Capabilities _ | Own | Application -> true
+      | Cursor -> false)
+    t.batches
 
 (* A DA1 reply answers the oldest batch that asked for one. The terminal
    answers in order, so every query sent before it has been answered or never
    will be. *)
 let attributes_report t attributes =
-  match
-    List.find_opt
-      (fun b ->
-        match b.question with Capabilities _ -> true | Cursor -> false)
-      t.batches
-  with
-  | Some ({ question = Capabilities q; _ } as b) ->
+  match replying t with
+  | None -> ()
+  | Some b -> (
       let rec before = function
         | b' :: rest when b' != b -> b' :: before rest
         | _ -> []
@@ -556,11 +585,17 @@ let attributes_report t attributes =
       t.lost_reports <- 0;
       b.answered <- true;
       close t b;
-      if q = Probe then t.rtt <- now t -. b.sent;
-      t.evidence <- Terminal.Caps.answered t.evidence q ~attributes;
-      Option.iter (ask t) (Terminal.Caps.next t.evidence q)
-  | Some { question = Cursor; _ } | None -> ()
+      match b.question with
+      | Capabilities q ->
+          if q = Probe then t.rtt <- now t -. b.sent;
+          t.evidence <- Terminal.Caps.answered t.evidence q ~attributes;
+          Option.iter (ask t) (Terminal.Caps.next t.evidence q)
+      | Application -> push t (Reply (Primary_attributes attributes))
+      | Own | Cursor -> ())
 
+(* A reply is the runtime's to act on, and the application's too while its
+   batch is the one being answered. The reports a terminal sends on its own
+   that are application facts are events. *)
 let reply t (r : Input.Reply.t) =
   (match r with
   | Cursor { row; col } -> cursor_report t ~row ~col
@@ -571,9 +606,14 @@ let reply t (r : Input.Reply.t) =
       (* The report often follows the window-size signal of the same resize,
          and comes once when the mode is set. *)
       if t.reported_size <> (cols, rows) then push t (Resize (cols, rows))
-  | Text_area_pixels { height; width } ->
-      Terminal.set_pixel_resolution t.terminal (Some (width, height))
-  | r -> t.evidence <- Terminal.Caps.add t.evidence r);
+  | r -> (
+      (match r with
+      | Text_area_pixels { height; width } ->
+          Terminal.set_pixel_resolution t.terminal (Some (width, height))
+      | r -> t.evidence <- Terminal.Caps.add t.evidence r);
+      match replying t with
+      | Some { question = Application; _ } -> push t (Reply r)
+      | _ -> ()));
   update_capabilities t
 
 let decoded t : Input.Decoder.event -> unit = function
@@ -646,6 +686,10 @@ let await t b =
   done
 
 let abort_paste t = Input.Decoder.cut_paste t.decoder (decoded t)
+
+let query t ~owed bytes =
+  if t.lifecycle = `Ready && can_query t then
+    ignore (send_batch t Application (bytes ^ da1, owed) : batch)
 
 (* Adopts a primary layout transition: its operations go out with the next
    frame, and a frame after operations or a move of the live region redraws
@@ -1073,7 +1117,7 @@ let resume t =
     if t.suspend_left_alt then (
       t.suspend_left_alt <- false;
       try Terminal.enter_alternate_screen t.terminal with _ -> ());
-    if t.config.mode = `Primary && can_query_cursor t then (
+    if t.config.mode = `Primary && can_query t then (
       (* Input read while waiting is stale, but for resizes. *)
       let kept = Queue.length t.events in
       let b = ask_cursor t in
@@ -1156,13 +1200,13 @@ let apply_resize t cols rows now =
   else (
     t.width <- cols;
     t.height <- rows;
-    Terminal.query_pixel_resolution t.terminal;
+    ask_own t Pixel_size;
     force_full_redraw t;
     refresh_render_region t;
     (* A terminal moves its rows as it resizes, by rules of its own; the
        cursor moves with its row. The loop asks where it went before the next
        frame. *)
-    if t.config.mode = `Primary && can_query_cursor t then t.reanchor <- true;
+    if t.config.mode = `Primary && can_query t then t.reanchor <- true;
     t.last_resize_apply_time <- now;
     request_redraw t)
 
@@ -1413,7 +1457,7 @@ let attach ?(mode = `Alt) ?(raw_mode = true) ?(target_fps = Some 30.)
             b.cursor));
       app.lifecycle <- `Ready;
       apply_config app;
-      Terminal.query_pixel_resolution terminal;
+      ask_own app Pixel_size;
       app)
 
 (* Constructor: create a live app with Unix I/O *)

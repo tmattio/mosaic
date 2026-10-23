@@ -328,7 +328,9 @@ val modify_other_keys_off : t
 (** {1:queries Device and capability queries} *)
 
 (** The type for terminal queries. The terminal answers in its input stream,
-    after what it was already sending. *)
+    after what it was already sending. The reader of the input must expect the
+    answer: one that is a control string, as DA3's and XTVERSION's are, is
+    otherwise read as keys. *)
 type query =
   | Cursor_position  (** DSR 6. *)
   | Pixel_size  (** CSI 14 t. *)

@@ -325,7 +325,12 @@ val query_pixel_resolution : t -> unit
 
 val send : t -> string -> unit
 (** [send t s] writes [s] through the output callback. For non-TTY handles this
-    is a no-op. *)
+    is a no-op.
+
+    The terminal answers a query in its input, and whoever reads the input must
+    know the answer is coming: a reply that is a control string, such as
+    XTVERSION's, decodes as typed keys unless it is owed
+    ({!Matrix_input.Decoder.expect}). *)
 
 val tty : t -> bool
 (** [tty t] is [true] iff escape sequences are emitted. *)

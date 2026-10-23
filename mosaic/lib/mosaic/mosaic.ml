@@ -702,7 +702,7 @@ let handle_input runtime (input : Matrix.event) =
       runtime.paste <- None
   | Paste_end `Cut -> runtime.paste <- None
   | Text text -> dispatch_paste runtime text
-  | Resize _ | Invalid _ -> ());
+  | Resize _ | Invalid _ | Reply _ -> ());
   synchronize runtime
 
 let render runtime = synchronize runtime

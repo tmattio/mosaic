@@ -87,6 +87,8 @@ type event =
       (** The terminal's color scheme, in reply to a query or on a change. *)
   | Invalid of string
       (** Bytes that are not UTF-8, one ill-formed subsequence. *)
+  | Reply of Input.Reply.t
+      (** A reply to the application's own queries, sent with {!query}. *)
 
 val pp_event : Format.formatter -> event -> unit
 (** [pp_event] formats an event for debugging. *)
@@ -435,6 +437,27 @@ val abort_paste : app -> unit
     marker: a terminal that stalls mid-paste stops the data, and the paste goes
     on until its end marker or the end of the input. The bytes after it are
     decoded as input. *)
+
+val query : app -> owed:Input.Decoder.owed -> string -> unit
+(** [query app ~owed q] sends the queries [q] to the terminal, followed by a
+    primary device attributes query (DA1), and delivers their replies as
+    {!Reply} events, ending with the DA1 reply. [owed] says which of the replies
+    [q] asks for are cursor position reports or control strings, as
+    {!Input.Decoder.expect} counts them: the decoder must know that they are
+    coming, or a string reply such as XTVERSION's [DCS > | text ST] decodes as
+    Alt+P and typed text, and a cursor report [CSI 1 ; m R] as F3. A terminal
+    answers in order and answers DA1, so its DA1 reply says that [q] has been
+    answered, or never will be, as for the runtime's own queries.
+
+    A query sent any other way, such as with {!Terminal.send}, is not owed: its
+    reply is never a {!Reply}, and one that is a control string, or a cursor
+    report from the first row, reaches the application as input. The replies
+    delivered are those the terminal sends after it has answered the queries
+    sent before [q], so they may include the answer to a query the runtime
+    itself sent just before; a report the terminal sends on its own that is an
+    application fact is its event ({!Color_scheme}, {!Resize}). Nothing is sent
+    when no reply could come: when the input is not a terminal in raw mode, or
+    the application is not running in the terminal ({!suspend}, {!close}). *)
 
 val request_immediate_redraw : app -> unit
 (** [request_immediate_redraw app] requests a one-shot frame without waiting for

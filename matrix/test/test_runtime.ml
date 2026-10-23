@@ -2586,6 +2586,42 @@ let test_probe_reports_never_keys () =
         (list input_event) [] (events c))
     [ 6.; 10. ]
 
+(* The application's queries are owed as the runtime's are: their replies,
+   string replies too, reach it as replies, ending with the DA1 that closes
+   them, and never as keys; the runtime's own pixel size query, sent just
+   before, stays the runtime's. A query sent with [Terminal.send] is not owed,
+   and its string reply is typed. *)
+let test_application_query () =
+  let ((app, c) as t) = clocked_app ~rtt:0.1 ~answer:xterm ~limit:2. [] in
+  Matrix.query app
+    ~owed:{ cursor_reports = 1; string_replies = 1 }
+    "\027[>0q\027[6n";
+  run_clocked t;
+  equal (list input_event)
+    [
+      Reply (Version "XTerm(398)");
+      Reply (Cursor { row = 9; col = 0 });
+      Reply (Primary_attributes [ 64; 1 ]);
+    ]
+    (events c);
+  is_true ~msg:"the runtime still has the pixel size"
+    (Matrix.pixel_resolution app = Some (800, 480));
+  let ((app, c) as t) = clocked_app ~rtt:0.1 ~answer:xterm ~limit:2. [] in
+  Matrix.Terminal.send (Matrix.terminal app) "\027[>0q";
+  run_clocked t;
+  is_true ~msg:"typed"
+    (List.mem
+       (Matrix.Key
+          {
+            key = Char (Uchar.of_char 'P');
+            mods = { Matrix.Input.Keystroke.no_mods with alt = true };
+            text = "";
+            base = None;
+            keypad = false;
+            repeat = false;
+          })
+       (events c))
+
 (* The startup payload starts with S7C1T and sets the reports that need no
    answer; a late answer changes the modes by their difference: the kitty
    flags are pushed and asked for again, modifyOtherKeys goes, and
@@ -2978,6 +3014,7 @@ let () =
             test_unanswered_batch_is_given_up;
           test "late replies are never typed" test_late_replies_never_typed;
           test "probe reports are never keys" test_probe_reports_never_keys;
+          test "the application's queries" test_application_query;
           test "a late answer changes modes" test_late_answer_changes_modes;
           test "metaSendsEscape set is kept" test_meta_sends_escape_kept;
           test "paste streams and aborts" test_paste_streams_and_aborts;
