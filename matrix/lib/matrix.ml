@@ -135,9 +135,12 @@ module Backend = struct
            (Sys.sigquit, Terminate Sys.sigquit);
          ])
 
+  (* [Unix.write] goes on past its first [write(2)] and, interrupted there,
+     raises without saying how much went: each call here is one
+     [write(2)], and the write goes on from where it stopped. *)
   let rec write_all id fd buf off len =
     if len > 0 then
-      match Unix.write fd buf off len with
+      match Unix.single_write fd buf off len with
       | n -> write_all id fd buf (off + n) (len - n)
       | exception Unix.Unix_error (Unix.EAGAIN, _, _) ->
           (try ignore (Unix.select [] [ fd ] [] (-1.))

@@ -2694,6 +2694,50 @@ let test_unix_post_wakes_the_loop () =
       in
       is_true ~msg:"woken without input (< 1 s)" (elapsed < 1.))
 
+(* A write the terminal is slow to take is interrupted by a signal the
+   process handles, here with an OCaml handler, which resumes no system
+   call: the write goes on from the byte where it stopped. The pipe takes
+   the first 64 KiB, then the write waits; the signal goes to the writing
+   thread alone, the others blocking it. *)
+let test_unix_write_cut_by_a_signal () =
+  let r, w = Unix.pipe ~cloexec:true () in
+  let devnull = Unix.openfile "/dev/null" [ O_RDONLY; O_CLOEXEC ] 0 in
+  let previous = Sys.signal Sys.sigusr1 (Sys.Signal_handle ignore) in
+  let mask = Thread.sigmask SIG_BLOCK [ Sys.sigusr1 ] in
+  Fun.protect
+    ~finally:(fun () ->
+      ignore (Thread.sigmask SIG_SETMASK mask : int list);
+      ignore (Sys.signal Sys.sigusr1 previous : Sys.signal_behavior);
+      List.iter Unix.close [ r; devnull ])
+    (fun () ->
+      let backend = Matrix.Backend.unix ~input:devnull ~output:w () in
+      let n = 200_000 in
+      let sent = Bytes.init n (fun i -> Char.chr (i * 7 land 255)) in
+      let writer =
+        Thread.create
+          (fun () ->
+            ignore (Thread.sigmask SIG_UNBLOCK [ Sys.sigusr1 ] : int list);
+            backend.write_output sent 0 n;
+            backend.cleanup ();
+            Unix.close w)
+          ()
+      in
+      Thread.delay 0.2;
+      Unix.kill (Unix.getpid ()) Sys.sigusr1;
+      Thread.delay 0.1;
+      let received = Buffer.create n and buf = Bytes.create 65536 in
+      let rec drain () =
+        match Unix.read r buf 0 65536 with
+        | 0 -> ()
+        | k ->
+            Buffer.add_subbytes received buf 0 k;
+            drain ()
+      in
+      drain ();
+      Thread.join writer;
+      equal ~msg:"the bytes written, once" int n (Buffer.length received);
+      is_true ~msg:"in order" (Buffer.to_bytes received = sent))
+
 let () =
   Windtrap.run "matrix.runtime"
     [
@@ -2903,5 +2947,6 @@ let () =
           test "each run has its own wake" test_unix_wakes_per_run;
           test "a pseudo-terminal is not the controlling terminal"
             test_unix_controlling;
+          test "a write cut by a signal goes on" test_unix_write_cut_by_a_signal;
         ];
     ]
