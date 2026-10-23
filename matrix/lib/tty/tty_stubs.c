@@ -19,6 +19,7 @@
 #else
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -187,6 +188,29 @@ CAMLprim value matrix_tty_now(value unit) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return Val_long((intnat)ts.tv_sec * 1000000000 + ts.tv_nsec);
+#endif
+}
+
+/* Whether a read would return at once, without waiting. [Unix.select]
+   allocates its answer; a run looks at its input on every step. On Windows
+   a socket is asked with select(), and another handle whether it is
+   signaled, which takes no record from a console as reading it would. */
+CAMLprim value matrix_tty_readable(value fd) {
+#ifdef _WIN32
+  if (Descr_kind_val(fd) == KIND_SOCKET) {
+    fd_set set;
+    struct timeval zero = {0, 0};
+    FD_ZERO(&set);
+    FD_SET(Socket_val(fd), &set);
+    return Val_bool(select(0, &set, NULL, NULL, &zero) > 0);
+  }
+  return Val_bool(WaitForSingleObject(Handle_val(fd), 0) == WAIT_OBJECT_0);
+#else
+  struct pollfd p = {.fd = Int_val(fd), .events = POLLIN, .revents = 0};
+  int n;
+  do n = poll(&p, 1, 0);
+  while (n < 0 && errno == EINTR);
+  return Val_bool(n > 0);
 #endif
 }
 

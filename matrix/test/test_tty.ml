@@ -63,6 +63,20 @@ let test_window () =
       equal ~msg:"a size never set" size None (Tty.window fd));
   with_pipe (fun r _ -> equal ~msg:"a pipe" size None (Tty.window r))
 
+let test_readable () =
+  with_pipe (fun r w ->
+      is_false ~msg:"an empty pipe" (Tty.readable r);
+      ignore (Unix.write_substring w "x" 0 1 : int);
+      is_true ~msg:"a byte" (Tty.readable r);
+      is_true ~msg:"asked again, still there" (Tty.readable r);
+      ignore (Unix.read r (Bytes.create 1) 0 1 : int);
+      is_false ~msg:"read" (Tty.readable r));
+  let r, w = Unix.pipe ~cloexec:true () in
+  Unix.close w;
+  Fun.protect
+    ~finally:(fun () -> Unix.close r)
+    (fun () -> is_true ~msg:"the end of the input" (Tty.readable r))
+
 let test_now () =
   let a = Tty.now () in
   Unix.sleepf 0.01;
@@ -522,6 +536,7 @@ let () =
           test "is_tty" test_is_tty;
           test "is_controlling" test_is_controlling;
           test "window" test_window;
+          test "readable" test_readable;
           test "now" test_now;
         ];
       group "settings"

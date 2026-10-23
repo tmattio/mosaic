@@ -55,6 +55,14 @@ val window : Unix.file_descr -> (int * int) option
     Windows). It is [None] when [fd] is not a terminal or the system reports a
     zero size, as it does for a pseudo-terminal whose size was never set. *)
 
+val readable : Unix.file_descr -> bool
+(** [readable fd] is [true] iff a read from [fd] would return without waiting:
+    [fd] has input, has reached its end, or has an error to report. It never
+    waits ([poll(2)] with no timeout), takes nothing from [fd] and allocates
+    nothing. On Windows a console's handle is asked whether it is signaled,
+    which takes none of the records it holds, as waiting with [Unix.select]
+    does. *)
+
 val now : unit -> int
 (** [now ()] is the time in nanoseconds since an arbitrary origin, on a clock
     that never goes back and that setting the system's time does not move

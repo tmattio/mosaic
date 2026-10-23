@@ -78,6 +78,7 @@
 
 #### Added
 
+- `Tty.readable fd` says whether a read would return without waiting (`poll(2)` with no timeout), allocating nothing and taking nothing from `fd`
 - **Driving a run by steps** – `Matrix.step app ~now` is the next step at the time the caller gives, or `None` when the run has nothing to do until one of `Matrix.fds app` is readable or `Matrix.deadline app` comes; it never waits. `Matrix.next` is that loop waiting with `select(2)`, and allocates nothing while idle. A program with an event loop of its own waits with that loop instead, and a test or a replay gives the steps the times of its own clock: a step is a function of the run's state, its input and `now`, which must never decrease (`Invalid_argument` otherwise) and must be on the clock `deadline` answers in, `Matrix.clock` or a test's own
 - **Pluggable backends** – `Matrix.Backend` is a record of I/O primitives with a shared `bootstrap` handshake
 - **Headless test backend (`matrix.test`)** – virtual clock, byte-level input through the real decoder, plain-text frame snapshots
