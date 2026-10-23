@@ -913,6 +913,37 @@ let mouse_click_reports_cursor_without_selection () =
         (List.mem (x, None) !fired))
     [ 2; 4 ]
 
+(* A press or a drag that starts in one editor leaves a sibling editor's
+   caret and selection as they are, even when the drag crosses into it. *)
+let press_leaves_sibling_editor_alone () =
+  let r = Renderer.create () in
+  let row =
+    Renderable.create ~parent:(Renderer.root r)
+      ~style:
+        (Toffee.Style.default
+        |> Toffee.Style.set_flex_direction Toffee.Style.Flex_direction.Row)
+      ()
+  in
+  let _left =
+    create_editor ~parent:row
+      ~style:(sized_style ~width:10 ~height:3)
+      ~value:"left text" ()
+  in
+  let proposals = ref 0 in
+  let right =
+    create_editor ~parent:row
+      ~style:(sized_style ~width:10 ~height:3)
+      ~value:"right text"
+      ~on_change:(fun _ -> incr proposals)
+      ()
+  in
+  render_frame r ~width:20 ~height:3;
+  dispatch_mouse r (mouse_down ~x:0 ~y:0);
+  dispatch_mouse r (mouse_drag ~x:15 ~y:0);
+  dispatch_mouse r (mouse_up ~x:15 ~y:0);
+  equal ~msg:"no proposal from the sibling" int 0 !proposals;
+  equal ~msg:"the sibling's caret" int 10 (Textarea.cursor right)
+
 let mouse_selection_disabled_when_not_selectable () =
   let r = Renderer.create () in
   let ta =
@@ -1450,6 +1481,8 @@ let () =
           test "selection syncs to buffer" mouse_selection_syncs_to_buffer;
           test "click reports cursor without selection"
             mouse_click_reports_cursor_without_selection;
+          test "press leaves a sibling editor alone"
+            press_leaves_sibling_editor_alone;
           test "selection disabled when not selectable"
             mouse_selection_disabled_when_not_selectable;
           test "wheel scrolls surface" mouse_wheel_scrolls_surface;

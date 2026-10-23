@@ -571,24 +571,32 @@ let cursor_provider t _self =
 
 (* Selection *)
 
+let contains t ~x ~y =
+  let nx = Renderable.x t.node in
+  let ny = Renderable.y t.node in
+  x >= nx
+  && x < nx + Renderable.width t.node
+  && y >= ny
+  && y < ny + Renderable.height t.node
+
+(* The caret and the selection are the editor's value, so only a selection
+   that starts inside the editor moves them. The renderer also tells the
+   selectables beside the one pressed, and those keep their value. *)
 let register_selection t =
   if t.props.selectable then
     Renderable.set_selection t.node
-      ~should_start:(fun ~x ~y ->
-        let nx = Renderable.x t.node in
-        let ny = Renderable.y t.node in
-        let w = Renderable.width t.node in
-        let h = Renderable.height t.node in
-        x >= nx && x < nx + w && y >= ny && y < ny + h)
+      ~should_start:(fun ~x ~y -> contains t ~x ~y)
       ~on_change:(fun sel ->
         let base = t.props.state in
-        let next =
-          match sel with
-          | None -> Editor.clear_selection base
-          | Some sel ->
+        match sel with
+        | None ->
+            propose t ~base (Editor.clear_selection base);
+            Option.is_some (Editor.selection t.props.state)
+        | Some sel ->
+            let anchor = Selection.anchor sel and focus = Selection.focus sel in
+            if not (contains t ~x:anchor.x ~y:anchor.y) then false
+            else
               let nx = Renderable.x t.node and ny = Renderable.y t.node in
-              let anchor = Selection.anchor sel
-              and focus = Selection.focus sel in
               let anchor =
                 Text_surface.local_caret t.surface ~x:(anchor.x - nx)
                   ~y:(anchor.y - ny)
@@ -597,10 +605,8 @@ let register_selection t =
                 Text_surface.local_caret t.surface ~x:(focus.x - nx)
                   ~y:(focus.y - ny)
               in
-              Editor.select_carets ~anchor ~cursor:focus base
-        in
-        propose t ~base next;
-        Option.is_some (Editor.selection t.props.state))
+              propose t ~base (Editor.select_carets ~anchor ~cursor:focus base);
+              Option.is_some (Editor.selection t.props.state))
       ~clear:(fun () ->
         let base = t.props.state in
         propose t ~base (Editor.clear_selection base))
