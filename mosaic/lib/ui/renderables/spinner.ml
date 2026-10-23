@@ -5,18 +5,18 @@ type frame_set = { frames : string array; interval : float }
 let dots =
   {
     frames = [| "⠋"; "⠙"; "⠹"; "⠸"; "⠼"; "⠴"; "⠦"; "⠧"; "⠇"; "⠏" |];
-    interval = 80.;
+    interval = 0.08;
   }
 
-let line = { frames = [| "-"; "\\"; "|"; "/" |]; interval = 130. }
+let line = { frames = [| "-"; "\\"; "|"; "/" |]; interval = 0.13 }
 
 let dots2 =
-  { frames = [| "⣾"; "⣽"; "⣻"; "⢿"; "⡿"; "⣟"; "⣯"; "⣷" |]; interval = 80. }
+  { frames = [| "⣾"; "⣽"; "⣻"; "⢿"; "⡿"; "⣟"; "⣯"; "⣷" |]; interval = 0.08 }
 
-let arc = { frames = [| "◜"; "◠"; "◝"; "◞"; "◡"; "◟" |]; interval = 100. }
+let arc = { frames = [| "◜"; "◠"; "◝"; "◞"; "◡"; "◟" |]; interval = 0.1 }
 
-let bounce = { frames = [| "⠁"; "⠂"; "⠄"; "⠂" |]; interval = 120. }
-let circle = { frames = [| "◡"; "⊙"; "◠" |]; interval = 120. }
+let bounce = { frames = [| "⠁"; "⠂"; "⠄"; "⠂" |]; interval = 0.12 }
+let circle = { frames = [| "◡"; "⊙"; "◠" |]; interval = 0.12 }
 let default_frame_set = dots
 
 (* ───── Props ───── *)

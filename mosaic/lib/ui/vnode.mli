@@ -622,8 +622,8 @@ val canvas :
 
     Canvas-specific attributes:
     - [on_draw] is the render-time drawing callback. The [~delta] argument is
-      elapsed time in milliseconds since the last frame. Combine with
-      [~live:true] for per-frame animation. *)
+      elapsed time in seconds since the last frame. Combine with [~live:true]
+      for per-frame animation. *)
 
 val spinner :
   ?key:string ->

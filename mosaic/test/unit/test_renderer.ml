@@ -1776,7 +1776,7 @@ let selection_drag_auto_scrolls_scroll_box () =
   do_frame ~width:20 ~height:8 t;
   dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
   dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:7 ());
-  do_frame ~width:20 ~height:8 ~delta:1000. t;
+  do_frame ~width:20 ~height:8 ~delta:1. t;
   satisfies ~claim:"scroll box moved down (scroll_top > 0)" int
     (fun top -> top > 0)
     (Scroll_box.scroll_top sb);
@@ -1809,7 +1809,7 @@ let selection_drag_auto_scrolls_scroll_box_when_pointer_leaves_it () =
   do_frame ~width:20 ~height:12 t;
   dispatch_mouse t (mouse_press ~x:1 ~y:1 ());
   dispatch_mouse t (mouse_motion ~left:true ~x:1 ~y:10 ());
-  do_frame ~width:20 ~height:12 ~delta:1000. t;
+  do_frame ~width:20 ~height:12 ~delta:1. t;
   satisfies ~claim:"scroll box moved down (scroll_top > 0)" int
     (fun top -> top > 0)
     (Scroll_box.scroll_top sb)

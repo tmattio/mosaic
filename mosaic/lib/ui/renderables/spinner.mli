@@ -16,10 +16,10 @@ type t
 
 type frame_set = {
   frames : string array;  (** Frames to cycle through. *)
-  interval : float;  (** Time between frames, in milliseconds. *)
+  interval : float;  (** Time between frames, in seconds. *)
 }
 (** The type for animation frame sets. The spinner advances one frame each time
-    {!field-interval} milliseconds have elapsed. *)
+    {!field-interval} seconds have elapsed. *)
 
 (** {1:frame_sets Built-in frame sets} *)
 
@@ -100,8 +100,8 @@ val frame_index : t -> int
 (** [frame_index t] is the current zero-based frame index of [t]. *)
 
 val elapsed : t -> float
-(** [elapsed t] is the accumulated time in milliseconds since the last frame
-    advance of [t]. *)
+(** [elapsed t] is the accumulated time in seconds since the last frame advance
+    of [t]. *)
 
 (** {1:setters Setters} *)
 

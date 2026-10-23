@@ -11,9 +11,9 @@ module Scroll_accel = struct
     mutable history : float list;
   }
 
-  let min_interval = 6.
-  let streak_timeout = 150.
-  let ref_interval = 100.
+  let min_interval = 0.006
+  let streak_timeout = 0.150
+  let ref_interval = 0.100
   let max_history = 3
   let linear () = { strategy = Linear; last_now = 0.; history = [] }
 
@@ -118,7 +118,7 @@ type t = {
   mutable content_h : int;
   mutable on_scroll : (Scroll.t -> unit) option;
   mutable scroll_accel : Scroll_accel.t;
-  (* Milliseconds accumulated from frame deltas; feeds Scroll_accel.tick. *)
+  (* Seconds accumulated from frame deltas; feeds Scroll_accel.tick. *)
   mutable frame_clock : float;
   mutable wheel_acc_x : float;
   mutable wheel_acc_y : float;
@@ -300,10 +300,8 @@ let handle_auto_scroll t delta =
     | Some sel when Selection.is_dragging sel ->
         let scroll_x = auto_scroll_direction_x t t.auto_scroll_mouse_x in
         let scroll_y = auto_scroll_direction_y t t.auto_scroll_mouse_y in
-        (* Speeds are cells per second; [delta] is milliseconds. *)
-        let scroll_amount =
-          t.cached_auto_scroll_speed *. (Float.max 0. delta /. 1000.)
-        in
+        (* Speeds are cells per second. *)
+        let scroll_amount = t.cached_auto_scroll_speed *. Float.max 0. delta in
         let acc_x, dx =
           auto_scroll_step t.auto_scroll_acc_x scroll_x scroll_amount
         in

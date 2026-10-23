@@ -160,8 +160,8 @@ module Canvas : sig
   val set_on_draw : t -> (t -> delta:float -> unit) option -> unit
   (** [set_on_draw t cb] registers [cb] as the render-time drawing callback for
       [t]. [cb] fires each render pass after the grid has been auto-resized;
-      [~delta] is the elapsed time in milliseconds since the last frame. Pass
-      [None] to clear the callback. *)
+      [~delta] is the elapsed time in seconds since the last frame. Pass [None]
+      to clear the callback. *)
 
   val set_on_resize : t -> (t -> unit) option -> unit
   (** [set_on_resize t cb] registers [cb] as the resize callback for [t]. [cb]
@@ -548,7 +548,7 @@ end
 module Spinner : sig
   type frame_set = Mosaic_ui.Spinner.frame_set = {
     frames : string array;  (** Characters cycled as animation frames. *)
-    interval : float;  (** Time in milliseconds between frame advances. *)
+    interval : float;  (** Time in seconds between frame advances. *)
   }
   (** The type for animation frame sets. *)
 

@@ -1140,9 +1140,7 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
     runtime.framing <- true;
     handle_tick runtime;
     synchronize runtime;
-    (* Matrix reports time in nanoseconds; the render pipeline runs on
-       milliseconds. Convert once at the boundary. *)
-    frame_delta := dt *. 1000.;
+    frame_delta := dt;
     Atomic.set rendering true;
     runtime.delivering <- true;
     Fun.protect

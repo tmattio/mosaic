@@ -65,7 +65,7 @@ let create_is_live () =
 
 let static_frame_set_is_not_live () =
   let _t, spinner =
-    make_spinner ~frame_set:{ Spinner.frames = [| "x" |]; interval = 80. } ()
+    make_spinner ~frame_set:{ Spinner.frames = [| "x" |]; interval = 0.08 } ()
   in
   is_false ~msg:"single frame needs no ticks"
     (Renderable.live (Spinner.node spinner));
@@ -78,41 +78,41 @@ let static_frame_set_is_not_live () =
 let on_frame_advances_after_interval () =
   let _t, spinner = make_spinner ~frame_set:Spinner.dots () in
   equal ~msg:"starts at 0" int 0 (Spinner.frame_index spinner);
-  advance_frame spinner ~delta:80.;
+  advance_frame spinner ~delta:0.08;
   equal ~msg:"advanced to 1" int 1 (Spinner.frame_index spinner)
 
 let on_frame_accumulates_delta () =
   let _t, spinner = make_spinner ~frame_set:Spinner.dots () in
-  advance_frame spinner ~delta:40.;
+  advance_frame spinner ~delta:0.04;
   equal ~msg:"still at 0" int 0 (Spinner.frame_index spinner);
-  advance_frame spinner ~delta:40.;
+  advance_frame spinner ~delta:0.04;
   equal ~msg:"advanced to 1" int 1 (Spinner.frame_index spinner)
 
 let on_frame_wraps_around () =
   let _t, spinner = make_spinner ~frame_set:Spinner.dots () in
-  (* dots has 10 frames at 80ms interval *)
+  (* dots has 10 frames at a 0.08 s interval *)
   (* Advance 10 intervals to wrap around *)
   for _ = 1 to 10 do
-    advance_frame spinner ~delta:80.
+    advance_frame spinner ~delta:0.08
   done;
   equal ~msg:"wrapped to 0" int 0 (Spinner.frame_index spinner)
 
 let on_frame_short_delta_no_advance () =
   let _t, spinner = make_spinner ~frame_set:Spinner.dots () in
-  advance_frame spinner ~delta:10.;
+  advance_frame spinner ~delta:0.01;
   equal ~msg:"still at 0" int 0 (Spinner.frame_index spinner)
 
 let on_frame_large_delta_skips_frames () =
   let _t, spinner = make_spinner ~frame_set:Spinner.dots () in
-  (* 250ms should advance 3 frames at 80ms interval *)
-  advance_frame spinner ~delta:250.;
+  (* 0.25 s should advance 3 frames at 0.08 s interval *)
+  advance_frame spinner ~delta:0.25;
   equal ~msg:"advanced 3" int 3 (Spinner.frame_index spinner)
 
 (* ── Setters ── *)
 
 let set_frame_set_resets_elapsed () =
   let _t, spinner = make_spinner () in
-  advance_frame spinner ~delta:40.;
+  advance_frame spinner ~delta:0.04;
   satisfies ~claim:"elapsed above 0" float_exact
     (fun e -> e > 0.)
     (Spinner.elapsed spinner);
@@ -123,7 +123,7 @@ let set_frame_set_clamps_index () =
   let _t, spinner = make_spinner ~frame_set:Spinner.dots () in
   (* Advance to frame 8 *)
   for _ = 1 to 8 do
-    advance_frame spinner ~delta:80.
+    advance_frame spinner ~delta:0.08
   done;
   equal ~msg:"at frame 8" int 8 (Spinner.frame_index spinner);
   (* bounce has only 4 frames, so index should be clamped *)
@@ -159,7 +159,7 @@ let apply_props_replaces_props () =
 
 let apply_props_resets_on_frame_set_change () =
   let _t, spinner = make_spinner () in
-  advance_frame spinner ~delta:40.;
+  advance_frame spinner ~delta:0.04;
   satisfies ~claim:"has elapsed (above 0)" float_exact
     (fun e -> e > 0.)
     (Spinner.elapsed spinner);

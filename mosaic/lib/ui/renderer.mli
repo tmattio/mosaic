@@ -103,7 +103,7 @@ val render_frame : t -> width:int -> height:int -> delta:float -> unit
     before presentation.
 
     [width] and [height] are the frame dimensions in terminal cells. [delta] is
-    elapsed milliseconds since the last frame. *)
+    elapsed seconds since the last frame. *)
 
 val layout_frame : t -> width:int -> height:int -> delta:float -> unit
 (** [layout_frame t ~width ~height ~delta] lays out the next frame against
@@ -305,8 +305,8 @@ val hover : t -> Renderable.t option
 
 val add_frame_callback : t -> (float -> unit) -> unit
 (** [add_frame_callback t f] registers [f] to run at the start of each frame
-    with delta time in milliseconds. Callbacks run after lifecycle passes and
-    before layout computation.
+    with delta time in seconds. Callbacks run after lifecycle passes and before
+    layout computation.
 
     See also {!remove_frame_callback} and {!clear_frame_callbacks}. *)
 

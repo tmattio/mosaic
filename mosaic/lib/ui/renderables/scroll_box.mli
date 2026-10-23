@@ -33,7 +33,7 @@ module Scroll_accel : sig
       seconds, and [6.0]. *)
 
   val tick : t -> now:float -> float
-  (** [tick t ~now] advances the gesture clock in milliseconds. *)
+  (** [tick t ~now] advances the gesture clock to [now], in seconds. *)
 
   val reset : t -> unit
   (** [reset t] clears its velocity history. *)

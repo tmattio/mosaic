@@ -25,8 +25,8 @@ let make_scroll_box ?scroll_x ?scroll_y ?scroll ?background ?scroll_accel
 let accel_linear_always_one () =
   let a = Scroll_box.Scroll_accel.linear () in
   let m1 = Scroll_box.Scroll_accel.tick a ~now:0. in
-  let m2 = Scroll_box.Scroll_accel.tick a ~now:100. in
-  let m3 = Scroll_box.Scroll_accel.tick a ~now:200. in
+  let m2 = Scroll_box.Scroll_accel.tick a ~now:0.1 in
+  let m3 = Scroll_box.Scroll_accel.tick a ~now:0.2 in
   is_true ~msg:"first = 1.0" (Float.equal m1 1.0);
   is_true ~msg:"second = 1.0" (Float.equal m2 1.0);
   is_true ~msg:"third = 1.0" (Float.equal m3 1.0)
@@ -39,18 +39,18 @@ let accel_macos_first_tick_one () =
 let accel_macos_accelerates_on_rapid_events () =
   let a = Scroll_box.Scroll_accel.macos () in
   let _ = Scroll_box.Scroll_accel.tick a ~now:0. in
-  let _ = Scroll_box.Scroll_accel.tick a ~now:20. in
-  let _ = Scroll_box.Scroll_accel.tick a ~now:40. in
-  let m = Scroll_box.Scroll_accel.tick a ~now:60. in
+  let _ = Scroll_box.Scroll_accel.tick a ~now:0.02 in
+  let _ = Scroll_box.Scroll_accel.tick a ~now:0.04 in
+  let m = Scroll_box.Scroll_accel.tick a ~now:0.06 in
   satisfies ~claim:"multiplier above 1.0" float_exact (fun m -> m > 1.0) m
 
 let accel_macos_resets_after_timeout () =
   let a = Scroll_box.Scroll_accel.macos () in
   let _ = Scroll_box.Scroll_accel.tick a ~now:0. in
-  let _ = Scroll_box.Scroll_accel.tick a ~now:20. in
-  let _ = Scroll_box.Scroll_accel.tick a ~now:40. in
-  (* Long pause exceeding streak_timeout (150ms) *)
-  let m = Scroll_box.Scroll_accel.tick a ~now:500. in
+  let _ = Scroll_box.Scroll_accel.tick a ~now:0.02 in
+  let _ = Scroll_box.Scroll_accel.tick a ~now:0.04 in
+  (* Long pause exceeding streak_timeout (0.15 s) *)
+  let m = Scroll_box.Scroll_accel.tick a ~now:0.5 in
   is_true ~msg:"reset to 1.0" (Float.equal m 1.0)
 
 let accel_macos_respects_cap () =
@@ -58,16 +58,16 @@ let accel_macos_respects_cap () =
   (* Rapid events to build up velocity *)
   let m = ref 1.0 in
   for i = 1 to 30 do
-    m := Scroll_box.Scroll_accel.tick a ~now:(float_of_int (i * 10))
+    m := Scroll_box.Scroll_accel.tick a ~now:(float_of_int i *. 0.01)
   done;
   satisfies ~claim:"capped at 2.0" float_exact (fun m -> m <= 2.0) !m
 
 let accel_reset_clears_history () =
   let a = Scroll_box.Scroll_accel.macos () in
   let _ = Scroll_box.Scroll_accel.tick a ~now:0. in
-  let _ = Scroll_box.Scroll_accel.tick a ~now:20. in
+  let _ = Scroll_box.Scroll_accel.tick a ~now:0.02 in
   Scroll_box.Scroll_accel.reset a;
-  let m = Scroll_box.Scroll_accel.tick a ~now:100. in
+  let m = Scroll_box.Scroll_accel.tick a ~now:0.1 in
   is_true ~msg:"back to 1.0 after reset" (Float.equal m 1.0)
 
 (* ── Props ── *)

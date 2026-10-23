@@ -211,14 +211,13 @@ let%expect_test "virtual time drives every-subscriptions deterministically" =
     |
     |}]
 
-let%expect_test "live animation frames deliver a millisecond delta" =
-  (* Matrix reports elapsed seconds; the runtime converts once at the boundary
-     so the whole render pipeline (renderable.mli) runs on milliseconds. While
-     a live widget (the spinner) animates, the virtual clock advances at the
-     60 fps render cadence, so widgets must observe 1000/60 = 16.7 ms frames
-     (a runtime that forgot to convert would deliver 0.0). A canvas records
-     the delta it is drawn with; once the timer fires the spinner leaves the
-     view, the loop goes idle, and the recording is checked. *)
+let%expect_test "live animation frames deliver their delta in seconds" =
+  (* Matrix keeps integer nanoseconds; the render pipeline (renderable.mli)
+     takes the time between frames in seconds. While a live widget (the
+     spinner) animates, the virtual clock advances at the 60 fps render
+     cadence, so widgets must observe 1/60 s frames. A canvas records the
+     delta it is drawn with; once the timer fires the spinner leaves the view,
+     the loop goes idle, and the recording is checked. *)
   let last_delta = ref Float.nan in
   let application =
     {
@@ -239,8 +238,8 @@ let%expect_test "live animation frames deliver a millisecond delta" =
     }
   in
   drive application
-    [ `Run (fun _ -> Printf.printf "live frame delta: %.1f ms\n" !last_delta) ];
-  [%expect {| live frame delta: 16.7 ms |}]
+    [ `Run (fun _ -> Printf.printf "live frame delta: %.4f s\n" !last_delta) ];
+  [%expect {| live frame delta: 0.0167 s |}]
 
 let%expect_test "a pending every-timer renders only when it fires" =
   (* A timer is not an animation: while it is merely pending, the loop stays

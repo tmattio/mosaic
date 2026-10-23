@@ -15,7 +15,7 @@ type t
 
 type render = t -> Matrix_grid.t -> delta:float -> unit
 (** The type for render callbacks. [render self grid ~delta] draws [self] into
-    [grid]. [delta] is the elapsed time in milliseconds since the last frame. *)
+    [grid]. [delta] is the elapsed time in seconds since the last frame. *)
 
 type measure =
   known_dimensions:float option Toffee.Geometry.Size.t ->
@@ -395,9 +395,9 @@ val set_on_update : t -> (t -> delta:float -> unit) option -> unit
 val set_on_frame : t -> (t -> delta:float -> unit) option -> unit
 (** [set_on_frame t callback] registers a per-frame update hook.
     [callback t ~delta] is called every frame with [delta] as the elapsed
-    milliseconds, but only while [t] is live: pair the hook with {!set_live} to
-    start and stop the animation it drives. The hook runs only when [t] is part
-    of the frame: a child culled by a scroll container's viewport (see
+    seconds, but only while [t] is live: pair the hook with {!set_live} to start
+    and stop the animation it drives. The hook runs only when [t] is part of the
+    frame: a child culled by a scroll container's viewport (see
     {!Private.set_viewport_cull}) receives no ticks until it scrolls back into
     view. [None] clears the hook. *)
 

@@ -183,9 +183,9 @@ val set_on_draw : t -> (t -> delta:float -> unit) option -> unit
     callback.
 
     [cb] fires each render pass, after the grid has been auto-resized. [~delta]
-    is the elapsed time in milliseconds since the last frame. {!width} and
-    {!height} reflect the current layout dimensions inside [cb]. Content from
-    previous frames persists in the grid; call {!clear} first for full redraws.
+    is the elapsed time in seconds since the last frame. {!width} and {!height}
+    reflect the current layout dimensions inside [cb]. Content from previous
+    frames persists in the grid; call {!clear} first for full redraws.
 
     {b Note.} Combine with [~live:true] on the renderable for per-frame
     animation. *)
