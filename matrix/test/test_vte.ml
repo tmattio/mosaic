@@ -1176,20 +1176,29 @@ let palette_set_query_reset () =
   equal ~msg:"a set then a query in one OSC, in order" string
     "\x1b]4;3;rgb:0101/0202/0303\x07"
     (answers vte "\x1b]4;3;#010203;3;?\x07");
-  feed vte "\x1b]4;5;no such colour;256;#ffffff;6;#060606\x07";
-  equal ~msg:"a name or index that is no colour is skipped"
-    (pair (triple int int int) (triple int int int))
-    ((5, 5, 5), (6, 6, 6))
-    ((Vte.palette vte).colors.(5), (Vte.palette vte).colors.(6));
+  let colours l = List.map (fun i -> (Vte.palette vte).colors.(i)) l in
+  let rgbs = list (triple int int int) in
+  feed vte "\x1b]4;5;#050500;6;no such colour;7;#070700\x07";
+  equal ~msg:"OSC 4 stops at a spec that names no colour, as xterm" rgbs
+    [ (5, 5, 0); (6, 6, 6); (7, 7, 7) ]
+    (colours [ 5; 6; 7 ]);
+  feed vte "\x1b]4;256;#ffffff;8;#080800\x07\x1b]4;x;#ffffff;9;#090900\x07";
+  equal ~msg:"and at an index that names no colour" rgbs
+    [ (8, 8, 8); (9, 9, 9) ]
+    (colours [ 8; 9 ]);
+  equal ~msg:"a query after the error is not answered" string ""
+    (answers vte "\x1b]4;1;nope;1;?\x07");
   equal ~msg:"X11 colour names" string
     "\x1b]4;7;rgb:f8f8/f8f8/ffff\x07\x1b]11;rgb:bebe/bebe/bebe\x07"
     (answers vte "\x1b]4;7;Ghost White;7;?\x07\x1b]11;x11gray\x07\x1b]11;?\x07");
-  feed vte "\x1b]104;1;x;2\x07";
-  equal ~msg:"OSC 104 resets the colours listed"
-    (list (triple int int int))
+  feed vte "\x1b]104;1;300;2;x;3\x07";
+  equal
+    ~msg:
+      "OSC 104 resets the colours listed, past the table skipped, to the first \
+       entry that is no number"
+    rgbs
     [ (1, 1, 1); (2, 2, 2); (1, 2, 3) ]
-    (let p = Vte.palette vte in
-     [ p.colors.(1); p.colors.(2); p.colors.(3) ]);
+    (colours [ 1; 2; 3 ]);
   feed vte "\x1b]104\x07";
   equal ~msg:"OSC 104 with none resets all" (triple int int int) (3, 3, 3)
     (Vte.palette vte).colors.(3);

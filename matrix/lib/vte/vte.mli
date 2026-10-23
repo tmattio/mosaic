@@ -212,9 +212,12 @@
       cursor's colour, each to the palette {!create} was given.
 
     A spec is read by {!Matrix_input.Reply.rgb_of_spec}: [rgb:r/g/b], [#rrggbb]
-    or an X11 colour name such as [ghost white]; a pair or spec that names no
-    colour, such as an unknown name or an index above 255, is skipped. A change
-    marks every row and the cursor changed ({!section-dirty}).
+    or an X11 colour name such as [ghost white]. OSC 4 and OSC 104 stop at their
+    first entry in error, as xterm does: in OSC 4 an index that is not a number
+    from 0 to 255 or a spec that names no colour, in OSC 104 an entry that is
+    not a number (one above 255 is skipped). In OSC 10, a spec that names no
+    colour is skipped. A change marks every row and the cursor changed
+    ({!section-dirty}).
 
     Cells keep colours as the pen gave them: the defaults (SGR 39 and 49, or no
     colour) as {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}, indexed

@@ -1430,33 +1430,58 @@ let reset_colour t target =
   set_colour t target (palette_colour t.initial target)
 
 (* A spec [?] asks for the colour, answered as the OSC that would set it,
-   with the query's terminator; another spec sets it, if it names one. *)
+   with the query's terminator; another spec sets it, if it names one.
+   [false] if the spec names no colour. *)
 let colour t terminator target spec =
-  if spec = "?" then
+  if spec = "?" then (
     reply t
-      (Color { target; rgb = palette_colour t.palette target; terminator })
-  else Option.iter (set_colour t target) (Reply.rgb_of_spec spec)
-
-let index c = match decimal c with Some i when i <= 255 -> Some i | _ -> None
+      (Color { target; rgb = palette_colour t.palette target; terminator });
+    true)
+  else
+    match Reply.rgb_of_spec spec with
+    | Some rgb ->
+        set_colour t target rgb;
+        true
+    | None -> false
 
 (* OSC 4 is pairs [c ; spec]. OSC 10, 11 and 12 are specs for the dynamic
    colours from Ps on, the foreground, the background and the cursor; one past
    them names a colour this terminal does not have. OSC 104 resets the listed
    colours, all of them with none; OSC 110, 111 and 112 reset one dynamic colour
-   (ctlseqs). An index or spec that names no colour is skipped. *)
+   (ctlseqs).
+
+   OSC 4 and 104 stop at the first entry in error, as xterm does ("quit on any
+   error", misc.c): in OSC 4 an index that is not a number from 0 to 255 or a
+   spec that names no colour, in OSC 104 an entry that is not a number, while
+   an index past the table is skipped. Measured against xterm 398, two
+   departures: xterm's indices 256 to 260 are colours this terminal does not
+   have, so here they end OSC 4; and xterm reads an index with atoi, so [x]
+   is colour 0 there and ends OSC 4 here. A dynamic colour's spec that names
+   no colour is skipped, as in xterm. *)
 let osc_colours t n terminator text =
   let rec pairs = function
-    | c :: spec :: rest ->
-        Option.iter (fun i -> colour t terminator (`Palette i) spec) (index c);
-        pairs rest
+    | c :: spec :: rest -> (
+        match decimal c with
+        | Some i when i <= 255 && colour t terminator (`Palette i) spec ->
+            pairs rest
+        | _ -> ())
     | _ -> ()
+  in
+  let rec resets = function
+    | c :: rest -> (
+        match decimal c with
+        | Some i ->
+            if i <= 255 then reset_colour t (`Palette i);
+            resets rest
+        | None -> ())
+    | [] -> ()
   in
   let rec dynamic n = function
     | spec :: rest ->
         (match n with
-        | 10 -> colour t terminator `Foreground spec
-        | 11 -> colour t terminator `Background spec
-        | 12 -> colour t terminator `Cursor spec
+        | 10 -> ignore (colour t terminator `Foreground spec : bool)
+        | 11 -> ignore (colour t terminator `Background spec : bool)
+        | 12 -> ignore (colour t terminator `Cursor spec : bool)
         | _ -> ());
         dynamic (n + 1) rest
     | [] -> ()
@@ -1465,10 +1490,7 @@ let osc_colours t n terminator text =
   | 4 -> pairs (String.split_on_char ';' text)
   | 104 when text = "" ->
       set_palette t { t.palette with colors = t.initial.colors }
-  | 104 ->
-      List.iter
-        (fun c -> Option.iter (fun i -> reset_colour t (`Palette i)) (index c))
-        (String.split_on_char ';' text)
+  | 104 -> resets (String.split_on_char ';' text)
   | 110 -> reset_colour t `Foreground
   | 111 -> reset_colour t `Background
   | 112 -> reset_colour t `Cursor
