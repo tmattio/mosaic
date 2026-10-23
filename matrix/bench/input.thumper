@@ -1,2 +1,37 @@
 # thumper baseline v1
 # suite: input
+
+# machine: 83e4f30ba5340e6b
+# host: fudge · Intel(R) Core(TM) Ultra 5 235 · x86_64 · linux
+# ocaml: 5.5.1 · 64-bit · release
+
+decoder/fragmented-keyboard-bytewise	alloc_words	exact	85647
+decoder/fragmented-keyboard-bytewise	wall_time	batch=32	n=20	1.629e-04	1.595e-04 1.604e-04 1.611e-04 1.612e-04 1.613e-04 1.619e-04 1.624e-04 1.627e-04 1.627e-04 1.629e-04 1.629e-04 1.631e-04 1.635e-04 1.645e-04 1.658e-04 1.659e-04 1.661e-04 1.663e-04 1.667e-04 1.681e-04
+decoder/fragmented-osc-1024-bytes-chunk-1	alloc_words	exact	14161
+decoder/fragmented-osc-1024-bytes-chunk-1	wall_time	batch=256	n=20	2.043e-05	2.024e-05 2.030e-05 2.030e-05 2.033e-05 2.036e-05 2.036e-05 2.038e-05 2.038e-05 2.039e-05 2.042e-05 2.044e-05 2.046e-05 2.046e-05 2.049e-05 2.050e-05 2.051e-05 2.052e-05 2.066e-05 2.072e-05 2.088e-05
+decoder/fragmented-osc-256-bytes-chunk-1	alloc_words	exact	3591
+decoder/fragmented-osc-256-bytes-chunk-1	wall_time	batch=1024	n=20	5.226e-06	5.205e-06 5.207e-06 5.208e-06 5.211e-06 5.212e-06 5.215e-06 5.215e-06 5.215e-06 5.222e-06 5.222e-06 5.231e-06 5.232e-06 5.234e-06 5.236e-06 5.263e-06 5.274e-06 5.278e-06 5.315e-06 5.422e-06 5.520e-06
+decoder/fragmented-osc-3072-bytes-chunk-1	alloc_words	exact	41814
+decoder/fragmented-osc-3072-bytes-chunk-1	wall_time	batch=64	n=20	6.087e-05	6.034e-05 6.051e-05 6.062e-05 6.062e-05 6.065e-05 6.069e-05 6.070e-05 6.071e-05 6.078e-05 6.085e-05 6.088e-05 6.091e-05 6.098e-05 6.103e-05 6.108e-05 6.114e-05 6.116e-05 6.126e-05 6.145e-05 6.153e-05
+decoder/fragmented-osc-3072-bytes-chunk-32	alloc_words	exact	3496
+decoder/fragmented-osc-3072-bytes-chunk-32	wall_time	batch=512	n=20	7.727e-06	7.681e-06 7.686e-06 7.688e-06 7.690e-06 7.691e-06 7.705e-06 7.712e-06 7.723e-06 7.725e-06 7.726e-06 7.727e-06 7.728e-06 7.733e-06 7.737e-06 7.756e-06 7.758e-06 7.762e-06 7.772e-06 7.858e-06 7.932e-06
+decoder/keyboard-kitty-hot	alloc_words	exact	95756
+decoder/keyboard-kitty-hot	wall_time	batch=32	n=20	1.495e-04	1.488e-04 1.488e-04 1.489e-04 1.491e-04 1.491e-04 1.492e-04 1.492e-04 1.493e-04 1.494e-04 1.494e-04 1.495e-04 1.496e-04 1.496e-04 1.498e-04 1.500e-04 1.503e-04 1.511e-04 1.511e-04 1.517e-04 1.519e-04
+decoder/keyboard-legacy-hot	alloc_words	exact	84492
+decoder/keyboard-legacy-hot	wall_time	batch=64	n=20	1.107e-04	1.092e-04 1.094e-04 1.096e-04 1.098e-04 1.105e-04 1.105e-04 1.106e-04 1.107e-04 1.107e-04 1.107e-04 1.108e-04 1.109e-04 1.110e-04 1.115e-04 1.116e-04 1.118e-04 1.119e-04 1.122e-04 1.124e-04 1.128e-04
+decoder/mouse-mixed	alloc_words	exact	7836
+decoder/mouse-mixed	wall_time	batch=512	n=20	1.326e-05	1.303e-05 1.303e-05 1.304e-05 1.305e-05 1.310e-05 1.313e-05 1.314e-05 1.316e-05 1.317e-05 1.325e-05 1.326e-05 1.326e-05 1.328e-05 1.329e-05 1.332e-05 1.342e-05 1.345e-05 1.349e-05 1.351e-05 1.381e-05
+decoder/paste-ci-log	alloc_words	exact	1494
+decoder/paste-ci-log	wall_time	batch=256	n=20	1.934e-05	1.919e-05 1.920e-05 1.922e-05 1.925e-05 1.927e-05 1.928e-05 1.928e-05 1.931e-05 1.931e-05 1.934e-05 1.934e-05 1.934e-05 1.936e-05 1.937e-05 1.939e-05 1.939e-05 1.941e-05 1.945e-05 1.946e-05 1.977e-05
+decoder/paste-overflow-recovery	alloc_words	exact	132684
+decoder/paste-overflow-recovery	wall_time	batch=1	n=20	2.046e-03	2.002e-03 2.015e-03 2.016e-03 2.023e-03 2.026e-03 2.026e-03 2.027e-03 2.032e-03 2.035e-03 2.041e-03 2.050e-03 2.053e-03 2.054e-03 2.055e-03 2.055e-03 2.063e-03 2.074e-03 2.080e-03 2.084e-03 2.102e-03
+decoder/paste-split-end-marker	alloc_words	exact	41880
+decoder/paste-split-end-marker	wall_time	batch=8	n=20	6.406e-04	6.339e-04 6.359e-04 6.371e-04 6.376e-04 6.381e-04 6.383e-04 6.400e-04 6.401e-04 6.401e-04 6.403e-04 6.410e-04 6.415e-04 6.422e-04 6.423e-04 6.429e-04 6.440e-04 6.445e-04 6.456e-04 6.459e-04 6.469e-04
+decoder/paste-valid-1MiB	alloc_words	exact	132684
+decoder/paste-valid-1MiB	wall_time	batch=1	n=20	2.041e-03	2.005e-03 2.014e-03 2.015e-03 2.036e-03 2.037e-03 2.037e-03 2.037e-03 2.038e-03 2.040e-03 2.040e-03 2.042e-03 2.043e-03 2.049e-03 2.050e-03 2.057e-03 2.057e-03 2.061e-03 2.078e-03 2.088e-03 2.098e-03
+decoder/paste-valid-64KiB	alloc_words	exact	8364
+decoder/paste-valid-64KiB	wall_time	batch=32	n=20	1.280e-04	1.266e-04 1.271e-04 1.271e-04 1.273e-04 1.273e-04 1.274e-04 1.277e-04 1.279e-04 1.280e-04 1.280e-04 1.280e-04 1.280e-04 1.281e-04 1.281e-04 1.282e-04 1.283e-04 1.286e-04 1.288e-04 1.290e-04 1.297e-04
+decoder/typing-ascii-burst	alloc_words	exact	12
+decoder/typing-ascii-burst	wall_time	batch=2048	n=20	2.381e-06	2.296e-06 2.312e-06 2.324e-06 2.340e-06 2.358e-06 2.360e-06 2.360e-06 2.366e-06 2.376e-06 2.380e-06 2.382e-06 2.383e-06 2.386e-06 2.386e-06 2.388e-06 2.392e-06 2.393e-06 2.394e-06 2.394e-06 2.603e-06
+decoder/typing-unicode-burst	alloc_words	exact	8332
+decoder/typing-unicode-burst	wall_time	batch=512	n=20	1.329e-05	1.309e-05 1.312e-05 1.312e-05 1.318e-05 1.323e-05 1.325e-05 1.326e-05 1.326e-05 1.327e-05 1.329e-05 1.329e-05 1.330e-05 1.333e-05 1.335e-05 1.337e-05 1.344e-05 1.349e-05 1.377e-05 1.386e-05 1.387e-05
