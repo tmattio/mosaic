@@ -231,10 +231,15 @@ let stop_repeat t =
   t.repeat_active <- false;
   Renderable.set_live t.node false
 
+(* Seconds before the first repeat, then between repeats; frame deltas are
+   seconds. *)
+let repeat_first_delay = 0.5
+let repeat_interval = 0.2
+
 let start_repeat t ~is_end =
   t.repeat_active <- true;
   t.repeat_is_end <- is_end;
-  t.repeat_delay <- 500.;
+  t.repeat_delay <- repeat_first_delay;
   t.repeat_elapsed <- 0.;
   Renderable.set_live t.node true
 
@@ -425,7 +430,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?(position = 0)
       syncing_from_slider = false;
       repeat_active = false;
       repeat_is_end = false;
-      repeat_delay = 500.;
+      repeat_delay = repeat_first_delay;
       repeat_elapsed = 0.;
     }
   in
@@ -455,7 +460,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?(position = 0)
                scroll_by t amt ~unit:`Viewport)
            else (
              t.repeat_elapsed <- t.repeat_elapsed +. d;
-             if t.repeat_elapsed >= 200. then (
+             if t.repeat_elapsed >= repeat_interval then (
                t.repeat_elapsed <- 0.;
                let amt = if t.repeat_is_end then 0.2 else -0.2 in
                scroll_by t amt ~unit:`Viewport))));

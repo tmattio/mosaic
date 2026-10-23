@@ -298,6 +298,50 @@ let pp_contains_scroll_bar () =
   is_true ~msg:"has ScrollBar prefix"
     (String.length s >= 9 && String.sub s 0 9 = "ScrollBar")
 
+(* ── Arrow repeat ── *)
+
+(* Holding an arrow scrolls once on the press, again after half a second,
+   then every fifth of a second; frame deltas are seconds. *)
+let arrow_hold_repeats_in_seconds () =
+  let renderer = Renderer.create () in
+  let bar = ref None in
+  let style =
+    Toffee.Style.make
+      ~size:
+        (Toffee.Geometry.Size.make
+           (Toffee.Style.Dimension.length 1.)
+           (Toffee.Style.Dimension.length 10.))
+      ()
+  in
+  let b =
+    Scroll_bar.create ~parent:(Renderer.root renderer) ~style ~show_arrows:true
+      ~scroll_size:100 ~viewport_size:10
+      ~on_change:(fun v ->
+        Option.iter (fun b -> Scroll_bar.set_scroll_position b v) !bar)
+      ()
+  in
+  bar := Some b;
+  let frame delta = Renderer.render_frame renderer ~width:1 ~height:10 ~delta in
+  frame 0.;
+  ignore (Renderer.render ~full:true renderer : string);
+  ignore
+    (dispatch_mouse renderer (mouse_report ~x:0 ~y:9 (Press Left))
+      : Event.mouse);
+  equal ~msg:"the press scrolls half a viewport" int 5
+    (Scroll_bar.scroll_position b);
+  frame 0.25;
+  equal ~msg:"no repeat within half a second" int 5
+    (Scroll_bar.scroll_position b);
+  frame 0.25;
+  equal ~msg:"the first repeat after half a second" int 10
+    (Scroll_bar.scroll_position b);
+  frame 0.125;
+  equal ~msg:"no repeat within a fifth of a second" int 10
+    (Scroll_bar.scroll_position b);
+  frame 0.125;
+  equal ~msg:"the next repeat a fifth of a second later" int 12
+    (Scroll_bar.scroll_position b)
+
 (* ── Runner ── *)
 
 let declared_state_and_rejected_proposals () =
@@ -413,6 +457,8 @@ let () =
             apply_style_preserves_scroll_state;
           test "updates orientation" apply_props_updates_orientation;
         ];
+      group "Arrow repeat"
+        [ test "holding repeats in seconds" arrow_hold_repeats_in_seconds ];
       group "set_on_change"
         [ test "replaces callback" set_on_change_replaces_callback ];
       group "Pretty-printing"
