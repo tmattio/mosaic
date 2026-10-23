@@ -57,6 +57,14 @@
  (libraries windtrap matrix.terminal matrix.ansi matrix.input))
 
 (test
+ (name test_terminfo)
+ (package matrix)
+ (modules test_terminfo)
+ (deps
+  (source_tree data/terminfo))
+ (libraries windtrap matrix.terminfo))
+
+(test
  (name test_tty)
  (package matrix)
  (modules test_tty)
@@ -170,5 +178,6 @@
   matrix.image
   matrix.charts
   matrix.vte
-  matrix.terminal)
+  matrix.terminal
+  matrix.terminfo)
  (forbidden_libraries unix threads))

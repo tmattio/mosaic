@@ -90,6 +90,7 @@
 - `Matrix_text.grapheme_cluster_break` is the Grapheme_Cluster_Break property of a character (UAX #29), as a variant with the short value aliases uucp uses
 - `Grid.span g idx` is the start index and width of the grapheme that covers a cell, read from that cell alone, so a wide grapheme can be acted on whole from any of its cells
 - `Ansi.Writer.of_bytes` writes into caller-owned bytes that it never replaces, raising `Ansi.Writer.Buffer_full` on a write that does not fit; `Screen.render_into` with such a writer renders a frame in memory the caller bounds, and a frame that does not fit commits nothing
+- **Terminal descriptions (`matrix.terminfo`)** – `Matrix_terminfo.of_string` reads a compiled entry of the terminfo database in both of term(5)'s formats, the legacy one (0432) and ncurses' 32-bit one (01036), with the extended section of user-defined capabilities (`RGB`, `BE`, `Smulx`…) and their names; `flag`, `number` and `string` read any capability by its name, and `flags`, `numbers` and `strings` list them. `expand` evaluates parameterized strings as ncurses' tparm does, static variables (`vars`) included, and `pieces` cuts a string at its `$<…>` delays. On this machine it reads all 1,845 compiled entries as ncurses' own reader does (154,443 values) and expands 90,346 parameterized strings as tparm does. The 0.1.0 library, removed as unused, rejected every 01036 entry (`xterm-256color`), lost every string after the first absent one, ignored `%i` and read no extended capability. It links no unix
 - `Ansi.Color.to_depth` reduces a color to what a terminal of a given depth shows (`Truecolor`, `Ansi256`, `Ansi16`, `Ansi8`, `Mono`), by the squared RGB distance xterm uses to show a direct color in its palette, reading no environment
 
 #### Changed
@@ -172,7 +173,6 @@
 - The `matrix.input` `Keymap` API, superseded by `Mosaic.Shortcut`
 - `Ansi.Color.downgrade`, the legacy CSI-u toggles, and the obsolete color-scheme DSR query
 - `Input.equal_full`; `Input.equal` is now structural
-- The unused `matrix.terminfo` library
 
 ### matrix-eio
 

@@ -20,4 +20,5 @@ let () =
          (Matrix_terminal.Caps.evidence
             (Matrix_terminal.Caps.env (fun _ -> None) ~win32:false)))
   in
-  Matrix_terminal.close terminal
+  Matrix_terminal.close terminal;
+  ignore (Matrix_terminfo.expand "%p1%d" [ Int 1 ] : string)
