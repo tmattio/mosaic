@@ -39,7 +39,7 @@ let grid_to_text grid =
   done;
   Buffer.contents buf
 
-let grid_to_ansi grid = Cell_grid.to_ansi ~reset:false grid
+let grid_to_ansi grid = Cell_grid.to_ansi grid
 
 (* ── Layout ── *)
 

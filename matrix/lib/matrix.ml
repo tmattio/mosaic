@@ -936,7 +936,7 @@ let static_snapshot t ?rows grid =
   if Grid.width grid > t.width then
     invalid_arg "Matrix.static_write: grid is wider than the terminal";
   let rows = Option.value rows ~default:(Grid.height grid) in
-  let text = Grid.to_ansi ~reset:false ~complete_rows:true ~rows grid in
+  let text = Grid.to_ansi ~complete_rows:true ~rows grid in
   (rows, "\027[?7l" ^ text ^ "\027[?7h")
 
 let static_write ?(preserve_live_region = false) ?rows t grid =

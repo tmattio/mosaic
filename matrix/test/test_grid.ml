@@ -1321,7 +1321,7 @@ let blit_region_preserves_default_foreground_glyph () =
 let to_ansi_selects_complete_rows () =
   let grid = Grid.create ~width:1 ~height:3 () in
   List.iteri (fun y text -> Grid.draw_text grid ~x:0 ~y ~text) [ "A"; "B"; "C" ];
-  let ansi = Grid.to_ansi ~reset:false ~complete_rows:true ~rows:2 grid in
+  let ansi = Grid.to_ansi ~complete_rows:true ~rows:2 grid in
   in_order ~msg:"selected rows are cleared, styled, and CRLF-terminated"
     ~subs:[ "\027[2K"; "A"; "\r\n"; "\027[2K"; "B"; "\r\n" ]
     ansi;
@@ -1340,7 +1340,7 @@ let to_ansi_handles_empty_glyph () =
   let grid = Grid.create ~width:1 ~height:1 () in
   Grid.set_uchar grid ~x:0 ~y:0 ~uchar:Uchar.min ~fg:Ansi.Color.white
     ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
-  let ansi = Grid.to_ansi ~reset:false grid in
+  let ansi = Grid.to_ansi grid in
   is_true ~msg:"serialized empty glyph as space" (String.contains ansi ' ')
 
 let copied_partial_span_becomes_space () =
@@ -1350,14 +1350,14 @@ let copied_partial_span_becomes_space () =
   Grid.blit_region ~src ~dst:grid ~src_x:1 ~src_y:0 ~width:1 ~height:1 ~dst_x:0
     ~dst_y:0;
   assert_valid_spans grid;
-  let ansi = Grid.to_ansi ~reset:false grid in
+  let ansi = Grid.to_ansi grid in
   is_true ~msg:"partial span serializes as space" (String.contains ansi ' ')
 
 let to_ansi_preserves_indexed_foreground () =
   let grid = Grid.create ~width:1 ~height:1 () in
   let style = Ansi.Style.make ~fg:(Ansi.Color.indexed 42) () in
   Grid.draw_text grid ~x:0 ~y:0 ~text:"X" ~style;
-  let ansi = Grid.to_ansi ~reset:false grid in
+  let ansi = Grid.to_ansi grid in
   contains ~msg:"indexed foreground serialized as palette SGR"
     ~sub:"\027[0;38;5;42m" ansi
 
@@ -1367,7 +1367,7 @@ let blit_preserves_indexed_background_intent () =
     ~bg:(Ansi.Color.indexed 99) ~attrs:Ansi.Attr.empty ();
   let dst = Grid.create ~width:1 ~height:1 () in
   Grid.blit ~src ~dst;
-  let ansi = Grid.to_ansi ~reset:false dst in
+  let ansi = Grid.to_ansi dst in
   contains ~msg:"indexed background survives blit" ~sub:"48;5;99" ansi
 
 let draw_text_overflow_does_nothing () =
@@ -2015,6 +2015,15 @@ let many_distinct_graphemes () =
 
 let tests =
   [
+    test "to_ansi ends each row with one reset" (fun () ->
+        let grid = Grid.create ~width:2 ~height:2 () in
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"ab"
+          ~style:(Ansi.Style.make ~bold:true ());
+        let ansi = Grid.to_ansi grid in
+        let reset = "\027[0m" in
+        is_true ~msg:"ends with a reset" (String.ends_with ~suffix:reset ansi);
+        is_false ~msg:"ends with no second reset"
+          (String.ends_with ~suffix:(reset ^ reset) ansi));
     test "draw_box rejects a wide border character" (fun () ->
         let grid = Grid.create ~width:6 ~height:3 () in
         let border =

@@ -1575,7 +1575,7 @@ let to_text ?(trim = true) t =
     Buffer.contents buf
   end
 
-let to_ansi ?(reset = true) ?(complete_rows = false) ?rows t =
+let to_ansi ?(complete_rows = false) ?rows t =
   let height = Option.value rows ~default:t.height in
   if height < 0 || height > t.height then
     invalid_arg "Matrix_grid.to_ansi: rows must be within grid height";
@@ -1625,9 +1625,7 @@ let to_ansi ?(reset = true) ?(complete_rows = false) ?rows t =
           Ansi.emit Ansi.reset w;
           Ansi.Sgr_state.reset style;
           if complete_rows then Ansi.emit (Ansi.literal "\r\n") w
-        done;
-
-        if reset then Ansi.emit Ansi.reset w)
+        done)
 
 (* {1 Checked accessors}
 
