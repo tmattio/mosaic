@@ -1456,6 +1456,74 @@ let folds_agree_with_segmenter () =
         texts)
     methods
 
+let gcb_name : grapheme_cluster_break -> string = function
+  | `CN -> "CN"
+  | `CR -> "CR"
+  | `EX -> "EX"
+  | `L -> "L"
+  | `LF -> "LF"
+  | `LV -> "LV"
+  | `LVT -> "LVT"
+  | `PP -> "PP"
+  | `RI -> "RI"
+  | `SM -> "SM"
+  | `T -> "T"
+  | `V -> "V"
+  | `XX -> "XX"
+  | `ZWJ -> "ZWJ"
+
+let grapheme_cluster_break_values () =
+  let check cp expected =
+    equal
+      ~msg:(Printf.sprintf "U+%04X" cp)
+      string expected
+      (gcb_name (grapheme_cluster_break (Uchar.of_int cp)))
+  in
+  List.iter
+    (fun (cp, v) -> check cp v)
+    [
+      (0x000D, "CR");
+      (0x000A, "LF");
+      (0x0000, "CN");
+      (0x2028, "CN") (* LINE SEPARATOR *);
+      (0x200B, "CN") (* ZERO WIDTH SPACE, a format character *);
+      (0x0300, "EX");
+      (0x200C, "EX") (* ZWNJ *);
+      (0xFE0F, "EX");
+      (0x1F3FB, "EX") (* an emoji modifier, E_Modifier before Unicode 11 *);
+      (0x200D, "ZWJ");
+      (0x0903, "SM");
+      (0x0600, "PP");
+      (0x1F1E6, "RI");
+      (0x1100, "L");
+      (0x1160, "V");
+      (0x11A8, "T");
+      (0xAC00, "LV");
+      (0xAC01, "LVT");
+      (0x0061, "XX");
+      (0x1F466, "XX") (* BOY, E_Base before Unicode 11 *);
+      (0x2764, "XX") (* HEAVY BLACK HEART, Glue_After_Zwj before *);
+    ]
+
+(* Every scalar's value agrees with how the segmenter joins it, by the rule
+   each value is read by: GB4 and GB5 for controls, GB9 and GB9a for what
+   continues the cluster before it, GB9b for Prepend. *)
+let grapheme_cluster_break_agrees_with_segmentation () =
+  let s cp = uchar_to_utf8 cp in
+  for cp = 0 to 0x10FFFF do
+    if Uchar.is_valid cp then (
+      let v = grapheme_cluster_break (Uchar.of_int cp) in
+      let msg rule =
+        Printf.sprintf "U+%04X is %s, by %s" cp (gcb_name v) rule
+      in
+      let control = match v with `CN | `CR | `LF -> true | _ -> false in
+      if control <> (grapheme_count (s cp ^ "\u{0300}") = 2) then
+        fail (msg "GB4");
+      let continues = match v with `EX | `ZWJ | `SM -> true | _ -> false in
+      if continues <> (grapheme_count ("a" ^ s cp) = 1) then fail (msg "GB9");
+      if v = `PP <> (grapheme_count (s cp ^ "a") = 1) then fail (msg "GB9b"))
+  done
+
 let () =
   run "matrix.text"
     [
@@ -1497,6 +1565,9 @@ let () =
           test "malformed wcwidth positions" malformed_wcwidth_positions;
           test "wcwidth decoder matches Stdlib" wcwidth_decoder_matches_stdlib;
           test "Unicode 18" unicode_18;
+          test "grapheme cluster break values" grapheme_cluster_break_values;
+          test "grapheme cluster break agrees with segmentation"
+            grapheme_cluster_break_agrees_with_segmentation;
         ];
       group "Segmenter"
         [

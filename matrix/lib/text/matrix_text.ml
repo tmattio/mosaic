@@ -65,6 +65,49 @@ let uchar_width ~tab_width uchar =
     ~tab_width:(normalize_tab_width tab_width)
     (Uchar.to_int uchar)
 
+type grapheme_cluster_break =
+  [ `CN
+  | `CR
+  | `EX
+  | `L
+  | `LF
+  | `LV
+  | `LVT
+  | `PP
+  | `RI
+  | `SM
+  | `T
+  | `V
+  | `XX
+  | `ZWJ ]
+
+(* Indexed by the table's value, which follows uucp's order. 3 to 6 are
+   E_Base, E_Base_GAZ, E_Modifier and Glue_After_Zwj, which no character has
+   had since Unicode 11.0; the table holds none of them. *)
+let gcb_of_index : grapheme_cluster_break array =
+  [|
+    `CN;
+    `CR;
+    `EX;
+    `XX;
+    `XX;
+    `XX;
+    `XX;
+    `L;
+    `LF;
+    `LV;
+    `LVT;
+    `PP;
+    `RI;
+    `SM;
+    `T;
+    `V;
+    `XX;
+    `ZWJ;
+  |]
+
+let grapheme_cluster_break u = gcb_of_index.(Unicode.grapheme_cluster_break u)
+
 (* Unicode-width state machine.
 
    The [`Unicode] and [`Unicode_wide] methods fold the scalars of a unit

@@ -48,6 +48,58 @@ val uchar_width : tab_width:int -> Uchar.t -> int
     Controls and combining characters contribute [0]. Width policies agree on
     individual scalars; measuring a sequence requires {!measure}. *)
 
+(** {1:properties Character properties} *)
+
+type grapheme_cluster_break =
+  [ `CN
+  | `CR
+  | `EX
+  | `L
+  | `LF
+  | `LV
+  | `LVT
+  | `PP
+  | `RI
+  | `SM
+  | `T
+  | `V
+  | `XX
+  | `ZWJ ]
+(** The type for the values of the Grapheme_Cluster_Break property, which the
+    boundary rules of {{:https://www.unicode.org/reports/tr29/}UAX #29} read
+    (Table 2). The tags are the property's short value aliases, as in uucp's
+    [Uucp.Break.grapheme_cluster], into which a value coerces:
+    - [`CR] and [`LF]: CARRIAGE RETURN and LINE FEED, which make one cluster of
+      CR LF (GB3) and none with anything else.
+    - [`CN], Control: the other controls, the line and paragraph separators, and
+      most format characters. A cluster boundary falls on both sides (GB4, GB5).
+    - [`EX], Extend: the characters that continue the cluster before them (GB9):
+      nonspacing and enclosing marks, emoji modifiers, ZWNJ, variation
+      selectors.
+    - [`ZWJ]: ZERO WIDTH JOINER, which also continues the cluster before it and
+      joins an emoji to the pictograph after it (GB11).
+    - [`SM], SpacingMark: spacing combining marks that continue the cluster
+      before them (GB9a), as U+0903 DEVANAGARI SIGN VISARGA does.
+    - [`PP], Prepend: characters that the character after them joins (GB9b), as
+      U+0600 ARABIC NUMBER SIGN is joined by the digits it precedes.
+    - [`RI], Regional_Indicator: the letters U+1F1E6..U+1F1FF, which pair into
+      flags (GB12, GB13).
+    - [`L], [`V], [`T], [`LV] and [`LVT]: Hangul leading consonants, vowels,
+      trailing consonants and precomposed syllables, which conjoin into one
+      syllable (GB6 to GB8).
+    - [`XX], Other: everything else, a letter or a pictograph among them.
+
+    UAX #29 keeps four more values, E_Base, E_Modifier, Glue_After_Zwj and
+    E_Base_GAZ, as "obsolete and unused": no character has had them since
+    Unicode 11.0, so the type leaves them out. *)
+
+val grapheme_cluster_break : Uchar.t -> grapheme_cluster_break
+(** [grapheme_cluster_break u] is the Grapheme_Cluster_Break property of [u], by
+    the Unicode version of this module's tables, the one {!Segmenter} follows.
+    It describes [u] alone: whether a boundary falls between two characters also
+    depends on the rules that look further back, which only a {!Segmenter}
+    applies. Allocation-free. *)
+
 (** {1:segmenter Display units}
 
     A terminal receives its output in pieces of any size and must cut it into

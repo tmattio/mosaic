@@ -78,6 +78,7 @@
 - **Application queries** – `Matrix.query app ~owed q` sends the application's queries as a batch closed by DA1, owed as the runtime's own are, and delivers their replies as `Matrix.Reply` events ending with the DA1 reply. Every DA1 reply is alike, so one batch that ends with DA1, the runtime's or the application's, is in flight at a time. A query sent with `Terminal.send` is not owed: its reply never reaches the application as a reply, and one that is a control string (DA3, XTVERSION, OSC 10/11, an OSC 52 read, XTGETTCAP) decodes as typing
 - `Ansi.Parser.at_boundary` tells whether the bytes fed so far end inside a character, a sequence or a string, without ending the stream as `Parser.finish` does
 - `Screen.Hit_grid.draw ~src ~dst ~x ~y` paints one hit grid's regions onto another at an offset, its empty cells leaving the destination unchanged, to embed a surface's hits in a larger one
+- `Matrix_text.grapheme_cluster_break` is the Grapheme_Cluster_Break property of a character (UAX #29), as a variant with the short value aliases uucp uses
 
 #### Changed
 
