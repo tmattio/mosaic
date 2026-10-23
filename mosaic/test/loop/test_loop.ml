@@ -3147,3 +3147,41 @@ let%expect_test "a perform's send returns once update has applied the message" =
     applied 2
     send 2 returned
     |}]
+
+(* A program run with [start] is driven by its caller: [step] never waits,
+   [`Idle] leaves the waiting to the caller until [deadline], a message
+   dispatched from elsewhere reaches [update], and the end of the input is
+   [`Stopped]. *)
+let%expect_test "a caller drives a started program by its steps" =
+  let t =
+    Matrix_test.create
+      ~on_idle:(fun _ ~until:_ -> failwith "the program waited")
+      ~width:48 ~height:1 ()
+  in
+  Mosaic.start ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+    (app ~subs:on_keys ()) (fun r ->
+      let rec until_idle () =
+        match Mosaic.step r ~now:(Matrix_test.now t) with
+        | `Stepped -> until_idle ()
+        | `Stopped -> print_endline "stopped"
+        | `Idle -> (
+            match Mosaic.deadline r with
+            | Some deadline ->
+                Matrix_test.advance t (max 0 (deadline - Matrix_test.now t));
+                until_idle ()
+            | None -> print_endline (String.trim (Matrix_test.screen t)))
+      in
+      until_idle ();
+      Mosaic.dispatch r (Note "dispatched");
+      until_idle ();
+      Matrix_test.feed t "a";
+      until_idle ();
+      Matrix_test.stop t;
+      until_idle ());
+  [%expect
+    {|
+    keys:[] ticks:0 size:- note:-
+    keys:[] ticks:0 size:- note:dispatched
+    keys:[a] ticks:0 size:- note:dispatched
+    stopped
+    |}]

@@ -973,7 +973,18 @@ module Probe = struct
   let is_settled t = not (List.exists (fun check -> check.is_pending ()) t)
 end
 
-let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
+(* A running program, its model hidden: the run that is Mosaic's, how the
+   program acts on a step of it, whether it is over, and how messages reach
+   it from elsewhere. *)
+type 'msg running = {
+  matrix_app : 'msg post Matrix.app;
+  handle : 'msg post Matrix.step -> unit;
+  over : unit -> bool;
+  dispatch_msg : 'msg -> unit;
+}
+
+let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
+    =
   (* When a probe is requested, count in-flight performs and wake the loop on
      completion so a driver blocked on quiescence re-evaluates. *)
   let in_flight_performs = Atomic.make 0 in
@@ -1159,40 +1170,28 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
         arm_wakeup runtime
     | _ -> ()
   in
-  let rec loop () =
-    if not runtime.quit then
-      match Matrix.next matrix_app with
-      | Stopped -> ()
-      | Event input ->
-          handle_input runtime input;
-          loop ()
-      | Timer fired ->
-          timer fired;
-          loop ()
-      | Posted (Message (stop, msg)) ->
-          (* Applied now, so the turn's budget counts its update. *)
-          Atomic.decr runtime.posted_msgs;
-          if not (stopped stop) then (
-            push_msg runtime msg;
-            process_pending_msgs runtime);
-          loop ()
-      | Posted Redraw ->
-          redraw ();
-          loop ()
-      | Posted (Sent (stop, msg, latch)) ->
-          Atomic.decr runtime.posted_msgs;
-          Fun.protect
-            ~finally:(fun () -> release_senders runtime (Some latch))
-            (fun () ->
-              if not (stopped stop) then (
-                push_msg runtime msg;
-                process_pending_msgs runtime));
-          loop ()
-      | Posted Wake -> loop ()
-      | Posted (Failed (exn, bt)) -> Printexc.raise_with_backtrace exn bt
-      | Frame ->
-          frame ();
-          loop ()
+  let handle : _ Matrix.step -> unit = function
+    | Stopped -> runtime.quit <- true
+    | Event input -> handle_input runtime input
+    | Timer fired -> timer fired
+    | Posted (Message (stop, msg)) ->
+        (* Applied now, so the turn's budget counts its update. *)
+        Atomic.decr runtime.posted_msgs;
+        if not (stopped stop) then (
+          push_msg runtime msg;
+          process_pending_msgs runtime)
+    | Posted Redraw -> redraw ()
+    | Posted (Sent (stop, msg, latch)) ->
+        Atomic.decr runtime.posted_msgs;
+        Fun.protect
+          ~finally:(fun () -> release_senders runtime (Some latch))
+          (fun () ->
+            if not (stopped stop) then (
+              push_msg runtime msg;
+              process_pending_msgs runtime))
+    | Posted Wake -> ()
+    | Posted (Failed (exn, bt)) -> Printexc.raise_with_backtrace exn bt
+    | Frame -> frame ()
   in
   (* The run's end stops the workers and the senders' waits. *)
   let finish () =
@@ -1206,7 +1205,13 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
   Fun.protect ~finally:finish (fun () ->
       let width, height = Matrix.size matrix_app in
       handle_resize runtime ~width ~height;
-      loop ())
+      f
+        {
+          matrix_app;
+          handle;
+          over = (fun () -> runtime.quit);
+          dispatch_msg = (mailbox runtime).dispatch;
+        })
 
 (* The default executor. Work runs on systhreads of one helper domain, so
    the loop's domain runs the loop alone: a systhread on the loop's domain
@@ -1289,25 +1294,45 @@ module Helper = struct
     Option.iter Domain.join ended
 end
 
-let run ?backend ?config ?process_perform ?probe app =
+let start ?backend ?config ?process_perform ?probe app f =
   let config =
     match config with
     | Some config -> config
     | None -> Matrix.config ~cursor_visible:false ()
   in
   let init = app.init () in
+  let within process_perform =
+    Matrix.run ?backend ~config (fun matrix_app ->
+        program matrix_app ~process_perform ?probe app init f)
+  in
   match process_perform with
-  | Some process_perform ->
-      Matrix.run ?backend ~config (fun matrix_app ->
-          program matrix_app ~process_perform ?probe app init)
+  | Some process_perform -> within process_perform
   | None ->
       let helper = Helper.create () in
       Fun.protect
         ~finally:(fun () -> Helper.close helper)
-        (fun () ->
-          Matrix.run ?backend ~config (fun matrix_app ->
-              program matrix_app ~process_perform:(Helper.submit helper) ?probe
-                app init))
+        (fun () -> within (Helper.submit helper))
+
+let step r ~now =
+  if r.over () then `Stopped
+  else
+    match Matrix.step r.matrix_app ~now with
+    | None -> `Idle
+    | Some step ->
+        r.handle step;
+        if r.over () then `Stopped else `Stepped
+
+let fds r = Matrix.fds r.matrix_app
+let deadline r = Matrix.deadline r.matrix_app
+let dispatch r msg = r.dispatch_msg msg
+
+(* [step] waiting with [Matrix.next], which allocates nothing while the run
+   is idle. *)
+let run ?backend ?config ?process_perform ?probe app =
+  start ?backend ?config ?process_perform ?probe app (fun r ->
+      while not (r.over ()) do
+        r.handle (Matrix.next r.matrix_app)
+      done)
 
 let empty = Vnode.empty
 let fragment = Vnode.fragment

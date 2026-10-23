@@ -13,7 +13,7 @@
     - {{!elements}UI elements}
     - {{!views}Views}, {{!commands}Commands}, and
       {{!subscriptions}Subscriptions}
-    - {{!application}Application} and {{!running}Running}
+    - {{!application}Application} and {{!section-running}Running}
 
     The entry point is {!val-run}. *)
 
@@ -1260,7 +1260,14 @@ module Probe : sig
       so a driver blocked on backend idleness can re-evaluate the probe. *)
 end
 
-(** {1:running Running} *)
+(** {1:running Running}
+
+    {!val-run} runs a program until it ends, waiting for the terminal with
+    [select(2)]. A program that waits with an event loop of its own, such as
+    Eio's, runs with {!val-start} instead and does the waiting itself: it takes
+    the program's steps with {!step}, and between them waits until one of {!fds}
+    is readable or the time {!deadline} comes, as {!Matrix.next} does for a run.
+*)
 
 val run :
   ?backend:Matrix.Backend.t ->
@@ -1299,6 +1306,52 @@ val run :
       Test harnesses use it to settle deterministically (see the [matrix.test]
       library). When a probe is requested, every perform completion also posts
       to the loop, so a blocked loop re-evaluates its quiescence. *)
+
+type 'msg running
+(** The type for programs running in a terminal ({!val-start}), whose work done
+    elsewhere gives them messages of type ['msg]. A [running] exists only inside
+    {!val-start}, and belongs to the thread that called it: every function that
+    takes one must be called on that thread, except {!val-dispatch}. *)
+
+val start :
+  ?backend:Matrix.Backend.t ->
+  ?config:Matrix.config ->
+  ?process_perform:((unit -> unit) -> unit) ->
+  ?probe:(Probe.t -> unit) ->
+  ('model, 'msg) app ->
+  ('msg running -> 'a) ->
+  'a
+(** [start app f] is {!val-run}[ app] with the waiting left to [f]. It calls
+    [app]'s [init], takes the terminal, calls [f] with the running program, and
+    gives the terminal back when [f] returns or raises. [f] takes the program's
+    steps with {!step} until it says [`Stopped]; the program ends when [f]
+    returns, whether it said so or not. The optional arguments are {!val-run}'s.
+*)
+
+val step : 'msg running -> now:int -> [ `Stepped | `Idle | `Stopped ]
+(** [step r ~now] has [r] take the next step of its run at the time [now]
+    ({!Matrix.val-step}) and act on it, as {!val-run} does with each. It is
+    [`Stepped] when it did, [`Idle] when the run has nothing to do until one of
+    {!fds} is readable or the time {!deadline} comes, and [`Stopped] once the
+    program is over: it quit, Ctrl+C ended it, or its input ended. It never
+    waits for input, a message or a time. [now] must follow {!Matrix.val-step}'s
+    rule for times.
+
+    Raises what [update], [view] or a command raised, and what work done off the
+    loop raised ({!Cmd.val-perform}). *)
+
+val fds : 'msg running -> Unix.file_descr list
+(** [fds r] is the descriptors [r]'s run waits for ({!Matrix.fds}). *)
+
+val deadline : 'msg running -> int option
+(** [deadline r] is the time by which {!step} must be called again after it said
+    [`Idle] ({!Matrix.deadline}). *)
+
+val dispatch : 'msg running -> 'msg -> unit
+(** [dispatch r msg] gives [msg] to [r]'s [update] in a later step, as the
+    mailbox of work done off the loop does ({!type-mailbox}). It never blocks.
+    Any thread, domain or fiber may call it; after the run ends it does nothing.
+*)
 
 (** {1:dim_helpers Dimension helpers} *)
 
