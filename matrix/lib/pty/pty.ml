@@ -96,30 +96,21 @@ let rec wait t =
           t.child <- No_child;
           raise e)
 
-(* Reap after SIGTERM. An immediate waitpid catches the common case — the
-   child exited long ago and close must not stall the caller — then a short
-   poll grants the SIGTERM grace before escalating to SIGKILL. *)
-let reap pid =
-  let reaped () =
-    match Unix.waitpid [ WNOHANG ] pid with
-    | 0, _ -> false
-    | _ -> true
-    | exception Unix.Unix_error _ -> true
-  in
-  let rec poll attempts =
-    if reaped () then ()
-    else if attempts <= 0 then (
-      (try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ());
-      try ignore (Unix.waitpid [] pid) with Unix.Unix_error _ -> ())
-    else (
+(* After close's SIGTERM, the child has about 100 ms to exit, polled
+   without blocking, before SIGKILL. *)
+let rec grace t attempts =
+  check t;
+  match t.child with
+  | Running pid when attempts <= 0 -> (
+      try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ())
+  | Running _ ->
       Unix.sleepf 0.01;
-      poll (attempts - 1))
-  in
-  poll 10
+      grace t (attempts - 1)
+  | No_child | Exited _ -> ()
 
 let close_fd fd = try Unix.close fd with Unix.Unix_error _ -> ()
 
-let close ?(wait = true) t =
+let close ?wait:(reap = true) t =
   if t.closed then ()
   else (
     t.closed <- true;
@@ -128,8 +119,13 @@ let close ?(wait = true) t =
     close_fd t.fd;
     Option.iter close_fd t.slave;
     signal t Sys.sigterm;
-    if wait then (
-      (match t.child with Running pid -> reap pid | No_child | Exited _ -> ());
+    if reap then (
+      grace t 10;
+      (match t.child with
+      | Running _ -> (
+          try ignore (wait t : Unix.process_status)
+          with Unix.Unix_error _ -> ())
+      | No_child | Exited _ -> ());
       t.child <- No_child))
 
 let get_winsize t = get_winsize_raw (live_fd t "get_winsize")

@@ -597,6 +597,46 @@ let test_wait_after_close_without_wait () =
   | Unix.WSTOPPED _ -> fail "stopped");
   equal ~msg:"the child is reaped" (option int) None (Pty.pid pty)
 
+(* Runs [f] while another process sends SIGUSR1 to this one every
+   millisecond or so, which interrupts the system calls that block. *)
+let with_interrupts f =
+  let previous = Sys.signal Sys.sigusr1 (Sys.Signal_handle (fun _ -> ())) in
+  let null = Unix.openfile "/dev/null" [ Unix.O_RDWR ] 0 in
+  let script =
+    Printf.sprintf "while kill -USR1 %d 2>/dev/null; do sleep 0.001; done"
+      (Unix.getpid ())
+  in
+  let sender =
+    Unix.create_process "sh" [| "sh"; "-c"; script |] null null null
+  in
+  Unix.close null;
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.kill sender Sys.sigkill;
+      ignore (Unix.waitpid [] sender : int * Unix.process_status);
+      Sys.set_signal Sys.sigusr1 previous)
+    f
+
+(* Regression: close's reap took EINTR from waitpid for the child's exit,
+   and returned with the child unreaped when a signal arrived while it
+   waited. Close and wait now reap through one wait that retries. *)
+let test_reap_through_signals () =
+  let pty = Pty.spawn ~prog:"sleep" ~args:[ "0.2" ] () in
+  let status = with_interrupts (fun () -> Pty.wait pty) in
+  is_true ~msg:"wait gives the exit status" (status = Unix.WEXITED 0);
+  Pty.close pty;
+  let pty =
+    Pty.spawn ~prog:"sh" ~args:[ "-c"; "trap '' TERM; while :; do :; done" ] ()
+  in
+  let pid = Option.get (Pty.pid pty) in
+  with_interrupts (fun () -> Pty.close pty);
+  let reaped =
+    match Unix.waitpid [ Unix.WNOHANG ] pid with
+    | _ -> false
+    | exception Unix.Unix_error (Unix.ECHILD, _, _) -> true
+  in
+  is_true ~msg:"close reaped the child" reaped
+
 (* Regression: a second close used to call Unix.close on the stored fd number
    again. The kernel reallocates freed numbers to the next opened descriptor,
    so the second close destroyed an unrelated fd. *)
@@ -688,6 +728,7 @@ let tests =
       test "wait reaps the child" test_wait_reaps_the_child;
       test "wait after terminate" test_wait_after_terminate;
       test "wait after close without wait" test_wait_after_close_without_wait;
+      test "reap through signals" test_reap_through_signals;
       test "eof on close" test_eof_on_close;
       test "pty close" test_pty_close;
     ]
