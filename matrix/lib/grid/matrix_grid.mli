@@ -1,204 +1,235 @@
-(** Mutable grid of terminal cells.
+(** Grids of terminal cells, the frames a renderer draws, compares and writes.
 
-    A grid is a two-dimensional framebuffer where each cell stores character
-    content, foreground and background colors, text attributes, and a hyperlink.
-    Backed by bigarrays for cache-friendly access.
+    A {e grid} is a mutable rectangle of {e cells}, [width] columns by [height]
+    rows. A cell holds text, a foreground and a background color
+    ({!Ansi.Color}), attributes ({!Ansi.Attr}) and a hyperlink. It is named by
+    its column [x] and row [y], both from [0], or by its {e index}
+    [y * width + x] ({!idx}).
 
-    Single codepoints are stored directly as packed integers. Multi-codepoint
-    grapheme clusters (ZWJ emoji, combining characters) are stored in grid-owned
-    grapheme storage. Wide characters span multiple cells: a start cell followed
-    by continuation markers. A grapheme may span a whole row: its width is
-    bounded by the grid's width alone.
+    A {e grapheme} is the text a cell shows, one or more scalars that a terminal
+    places as one, as {!Matrix_text} measures them. A grapheme [w] cells wide
+    fills [w] adjacent cells of one row, its {e span}. The first is its
+    {e start cell}, which holds it, and the other [w - 1] are its
+    {e continuation cells}. A grapheme may be as wide as a row, and every cell
+    belongs to exactly one span ({!span}). A cell may also be {e empty}, as
+    after a control character is written. A {e blank} is a space with the
+    default foreground, no attributes and no link, on a background the operation
+    that makes it chooses. Text is stored with each ill-formed UTF-8 subsequence
+    replaced by U+FFFD.
 
     A grapheme is never stored in part. An operation that writes, erases or
-    moves some of a grapheme's cells turns the rest of them into blanks: spaces
-    with the default foreground, no attributes and no link, on the background
-    the operation writes. That is the written cell's background for a write, and
-    the [color] of {!clear_rect}, {!fill_rect} and {!shift}, so one of these
-    operations never leaves two kinds of blank. A terminal needs this: ECMA-48
-    puts the positions an erasure or a deletion vacates "into the erased state"
-    (§8.3.26), and the half of a wide character they cut is such a position.
+    moves some of a grapheme's cells turns the rest of them into blanks, on the
+    background the operation writes. That is the written cell's background for a
+    write, and the [color] of {!clear_rect}, {!fill_rect} and {!shift}, so that
+    one of these operations never leaves two kinds of blank. A terminal needs
+    this, since ECMA-48 puts the positions an erasure or a deletion vacates
+    "into the erased state" (§8.3.26), and the half of a wide character they cut
+    is such a position. A grapheme also has one rendition, its start cell's
+    colors, attributes and hyperlink, since a terminal shows a character in one.
+    Blending a translucent color over a wide character blends it over the start
+    cell's background, and the other cells take the start cell's rendition.
 
-    A grapheme also has one rendition, its start cell's colors, attributes and
-    hyperlink, since a terminal shows a character in one: blending a translucent
-    color over a wide character blends it over the start cell's background, and
-    the other cells take the start cell's rendition.
+    {e Drawing} composites colors over the cells it writes by source-over
+    blending ({!Ansi.Color.blend}), after multiplying their alpha by the
+    {e opacity}, the product of the opacity stack (see {!section-opacity}).
+    {e Copying} stores colors as they are. Drawing writes only the start cells
+    that the {e scissor}, the top of the stack of clipping regions
+    ({!section-clipping}), contains. {!draw_text} and {!val-set_uchar} write the
+    continuation cells of a grapheme whose start cell they write even outside
+    the scissor, so that the row keeps whole spans. Each function says whether
+    it draws or copies.
 
-    Drawing composites colors with source-over alpha blending; copying preserves
-    stored colors. A stack of {e scissor} clipping regions constrains drawing.
-    Wide characters are span-atomic: if the start cell is accepted by a clipping
-    region, continuation cells are written with it to keep the row well-formed.
-*)
+    Grids made with {!create_like} share their grapheme storage, which makes
+    comparing and copying cells between them cheaper. A grapheme of more than
+    one scalar, or of one scalar more than three cells wide, takes a slot in the
+    storage while a cell holds it, and a write that needs a slot when 262,143
+    are taken raises [Failure].
+
+    Unless a function's doc says otherwise, the parts of a write outside the
+    grid are left out, and a function that takes an index does not check it. An
+    index must be in \[[0];[width g * height g - 1]\], and reading outside it is
+    undefined. A grid, and grids that share storage, must not be used by two
+    domains in parallel.
+
+    The life cycle of a frame:
+    + {!create} makes a grid, and {!create_like} a second one for the frame
+      after it.
+    + {!clear} makes its cells blanks, and {!draw_text}, {!draw_box} and the
+      other drawing functions draw the frame, within {!push_clip} and
+      {!push_opacity}.
+    + {!cells_equal} compares it with the frame before, and {!to_ansi} or the
+      cell accessors write it out.
+    + {!resize} follows the terminal's size.
+
+    This draws a word and reads the grid back as text:
+    {[
+    let g = Matrix_grid.create ~width:20 ~height:2 () in
+    Matrix_grid.draw_text g ~x:0 ~y:0 ~text:"Hello";
+    assert (Matrix_grid.to_text g = "Hello\n")
+    ]} *)
 
 (** {1:types Types} *)
 
 type t
-(** Mutable terminal contents. Every mutation preserves complete grapheme spans;
-    stored text and hyperlinks belong to the grid. *)
+(** The type for grids. *)
 
 type region = { x : int; y : int; width : int; height : int }
-(** The type for rectangular areas in cell coordinates. Covers cells satisfying
-    [x <= col < x + width] and [y <= row < y + height]. Non-positive [width] or
-    [height] yields an empty region. *)
+(** The type for rectangles of cells, the cells of columns [x] to
+    [x + width - 1] and rows [y] to [y + height - 1]. A rectangle whose [width]
+    or [height] is [0] or less is empty. *)
 
-(** {1:constructors Constructors} *)
+(** {1:constructors Constructors}
+
+    A constructor raises [Invalid_argument] if [width <= 0], [height <= 0] or
+    [width > max_width]. *)
 
 val create :
   width:int -> height:int -> ?width_method:Matrix_text.width_method -> unit -> t
-(** [create ~width ~height ()] is a grid with all cells set to spaces
-    (terminal-default foreground, transparent background) with:
-    - [width_method] grapheme width method. Defaults to [`Unicode].
-
-    Raises [Invalid_argument] if [width <= 0], [height <= 0] or
-    [width > max_width]. *)
+(** [create ~width ~height ()] is a grid of blanks on a transparent background,
+    with its own grapheme storage and the width method [width_method], which
+    defaults to [`Unicode]. *)
 
 val create_like : t -> width:int -> height:int -> t
-(** [create_like g ~width ~height] is a fresh empty grid that shares [g]'s
-    grapheme storage and width method.
-
-    Sharing storage lets {!cells_equal} compare graphemes without decoding and
-    {!blit} copy them without re-interning. Use this for double-buffered
-    rendering where frames are diffed against each other.
-
-    Raises [Invalid_argument] if [width <= 0], [height <= 0] or
-    [width > max_width]. *)
+(** [create_like g ~width ~height] is a grid of blanks on a transparent
+    background that shares [g]'s grapheme storage and has its width method. Two
+    frames that a renderer compares are made this way. *)
 
 (** {1:properties Properties} *)
 
 val max_width : int
-(** [max_width] is the greatest grid width, 262,144 cells. A cell records its
-    distance to both ends of its grapheme's span in 18 bits each. *)
+(** [max_width] is the greatest width of a grid, 262,144 cells. *)
 
 val width : t -> int
-(** [width g] is the grid width in cells. *)
+(** [width g] is the number of columns of [g]. *)
 
 val height : t -> int
-(** [height g] is the grid height in cells. *)
+(** [height g] is the number of rows of [g]. *)
 
 val width_method : t -> Matrix_text.width_method
-(** [width_method g] is the current width computation method. *)
+(** [width_method g] is the width method {!draw_text} uses by default. *)
 
 val set_width_method : t -> Matrix_text.width_method -> unit
-(** [set_width_method g m] changes the width method for subsequent {!draw_text}
-    calls. Existing cell widths are not updated. *)
+(** [set_width_method g m] makes [m] the width method of [g] for the draws after
+    it. The cells already written keep their widths. *)
 
 val active_height : t -> int
-(** [active_height g] is the number of rows from the top down to the last row
-    that shows something a terminal's erase does not: a character other than a
-    space, or a space with an attribute, a hyperlink or a background other than
-    the terminal's default (a transparent one shows the default). It is [0] for
-    a cleared grid. *)
+(** [active_height g] is the number of rows from the top to the last row with a
+    cell that shows something a terminal's erase does not. Such a cell holds a
+    character other than a space, or has an attribute, a hyperlink or a
+    background other than the terminal's default, a transparent one counting as
+    the default. It is [0] when no cell does. *)
 
-(** {1:cell_access Cell access}
-
-    Linear index [idx] is row-major: [idx = y * width + x]. *)
+(** {1:cell_access Cell access} *)
 
 val idx : t -> x:int -> y:int -> int
-(** [idx g ~x ~y] is the flat index for cell [(x, y)]. No bounds checking. *)
+(** [idx g ~x ~y] is [y * width g + x], the index of the cell at column [x] and
+    row [y]. It does not check that the cell is in [g]. *)
 
 val get_codepoint : t -> int -> int
-(** [get_codepoint g idx] is the Unicode scalar at [idx], [0] for empty cells,
-    or [-1] for a multi-codepoint grapheme, a scalar stored more than three
-    cells wide, or a continuation cell. *)
+(** [get_codepoint g idx] is the scalar of cell [idx], and [0] for an empty
+    cell. It is [-1] for a continuation cell, a grapheme of more than one
+    scalar, and a scalar stored more than three cells wide. *)
 
 val get_attrs : t -> int -> int
-(** [get_attrs g idx] is the packed attribute integer at [idx], as
-    {!Ansi.Attr.pack} gives it. *)
+(** [get_attrs g idx] is the attributes of cell [idx], as {!Ansi.Attr.pack}
+    packs them. *)
 
 val get_link : t -> int -> string
-(** [get_link g idx] is the hyperlink URL at [idx], or [""] for no link. *)
+(** [get_link g idx] is the hyperlink URL of cell [idx], and [""] for none. *)
 
 val get_fg : t -> int -> Ansi.Color.t
-(** [get_fg g idx] is the foreground color stored at [idx], including terminal
-    emission intent. *)
+(** [get_fg g idx] is the foreground of cell [idx], its intent included. *)
 
 val get_bg : t -> int -> Ansi.Color.t
-(** [get_bg g idx] is the background color stored at [idx], including terminal
-    emission intent. *)
+(** [get_bg g idx] is the background of cell [idx], its intent included. *)
 
 val get_text : t -> int -> string
-(** [get_text g idx] is the grapheme at [idx] as a string. Returns [""] for
-    empty or continuation cells. *)
+(** [get_text g idx] is the grapheme of cell [idx], and [""] for an empty or a
+    continuation cell. *)
 
 val cell_text_length : t -> int -> int
-(** [cell_text_length g idx] is the number of UTF-8 bytes needed to encode the
-    cell content at [idx]. *)
+(** [cell_text_length g idx] is the number of bytes {!blit_cell_text} writes for
+    cell [idx]. For a start cell it is the length of its grapheme, and for an
+    empty cell [1], the length of U+0000. For a continuation cell it is the
+    length of its grapheme if the grapheme takes a slot of the storage, and [0]
+    otherwise. *)
 
 val blit_cell_text : t -> int -> bytes -> pos:int -> int
-(** [blit_cell_text g idx dst ~pos] writes the UTF-8 bytes for the cell content
-    at [idx] into [dst] starting at [pos] and returns the number of bytes
-    written. Returns [0] if [dst] has insufficient space. *)
+(** [blit_cell_text g idx dst ~pos] writes the UTF-8 of cell [idx] into [dst]
+    from [pos] and is the number of bytes written, [cell_text_length g idx]. It
+    writes U+0000 for an empty cell. It writes nothing and is [0] if the bytes
+    do not fit in [dst].
+
+    Raises [Invalid_argument] if [pos < 0] or [pos > Bytes.length dst]. *)
 
 val get_style : t -> int -> Ansi.Style.t
-(** [get_style g idx] reconstructs the style at [idx]. *)
+(** [get_style g idx] is the style of cell [idx], with its colors, attributes
+    and hyperlink. *)
 
 (** {1:predicates Predicates} *)
 
 val is_empty : t -> int -> bool
-(** [is_empty g idx] is [true] iff the cell is the null/empty sentinel.
-    Different from a blank space cell (U+0020), which is the default content
-    after {!create} and {!clear}. *)
+(** [is_empty g idx] is [true] iff cell [idx] is empty. A blank holds a space
+    and is not empty. *)
 
 val is_continuation : t -> int -> bool
-(** [is_continuation g idx] is [true] iff the cell is the trailing part of a
-    wide character. *)
+(** [is_continuation g idx] is [true] iff cell [idx] is a continuation cell. *)
 
 val cell_width : t -> int -> int
-(** [cell_width g idx] is the display width of the grapheme that starts at
-    [idx]: [0] for an empty or continuation cell. *)
+(** [cell_width g idx] is the width of the grapheme that starts at cell [idx],
+    and [0] for an empty or a continuation cell. *)
 
 val span : t -> int -> int * int
-(** [span g idx] is [(start, width)], the cells of the grapheme that covers cell
-    [idx]: it starts at index [start] and covers [width] cells of the same row,
-    [idx] among them. Every cell belongs to exactly one span: a cell that holds
-    a grapheme one cell wide, or none, is a span of its own, [(idx, 1)]; every
-    cell of a wide grapheme, its start cell and its continuations, gives the
-    same span, whose [width] is the start cell's {!cell_width}.
-
-    A wide grapheme is acted on whole (see the module's introduction), so this
-    is the extent to act on from any of its cells: the cells to select, to
-    redraw, or to report under the pointer. Reads one cell.
+(** [span g idx] is [(start, width)], the span of the grapheme that covers cell
+    [idx], which starts at index [start] and covers [width] cells of the same
+    row, [idx] among them. A cell that holds a grapheme one cell wide, or none,
+    is a span of its own, [(idx, 1)]. Every cell of a wide grapheme, its start
+    cell and its continuations, gives the same span, whose [width] is the start
+    cell's {!cell_width}. A program acts on the whole span of a wide grapheme,
+    such as the cells to select, to redraw, or to report under the pointer. It
+    reads one cell.
 
     Raises [Invalid_argument] if [idx] is not in
     \[[0];[width g * height g - 1]\]. *)
 
 val cells_equal : t -> int -> t -> int -> bool
-(** [cells_equal g1 idx1 g2 idx2] is [true] iff both cells have identical text,
-    span position, colors, attributes, and hyperlink URLs. Protection is not
-    compared: it does not show. Grids need not share storage. Shared storage
-    allows direct comparison without lookup. *)
+(** [cells_equal g1 idx1 g2 idx2] is [true] iff the two cells have the same
+    text, place in their span, colors, attributes and hyperlink. Protection is
+    not compared, since it does not show. The grids may have their own storage,
+    and a comparison between grids that share storage reads no grapheme. *)
 
-(** {1:manipulation Manipulation} *)
+(** {1:manipulation Resizing, clearing and copying} *)
 
 val resize : t -> width:int -> height:int -> unit
-(** [resize g ~width ~height] resizes the grid, preserving existing contents
-    where possible. Cells outside the new bounds are released. No-op if
-    dimensions are unchanged.
+(** [resize g ~width ~height] makes [g] [width] by [height] cells. A cell in
+    both sizes keeps its contents, and the new cells are blanks on a transparent
+    background, as are the cells of a grapheme the new width cuts. Nothing
+    changes if [g] already has that size. The scissor and opacity stacks stay as
+    they are.
 
     Raises [Invalid_argument] if [width <= 0], [height <= 0] or
     [width > max_width]. *)
 
 val resize_clear : ?color:Ansi.Color.t -> t -> width:int -> height:int -> unit
-(** [resize_clear g ~width ~height] resizes [g] and clears all cells with
-    {!clear} when dimensions change. If dimensions are unchanged, this is a
-    no-op; use {!clear} for an explicit same-size clear.
+(** [resize_clear g ~width ~height] is {!resize} followed by {!clear}[ ~color],
+    if the size changes, and does nothing otherwise.
 
     Raises [Invalid_argument] if [width <= 0], [height <= 0] or
     [width > max_width]. *)
 
 val clear : ?color:Ansi.Color.t -> t -> unit
-(** [clear ~color g] resets all cells to spaces with the terminal's default
-    foreground and [color] background. [color] defaults to transparent. Releases
-    all stored grapheme references. The scissor stack is preserved. *)
+(** [clear ~color g] makes every cell of [g] a blank on [color], which defaults
+    to transparent. The scissor and opacity stacks stay as they are. *)
 
 val blit : src:t -> dst:t -> unit
-(** [blit ~src ~dst] copies all cell data from [src] to [dst], resizing [dst] to
-    match. Graphemes are copied into [dst]'s storage as needed. No alpha
-    blending. *)
+(** [blit ~src ~dst] copies [src] to [dst], every cell and the width method, and
+    resizes [dst] to the size of [src]. The graphemes are copied into the
+    storage of [dst] if it is not that of [src]. Nothing changes if [src] and
+    [dst] are the same grid. *)
 
 val copy : t -> t
-(** [copy g] is a deep copy of [g]. The scissor stack starts empty on the copy.
-*)
+(** [copy g] is a grid with the cells and width method of [g], its own grapheme
+    storage, and empty scissor and opacity stacks. *)
 
 val blit_region :
   src:t ->
@@ -210,15 +241,18 @@ val blit_region :
   dst_x:int ->
   dst_y:int ->
   unit
-(** [blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y] copies a
-    rectangular region from [src] to [dst].
+(** [blit_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y] copies
+    the [width] by [height] cells of [src] at column [src_x] and row [src_y] to
+    [dst] at column [dst_x] and row [dst_y], with their colors as they are. The
+    rectangle is cut to the cells that are in both grids, and to the scissor of
+    [dst]. It may overlap itself when [src] and [dst] are the same grid. It
+    never resizes [dst].
 
-    The region is clamped to valid bounds in both grids. Negative coordinates
-    shift the region inward. Respects the scissor on [dst]. Colors are copied
-    unchanged, independently of the destination opacity. Same-grid overlapping
-    regions are handled as copies. Wide-character fragments whose start or
-    continuation is outside the copied region are written as spaces. Never
-    resizes [dst]. *)
+    A cell whose grapheme the rectangle cuts is copied as a blank. Within one
+    grid such blanks, and the cells of a grapheme of [dst] that the copy cuts,
+    are on a transparent background. Between grids a blank keeps the background
+    of its cell in [src], and a cut grapheme of [dst] becomes blanks on the
+    background of the cell written over it. *)
 
 val draw_region :
   src:t ->
@@ -230,29 +264,27 @@ val draw_region :
   dst_x:int ->
   dst_y:int ->
   unit
-(** [draw_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y]
-    composites a rectangular region of [src] over [dst]. Bounds, clipping, and
-    grapheme spans follow {!blit_region}. Source colors are multiplied by the
-    destination opacity; fully transparent cells leave the destination
-    unchanged. Self-composition snapshots the source before drawing. *)
+(** [draw_region ~src ~dst ~src_x ~src_y ~width ~height ~dst_x ~dst_y] draws the
+    cells of [src] that {!blit_region} would copy over those of [dst]. The
+    colors of [src] are multiplied by the opacity of [dst], and a cell whose
+    colors are then both transparent leaves its cell of [dst] as it is. When
+    [src] and [dst] are the same grid, it reads a copy of [src] taken first. It
+    draws nothing while the opacity of [dst] is [0]. *)
 
 val fill_rect :
   t -> x:int -> y:int -> width:int -> height:int -> color:Ansi.Color.t -> unit
-(** [fill_rect g ~x ~y ~width ~height ~color] fills a rectangle:
-    - Transparent (alpha = 0): leaves cells unchanged.
-    - Semi-transparent: blends over existing background.
-    - Opaque: overwrites entirely with blanks on [color], clearing whole every
-      grapheme with a cell in the rectangle, as {!clear_rect} does.
-
-    Clipped to grid bounds and scissor. *)
+(** [fill_rect g ~x ~y ~width ~height ~color] draws [color] over the rectangle,
+    cut to the scissor, after multiplying its alpha by the opacity. A
+    transparent [color] changes nothing. A translucent one tints the colors of
+    each cell, keeps its text and drops its hyperlink. An opaque one makes each
+    cell a blank on [color], as {!clear_rect} does. *)
 
 val clear_rect :
   ?color:Ansi.Color.t -> t -> x:int -> y:int -> width:int -> height:int -> unit
-(** [clear_rect g ~x ~y ~width ~height] clears a rectangle to blanks on [color],
-    which defaults to transparent. A grapheme with a cell in the rectangle is
-    cleared whole, also where it extends outside the rectangle or the scissor.
-
-    Clipped to grid bounds and scissor. *)
+(** [clear_rect g ~x ~y ~width ~height] makes the cells of the rectangle, cut to
+    the scissor, blanks on [color], which defaults to transparent. [color] is
+    stored as it is. A grapheme with a cell in the rectangle becomes blanks
+    whole, also where it extends outside the rectangle or the scissor. *)
 
 (** {1:drawing Drawing} *)
 
@@ -265,25 +297,23 @@ val draw_text :
   y:int ->
   text:string ->
   unit
-(** [draw_text ~style ~tab_width ~width_method g ~x ~y ~text] draws single-line
-    text. Text is segmented using [width_method], defaulting to the grid's
-    {!width_method}. This override does not change the grid configuration. Wide
-    characters occupy multiple cells with continuation markers. Tabs expand to
-    [tab_width] spaces (default [2]). Display units of no width are skipped:
-    zero-width characters standing alone, such as U+200B, and the other control
-    characters, newlines included, which no cell holds.
+(** [draw_text ~style ~tab_width ~width_method g ~x ~y ~text] draws the display
+    units of [text] in [style] from column [x] of row [y], each in as many cells
+    as it is wide. [width_method] defaults to {!width_method}[ g], and [style]
+    to {!Ansi.Style.default}, whose absent colors are the default foreground and
+    a transparent background. A TAB is [tab_width] spaces, and [tab_width]
+    defaults to [2], and is [2] if [0] or less. Units of width [0], such as
+    U+200B alone and the control characters, newlines among them, take no cell.
+    A unit that would cross the right edge leaves spaces in [style] up to it,
+    and nothing is drawn if both colors of [style] are transparent.
 
-    When the resolved background has alpha < 1.0, colors are blended with
-    existing cells. A space on a translucent background preserves the existing
-    cell content and tints its colors; a wide character is tinted whole when the
-    space covers its start cell, and not at all otherwise.
-
-    Respects the active scissor for start cells. If a wide character's start
-    cell is visible, its continuation cells are written as well to preserve the
-    grid's wide-span invariant. *)
+    A space on a translucent background keeps the text of the cell it covers,
+    tints its colors and gives it the hyperlink of [style]. It tints a wide
+    grapheme whole when it covers the start cell, and leaves it as it is
+    otherwise. *)
 
 module Border = Border
-(** Box-drawing border character sets. *)
+(** Box-drawing characters. *)
 
 val draw_box :
   t ->
@@ -300,32 +330,34 @@ val draw_box :
   ?title_style:Ansi.Style.t ->
   unit ->
   unit
-(** [draw_box g ~x ~y ~width ~height ()] draws a box with Unicode borders and:
-    - [border] character set. Defaults to {!Border.single}.
-    - [sides] to draw. Defaults to {!Border.all}.
-    - [style] for border characters. Defaults to {!Ansi.Style.default}.
-    - [fill] interior and border cell background color. When absent, no fill is
-      applied.
-    - [title] on the top border when [\`Top] is included and
-      [width >= title_width + 4].
-    - [title_alignment] defaults to [\`Left] with 2-cell padding.
-    - [title_style] for the title text.
+(** [draw_box g ~x ~y ~width ~height ()] draws the box of the rectangle, with
+    the characters [border], {!Border.single} by default, on its sides [sides],
+    {!Border.all} by default, in [style], {!Ansi.Style.default} by default.
 
-    Respects the scissor. *)
+    With [fill], the inside of the box is filled with [fill] ({!fill_rect}), and
+    the border cells have [fill] as their background. Without it, their
+    background is that of [style], or transparent, and the inside is left as it
+    is.
+
+    With [title], the title is drawn on the top side, if it is drawn and the box
+    is at least four cells wider than the title. [title_alignment] places it two
+    cells from the left, which is the default, two cells from the right, or
+    centered. It is drawn in [title_style], or in the foreground of [style], on
+    the border's background. *)
 
 type line_symbols = {
   h : string;  (** Horizontal segment. *)
   v : string;  (** Vertical segment. *)
-  diag_up : string;  (** Diagonal up-right. *)
-  diag_down : string;  (** Diagonal down-right. *)
+  diag_up : string;  (** Diagonal from bottom left to top right. *)
+  diag_down : string;  (** Diagonal from top left to bottom right. *)
 }
-(** The type for line drawing symbol sets. *)
+(** The type for the characters of lines. *)
 
 val default_line_symbols : line_symbols
-(** Unicode box-drawing: ["─"], ["│"], ["╱"], ["╲"]. *)
+(** [default_line_symbols] is ["─"], ["│"], ["╱"] and ["╲"]. *)
 
 val ascii_line_symbols : line_symbols
-(** ASCII: ["-"], ["|"], ["/"], ["\\"]. *)
+(** [ascii_line_symbols] is ["-"], ["|"], ["/"] and ["\\"]. *)
 
 val draw_line :
   t ->
@@ -338,16 +370,15 @@ val draw_line :
   ?kind:[ `Line | `Braille ] ->
   unit ->
   unit
-(** [draw_line g ~x1 ~y1 ~x2 ~y2 ()] draws a line using Bresenham's algorithm
-    with:
-    - [\`Line] (default) uses box-drawing characters with per-step symbol
-      selection based on direction.
-    - [\`Braille] uses 2×4 dot patterns that merge with existing braille cells,
-      allowing multiple lines to share cells.
+(** [draw_line g ~x1 ~y1 ~x2 ~y2 ()] draws the line from [(x1, y1)] to
+    [(x2, y2)] by Bresenham's algorithm, in [style]. With [`Line], the default,
+    each cell takes the character of [symbols] for the direction of the step
+    that leaves it, and the last cell that of the line's direction. With
+    [`Braille], the coordinates are in dots, two across and four down per cell,
+    and a cell's dots are added to those of a braille character already in it,
+    so that lines can share cells. *)
 
-    Respects the scissor. *)
-
-(** {1:set_uchar Direct cell write} *)
+(** {1:set_uchar Writing cells} *)
 
 val set_uchar :
   t ->
@@ -361,17 +392,14 @@ val set_uchar :
   ?blend:bool ->
   unit ->
   unit
-(** [set_uchar g ~x ~y ~uchar ~fg ~bg ~attrs ()] draws one Unicode scalar.
-    [blend] defaults to [false], copying colors unchanged. [~blend:true] applies
-    the opacity stack and composites colors over existing cells.
-
-    A start outside the grid or scissor is skipped. Existing overlapping spans
-    are removed and continuation cells are written with the start, even beyond
-    the scissor. A scalar that would cross the right edge writes styled spaces
-    instead. Width is the Unicode scalar width; controls and zero-width scalars
-    write an empty cell without extending the previous grapheme. Use
-    {!draw_text} for multi-codepoint graphemes. Drawn cells do not expose
-    storage handles; use {!blit_region} to copy existing content. *)
+(** [set_uchar g ~x ~y ~uchar ~fg ~bg ~attrs ()] writes the scalar [uchar] at
+    column [x] of row [y], as wide as {!Matrix_text.uchar_width} makes it. It
+    copies colors, and draws them if [blend] is [true] ([false] by default). It
+    writes nothing if the start cell is outside the grid or the scissor, and
+    writes continuation cells even outside the scissor. A scalar that would
+    cross the right edge is written as spaces up to it, and a control or a
+    scalar of width [0] as an empty cell. Writing a grapheme of more than one
+    scalar takes {!draw_text} or {!set_grapheme}. *)
 
 val set_grapheme :
   t ->
@@ -387,121 +415,128 @@ val set_grapheme :
   pos:int ->
   len:int ->
   unit
-(** [set_grapheme g ~x ~y ~width ~fg ~bg ~attrs s ~pos ~len] stores the grapheme
-    [s.[pos] .. s.[pos + len - 1]] in the [width] cells from [(x, y)], exactly:
-    the colors are stored as given, and neither the scissor nor the opacity
-    applies. The caller chooses [width], so a terminal places text by its own
-    display units and fits it to its line. [link] defaults to no link and
-    [protected] (see {!is_protected}) to [false]. The graphemes the write cuts
-    become blanks on [bg].
+(** [set_grapheme g ~x ~y ~width ~fg ~bg ~attrs s ~pos ~len] stores the [len]
+    bytes of [s] from [pos] as one grapheme in the [width] cells from column [x]
+    of row [y]. It copies, so neither the scissor nor the opacity applies. The
+    caller chooses [width], so that a terminal places text by its own display
+    units and fits it to its line. [link] defaults to no link and [protected]
+    ({!section-protection}) to [false]. The graphemes the write cuts become
+    blanks on [bg].
 
-    No cell holds a control character: it has no glyph, and {!to_ansi} would
-    send it to the terminal that receives the cells, where it would act.
+    No cell holds a control character, since one has no glyph and {!to_ansi}
+    would send it to the terminal that receives the cells, where it would act.
 
     Raises [Invalid_argument] if [len <= 0] or [pos] and [len] do not designate
     a substring of [s], if the cells are not all in the grid ([width < 1],
     [x < 0], [x + width > width g], or [y] outside the rows), or if the bytes
-    contain a control character: C0, DEL or C1 (U+0080 to U+009F). *)
+    hold a control character, C0, DEL or C1 (U+0080 to U+009F). *)
 
 (** {1:protection Protection}
 
     A DEC terminal can mark the characters it writes as not erasable by a
-    selective erase (DECSCA; VT220 Programmer Reference Manual §4.9), so that a
+    selective erase (DECSCA, VT220 Programmer Reference Manual §4.9), so that a
     form's fields can be cleared while its labels stay. The mark belongs to the
-    character, so it lives in the cell and moves with it. It does not show:
+    character, so it lives in the cell and moves with it. It does not show, so
     {!get_attrs}, {!get_style}, {!cells_equal} and {!to_ansi} ignore it. Every
-    operation except {!erase_unprotected} treats it as part of the cell, and a
-    blank is not protected. *)
+    operation other than {!erase_unprotected} treats it as part of the cell, and
+    a blank is not protected. *)
 
 val is_protected : t -> int -> bool
-(** [is_protected g idx] is [true] iff the cell at [idx] was written by
-    {!set_grapheme} with [~protected:true] and not replaced since. *)
+(** [is_protected g idx] is [true] iff cell [idx] was written by {!set_grapheme}
+    with [~protected:true] and not written since. *)
 
 val erase_unprotected : t -> region -> unit
 (** [erase_unprotected g r] replaces with spaces the text of every unprotected
-    grapheme with a cell in [r], and drops its link, the text it named. Each
-    cell keeps its colors and attributes: a selective erase does not change the
-    rendition (VT220 Programmer Reference Manual §4.12, DECSEL: it "does not
-    affect video line attributes or video character attributes"). Protected
-    graphemes are left as they are. [r] is clipped to the grid; the scissor does
-    not apply. *)
+    grapheme with a cell in [r], and drops its hyperlink, which named that text.
+    Each cell keeps its colors and attributes, since a selective erase leaves
+    the rendition as it is (VT220 Programmer Reference Manual §4.12, DECSEL
+    "does not affect video line attributes or video character attributes").
+    Protected graphemes stay as they are. [r] is cut to the grid, and the
+    scissor does not apply. *)
 
-(** {1:clipping Clipping} *)
+(** {1:clipping Clipping}
+
+    The scissor is the intersection of the regions on the stack, or the whole
+    grid when the stack is empty. *)
 
 val push_clip : t -> region -> unit
-(** [push_clip g r] pushes a clipping region. The effective clip is the
-    intersection of [r] with the current clip. *)
+(** [push_clip g r] pushes [r], so that the scissor becomes its intersection
+    with [r]. *)
 
 val pop_clip : t -> unit
-(** [pop_clip g] pops the most recent clip. No-op if the stack is empty. *)
+(** [pop_clip g] pops the region pushed last, and does nothing if the stack is
+    empty. *)
 
 val clear_clip : t -> unit
-(** [clear_clip g] removes all clipping regions. *)
+(** [clear_clip g] empties the stack. *)
 
 val clip_region : t -> region
-(** [clip_region g] is the effective scissor intersected with grid bounds. An
-    empty intersection has zero width or height. *)
+(** [clip_region g] is the scissor cut to the grid, whose [width] or [height] is
+    [0] when the two do not intersect. *)
 
 val intersects_clip : t -> region -> bool
-(** [intersects_clip g r] is [true] iff the positive-area region [r] intersects
-    both [g]'s bounds and its effective clipping region. *)
+(** [intersects_clip g r] is [true] iff [r] is not empty and shares a cell with
+    both the grid and the scissor. *)
 
 val clip : t -> region -> (unit -> 'a) -> 'a
-(** [clip g r f] runs [f ()] with [r] as the active clip, popping it on return
-    (even on exception). *)
+(** [clip g r f] is [f ()] with [r] pushed, and pops [r] when [f] returns or
+    raises. *)
 
-(** {1:opacity Opacity stack}
+(** {1:opacity Opacity}
 
-    Hierarchical opacity for UI trees. Drawing operations multiply color alpha
-    by the product of all stacked opacities. Push/pop pairs must be balanced. *)
+    The opacity stack serves a tree of drawn elements, where each element's
+    opacity multiplies those of the elements around it. The opacity is the
+    product of the stack's entries, and [1.0] when it is empty. Each
+    {!push_opacity} must be followed by its {!pop_opacity}. *)
 
 val push_opacity : t -> float -> unit
-(** [push_opacity g o] pushes [o] (clamped to \[0.0, 1.0\]). *)
+(** [push_opacity g o] pushes [o], clamped to \[[0.0];[1.0]\]. *)
 
 val pop_opacity : t -> unit
-(** [pop_opacity g] pops the most recent opacity. No-op if the stack is empty.
-*)
+(** [pop_opacity g] pops the opacity pushed last, and does nothing if the stack
+    is empty. *)
 
 val current_opacity : t -> float
-(** [current_opacity g] is the product of all stacked opacities, or [1.0] if the
-    stack is empty. *)
+(** [current_opacity g] is the opacity of [g]. *)
 
 (** {1:shifting Shifting} *)
 
 val shift : t -> region -> dx:int -> dy:int -> color:Ansi.Color.t -> unit
 (** [shift g r ~dx ~dy ~color] moves the contents of [r] by [dx] columns and
-    [dy] rows, within [r]: what leaves [r] is lost, and the cells the move
+    [dy] rows, within [r]. What leaves [r] is lost, and the cells the move
     uncovers become blanks on [color]. Text, colors, attributes and links move
     together. A grapheme cut by an edge of [r], before or after the move,
     becomes blanks on [color] whole, also outside [r]. A shift by [0] and [0]
-    changes nothing.
-
-    A terminal's scrolls, line and character insertions and deletions, and
-    column shifts are all shifts of a region by its margins. [r] is clipped to
-    the grid; the scissor and the opacity do not apply. *)
+    changes nothing. A terminal's scrolls, insertions and deletions of lines and
+    characters, and column shifts are each a shift of a region by its margins.
+    [r] is cut to the grid, and neither the scissor nor the opacity applies. *)
 
 (** {1:diagnostics Diagnostics} *)
 
 val grapheme_stats : t -> int * int
-(** [grapheme_stats g] is [(live, slots)] for [g]'s grapheme store: the number
-    of live interned payloads and the number of store slots ever allocated
-    (including freed slots awaiting reuse). The store is shared between grids
-    created with {!create_like}. Intended for tests and devtools; [slots]
-    staying bounded under churn indicates slots are reclaimed and reused. *)
+(** [grapheme_stats g] is [(live, slots)] for the grapheme storage of [g], which
+    grids made with {!create_like} share. [live] is the number of graphemes
+    cells hold, and [slots] the number of slots ever allocated, those freed for
+    reuse included. A test that writes many graphemes checks that [slots] stays
+    bounded, which shows that freed slots are reused. *)
 
 (** {1:converting Converting} *)
 
 val to_text : ?trim:bool -> t -> string
-(** [to_text ~trim g] renders [g]'s visible text: one line per row, one grapheme
-    per cell, continuation cells of wide graphemes skipped, empty cells as
-    spaces. Trailing spaces on each row are dropped when [trim] is [true]
-    (default). Styling is discarded; see {!to_ansi} for styled output. *)
+(** [to_text ~trim g] is the text of [g], one line per row, separated by LF. A
+    start cell gives its grapheme and an empty cell a space, and a continuation
+    cell gives nothing. With [~trim:true], the default, the spaces at the end of
+    each line are dropped. Styles are left out, which {!to_ansi} writes. *)
 
 val to_ansi : ?reset:bool -> ?complete_rows:bool -> ?rows:int -> t -> string
-(** [to_ansi ~reset ~complete_rows ?rows g] serializes the first [rows] rows of
-    [g] with ANSI styles. [rows] defaults to the grid height; [0] produces an
-    empty string. By default, rows are separated by LF without a final newline.
-    [complete_rows] (default [false]) instead erases each terminal row before
-    writing it and terminates every row with CRLF, including the last row.
-    [reset] (default [true]) adds a final SGR reset. Raises [Invalid_argument]
-    if [rows] is negative or exceeds the grid height. *)
+(** [to_ansi ~reset ~complete_rows ~rows g] is the first [rows] rows of [g] with
+    their styles and hyperlinks, [height g] rows by default. A row starts with
+    its whole style and ends by closing its hyperlink and with [CSI 0 m]. Rows
+    are separated by LF, without one after the last. With [~complete_rows:true]
+    ([false] by default), each row starts by erasing the terminal's line (EL 2)
+    and ends with CR LF, the last one included. With [~reset:true], the default,
+    a final [CSI 0 m] follows. An empty cell is written as a space. It is [""]
+    if [rows] is [0].
+
+    Raises [Invalid_argument] if [rows] is negative or greater than [height g].
+*)

@@ -1,58 +1,39 @@
-(** Buffer-local reference counting for grapheme clusters.
+(** The cells of one grid that hold each stored grapheme, counted so that the
+    grid holds one reference of the {!Grapheme_store}.
 
-    This module implements a "write-combining" strategy for reference counting.
-    Instead of touching the grapheme store for every cell assignment in a grid,
-    this tracker maintains a local count of usage within a specific grid buffer.
-
-    Store refcounts are only updated when a grapheme's local count transitions
-    between 0 and 1. This keeps store operations proportional to the number of
-    distinct graphemes rather than the number of cells. *)
+    A tracker counts, for each grapheme of the store, the cells of its grid that
+    hold it, the start and continuation cells of a grapheme counting together.
+    It adds a reference to the store when a grapheme's count rises from 0 and
+    takes it back when the count falls to 0, so the store is touched once per
+    grapheme and grid, whatever the number of cells. *)
 
 type t
-(** The abstract state of a tracker. *)
+(** The type for trackers. *)
 
 val create : Grapheme_store.t -> t
-(** [create store] initializes a new tracker associated with [store]. Collection
-    of the tracker schedules release of its remaining references. *)
+(** [create store] is a tracker of no cell for [store]. When the tracker is
+    collected, the release of its references is queued on [store]
+    ({!Grapheme_store.defer_release}). *)
 
 val add : t -> Packed_cell.t -> unit
-(** [add t id] increments the local reference count for the given encoded
-    character [id].
-
-    If [id] represents a simple scalar (not an interned pointer), this is a
-    no-op. If [id] is a complex grapheme seeing its first local reference, the
-    store reference count is incremented.
-
-    Start and continuation cells of the same grapheme share a single entry,
-    keyed by a stable store key, so wide graphemes only bump the store refcount
-    once per grid. *)
+(** [add t id] counts one more cell that holds [id], and does nothing if [id]
+    holds its scalar inline. A grapheme counted for the first time gains a
+    reference in the store. *)
 
 val remove : t -> Packed_cell.t -> unit
-(** [remove t id] decrements the local reference count for the given encoded
-    character [id].
-
-    If [id] represents a simple scalar, this is a no-op. If [id] is a complex
-    grapheme and its local count reaches zero, the store reference count is
-    decremented. *)
+(** [remove t id] counts one cell fewer that holds [id], and does nothing if
+    [id] holds its scalar inline or is not counted. A grapheme whose count falls
+    to 0 loses its reference in the store. *)
 
 val replace : t -> old_id:Packed_cell.t -> new_id:Packed_cell.t -> unit
-(** [replace t ~old_id ~new_id] effectively performs [remove t old_id] followed
-    by [add t new_id].
-
-    This is optimized to avoid unnecessary hash table operations when [old_id]
-    and [new_id] are identical or both are simple scalars. *)
+(** [replace t ~old_id ~new_id] is [add t new_id] followed by [remove t old_id],
+    so a grapheme that both name keeps its reference. It does nothing if
+    [old_id] and [new_id] are equal. *)
 
 val clear : t -> unit
-(** [clear t] releases all references tracked by this instance.
-
-    Decrements the global refcount for every unique interned grapheme currently
-    tracked, then resets the local state. This should be called when clearing a
-    Grid; unreachable trackers release their remaining references automatically.
-*)
+(** [clear t] takes back the store reference of every grapheme [t] counts, and
+    counts none afterwards. A grid calls it when it clears all its cells. *)
 
 val unique_count : t -> int
-(** Returns the number of unique interned graphemes currently tracked.
-
-    This is O(1) because the tracker maintains the count alongside the hash
-    table, so it can be queried cheaply in hot paths. Useful for statistics and
-    debugging. *)
+(** [unique_count t] is the number of graphemes [t] counts. It reads one field.
+*)

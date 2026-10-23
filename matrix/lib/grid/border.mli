@@ -1,8 +1,9 @@
-(** Box-drawing border character sets.
+(** Box-drawing characters, the sets {!Matrix_grid.draw_box} draws borders with.
 
-    A border defines the 11 Unicode scalars needed to draw a complete box: four
-    corners, horizontal and vertical edges, four T-junctions, and a cross
-    intersection. *)
+    A {e border} gives the 11 scalars that draw a box and the lines that divide
+    it. These are the four corners, the horizontal and vertical edges, the four
+    T-junctions, and the cross. Each must be one cell wide, since a box gives
+    each one cell. *)
 
 (** {1:borders Borders} *)
 
@@ -19,27 +20,28 @@ type t = {
   right_t : Uchar.t;
   cross : Uchar.t;
 }
-(** The type for border character sets. *)
+(** The type for borders. *)
 
 (** {1:presets Presets} *)
 
 val single : t
-(** Light box drawing: ┌ ┐ └ ┘ ─ │ ┬ ┴ ├ ┤ ┼ *)
+(** [single] is the light border ┌ ┐ └ ┘ ─ │ ┬ ┴ ├ ┤ ┼. *)
 
 val double : t
-(** Double box drawing: ╔ ╗ ╚ ╝ ═ ║ ╦ ╩ ╠ ╣ ╬ *)
+(** [double] is the double border ╔ ╗ ╚ ╝ ═ ║ ╦ ╩ ╠ ╣ ╬. *)
 
 val rounded : t
-(** Rounded box drawing: ╭ ╮ ╰ ╯ ─ │ ┬ ┴ ├ ┤ ┼ *)
+(** [rounded] is the light border with round corners ╭ ╮ ╰ ╯ ─ │ ┬ ┴ ├ ┤ ┼. *)
 
 val heavy : t
-(** Heavy box drawing: ┏ ┓ ┗ ┛ ━ ┃ ┳ ┻ ┣ ┫ ╋ *)
+(** [heavy] is the heavy border ┏ ┓ ┗ ┛ ━ ┃ ┳ ┻ ┣ ┫ ╋. *)
 
 val ascii : t
-(** ASCII fallback: [+ + + + - | + + + + +]. *)
+(** [ascii] is the border of ASCII characters [+ + + + - | + + + + +], for
+    terminals without box-drawing characters. *)
 
 val empty : t
-(** Invisible border (spaces). *)
+(** [empty] is the border of spaces. *)
 
 (** {1:customizing Customizing} *)
 
@@ -57,8 +59,8 @@ val modify :
   ?cross:Uchar.t ->
   t ->
   t
-(** [modify ?top_left ... base] is [base] with the specified characters
-    overridden. *)
+(** [modify ?top_left ... base] is [base] with the characters given in place of
+    its own. *)
 
 (** {1:sides Sides} *)
 
