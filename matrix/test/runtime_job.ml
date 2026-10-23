@@ -14,7 +14,11 @@ let () =
   ignore (Sys.signal Sys.sigttou Sys.Signal_ignore : Sys.signal_behavior);
   match Unix.fork () with
   | 0 ->
+      (* The job takes the terminal's foreground itself as well as the
+         shell: whichever runs first, the job never reaches the terminal
+         from the background, where setting it would stop the job. *)
       setpgid 0 0;
+      tcsetpgrp Unix.stdin (Unix.getpid ());
       ignore (Sys.signal Sys.sigttou Sys.Signal_default : Sys.signal_behavior);
       Unix.execv child [| child |]
   | pid ->
