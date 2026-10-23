@@ -1,8 +1,8 @@
 (* A job-control shell for test_runtime_pty: it runs runtime_child.exe as a
    job of its own process group, in the foreground of the terminal, and
    reports on its standard output when the job stops or ends. While the job
-   is stopped it reads a command: [f] continues it in the foreground, [b] in
-   the background. *)
+   is stopped it reads a command, a line that ends with it: [f] continues it
+   in the foreground, [b] in the background. *)
 
 external setpgid : int -> int -> unit = "runtime_job_setpgid"
 external tcsetpgrp : Unix.file_descr -> int -> unit = "runtime_job_tcsetpgrp"
@@ -31,7 +31,12 @@ let () =
         | _, WSIGNALED n -> Printf.printf "JOB-SIGNALED %d\r\n%!" n
         | exception Unix.Unix_error (Unix.EINTR, _, _) -> wait ()
       and command () =
-        match input_line stdin with
+        (* The command is the line's last character: a terminal's late
+           answer to a query the job sent before it stopped is typing to
+           whoever reads the terminal, and precedes it on the line. *)
+        let line = input_line stdin in
+        let last = String.length line - 1 in
+        match if last < 0 then "" else String.sub line last 1 with
         | "f" ->
             tcsetpgrp Unix.stdin pid;
             Unix.kill (-pid) Sys.sigcont;
