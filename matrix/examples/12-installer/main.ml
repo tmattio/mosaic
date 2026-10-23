@@ -180,7 +180,7 @@ let commit app ~before ~after =
 let () =
   let config = Matrix.config ~mode:`Primary ~fps:30. ~mouse:`Off () in
   Matrix.run ~config @@ fun app ->
-  let rec loop state last completed_at =
+  let rec loop state completed_at =
     match Matrix.next app with
     | Stopped | Event (Key { key = Escape; _ }) -> ()
     | Event (Key k) when Input.Keystroke.is_interrupt k ->
@@ -190,8 +190,7 @@ let () =
       when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
         ()
     | Frame -> (
-        let now = Matrix.now app in
-        let next = update ~dt:(Float.of_int (now - last) *. 1e-9) state in
+        let next = update ~dt:(Matrix.frame_dt app) state in
         commit app ~before:(completed state.packages)
           ~after:(completed next.packages);
         Matrix.draw app
@@ -200,10 +199,10 @@ let () =
         Matrix.request_redraw app;
         (* Stop a second after everything is installed. *)
         match (all_done next, completed_at) with
-        | false, _ -> loop next now None
-        | true, None -> loop next now (Some next.elapsed)
+        | false, _ -> loop next None
+        | true, None -> loop next (Some next.elapsed)
         | true, Some done_at ->
-            if next.elapsed -. done_at < 1.0 then loop next now completed_at)
-    | Event _ | Timer _ | Posted _ -> loop state last completed_at
+            if next.elapsed -. done_at < 1.0 then loop next completed_at)
+    | Event _ | Timer _ | Posted _ -> loop state completed_at
   in
-  loop initial_state (Matrix.now app) None
+  loop initial_state None

@@ -339,18 +339,15 @@ let () =
   Matrix.run @@ fun app ->
   let cols, rows = Matrix.size app in
   let state = create_state ~cols ~rows in
-  let rec loop last =
+  let rec loop () =
     match Matrix.next app with
     | Stopped -> ()
     | Event event -> (
-        match handle_input state event with
-        | `Quit -> ()
-        | `Continue -> loop last)
+        match handle_input state event with `Quit -> () | `Continue -> loop ())
     | Frame ->
         (* Each frame moves the particles by the time since the last, at most
            a tenth of a second, and asks for the next. *)
-        let now = Matrix.now app in
-        let dt = Float.min (Float.of_int (now - last) *. 1e-9) 0.1 in
+        let dt = Float.min (Matrix.frame_dt app) 0.1 in
         spawn_from_emitters state dt;
         update_particles state dt;
         draw_with_overlay overlay app (fun grid ->
@@ -359,7 +356,7 @@ let () =
             draw_particles grid state;
             draw_ui grid state ~rows);
         Matrix.request_redraw app;
-        loop now
-    | Timer _ | Posted _ -> loop last
+        loop ()
+    | Timer _ | Posted _ -> loop ()
   in
-  loop (Matrix.now app)
+  loop ()

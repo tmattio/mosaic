@@ -427,6 +427,13 @@ val request_redraw : 'msg app -> unit
     the end of {!draw}, asks for the next frame: an animation asks again from
     each frame, and stops by not asking. A run begins with a frame requested. *)
 
+val frame_dt : 'msg app -> float
+(** [frame_dt app] is the time in seconds from the frame before the latest
+    {!Frame} to that frame, measured between the times of the steps that
+    returned them. It is [0.] until the run's second frame. An animation moves
+    by it in each frame. One that stopped asking for frames sees the whole pause
+    in the first frame it asks for again. *)
+
 val draw : 'msg app -> ?primary_required_rows:int -> (Grid.t -> unit) -> unit
 (** [draw app f] draws the frame {!next} returned: it lays the frame out at
     {!size}, calls [f] with its grid, cleared, and presents it: the frame is

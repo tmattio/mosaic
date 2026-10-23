@@ -181,7 +181,7 @@ let () =
   let config = Matrix.config ~mouse:`Off () in
   let overlay = Matrix.Debug_overlay.create () in
   Matrix.run ~config @@ fun app ->
-  let rec loop state last =
+  let rec loop state =
     match Matrix.next app with
     | Stopped | Event (Key { key = Escape; _ }) -> ()
     | Event (Key k) when Input.Keystroke.is_interrupt k ->
@@ -197,12 +197,10 @@ let () =
             ball_vx = -50.0 +. Random.float 100.0;
             ball_vy = -50.0 +. Random.float 100.0;
           }
-          last
     | Frame ->
         (* Each frame moves the scene by the time since the last, and asks
            for the next. *)
-        let now = Matrix.now app in
-        let state = update ~dt:(Float.of_int (now - last) *. 1e-9) state in
+        let state = update ~dt:(Matrix.frame_dt app) state in
         draw_with_overlay overlay app (fun grid ->
             let cols, rows = Matrix.size app in
             Grid.clear ~color:Ansi.Color.black grid;
@@ -215,7 +213,7 @@ let () =
             draw_ball grid ~cx ~cy ~scale ~x:state.ball_x ~y:state.ball_y;
             draw_ui grid ~cols ~rows);
         Matrix.request_redraw app;
-        loop state now
-    | Event _ | Timer _ | Posted _ -> loop state last
+        loop state
+    | Event _ | Timer _ | Posted _ -> loop state
   in
-  loop initial_state (Matrix.now app)
+  loop initial_state

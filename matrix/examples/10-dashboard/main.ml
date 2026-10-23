@@ -285,7 +285,7 @@ let () =
   Random.self_init ();
   let config = Matrix.config ~fps:30. ~mouse:`Off () in
   Matrix.run ~config @@ fun app ->
-  let rec loop state last =
+  let rec loop state =
     match Matrix.next app with
     | Stopped | Event (Key { key = Escape; _ }) -> ()
     | Event (Key k) when Input.Keystroke.is_interrupt k ->
@@ -294,14 +294,13 @@ let () =
     | Event (Key { key = Char u; _ })
       when Uchar.to_int u = Char.code 'q' || Uchar.to_int u = Char.code 'Q' ->
         ()
-    | Event (Key { key = Up; _ }) -> loop (scroll state (-1)) last
-    | Event (Key { key = Down; _ }) -> loop (scroll state 1) last
-    | Event (Key { key = Page_up; _ }) -> loop (scroll state (-10)) last
-    | Event (Key { key = Page_down; _ }) -> loop (scroll state 10) last
+    | Event (Key { key = Up; _ }) -> loop (scroll state (-1))
+    | Event (Key { key = Down; _ }) -> loop (scroll state 1)
+    | Event (Key { key = Page_up; _ }) -> loop (scroll state (-10))
+    | Event (Key { key = Page_down; _ }) -> loop (scroll state 10)
     | Frame ->
         (* The metrics move on every frame, thirty a second. *)
-        let now = Matrix.now app in
-        let state = update ~dt:(Float.of_int (now - last) *. 1e-9) state in
+        let state = update ~dt:(Matrix.frame_dt app) state in
         Matrix.draw app (fun grid ->
             let cols, rows = Matrix.size app in
             Grid.clear ~color:Ansi.Color.black grid;
@@ -324,7 +323,7 @@ let () =
             draw_stats_panel grid ~x:left_width ~y:1 ~width:right_panel_width
               ~height:stats_height state);
         Matrix.request_redraw app;
-        loop state now
-    | Event _ | Timer _ | Posted _ -> loop state last
+        loop state
+    | Event _ | Timer _ | Posted _ -> loop state
   in
-  loop (initial_state ()) (Matrix.now app)
+  loop (initial_state ())

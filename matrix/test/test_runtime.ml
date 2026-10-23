@@ -273,6 +273,32 @@ let test_frame_requests () =
         [ ms 1200 ]
         !times)
 
+(* [frame_dt] is the time between the latest two frames: 0 for the first,
+   one interval while an animation asks from each frame, and the whole pause
+   for the first frame after one. *)
+let test_frame_dt () =
+  let f = fake () in
+  let dts = ref [] in
+  run ~config:(quiet ~fps:10. ()) f (fun app ->
+      let rec frames n =
+        if n > 0 then
+          match Matrix.next app with
+          | Frame ->
+              dts := Matrix.frame_dt app :: !dts;
+              Matrix.draw app ignore;
+              if n > 1 then Matrix.request_redraw app;
+              frames (n - 1)
+          | _ -> frames n
+      in
+      equal ~msg:"before the first frame" (float 1e-9) 0. (Matrix.frame_dt app);
+      frames 3;
+      f.now <- f.now + ms 1000;
+      Matrix.request_redraw app;
+      frames 1;
+      equal ~msg:"0, two intervals, then the pause"
+        (list (float 1e-9))
+        [ 0.; 0.1; 0.1; 1.0 ] (List.rev !dts))
+
 (* A turn: one step of each kind that has some, in kind order, then the
    events, the timers and the posts, until all are done or one frame interval
    has passed since the clock was read; then the frame, once its interval
@@ -2954,6 +2980,7 @@ let () =
         [
           test "frames on demand" test_frames_on_demand;
           test "frame requests" test_frame_requests;
+          test "frame_dt" test_frame_dt;
           test "turn order" test_turn_order;
           test "input read when nothing is queued"
             test_input_read_when_nothing_is_queued;

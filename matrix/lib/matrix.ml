@@ -385,6 +385,9 @@ type 'msg app = {
   (* The frame being drawn was drawn across a release. *)
   mutable void : bool;
   mutable last_frame : int;
+  (* The time between the latest frame and the one before, 0 until the
+     second. *)
+  mutable frame_dt : int;
   mutable force_full_next_frame : bool;
   mutable size_report : size_report;
   (* The usable size last returned as [Resize]. *)
@@ -402,6 +405,10 @@ type 'msg app = {
   (* Undos of the steps that took the terminal, latest first. *)
   mutable undo : (exiting:bool -> unit) list;
 }
+
+(* The last frame's time before the first frame: long enough ago that the
+   first is due at once. *)
+let no_frame = min_int / 2
 
 (* The runs, latest first, under [runs_lock]: runs may start on several
    domains. A run on the controlling terminal holds it; one started inside
@@ -510,6 +517,7 @@ let pixel_resolution t = Terminal.pixel_resolution t.terminal
 let terminal t = t.terminal
 let capabilities t = Terminal.capabilities t.terminal
 let now t = t.now
+let frame_dt t = Float.of_int t.frame_dt *. 1e-9
 
 (* A reply needs a terminal on the input side, in raw mode. *)
 let can_query t =
@@ -1648,6 +1656,7 @@ let start_frame t =
   t.dirty <- false;
   t.drawing <- true;
   t.void <- false;
+  if t.last_frame <> no_frame then t.frame_dt <- t.latest - t.last_frame;
   t.last_frame <- t.latest;
   Frame
 
@@ -1814,7 +1823,8 @@ let make backend ?stop config =
     dirty = true;
     drawing = false;
     void = false;
-    last_frame = min_int / 2;
+    last_frame = no_frame;
+    frame_dt = 0;
     force_full_next_frame = true;
     size_report = Applied;
     usable = (width, height);
