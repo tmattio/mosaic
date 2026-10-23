@@ -827,8 +827,7 @@ let render r app grid =
 
 let run_case case =
   let vte =
-    Vte.create ~scrollback:4096 ~width_method:case.width_method
-      ~default_fg:Color.default_fg ~default_bg:Color.default_bg ~rows:case.rows
+    Vte.create ~scrollback:4096 ~width_method:case.width_method ~rows:case.rows
       ~cols:case.cols ()
   in
   let r =

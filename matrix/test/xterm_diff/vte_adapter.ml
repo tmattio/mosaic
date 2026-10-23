@@ -3,8 +3,7 @@ module Grid = Matrix_grid
 type t = Vte.t
 
 let create ?(width_method = `Unicode) ~rows ~cols () =
-  Vte.create ~scrollback:0 ~width_method ~default_fg:Ansi.Color.default_fg
-    ~default_bg:Ansi.Color.default_bg ~rows ~cols ()
+  Vte.create ~scrollback:0 ~width_method ~rows ~cols ()
 
 (* The replies' bytes, compared with xterm's. *)
 let feed t s = Matrix_input.Reply.encode (Vte.feed_string t s)

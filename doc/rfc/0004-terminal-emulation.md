@@ -8,7 +8,9 @@
   The identity stays a constant VT100 with Advanced Video. `feed` now returns the replies as
   `Matrix_input.Reply.t` values, which `Reply.encode` writes, so a caller that must pass for
   another terminal rewrites a reply where it relays it; and the terminal keeps a palette, given to
-  `create` and set, queried and reset by OSC 4, 10–12, 104 and 110–112, which serves themes.
+  `create` and set, queried and reset by OSC 4, 10–12, 104 and 110–112, which serves themes. The
+  palette owns the default colours, so `?default_fg`/`?default_bg` (§2.1) are removed: cells keep
+  the default intent and a renderer resolves it through the palette.
 - Baseline: main @ `07d38086` plus the 35 fix commits of PRs #46–#96 (Thomas Gazagnaire),
   rebased, which this redesign builds on and keeps the tests of.
 - Process: the "Becoming certain" campaign of raven's `doc/dev/design.md`, applied to matrix. For

@@ -589,12 +589,9 @@ let erase_cutting_wide_takes_background () =
   equal ~msg:"ECH" (option int) (Some 1) (bg "\x1b[X")
 
 let terminal_defaults_replace_cells () =
-  (* With the terminal-default colours as both defaults, erasing and printing
-     replace the cells instead of blending over them. *)
-  let vte () =
-    Vte.create ~default_fg:Ansi.Color.default_fg
-      ~default_bg:Ansi.Color.default_bg ~rows:1 ~cols:8 ()
-  in
+  (* Cells keep the default colours as such: erasing and printing replace
+     the cells instead of blending over them. *)
+  let vte () = Vte.create ~rows:1 ~cols:8 () in
   let screen s =
     let vte = vte () in
     feed vte s;
@@ -676,7 +673,7 @@ let saved_cursor_per_screen () =
   equal ~msg:"DECRC with nothing saved goes home" string "Xb   \n     \n     "
     (Vte.to_string vte);
   is_true ~msg:"and resets SGR"
-    (Ansi.Color.equal (Grid.get_fg (Vte.grid vte) 0) Ansi.Color.white)
+    (Ansi.Color.equal (Grid.get_fg (Vte.grid vte) 0) Ansi.Color.default_fg)
 
 let alternate_screen_restores_style () =
   (* Leaving the alternate screen (DECRST 1049) restores the SGR state saved
@@ -883,7 +880,7 @@ let rows_and_scrollback () =
     (List.for_all2 Ansi.Style.equal screen_styles (styles row));
   equal ~msg:"its link" string "http://l.test" (Grid.get_link row 1);
   is_true ~msg:"blanks past it, on the default background"
-    (Ansi.Color.equal Ansi.Color.black (Grid.get_bg row 5));
+    (Ansi.Color.equal Ansi.Color.default_bg (Grid.get_bg row 5));
   equal ~msg:"rows outside are blank" (list string) [ ""; "" ]
     [ Vte.text vte (-3); Vte.text vte 2 ];
   Vte.blit_row vte (-3) row ~y:0;
@@ -1144,14 +1141,7 @@ let mode_and_colour_queries () =
     "\x1b]4;1;rgb:8080/0000/0000\x07\x1b]4;196;rgb:ffff/0000/0000\x07"
     (answers vte "\x1b]4;1;?;2;red;196;?;256;?;+1;?\x07");
   equal ~msg:"no answer: a set, a query cut short" string ""
-    (answers vte "\x1b]11;#ffffff\x07\x1b]10;?\x18");
-  let vte =
-    Vte.create ~default_fg:(Ansi.Color.of_rgb 1 2 3)
-      ~default_bg:Ansi.Color.default_bg ~rows:2 ~cols:10 ()
-  in
-  equal ~msg:"the default colours create was given" string
-    "\x1b]10;rgb:0101/0202/0303\x07\x1b]11;rgb:0000/0000/0000\x07"
-    (answers vte "\x1b]10;?\x07\x1b]11;?\x07")
+    (answers vte "\x1b]11;#ffffff\x07\x1b]10;?\x18")
 
 (* The palette is the one create was given; OSC 4, 10, 11 and 12 set it and
    ask for it, OSC 104 and 110 to 112 reset it to that one, as RIS does. *)

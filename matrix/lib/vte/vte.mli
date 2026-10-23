@@ -216,12 +216,12 @@
     name or an index above 255, is skipped. A change marks every row and the
     cursor changed ({!section-dirty}).
 
-    Cells keep the colour the pen gave them, with the [default_fg] and
-    [default_bg] of {!create} for the defaults, so a change of the palette
-    changes no cell. A renderer that shows the palette resolves the default and
-    indexed intents of {!Ansi.Color} through {!val-palette}: it keeps the
-    default intent in the cells with {!Ansi.Color.default_fg} and
-    {!Ansi.Color.default_bg}.
+    Cells keep colours as the pen gave them: the defaults (SGR 39 and 49, or no
+    colour) as {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}, indexed
+    colours by their index, and RGB colours as they are. The palette alone says
+    what the defaults and the indices show, so a change of the palette changes
+    no cell: a renderer resolves the default and indexed intents of
+    {!Ansi.Color} through {!val-palette} when it draws.
 
     {2:resets Resets}
 
@@ -258,8 +258,6 @@ type palette = {
 val create :
   ?scrollback:int ->
   ?width_method:Matrix_text.width_method ->
-  ?default_fg:Ansi.Color.t ->
-  ?default_bg:Ansi.Color.t ->
   ?palette:palette ->
   rows:int ->
   cols:int ->
@@ -269,14 +267,10 @@ val create :
     - [scrollback], the number of lines the scrollback keeps, the oldest dropped
       first. Defaults to [10000]; [0] keeps none.
     - [width_method], how wide characters are. Defaults to [`Unicode].
-    - [default_fg] and [default_bg], the colours cells take when the pen sets
-      none or sets the default (SGR 39, 49). Default to {!Ansi.Color.white} and
-      {!Ansi.Color.black}; {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}
-      keep the terminal default in the cells.
     - [palette], the palette ({!section-palette}). Defaults to the colours of
-      {!Ansi.Color.indexed}, with the colours of [default_fg] and [default_bg]
-      as the default foreground and background, and the foreground's as the
-      cursor's. [t] keeps a copy.
+      {!Ansi.Color.indexed}, with indexed colour 7 as the default foreground and
+      the cursor's colour and 0 as the default background, white on black. [t]
+      keeps a copy.
 
     [rows] and [cols] below [1] are taken as [1].
 
@@ -407,7 +401,7 @@ val text : t -> int -> string
 val blit_row : t -> int -> Matrix_grid.t -> y:int -> unit
 (** [blit_row t r dst ~y] writes row [r] of [t] on row [y] of [dst]: its cells,
     with their rendition and hyperlinks, as far as [dst] is wide, then blanks on
-    the default background. A view [offset] lines up into the scrollback is
+    {!Ansi.Color.default_bg}. A view [offset] lines up into the scrollback is
     [for y = 0 to h - 1 do blit_row t (y - offset) dst ~y done], for a [dst] [h]
     rows high.
 

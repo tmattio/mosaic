@@ -131,10 +131,6 @@ type t = {
   mutable tabs : bool array;
   mutable title : string;
   cluster : cluster;
-  default_fg : Ansi.Color.t;
-  default_bg : Ansi.Color.t;
-  (* [Some default_bg], made once: an optional argument allocates. *)
-  default_bg_opt : Ansi.Color.t option;
   (* The palette [create] was given, and the one programs set. Neither's
      colours are ever written: a change makes a new array. *)
   initial : palette;
@@ -179,16 +175,24 @@ let screen t = if t.modes.alternate_screen then t.alternate else t.primary
 let grid t = (screen t).grid
 let full_margins t = { top = 0; bottom = t.rows - 1 }
 
+(* Cells keep the default colours as such: a renderer resolves them through
+   the palette. *)
+let default_fg = Ansi.Color.default_fg
+let default_bg = Ansi.Color.default_bg
+
+(* [Some default_bg], made once: an optional argument allocates. *)
+let default_bg_opt = Some default_bg
+
 (* A colour of the pen, or the default for none and for SGR 39/49. *)
 let resolve ~default = function
   | None -> default
   | Some c -> (
       match Ansi.Color.intent c with Default -> default | Indexed _ | Rgb -> c)
 
-let fg t = resolve ~default:t.default_fg t.pen.style.fg
+let fg t = resolve ~default:default_fg t.pen.style.fg
 
 (* The background of what is printed, and of every blank. *)
-let bg t = resolve ~default:t.default_bg t.pen.style.bg
+let bg t = resolve ~default:default_bg t.pen.style.bg
 let protection t = if t.pen.protected then Some true else None
 
 (* {1:dirty Changes} *)
@@ -245,20 +249,20 @@ let read_varint s i =
 
 (* A cell shows nothing when it is a space with no attribute and no link, on
    the terminal's background or a transparent one. *)
-let shows_nothing t g idx =
+let shows_nothing g idx =
   let cp = Grid.get_codepoint g idx and bg = Grid.get_bg g idx in
   (cp = 0x20 || cp = 0)
   && Grid.get_attrs g idx = 0
   && Grid.get_link g idx = ""
   && (Ansi.Color.Packed.alpha (Ansi.Color.Packed.encode bg) = 0
-     || Ansi.Color.equal bg t.default_bg)
+     || Ansi.Color.equal bg default_bg)
 
 (* The row up to its last cell that shows something. Styles are stored only
    when they change. *)
 let compress_row t (s : screen) row =
   let g = s.grid and base = row * t.cols in
   let last = ref (t.cols - 1) in
-  while !last >= 0 && shows_nothing t g (base + !last) do
+  while !last >= 0 && shows_nothing g (base + !last) do
     decr last
   done;
   let text = Buffer.create t.cols and cells = Buffer.create (2 * t.cols) in
@@ -916,7 +920,7 @@ let decaln t =
   let g = grid t in
   for y = 0 to t.rows - 1 do
     for x = 0 to t.cols - 1 do
-      Grid.set_grapheme g ~x ~y ~width:1 ~fg:t.default_fg ~bg:t.default_bg
+      Grid.set_grapheme g ~x ~y ~width:1 ~fg:default_fg ~bg:default_bg
         ~attrs:Ansi.Attr.empty "E" ~pos:0 ~len:1
     done
   done;
@@ -1027,7 +1031,7 @@ let set_modes t p set on =
 let ris t =
   List.iter
     (fun s ->
-      Grid.clear ~color:t.default_bg s.grid;
+      Grid.clear ~color:default_bg s.grid;
       Bytes.fill s.wrapped 0 t.rows '\000';
       s.saved <- power_up)
     [ t.primary; t.alternate ];
@@ -1052,14 +1056,17 @@ let check_cols fn cols =
   if cols > Grid.max_width then
     invalid_arg (Printf.sprintf "Vte.%s: cols > %d" fn Grid.max_width)
 
-(* The colours of Ansi.Color.indexed, with the default colours. *)
-let default_palette ~default_fg ~default_bg =
-  let foreground = Ansi.Color.to_rgb default_fg in
+(* The colours of Ansi.Color.indexed, white (7) on black (0), and the
+   cursor the foreground's. *)
+let default_palette =
+  let colors =
+    Array.init 256 (fun i -> Ansi.Color.to_rgb (Ansi.Color.indexed i))
+  in
   {
-    colors = Array.init 256 (fun i -> Ansi.Color.to_rgb (Ansi.Color.indexed i));
-    foreground;
-    background = Ansi.Color.to_rgb default_bg;
-    cursor = foreground;
+    colors;
+    foreground = colors.(7);
+    background = colors.(0);
+    cursor = colors.(7);
   }
 
 let check_palette p =
@@ -1076,14 +1083,9 @@ let check_palette p =
 
 (* The structure, which RIS gives its power-up state. *)
 let create ?(scrollback = 10000) ?(width_method = `Unicode)
-    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ?palette
-    ~rows ~cols () =
+    ?(palette = default_palette) ~rows ~cols () =
   check_cols "create" cols;
-  let initial =
-    match palette with
-    | Some p -> check_palette p
-    | None -> default_palette ~default_fg ~default_bg
-  in
+  let initial = check_palette palette in
   let rows = max 1 rows and cols = max 1 cols in
   let screen () =
     let grid = Grid.create ~width:cols ~height:rows ~width_method () in
@@ -1122,9 +1124,6 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
           cells = 0;
           prev = "";
         };
-      default_fg;
-      default_bg;
-      default_bg_opt = Some default_bg;
       initial;
       palette = initial;
       parser = Ansi.Parser.create ();
@@ -1566,15 +1565,15 @@ let resize_screen t s ~row ~rows ~cols =
       done;
     Grid.shift s.grid
       { Grid.x = 0; y = 0; width = old_cols; height = old_rows }
-      ~dx:0 ~dy:(-up) ~color:t.default_bg;
+      ~dx:0 ~dy:(-up) ~color:default_bg;
     Bytes.blit s.wrapped up s.wrapped 0 (old_rows - up)
   end;
   Grid.resize s.grid ~width:cols ~height:rows;
   if cols > old_cols then
-    Grid.clear_rect ~color:t.default_bg s.grid ~x:old_cols ~y:0
+    Grid.clear_rect ~color:default_bg s.grid ~x:old_cols ~y:0
       ~width:(cols - old_cols) ~height:rows;
   if rows > old_rows then
-    Grid.clear_rect ~color:t.default_bg s.grid ~x:0 ~y:old_rows ~width:cols
+    Grid.clear_rect ~color:default_bg s.grid ~x:0 ~y:old_rows ~width:cols
       ~height:(rows - old_rows);
   let wrapped = Bytes.make rows '\000' in
   Bytes.blit s.wrapped 0 wrapped 0 (min rows (old_rows - up));
@@ -1586,7 +1585,7 @@ let resize_screen t s ~row ~rows ~cols =
   if down > 0 then begin
     Grid.shift s.grid
       { Grid.x = 0; y = 0; width = cols; height = rows }
-      ~dx:0 ~dy:down ~color:t.default_bg;
+      ~dx:0 ~dy:down ~color:default_bg;
     Bytes.blit wrapped 0 wrapped down (rows - down);
     for r = down - 1 downto 0 do
       let line = pop_line t.history in
@@ -1690,7 +1689,7 @@ let blit_row t row dst ~y =
       t.cols)
     else decompress_line (history_line t row) dst y
   in
-  Grid.clear_rect ?color:t.default_bg_opt dst ~x:written ~y
+  Grid.clear_rect ?color:default_bg_opt dst ~x:written ~y
     ~width:(Grid.width dst - written)
     ~height:1
 

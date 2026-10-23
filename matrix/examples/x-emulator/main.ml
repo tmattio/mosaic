@@ -476,9 +476,14 @@ let render state =
   let grid_width = Grid.width grid in
   let grid_height = Grid.height grid in
 
-  (* Theme default foreground (for ANSI "default" color). *)
-  let default_fg_r, default_fg_g, default_fg_b, default_fg_a =
-    (230, 230, 230, 255)
+  (* The terminal's palette says what the default and indexed colors show:
+     programs may change it. *)
+  let palette = Vte.palette vte in
+  let resolve ~default c =
+    match Ansi.Color.intent c with
+    | Default -> default
+    | Indexed i -> palette.colors.(i)
+    | Rgb -> Ansi.Color.to_rgb c
   in
 
   (* Cache glyph textures by (text, fg color, attrs); bg is drawn separately. *)
@@ -522,25 +527,17 @@ let render state =
       let raw_width = Grid.cell_width grid idx in
       let cell_width = if raw_width <= 0 then 1 else raw_width in
 
-      let fg_r_raw, fg_g_raw, fg_b_raw, fg_a_raw =
-        Grid.get_fg grid idx |> Ansi.Color.to_rgba
-      in
-      let bg_r_raw, bg_g_raw, bg_b_raw, bg_a_raw =
-        Grid.get_bg grid idx |> Ansi.Color.to_rgba
-      in
-
-      (* Foreground: - (0,0,0,0) => default fg - otherwise literal RGBA *)
-      let fg_r, fg_g, fg_b, fg_a =
-        if fg_r_raw = 0 && fg_g_raw = 0 && fg_b_raw = 0 && fg_a_raw = 0 then
-          (default_fg_r, default_fg_g, default_fg_b, default_fg_a)
-        else (fg_r_raw, fg_g_raw, fg_b_raw, fg_a_raw)
-      in
-
-      (* Background: - bg_a = 0 => no background fill (transparent) - otherwise
-         literal RGBA (including 0,0,0,255 for real black) *)
-      let bg_r, bg_g, bg_b, bg_a =
-        if bg_a_raw = 0 then (0, 0, 0, 0)
-        else (bg_r_raw, bg_g_raw, bg_b_raw, bg_a_raw)
+      let fg = Grid.get_fg grid idx and bg = Grid.get_bg grid idx in
+      let fg_r, fg_g, fg_b = resolve ~default:palette.foreground fg in
+      let fg_a = 255 in
+      (* A transparent background lets the window show through. *)
+      let bg_r, bg_g, bg_b = resolve ~default:palette.background bg in
+      let bg_a =
+        match Ansi.Color.intent bg with
+        | Rgb ->
+            let _, _, _, a = Ansi.Color.to_rgba bg in
+            a
+        | Default | Indexed _ -> 255
       in
 
       let attr = Grid.get_attrs grid idx |> Ansi.Attr.unpack in
@@ -602,7 +599,8 @@ let render state =
   (* Render cursor (always at live position, even in scrollback view) *)
   if (Vte.modes vte).cursor_visible then (
     let r, c = Vte.cursor_pos vte in
-    Sdl.set_render_draw_color renderer 255 255 0 255
+    let cr, cg, cb = palette.cursor in
+    Sdl.set_render_draw_color renderer cr cg cb 255
     |> or_else "Set cursor color";
     let cursor_rect =
       Sdl.Rect.create
