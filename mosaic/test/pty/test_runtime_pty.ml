@@ -303,6 +303,12 @@ let test_idle_costs_no_wakeups () =
   let rate = idle_wakeups "idle" in
   is_true ~msg:(Printf.sprintf "%.1f wakeups/s, at most 1" rate) (rate <= 1.)
 
+(* The executor's domain ends with its work: a program that ran a perform
+   idles as one that never did. *)
+let test_idle_after_perform () =
+  let rate = idle_wakeups "idle-after-perform" in
+  is_true ~msg:(Printf.sprintf "%.1f wakeups/s, at most 1" rate) (rate <= 1.)
+
 let test_idle_matrix () =
   let rate = idle_wakeups "idle-matrix" in
   is_true ~msg:(Printf.sprintf "%.1f wakeups/s, at most 1" rate) (rate <= 1.)
@@ -478,6 +484,8 @@ let () =
              [
                test "an idle program does not wake" test_idle_costs_no_wakeups;
                test "an idle Matrix run does not wake" test_idle_matrix;
+               test "a program that ran a perform does not wake"
+                 test_idle_after_perform;
                test "a 1 s timer wakes once a second" test_idle_every;
                test "a tick wakes once a frame" test_idle_tick;
              ]);
@@ -496,6 +504,7 @@ let () =
            else
              [
                test "R-S: a storm of dispatches" test_storm;
+               test "R-F: a flood from a systhread" (test_flood "flood");
                test "R-F: a flood from a domain" (test_flood "flood-domain");
                test "R-X: an exception in a perform" test_perform_exception;
                test "R-X2: an exception in init" test_init_exception;

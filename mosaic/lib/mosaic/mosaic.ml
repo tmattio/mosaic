@@ -1215,17 +1215,106 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
       handle_resize runtime ~width ~height;
       loop ())
 
-let run ?backend ?config
-    ?(process_perform = fun thunk -> ignore (Thread.create thunk () : Thread.t))
-    ?probe app =
+(* The default executor. Work runs on systhreads of one helper domain, so
+   the loop's domain runs the loop alone: a systhread on the loop's domain
+   shares its lock, and work that computes would hold the loop up to a tick
+   at each of its blocking calls. The domain starts with the first work and
+   ends once it has none, which also stops the tick thread that systhreads
+   start; work after that starts another domain, which joins the one before
+   it as it ends, off the loop. *)
+module Helper = struct
+  type t = {
+    lock : Mutex.t;
+    changed : Condition.t;
+    jobs : (unit -> unit) Queue.t;
+    (* Jobs started and not finished. *)
+    mutable running : int;
+    (* Whether the domain serves: it takes jobs until it has none. *)
+    mutable serving : bool;
+    mutable domain : unit Domain.t option;
+  }
+
+  let create () =
+    {
+      lock = Mutex.create ();
+      changed = Condition.create ();
+      jobs = Queue.create ();
+      running = 0;
+      serving = false;
+      domain = None;
+    }
+
+  let finished t =
+    Mutex.protect t.lock (fun () ->
+        t.running <- t.running - 1;
+        Condition.signal t.changed)
+
+  (* The helper domain's main thread, with [t.lock] held. *)
+  let rec serve t =
+    match Queue.take_opt t.jobs with
+    | Some job ->
+        t.running <- t.running + 1;
+        let run () = Fun.protect job ~finally:(fun () -> finished t) in
+        (match Thread.create run () with
+        | (_ : Thread.t) -> ()
+        | exception _ ->
+            (* No thread can start: the job runs on this one, still off the
+               loop. *)
+            Mutex.unlock t.lock;
+            run ();
+            Mutex.lock t.lock);
+        serve t
+    | None when t.running > 0 ->
+        Condition.wait t.changed t.lock;
+        serve t
+    | None -> t.serving <- false
+
+  let submit t job =
+    Mutex.protect t.lock (fun () ->
+        Queue.push job t.jobs;
+        if t.serving then Condition.signal t.changed
+        else
+          let previous = t.domain in
+          t.serving <- true;
+          t.domain <-
+            Some
+              (Domain.spawn (fun () ->
+                   Mutex.protect t.lock (fun () -> serve t);
+                   Option.iter Domain.join previous)))
+
+  (* At the run's end: the domain that ended is joined; one still serving
+     work that has not returned is left to it. *)
+  let close t =
+    let ended =
+      Mutex.protect t.lock (fun () ->
+          if t.serving then None
+          else
+            let domain = t.domain in
+            t.domain <- None;
+            domain)
+    in
+    Option.iter Domain.join ended
+end
+
+let run ?backend ?config ?process_perform ?probe app =
   let config =
     match config with
     | Some config -> config
     | None -> Matrix.config ~cursor_visible:false ()
   in
   let init = app.init () in
-  Matrix.run ?backend ~config (fun matrix_app ->
-      program matrix_app ~process_perform ?probe app init)
+  match process_perform with
+  | Some process_perform ->
+      Matrix.run ?backend ~config (fun matrix_app ->
+          program matrix_app ~process_perform ?probe app init)
+  | None ->
+      let helper = Helper.create () in
+      Fun.protect
+        ~finally:(fun () -> Helper.close helper)
+        (fun () ->
+          Matrix.run ?backend ~config (fun matrix_app ->
+              program matrix_app ~process_perform:(Helper.submit helper) ?probe
+                app init))
 
 let empty = Vnode.empty
 let fragment = Vnode.fragment

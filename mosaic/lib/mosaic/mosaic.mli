@@ -822,8 +822,8 @@ module Cmd : sig
 
   val perform : (('msg -> unit) -> unit) -> 'msg t
   (** [perform f] runs [f dispatch] off the loop, by {!val-run}'s
-      [process_perform] (by default a new thread), so that long work never holds
-      the loop.
+      [process_perform] (by default a thread of a helper domain), so that long
+      work never holds the loop.
 
       [f] may call [dispatch msg] any number of times, from any thread; each
       call queues [msg] for the loop, which applies it with [update] when it
@@ -1212,8 +1212,9 @@ module Probe : sig
   (** Runtime quiescence introspection for test harnesses.
 
       A probe collects named checks for outstanding work. {!val-run} supplies
-      checks for undispatched messages, in-flight {!Cmd.val-perform} callbacks,
-      and asynchronous rendering, named [messages], [performs], and [render]
+      checks for undispatched messages, in-flight {!Cmd.val-perform} callbacks
+      (not {!Sub.val-worker}s, which may run as long as the program), and
+      asynchronous rendering, named [messages], [performs], and [render]
       respectively. Applications may add checks for work they own outside Mosaic
       with {!with_pending}.
 
@@ -1266,12 +1267,20 @@ val run :
     - [backend] -- the terminal to run in. Defaults to {!Matrix.Backend.unix}.
     - [config] -- what the run sets up. Defaults to {!Matrix.config} with a
       hidden cursor.
-    - [process_perform] -- controls how {!Cmd.Perform} callbacks are executed.
-      Receives a thunk that wraps the user callback with the dispatch function
-      already wired in. The default spawns a native [Thread] per callback so
-      that long-running operations (e.g. HTTP requests) never block the UI loop.
-      The dispatch function may be called from any thread or fiber: it posts the
-      message to the loop ({!Matrix.post}), which applies it in a later turn.
+    - [process_perform] -- the executor: it runs the work of {!Cmd.val-perform}
+      and {!Sub.val-worker} off the loop, each given as a function that has the
+      dispatch wired in and raises nothing. By default each runs on a thread of
+      its own, in one helper domain, so that the loop's domain runs the loop
+      alone: work on a thread of the loop's domain shares its lock, and work
+      that computes would hold up each key by up to a tick of OCaml's thread
+      scheduler (50 ms) at each of its blocking calls. The helper domain starts
+      with the first work (about 160 us) and ends when it has none. While it
+      runs, OCaml's systhread tick wakes the process 20 times a second, and
+      {!Unix.fork} raises, as OCaml forbids forking a process that runs several
+      domains; {!Unix.create_process} works. An executor given here runs the
+      work where it likes, such as on fibers of the application's own scheduler;
+      the messages go through the loop ({!Matrix.post}) whatever thread or fiber
+      dispatches them.
     - [probe] -- receives a {!Probe.t} for this runtime before the loop starts.
       Test harnesses use it to settle deterministically (see the [matrix.test]
       library). When a probe is requested, every perform completion also posts
