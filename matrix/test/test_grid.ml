@@ -2047,7 +2047,7 @@ let spaces_draw_and_layers_composite () =
 module Lines = Grid.Lines
 
 let lines_text ?glyphs ~width ~height f =
-  let l = Lines.create ~width ~height in
+  let l = Lines.create ~x:0 ~y:0 ~width ~height in
   f l;
   let g = Grid.create ~width ~height () in
   Grid.draw_lines ?glyphs g l;
@@ -2105,7 +2105,7 @@ let lines_tests =
                   (fun left ->
                     List.iter
                       (fun right ->
-                        let l = Lines.create ~width:1 ~height:1 in
+                        let l = Lines.create ~x:0 ~y:0 ~width:1 ~height:1 in
                         let add dir = function
                           | None -> ()
                           | Some weight -> Lines.arm ~weight l ~x:0 ~y:0 dir
@@ -2192,7 +2192,7 @@ let lines_tests =
     test "a cell takes the style of the first line through it" (fun () ->
         let red = Ansi.Style.make ~fg:Ansi.Color.red ()
         and blue = Ansi.Style.make ~fg:Ansi.Color.blue () in
-        let l = Lines.create ~width:3 ~height:3 in
+        let l = Lines.create ~x:0 ~y:0 ~width:3 ~height:3 in
         Lines.hline ~style:red l ~x:0 ~y:1 ~length:3;
         Lines.vline ~style:blue l ~x:1 ~y:0 ~length:3;
         let g = Grid.create ~width:3 ~height:3 () in
@@ -2231,9 +2231,19 @@ let lines_tests =
         equal ~msg:"wide" string "🟦\n🟦"
           (lines_text ~glyphs:(Lines.Set set) ~width:2 ~height:2 (fun l ->
                Lines.vline l ~x:0 ~y:0 ~length:2)));
+    test "a set covers its rectangle from its origin" (fun () ->
+        let l = Lines.create ~x:2 ~y:1 ~width:3 ~height:1 in
+        Lines.hline l ~x:0 ~y:1 ~length:8;
+        Lines.vline l ~x:3 ~y:0 ~length:2;
+        Lines.hline l ~x:0 ~y:0 ~length:8;
+        let g = Grid.create ~width:8 ~height:2 () in
+        Grid.draw_lines g l;
+        equal ~msg:"cut to the rectangle, arms kept" string "\n  ─┴─"
+          (Grid.to_text g);
+        equal ~msg:"origin" (pair int int) (2, 1) (Lines.x l, Lines.y l));
     test "create rejects a negative size" (fun () ->
         raises_match (Exn.invalid_arg ~substring:"Lines.create") (fun () ->
-            ignore (Lines.create ~width:(-1) ~height:1)));
+            ignore (Lines.create ~x:0 ~y:0 ~width:(-1) ~height:1)));
   ]
 
 let tests =

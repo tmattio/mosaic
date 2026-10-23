@@ -6,6 +6,8 @@ type weight = [ `Light | `Heavy | `Double ]
    and bits 10 and 11 that line's weight. The bits from 12 hold one more than
    the index of its style in [styles]. A cell no line passes through is 0. *)
 type t = {
+  x : int;
+  y : int;
   width : int;
   height : int;
   cells : int array;
@@ -24,11 +26,13 @@ let style_shift = 12
 let[@inline] field c k = (c lsr k) land 3
 let weight_code = function `Light -> 1 | `Heavy -> 2 | `Double -> 3
 
-let create ~width ~height =
+let create ~x ~y ~width ~height =
   if width < 0 || height < 0 then
     invalid_arg
       (Printf.sprintf "Matrix_grid.Lines.create: size %dx%d" width height);
   {
+    x;
+    y;
     width;
     height;
     cells = Array.make (width * height) 0;
@@ -36,6 +40,8 @@ let create ~width ~height =
     n_styles = 0;
   }
 
+let x t = t.x
+let y t = t.y
 let width t = t.width
 let height t = t.height
 
@@ -67,6 +73,7 @@ let style_slot t s =
 (* Adds the arms and lone line of [bits] to cell [(x, y)], each arm keeping
    the heavier of its weights. A new cell takes the style of slot [slot]. *)
 let mark t ~x ~y ~slot bits =
+  let x = x - t.x and y = y - t.y in
   if x >= 0 && y >= 0 && x < t.width && y < t.height then begin
     let i = (y * t.width) + x in
     let c = t.cells.(i) in

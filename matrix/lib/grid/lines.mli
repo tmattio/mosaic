@@ -1,7 +1,8 @@
 (** Lines of box-drawing characters that join where they meet.
 
     A {e line set} ({!t}) records horizontal and vertical lines on a rectangle
-    of cells, [width] columns by [height] rows, named as a grid names them. Each
+    of cells, [width] columns by [height] rows from column [x] and row [y],
+    named as a grid names them, and holds a value for each of its cells. Each
     line has a {e weight} ({!type-weight}) and a style. A line has an {e arm} in
     each of its cells toward every neighbor it continues into, so its inner
     cells have two arms and its two end cells one. Lines that cross or meet add
@@ -32,7 +33,7 @@
     This draws a box with a double frame and a light rule across it, whose ends
     join the frame as ╟ and ╢:
     {[
-    let l = Matrix_grid.Lines.create ~width:10 ~height:4 in
+    let l = Matrix_grid.Lines.create ~x:0 ~y:0 ~width:10 ~height:4 in
     Matrix_grid.Lines.hline ~weight:`Double l ~x:0 ~y:0 ~length:10;
     Matrix_grid.Lines.hline ~weight:`Double l ~x:0 ~y:3 ~length:10;
     Matrix_grid.Lines.vline ~weight:`Double l ~x:0 ~y:0 ~length:4;
@@ -54,11 +55,17 @@ type weight = [ `Light | `Heavy | `Double ]
 type t
 (** The type for line sets. *)
 
-val create : width:int -> height:int -> t
-(** [create ~width ~height] is an empty line set for a rectangle of [width]
-    columns by [height] rows.
+val create : x:int -> y:int -> width:int -> height:int -> t
+(** [create ~x ~y ~width ~height] is an empty line set for the rectangle of
+    [width] columns from column [x] and [height] rows from row [y].
 
     Raises [Invalid_argument] if [width < 0] or [height < 0]. *)
+
+val x : t -> int
+(** [x l] is the first column of [l]'s rectangle. *)
+
+val y : t -> int
+(** [y l] is the first row of [l]'s rectangle. *)
 
 val width : t -> int
 (** [width l] is the number of columns of [l]'s rectangle. *)
@@ -151,7 +158,8 @@ val of_border : Border.t -> glyphs
    through it. *)
 
 val code : t -> int -> int
-(** [code l idx] is the code of cell [idx], [y * width l + x]. *)
+(** [code l idx] is the code of the cell of column [x l + i] and row [y l + j],
+    where [idx] is [j * width l + i]. *)
 
 val style : t -> int -> Ansi.Style.t
 (** [style l code] is the style of a cell of code [code], not [0]. *)

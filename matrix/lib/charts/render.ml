@@ -493,7 +493,9 @@ let draw_axes (layout : Layout.t) (grid : G.t) =
      junctions, drawn last with the glyph their arms give in the charset. A
      tick mark adds an arm to the cell of its axis line. A cell keeps the
      style of the first line through it. *)
-  let lines = G.Lines.create ~width:(G.width grid) ~height:(G.height grid) in
+  let lines =
+    G.Lines.create ~x:0 ~y:0 ~width:(G.width grid) ~height:(G.height grid)
+  in
   let hline ~st y x1 x2 =
     G.Lines.hline ~style:st lines ~x:x1 ~y ~length:(x2 - x1 + 1)
   in

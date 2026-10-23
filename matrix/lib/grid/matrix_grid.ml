@@ -1427,10 +1427,10 @@ let draw_glyph t ~x ~y ~style s =
     else draw_text ~style t ~x ~y ~text:s
 
 let draw_lines ?(glyphs = Lines.Unicode) t lines =
-  let lw = Lines.width lines in
-  for y = 0 to min (Lines.height lines) t.height - 1 do
-    for x = 0 to min lw t.width - 1 do
-      let c = Lines.code lines ((y * lw) + x) in
+  let lx = Lines.x lines and ly = Lines.y lines and lw = Lines.width lines in
+  for y = max 0 ly to min (ly + Lines.height lines) t.height - 1 do
+    for x = max 0 lx to min (lx + lw) t.width - 1 do
+      let c = Lines.code lines (((y - ly) * lw) + x - lx) in
       if c <> 0 then
         let style = Lines.style lines c in
         match glyphs with
