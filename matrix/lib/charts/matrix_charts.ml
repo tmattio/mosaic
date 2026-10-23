@@ -185,37 +185,44 @@ module Overlay = struct
 
   let border_size = function Some _ -> 2 | None -> 0
 
+  (* The top-left cell of a [box_w] by [box_h] box placed at [anchor] of the
+     point [(px, py)], before it is moved inside the plot. *)
+  let propose ~px ~py ~box_w ~box_h = function
+    | `Right -> (px + 2, py - (box_h / 2))
+    | `Left -> (px - box_w - 2, py - (box_h / 2))
+    | `Top -> (px - (box_w / 2), py - box_h - 2)
+    | `Bottom -> (px - (box_w / 2), py + 2)
+
+  (* The box at [(x0, y0)] moved the least distance inside [rect]. *)
+  let place ~(rect : Layout.rect) ~box_w ~box_h (x0, y0) =
+    ( Layout.clamp_int rect.x (rect.x + rect.width - box_w) x0,
+      Layout.clamp_int rect.y (rect.y + rect.height - box_h) y0 )
+
+  (* The anchor whose box the plot clips least, the earlier on a tie, where a
+     box that covers the point once moved inside the plot loses to every box
+     that does not, however much the plot clips that one. *)
   let best_anchor ~rect ~px ~py ~box_w ~box_h =
-    let propose = function
-      | `Right -> (px + 2, py - (box_h / 2))
-      | `Left -> (px - box_w - 2, py - (box_h / 2))
-      | `Top -> (px - (box_w / 2), py - box_h - 2)
-      | `Bottom -> (px - (box_w / 2), py + 2)
-    in
-    let score (x0, y0) =
+    let score anchor =
+      let x0, y0 = propose ~px ~py ~box_w ~box_h anchor in
       let clip =
         max 0 (rect.Layout.x - x0)
         + max 0 (x0 + box_w - (rect.x + rect.width))
         + max 0 (rect.y - y0)
         + max 0 (y0 + box_h - (rect.y + rect.height))
       in
-      let overlap =
-        if px >= x0 && px < x0 + box_w && py >= y0 && py < y0 + box_h then 1000
-        else 0
-      in
-      clip + overlap
+      let x, y = place ~rect ~box_w ~box_h (x0, y0) in
+      let covers = px >= x && px < x + box_w && py >= y && py < y + box_h in
+      (covers, clip)
     in
-    let best = ref (propose `Right) in
-    let best_score = ref max_int in
-    List.iter
-      (fun a ->
-        let pos = propose a in
-        let s = score pos in
-        if s < !best_score then (
-          best_score := s;
-          best := pos))
-      [ `Right; `Left; `Top; `Bottom ];
-    !best
+    let best, _ =
+      List.fold_left
+        (fun (best, best_score) anchor ->
+          let s = score anchor in
+          if compare s best_score < 0 then (anchor, s) else (best, best_score))
+        (`Right, score `Right)
+        [ `Left; `Top; `Bottom ]
+    in
+    best
 
   let draw_tooltip_border grid ~style:bst ~charset ~x0 ~y0 ~box_w ~box_h =
     if box_w >= 2 && box_h >= 2 then begin
@@ -260,18 +267,14 @@ module Overlay = struct
       let box_h = content_h + (2 * padding) + bsz in
       if box_w <= 0 || box_h <= 0 then ()
       else
-        let x0, y0 =
+        let anchor =
           match anchor with
-          | (`Left | `Right | `Top | `Bottom) as a -> (
-              match a with
-              | `Right -> (px + 2, py - (box_h / 2))
-              | `Left -> (px - box_w - 2, py - (box_h / 2))
-              | `Top -> (px - (box_w / 2), py - box_h - 2)
-              | `Bottom -> (px - (box_w / 2), py + 2))
+          | (`Left | `Right | `Top | `Bottom) as a -> a
           | `Auto -> best_anchor ~rect ~px ~py ~box_w ~box_h
         in
-        let x0 = Layout.clamp_int rect.x (rect.x + rect.width - box_w) x0 in
-        let y0 = Layout.clamp_int rect.y (rect.y + rect.height - box_h) y0 in
+        let x0, y0 =
+          place ~rect ~box_w ~box_h (propose ~px ~py ~box_w ~box_h anchor)
+        in
         (* Clear background *)
         for yy = 0 to box_h - 1 do
           for xx = 0 to box_w - 1 do

@@ -1079,9 +1079,10 @@ module Overlay : sig
   type tooltip_anchor = [ `Auto | `Left | `Right | `Top | `Bottom ]
   (** The type for where a tooltip sits. [`Right] and [`Left] put it two cells
       beside its point, centered on the point's row, and [`Top] and [`Bottom]
-      two cells above or below, centered on its column. [`Auto] takes the first
-      of [`Right], [`Left], [`Top] and [`Bottom] whose box the plot clips least,
-      where a box that covers the point counts as clipped by 1000 cells. *)
+      two cells above or below, centered on its column. [`Auto] takes, of
+      [`Right], [`Left], [`Top] and [`Bottom] in this order, the first whose box
+      the plot clips least among those whose box, once moved inside the plot,
+      leaves the point uncovered, or among all four when each covers it. *)
 
   type tooltip_border = [ `Theme | `None | `Style of Ansi.Style.t ]
   (** The type for tooltip borders. [`Theme] is {!Theme.t.tooltip_border},

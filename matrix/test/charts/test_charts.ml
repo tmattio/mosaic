@@ -767,3 +767,44 @@ let%expect_test "time labels before the epoch" =
     0.0 01/01 00:00:00
     951782400.5 02/29 00:00:00
     |}]
+
+(* The text of [grid], one row per line between bars, with an empty or
+   continuation cell as a space. *)
+let print_cells grid =
+  for y = 0 to Grid.height grid - 1 do
+    let row = Buffer.create 64 in
+    for x = 0 to Grid.width grid - 1 do
+      match Grid.get_text grid (Grid.idx grid ~x ~y) with
+      | "" -> Buffer.add_char row ' '
+      | s -> Buffer.add_string row s
+    done;
+    Printf.printf "|%s|\n" (Buffer.contents row)
+  done
+
+(* A chart without axes whose plot is the whole 20 by 7 grid, with data
+   coordinates equal to columns and rows counted from the bottom. *)
+let bare_chart () =
+  empty ()
+  |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+  |> line ~style:(Style.make ()) ~x:fst ~y:snd [| (0., 0.); (19., 6.) |]
+
+(* Right of the point the box clips by 2 cells, and moved inside the plot it
+   covers the point. Below, it clips by 2 cells too and leaves it visible. *)
+let%expect_test "a tooltip avoids covering its point" =
+  let grid = Grid.create ~width:20 ~height:7 () in
+  let layout = draw (bare_chart ()) grid ~width:20 ~height:7 in
+  Grid.clear grid;
+  Overlay.tooltip ~border:`None ~padding:0 layout grid ~x:6. ~y:3.
+    [ "aaaaaaaaaaaaaa"; "b"; "c" ];
+  Overlay.marker ~glyph:"X" layout grid ~x:6. ~y:3.;
+  print_cells grid;
+  [%expect
+    {|
+    |                    |
+    |                    |
+    |                    |
+    |      X             |
+    |aaaaaaaaaaaaaa      |
+    |b                   |
+    |c                   |
+    |}]
