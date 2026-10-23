@@ -1,60 +1,83 @@
-(** Double-buffered terminal screen.
+(** Screens, which turn each frame a program draws into the bytes that bring a
+    terminal from the previous frame to it.
 
-    [Screen] builds terminal frames by mutating a {e next} buffer, diffs it
-    against the {e current} buffer to generate minimal ANSI escape sequences,
-    then swaps the two. Grid transforms can be applied after building and before
-    rendering.
+    A {e frame} is the picture a program shows at one moment, drawn as the cells
+    of a {!Matrix_grid.t} together with a {!Hit_grid.t} that says which element
+    lies under each cell. A screen keeps two such pairs. The {e next buffer} is
+    the frame being drawn. The {e current buffer} is the frame last rendered,
+    which the screen takes as what the terminal shows, and so it is the
+    {e diff baseline}. To {e render} is to compare the next buffer with the
+    baseline cell by cell, write the bytes that change the cells that differ,
+    and then {e swap} the buffers. The frame just drawn becomes the current
+    buffer, and the next buffer is blank again, in the sense that whatever first
+    reads or writes it after a render finds it cleared. A frame is therefore
+    drawn whole, and each frame redraws everything it shows.
 
-    {2:double_buf Double buffering}
+    A screen does no I/O and reads no clock. A render returns its bytes, and the
+    caller writes them to the terminal and measures time. The screen keeps the
+    {e cursor} the caller asks for ({!set_cursor}) for the code that writes the
+    terminal, and never writes it itself. Hit testing ({!query_hit}) reads the
+    current hit grid, so the regions of a frame answer mouse reports once that
+    frame has been rendered.
 
-    The screen maintains two grid buffers. During {!build} the caller populates
-    the next buffer. During {!render} the next buffer is diffed against current
-    to produce ANSI output, then the buffers swap; the swapped-in next buffer is
-    cleared before it is next observed or mutated, so a frame pays for exactly
-    one clear. Content must be redrawn every frame.
+    The life cycle of a screen usually goes like this:
+    + {!create} a screen, and {!apply_capabilities} once the terminal's
+      capabilities are known.
+    + For each frame, {!build} it at the terminal's size. The function given to
+      {!build} draws the cells into the grid and the elements' regions into the
+      hit grid.
+    + {!render} it, or {!render_into} a writer, and write the bytes to the
+      terminal.
+    + Answer mouse reports with {!query_hit} until the next frame.
+    + After something else has changed the terminal, such as an erase,
+      {!invalidate_presented} so that the baseline matches it again.
 
-    {2:hit_test Hit testing}
+    Unless a value's doc says otherwise, coordinates are cells counted from 0 at
+    the top-left of the frame, a region outside the grid is clipped to it, and
+    no value raises. A screen is mutable and must not be used by two domains
+    concurrently.
 
-    A {!Hit_grid.t} is maintained alongside each visual grid, mapping screen
-    coordinates to integer element IDs. Call {!Hit_grid.add} during frame
-    building to register clickable regions. Query coordinates with {!query_hit}
-    after rendering.
-
-    {2:invariants Invariants}
-    - The {!Matrix_grid.t} passed to {!build} is the next buffer. After
-      {!render} the buffers swap and the now-next buffer is observably cleared:
-      the clear is applied lazily by the next {!build}, {!next_grid},
-      {!next_hit_grid}, {!add_hit_region}, or {!active_height}.
-    - Visual and hit buffers swap on {!render}: regions registered via
-      {!Hit_grid.add} become queryable only after the following render.
-    - {!set_cursor} updates cursor intent only; rendering does not emit terminal
-      mode changes. *)
+    This program draws a one-word button, renders the frame, and finds the
+    button under column 2 of row 0:
+    {[
+    let screen = Matrix_screen.create () in
+    Matrix_screen.build screen ~width:80 ~height:24 (fun grid hits ->
+        Matrix_grid.draw_text grid ~x:0 ~y:0 ~text:"Quit";
+        Matrix_screen.Hit_grid.add hits ~x:0 ~y:0 ~width:4 ~height:1 ~id:1);
+    print_string (Matrix_screen.render screen);
+    assert (Matrix_screen.query_hit screen ~x:2 ~y:0 = 1)
+    ]} *)
 
 module Hit_grid = Hit_grid
+(** Hit grids. *)
 
 (** {1:types Types} *)
 
 type t
-(** The type for screens. Pairs visual and hit buffers with retained diff state
-    and rendering statistics. *)
+(** The type for screens. *)
 
 type stats = {
   frame_count : int;  (** Frames rendered since creation or {!reset}. *)
-  total_cells : int;  (** Sum of cells diffed across frames. *)
-  total_bytes : int;  (** Sum of ANSI bytes emitted. *)
+  total_cells : int;
+      (** Columns written by those frames, as {!frame_metrics} counts them. *)
+  total_bytes : int;  (** Bytes those frames produced. *)
 }
-(** The type for cumulative rendering statistics. *)
+(** The type for the totals of the frames rendered since creation or the last
+    {!reset}. *)
 
 type frame_metrics = {
-  frame_count : int;  (** One-based frame index. *)
-  cells : int;  (** Cells diffed. *)
-  bytes : int;  (** ANSI bytes written. *)
-  cursor_visible : bool;  (** Cursor state at render time. *)
+  frame_count : int;  (** Frames rendered since creation or {!reset}. *)
+  cells : int;
+      (** Columns the frame wrote, a wide character counting each column it
+          covers. *)
+  bytes : int;  (** Bytes the frame produced. *)
+  cursor_visible : bool;
+      (** The cursor's [visible] ({!type-cursor}) when the frame was rendered.
+      *)
 }
-(** The type for per-frame metrics. A screen reads no clock: the time a frame
-    takes and the time between frames are its caller's to measure. *)
+(** The type for the metrics of the last frame rendered. *)
 
-(** {1:constructors Constructors} *)
+(** {1:constructors Screens} *)
 
 val create :
   ?width_method:Matrix_text.width_method ->
@@ -62,83 +85,92 @@ val create :
   ?explicit_width:bool ->
   unit ->
   t
-(** [create ~width_method ~cursor_visible ~explicit_width ()] is a screen with:
-    - [width_method] is the character width computation method. Defaults to
-      [`Unicode].
-    - [cursor_visible] is the initial cursor visibility. Defaults to [true].
-    - [explicit_width] enables explicit-width OSC sequences for graphemes.
-      Defaults to [false].
+(** [create ~width_method ~cursor_visible ~explicit_width ()] is a screen whose
+    buffers are one cell wide and high and blank. Its cursor has position
+    [None], style [`Block], [blinking] [false] and color [None].
+    - [width_method] is how the grids measure graphemes ({!set_width_method}).
+      Defaults to [`Unicode].
+    - [cursor_visible] is the cursor's [visible]. Defaults to [true].
+    - [explicit_width] is the preference {!set_explicit_width} sets. Defaults to
+      [false]. *)
 
-    Grids start at 1x1 and are resized automatically on the first {!build}. *)
+(** {1:building Building frames}
 
-(** {1:building Frame building} *)
+    A build draws the whole frame. When the next buffer holds cells or regions
+    that an earlier {!build} or {!add_hit_region} drew since the last render, a
+    build first clears them, so a second build before a render replaces the
+    first. Cells and regions drawn through {!next_grid} and {!next_hit_grid}
+    stay, and a build draws over them, unless the build changes the screen's
+    size ({!resize}), which clears every buffer. *)
 
 val build :
   t -> width:int -> height:int -> (Matrix_grid.t -> Hit_grid.t -> unit) -> unit
-(** [build t ~width ~height f] builds a frame.
+(** [build t ~width ~height f] resizes [t] to [width] by [height] as {!resize}
+    does when its size differs, clears the next buffer as the section says, and
+    calls [f] with the next grid and hit grid to draw the frame into. When
+    [width] or [height] is [0] or less, it clears and does not call [f].
 
-    Resizes buffers to [width] x [height] when both are positive, clears what a
-    previous build drew since the last {!render} — each build owns the complete
-    frame, so a second build before a present replaces the superseded pass —
-    then calls [f] with them for in-place mutation. Buffers that no build has
-    drawn into since they were cleared are not cleared again, even if
-    {!next_grid} handed them out: cells drawn through it stay under the build's.
-
-    When [width <= 0] or [height <= 0], [f] is not called; the buffers are only
-    cleared.
-
-    {b Warning.} The {!Matrix_grid.t} and {!Hit_grid.t} passed to [f] must not
-    be mutated after the next {!render} -- they become the diff baseline. *)
+    [f] must not keep the grids it receives. After the next {!render} they are
+    the diff baseline, and a change to them makes later frames show wrong cells.
+*)
 
 val add_hit_region :
   t -> x:int -> y:int -> width:int -> height:int -> id:int -> unit
-(** [add_hit_region t ~x ~y ~width ~height ~id] registers a hit region on the
-    next hit grid. Convenience wrapper around {!Hit_grid.add} for use outside
-    the {!build} callback. Regions outside grid bounds are clipped. Negative
-    dimensions are clamped to zero. *)
+(** [add_hit_region t ~x ~y ~width ~height ~id] is {!Hit_grid.add} on the next
+    hit grid, for a region drawn outside a {!build}'s [f]. A {!build} that
+    follows before the next render clears it. *)
 
-(** {1:rendering Rendering} *)
+(** {1:rendering Rendering}
+
+    A render compares the next buffer with the diff baseline and writes each run
+    of cells that differ after moving the cursor to its start. A {e full} render
+    writes every cell. The render after a {!resize} is full, since the baseline
+    then no longer says what the terminal shows. A render ends with no hyperlink
+    open, and with the rendition reset (SGR 0) when it wrote a run of cells. It
+    leaves the cursor wherever its last write put it. It then swaps the buffers
+    and counts the frame in the {!section-statistics}.
+
+    A render writes the rows of a {e viewport}, a band of the terminal's rows
+    given by its first row and its height. Without one, the viewport starts at
+    {!row_offset} and is as high as the grid. Rows of the grid below the
+    viewport are not written, and after the render they are blank in the current
+    grid and empty in the current hit grid. *)
 
 type scroll_hint = {
-  top : int;  (** First row of the scroll region (0-indexed). *)
-  bottom : int;  (** Last row of the scroll region (0-indexed, inclusive). *)
+  top : int;  (** The region's first row of the frame, from 0. *)
+  bottom : int;  (** The region's last row of the frame, from 0. *)
   delta : int;
-      (** Rows to shift. Positive shifts content up (user scrolled down). *)
+      (** Rows the content moved up, or down when negative, as when the user
+          scrolls down by [delta]. *)
 }
-(** A scroll optimisation hint from a scrollable container. When provided, the
-    renderer shifts the previous buffer and emits DECSTBM + hardware scroll
-    sequences so only the newly-revealed edge rows need cell-level diffing.
-    Without the hint, scrolling rewrites every row in the viewport. A shift by
-    the region's height or more keeps no row and is ignored. *)
+(** The type for scroll hints. A hint says that the content of rows [top] to
+    [bottom] moved by [delta] rows since the last frame, as in a scrolled pane.
+    The render then scrolls that region on the terminal (DECSTBM, then SU or SD)
+    and in its baseline alike, resets the scrolling region to the whole screen,
+    homes the cursor to the viewport's first row, and diffs as usual, so only
+    the rows the scroll left out of place are written. A hint is ignored in a
+    full render, when [delta] is [0], when the region, clipped to the viewport,
+    has fewer than two rows, and when [delta] covers the whole region. A caller
+    must not pass a hint while it keeps a scrolling region of its own, which the
+    reset removes. *)
 
 type viewport = {
-  y : int;  (** Zero-based terminal row offset of the rendered surface. *)
-  height : int;  (** Number of rows in the rendered surface. *)
+  y : int;  (** The terminal row of the frame's first row, from 0. *)
+  height : int;  (** The rows of the frame written. *)
 }
-(** A terminal viewport rendered by the screen.
-
-    [None] in {!render} and {!render_into} means render the full next grid at
-    the screen's current {!row_offset}. [Some v] renders the first [v.height]
-    grid rows at terminal row offset [v.y]. *)
+(** The type for viewports. A viewport writes the first [height] rows of the
+    frame at terminal row [y]. A negative [y] is taken as [0], and [height] is
+    clipped to the grid. *)
 
 val render :
   ?full:bool -> ?scroll_hint:scroll_hint -> ?viewport:viewport -> t -> string
-(** [render ~full ~scroll_hint ~viewport t] is the ANSI output for the current
-    frame.
-
-    Diffs next against current (or renders all cells when [full] is [true]),
-    then swaps buffers. Hit regions registered during this frame become
-    queryable via {!query_hit}.
-    - [full] renders all cells regardless of changes. Defaults to [false].
-    - [scroll_hint] when provided, emits DECSTBM hardware scroll before diffing.
-      The hint is a rectangular diff optimization; the caller is responsible for
-      using it only when temporary scroll-region changes are safe for the
-      current terminal transaction.
-    - [viewport] renders into an explicit terminal surface. Rows outside the
-      viewport are not presented and do not become active hit regions.
-
-    [render] copies the retained output into a fresh string every call; hot
-    paths should prefer {!render_into}. *)
+(** [render ~full ~scroll_hint ~viewport t] renders the next buffer and is the
+    bytes it produces. It is {!render_into} on a writer [t] keeps, copied to a
+    new string on each call.
+    - [full] makes the render full. Defaults to [false].
+    - [scroll_hint] is the content's scroll since the last frame. Defaults to
+      none.
+    - [viewport] is the viewport. Defaults to the one at {!row_offset}. *)
 
 val render_into :
   ?full:bool ->
@@ -147,45 +179,61 @@ val render_into :
   t ->
   Ansi.Writer.t ->
   unit
-(** [render_into ~full ~scroll_hint ~viewport t writer] is like {!render}, but
-    appends output directly to [writer]. The caller owns and resets the writer;
-    its existing contents are preserved. Frame byte metrics count only the
-    appended output. Reuse the writer to retain output capacity across frames.
+(** [render_into ~full ~scroll_hint ~viewport t w] is {!render} with the bytes
+    appended to [w], after what [w] already holds. It never resets [w]. The
+    frame's [bytes] ({!frame_metrics}) count only those appended. A writer kept
+    across frames keeps its capacity.
 
-    If a write raises, as one to a writer of {!Ansi.Writer.of_bytes} raises
-    {!Ansi.Writer.Buffer_full} when its bytes are full, the exception passes
-    through and the frame is not committed: the screen is as before the call,
-    and the next render emits the same frame. The bytes appended before the
-    exception are an unfinished frame, never to be sent. *)
+    When a write to [w] raises, such as {!Ansi.Writer.Buffer_full} from a writer
+    of {!Ansi.Writer.of_bytes}, [render_into] raises it and changes nothing in
+    [t], so the next render produces the same frame. The bytes appended before
+    the exception are an unfinished frame and must not be sent. *)
 
-(** {1:screen_state Screen state} *)
+val set_row_offset : t -> int -> unit
+(** [set_row_offset t n] makes the terminal row [n] the first row of the
+    viewport of each later render that is given none. A negative [n] is taken as
+    [0]. *)
 
-val set_explicit_width : t -> bool -> unit
-(** [set_explicit_width t b] enables or disables explicit-width OSC emission for
-    graphemes. When enabled and the terminal supports it, OSC sequences
-    specifying the exact width of multi-width characters are emitted to prevent
-    terminal-side width mismatch. *)
+val row_offset : t -> int
+(** [row_offset t] is the row {!set_row_offset} set, initially [0]. *)
+
+val query_hit : t -> x:int -> y:int -> int
+(** [query_hit t ~x ~y] is the element the current hit grid holds at [(x, y)],
+    the one of the frame last rendered. It is {!Hit_grid.empty_id} when that
+    cell is empty or outside the grid. *)
+
+(** {1:cursor The cursor}
+
+    A frame's cursor is the place, shape and color it asks the terminal's cursor
+    to take. *)
 
 type cursor = {
   position : (int * int) option;
-      (** Zero-based [(x, y)] cell position, or [None] to leave the cursor at
-          the renderer/runtime default position. *)
-  style : Ansi.cursor_style;  (** Cursor shape. *)
+      (** The cell [(x, y)] of the frame the cursor should be at, or [None] when
+          the frame asks for no position. *)
+  style : Ansi.cursor_style;  (** The cursor's shape. *)
   blinking : bool;  (** [true] iff the cursor blinks. *)
   color : (int * int * int) option;
-      (** [Some (r, g, b)] or [None] for the terminal default. *)
-  visible : bool;  (** [true] iff the cursor is logically visible. *)
+      (** The cursor's color as [(r, g, b)], or [None] for the terminal's. *)
+  visible : bool;  (** [true] iff the cursor is shown. *)
 }
-(** The type for cursor state. *)
+(** The type for cursors. *)
 
 val set_cursor : t -> cursor -> unit
-(** [set_cursor t c] sets the desired cursor state. Colour components outside
-    \[[0]; [255]\] are clamped. *)
+(** [set_cursor t c] makes [c] the cursor of [t], with each color channel
+    clamped to \[[0];[255]\] and each negative coordinate taken as [0]. A later
+    {!resize} moves a position outside the new size to its last row or column.
+*)
 
 val cursor : t -> cursor
-(** [cursor t] is the current desired cursor state. *)
+(** [cursor t] is the cursor of [t]. *)
 
-(** {1:capabilities Capabilities} *)
+(** {1:capabilities Capabilities and widths}
+
+    A screen writes for the terminal {!apply_capabilities} describes. Until it
+    is called, the terminal takes explicit widths and hyperlinks, needs no
+    repositioning after wide graphemes, and shows 24-bit color. A capability
+    change applies from the next render. *)
 
 val apply_capabilities :
   t ->
@@ -195,101 +243,91 @@ val apply_capabilities :
   color_depth:Ansi.Sgr_state.color_depth ->
   unit
 (** [apply_capabilities t ~explicit_width ~explicit_cursor_positioning
-     ~hyperlinks ~color_depth] applies terminal capability flags to [t].
-    - [explicit_width]: whether the terminal supports explicit-width OSC
-      sequences.
-    - [explicit_cursor_positioning]: whether to reposition the cursor after wide
-      graphemes as a fallback when [explicit_width] is [false]. Prevents column
-      drift in terminals that miscalculate grapheme display widths.
-    - [hyperlinks]: whether the terminal supports OSC 8 hyperlinks.
-    - [color_depth]: terminal color emission depth. *)
+     ~hyperlinks ~color_depth] makes [t] write for a terminal with these
+    capabilities.
+    - [explicit_width] says the terminal takes OSC 66, which states the width of
+      a grapheme. A grapheme two or more columns wide is then written in OSC 66
+      when {!set_explicit_width} also asks for it.
+    - [explicit_cursor_positioning] says to move the cursor to the next cell
+      after each grapheme two or more columns wide when OSC 66 is not in use,
+      for a terminal that may measure the grapheme differently.
+    - [hyperlinks] says the terminal takes OSC 8. Without it, cells are written
+      without their hyperlinks.
+    - [color_depth] is the color depth colors are reduced to. *)
+
+val set_explicit_width : t -> bool -> unit
+(** [set_explicit_width t b] sets whether [t] writes wide graphemes in OSC 66,
+    which it does when [b] is [true] and the terminal takes OSC 66
+    ({!apply_capabilities}). *)
 
 val set_width_method : t -> Matrix_text.width_method -> unit
-(** [set_width_method t m] sets the grapheme width computation method on both
-    the current and next buffers. Use this after capability changes that affect
-    width calculation to keep buffers consistent across swaps. *)
+(** [set_width_method t m] makes [m] the method every buffer of [t] measures
+    graphemes with. Setting it on {!next_grid} alone would leave the other
+    buffer with the old method after the next swap. *)
 
 val width_method : t -> Matrix_text.width_method
-(** [width_method t] is the grapheme width computation method of [t]'s buffers.
-    Unlike reading it from {!next_grid}, it leaves the next buffer as it is. *)
+(** [width_method t] is the method [t]'s buffers measure graphemes with. It
+    leaves the next buffer as it is, where reading it from {!next_grid} clears a
+    buffer a render left. *)
 
-(** {1:layout Layout} *)
+(** {1:layout Size and baseline} *)
 
 val resize : t -> width:int -> height:int -> unit
-(** [resize t ~width ~height] resizes all internal buffers to [width] x
-    [height]. If the dimensions are unchanged, this is a no-op so the presented
-    diff baseline remains intact. Otherwise the baseline no longer says what the
-    terminal shows, so the next render paints every cell; hit grids are cleared.
+(** [resize t ~width ~height] makes every buffer of [t] [width] by [height] and
+    blank, and makes the next render full. When [t] already has that size it
+    does nothing, and the baseline stays. {!build} resizes as it needs.
 
-    Raises [Invalid_argument] if [width <= 0] or [height <= 0].
-
-    {b Note.} Normally unnecessary -- {!build} resizes automatically. *)
+    Raises [Invalid_argument] if [width] or [height] is [0] or less. *)
 
 val reset : t -> unit
-(** [reset t] clears the next buffer, empties hit grids and zeros statistics.
-    The current buffer (diff baseline) is left intact so the next render can
-    efficiently clear previously rendered content. Configuration is preserved.
-*)
+(** [reset t] clears the next buffer and the current hit grid and sets the
+    totals of {!val-stats} to [0]. The current grid stays as the baseline, so
+    the next render erases the cells the last frame showed. The cursor, the
+    capabilities and the row offset stay. *)
+
+val invalidate_presented : t -> unit
+(** [invalidate_presented t] makes the baseline blank, so that the next render
+    writes every cell of its frame that is not blank. A caller that has erased
+    the terminal's rows must call it, or the next render leaves out the cells it
+    takes as already shown. It writes no bytes. *)
 
 (** {1:statistics Statistics} *)
 
 val stats : t -> stats
-(** [stats t] is cumulative rendering statistics since creation or the last
-    {!reset}. *)
+(** [stats t] is the totals of the frames [t] rendered since creation or the
+    last {!reset}. *)
 
 val last_metrics : t -> frame_metrics
-(** [last_metrics t] is the metrics for the most recent frame. *)
+(** [last_metrics t] is the metrics of the last frame [t] rendered. Before the
+    first render its counts are [0]. *)
 
 (** {1:direct Direct access}
 
-    Direct access to internal buffers for advanced use cases. These functions
-    bypass the builder API. *)
+    These values hand out the buffers themselves, for code that draws or reads a
+    frame outside {!build}. *)
 
 val next_grid : t -> Matrix_grid.t
-(** [next_grid t] is [t]'s next buffer grid. On the first access after a
-    {!render}, any content left from the presented frame is cleared before the
-    grid is returned. Handing it out does not clear it again: what is drawn
-    through it is the frame, and a {!build} that follows draws over it, as it
-    does over a cleared grid. A second {!build} replaces the first.
+(** [next_grid t] is the grid of [t]'s next buffer, cleared if a render left it.
+    A {!build} that follows draws over what is drawn through it.
 
-    {b Warning.} Do not mutate the returned grid after the next {!render} -- it
-    becomes the diff baseline. *)
+    The grid must not be changed after the next {!render}, when it becomes the
+    diff baseline. *)
 
 val current_grid : t -> Matrix_grid.t
-(** [current_grid t] is [t]'s presented grid: the committed terminal state as of
-    the most recent {!render}. Blank before the first render.
+(** [current_grid t] is the grid of the frame last rendered, the diff baseline,
+    which is blank before the first render.
 
-    {b Warning.} Do not mutate the returned grid -- it is the diff baseline. *)
+    The grid must not be changed, or the next render leaves out the cells it
+    takes as already shown. *)
 
 val next_hit_grid : t -> Hit_grid.t
-(** [next_hit_grid t] is [t]'s next hit grid, cleared as {!next_grid}'s is.
+(** [next_hit_grid t] is the hit grid of [t]'s next buffer, cleared as
+    {!next_grid}'s is.
 
-    {b Warning.} Do not mutate the returned hit grid after the next {!render} --
-    it becomes the active hit grid for {!query_hit}. *)
-
-val query_hit : t -> x:int -> y:int -> int
-(** [query_hit t ~x ~y] is the element ID at [(x, y)] in the {e current} hit
-    grid (i.e. regions from the most recent {!render}). Returns [0] if out of
-    bounds or no region is registered. *)
-
-val set_row_offset : t -> int -> unit
-(** [set_row_offset t n] sets the vertical origin offset applied to all
-    subsequent renders. Negative values are clamped to zero. Useful for inline
-    primary-screen rendering. *)
-
-val row_offset : t -> int
-(** [row_offset t] is [t]'s current vertical origin offset. *)
-
-val invalidate_presented : t -> unit
-(** [invalidate_presented t] sets the presented baseline to blank cells, so the
-    next render paints every cell of the frame that is not blank.
-
-    Call this after physically erasing the terminal region to keep the
-    renderer's baseline in sync with the actual terminal state.
-
-    {b Note.} Does not emit any escape sequences. *)
+    The hit grid must not be changed after the next {!render}, when it becomes
+    the one {!query_hit} reads. *)
 
 val active_height : t -> int
-(** [active_height t] is {!Matrix_grid.active_height} of the next buffer: the
-    rows down to the last one that shows anything. Useful for sizing inline
-    rendering regions. *)
+(** [active_height t] is {!Matrix_grid.active_height} of the next grid, the rows
+    from the top down to the last one that shows anything, such as the height an
+    inline frame needs. *)
