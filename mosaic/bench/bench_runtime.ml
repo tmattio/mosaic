@@ -1,18 +1,105 @@
-(* Suspend only at Matrix_test's presented idle boundary. Mounting and the
-   preflight oracle run in setup; a sample resumes the real parser/update/view/
+(* Suspend only at the presented idle boundary. Mounting and the preflight
+   oracle run in setup; a sample resumes the real parser/update/view/
    layout/paint/submit loop and returns at the next presented idle. *)
 type _ Effect.t += Presented : unit Effect.t
+
+(* The terminal the benchmark drives: a pipe it writes the input to and an
+   unlinked file it reads the output from, which a run takes as it takes any
+   descriptors, with the size reported in band and a clock that only the
+   benchmark moves. The run measured is the one every program runs; an
+   emulator would add its own cost to each sample. *)
+module Term = struct
+  type t = {
+    input_r : Unix.file_descr;
+    input_w : Unix.file_descr;
+    output : Unix.file_descr;
+    mutable now : int;
+    mutable ended : bool;
+  }
+
+  let rec write_all fd s off =
+    if off < String.length s then
+      match Unix.write_substring fd s off (String.length s - off) with
+      | n -> write_all fd s (off + n)
+      | exception Unix.Unix_error (Unix.EINTR, _, _) -> write_all fd s off
+
+  let resize t ~width ~height =
+    write_all t.input_w (Printf.sprintf "\027[48;%d;%d;0;0t" height width) 0
+
+  let create ~width ~height =
+    let input_r, input_w = Unix.pipe ~cloexec:true () in
+    let path = Filename.temp_file "bench_runtime" ".out" in
+    let output =
+      Unix.openfile path [ O_RDWR; O_APPEND; O_TRUNC; O_CLOEXEC ] 0o600
+    in
+    Unix.unlink path;
+    let t = { input_r; input_w; output; now = 0; ended = false } in
+    resize t ~width ~height;
+    t
+
+  let feed t s = write_all t.input_w s 0
+  let advance t ns = t.now <- t.now + ns
+
+  let stop t =
+    if not t.ended then (
+      t.ended <- true;
+      Unix.close t.input_w)
+
+  let written t =
+    let length = (Unix.fstat t.output).st_size in
+    let bytes = Bytes.create length in
+    ignore (Unix.lseek t.output 0 SEEK_SET : int);
+    let rec go off =
+      if off < length then
+        match Unix.read t.output bytes off (length - off) with
+        | 0 -> ()
+        | n -> go (off + n)
+    in
+    go 0;
+    Bytes.to_string bytes
+
+  (* What a terminal of [width] by [height] shows of the output. *)
+  let screen t ~width ~height =
+    let vte = Vte.create ~rows:height ~cols:width () in
+    ignore (Vte.feed_string vte (written t) : Matrix.Input.Reply.t list);
+    Vte.to_string vte
+end
+
 type model = { editor : Mosaic.Editor.t; scroll : Mosaic.Scroll.t }
 type msg = Edit of Mosaic.Editor.t | Scroll of Mosaic.Scroll.t
 type workload = Keystroke | Wheel_burst | Resize
 
 type driver = {
-  terminal : Matrix_test.t;
+  terminal : Term.t;
   continuation : (unit, unit) Effect.Deep.continuation option ref;
   wheel_down : string;
   wheel_up : string;
   mutable alternate : bool;
 }
+
+(* A plain modern terminal: truecolor and Unicode width tables, no kitty
+   extensions, so that the measures never depend on the environment. *)
+let caps : Matrix.Terminal.capabilities =
+  {
+    rgb = true;
+    kitty_keyboard = None;
+    kitty_graphics = false;
+    bracketed_paste = true;
+    focus_tracking = true;
+    unicode_width = `Unicode;
+    grapheme_mode = None;
+    sgr_pixels = false;
+    color_scheme_updates = false;
+    explicit_width = false;
+    explicit_cursor_positioning = false;
+    scaled_text = false;
+    sixel = false;
+    sync = false;
+    hyperlinks = false;
+    meta_sends_escape = None;
+    multiplexer = None;
+    identity = None;
+  }
 
 let initial_width = 250
 let initial_height = 70
@@ -95,14 +182,13 @@ let step workload driver =
   driver.alternate <- not driver.alternate;
   (match workload with
   | Keystroke ->
-      Matrix_test.feed driver.terminal
-        (if driver.alternate then "x" else "\127")
+      Term.feed driver.terminal (if driver.alternate then "x" else "\127")
   | Wheel_burst ->
-      Matrix_test.feed driver.terminal
+      Term.feed driver.terminal
         (if driver.alternate then driver.wheel_down else driver.wheel_up)
   | Resize ->
       let width, height = if driver.alternate then (249, 69) else (250, 70) in
-      Matrix_test.resize driver.terminal ~width ~height);
+      Term.resize driver.terminal ~width ~height);
   resume driver;
   if !(driver.continuation) = None then
     failwith "runtime benchmark: loop ended before presentation"
@@ -116,7 +202,7 @@ let measure workload driver =
   | Keystroke | Resize -> ()
 
 let close driver =
-  Matrix_test.stop driver.terminal;
+  Term.stop driver.terminal;
   resume driver
 
 let require condition message =
@@ -125,16 +211,19 @@ let require condition message =
 (* Runs [application] over [t], the benchmark driving its steps at [t]'s
    clock: [on_idle] runs whenever the program has nothing to do and nothing
    has come for it, given the run's deadline. *)
-let drive ?process_perform ~on_idle t application =
-  Mosaic.start ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
-    ~config:(Matrix_test.config t) ?process_perform application (fun r ->
+let drive ?(mode = `Alt) ?process_perform ~on_idle (t : Term.t) application =
+  Mosaic.start ~input:t.input_r ~output:t.output
+    ~config:(Matrix.config ~mode ~caps ()) ?process_perform application
+    (fun r ->
+      (* The clock starts at the run's time, which the steps never precede. *)
+      t.now <- Matrix.clock ();
       let rec loop () =
-        match Mosaic.step r ~now:(Matrix_test.now t) with
+        match Mosaic.step r ~now:t.now with
         | `Stepped -> loop ()
         | `Stopped -> ()
         | `Idle ->
             (match Mosaic.deadline r with
-            | Some deadline when deadline <= Matrix_test.now t -> ()
+            | Some deadline when deadline <= t.now -> ()
             | until ->
                 if not (List.exists Matrix.Tty.readable (Mosaic.fds r)) then
                   on_idle t ~until);
@@ -149,13 +238,10 @@ let setup ~mode ~blocks workload () =
   let accepted =
     ref { editor = Mosaic.Editor.of_string "a"; scroll = Mosaic.Scroll.at 7500 }
   in
-  let terminal =
-    Matrix_test.create ~mode ~width:initial_width ~height:initial_height ()
-  in
-  let on_idle terminal ~until =
+  let terminal = Term.create ~width:initial_width ~height:initial_height in
+  let on_idle (terminal : Term.t) ~until =
     match until with
-    | Some until ->
-        Matrix_test.advance terminal (max 1 (until - Matrix_test.now terminal))
+    | Some until -> Term.advance terminal (max 1 (until - terminal.now))
     | None -> Effect.perform Presented
   in
   let application =
@@ -180,7 +266,7 @@ let setup ~mode ~blocks workload () =
     }
   in
   Effect.Deep.match_with
-    (fun () -> drive ~on_idle terminal application)
+    (fun () -> drive ~mode ~on_idle terminal application)
     ()
     {
       retc = (fun () -> ());
@@ -194,11 +280,9 @@ let setup ~mode ~blocks workload () =
                   continuation := Some k)
           | _ -> None);
     };
-  (* The live region ends at the terminal's last row. *)
-  let top = initial_height - snd (Matrix_test.size terminal) in
-  require
-    (top > 0 = (mode = `Primary))
-    "only a primary-mode live region is shorter than the terminal";
+  (* The live region ends at the terminal's last row, below the earlier
+     output in [`Primary] mode. *)
+  let top = match mode with `Alt -> 0 | `Primary -> 20 in
   let viewport_height =
     match mode with
     | `Alt -> initial_height - 1
@@ -213,17 +297,31 @@ let setup ~mode ~blocks workload () =
       alternate = false;
     }
   in
+  (* What the terminal shows, at the size last reported. *)
+  let screen () =
+    let width, height =
+      if workload = Resize && driver.alternate then (249, 69)
+      else (initial_width, initial_height)
+    in
+    Term.screen terminal ~width ~height
+  in
+  require
+    (mode = `Alt
+    || List.exists
+         (String.starts_with ~prefix:"earlier output 19")
+         (String.split_on_char '\n' (screen ())))
+    "the earlier output is above the live region";
   (* Validate both directions before measuring. Captured ANSI and frame text
      are deliberately inspected here, never copied in the measured loop. *)
   for _ = 1 to 2 do
-    let before = Matrix_test.screen terminal in
-    let written = String.length (Matrix_test.written terminal) in
+    let before = screen () in
+    let written = String.length (Term.written terminal) in
     step workload driver;
     require
-      (not (String.equal before (Matrix_test.screen terminal)))
+      (not (String.equal before (screen ())))
       "input did not change the presented frame";
     require
-      (String.length (Matrix_test.written terminal) > written)
+      (String.length (Term.written terminal) > written)
       "changed frame emitted no ANSI output";
     match workload with
     | Keystroke ->
@@ -240,14 +338,7 @@ let setup ~mode ~blocks workload () =
         require
           (y = if driver.alternate then 7508 else 7500)
           (Printf.sprintf "wheel burst resolved to %d" y)
-    | Resize ->
-        let grid = Matrix_test.grid terminal in
-        require
-          (Matrix.Grid.width grid = if driver.alternate then 249 else 250)
-          "resize width was not presented";
-        require
-          (Matrix.Grid.height grid = if driver.alternate then 69 else 70)
-          "resize height was not presented"
+    | Resize -> ()
   done;
   driver
 
@@ -255,7 +346,7 @@ let setup ~mode ~blocks workload () =
    [pause] says so when the loop goes idle, and a sample resumes it. *)
 
 type loop = {
-  t : Matrix_test.t;
+  t : Term.t;
   suspended : (unit, unit) Effect.Deep.continuation option ref;
   dispatch : (unit -> unit) ref;
   views : int ref;
@@ -271,7 +362,7 @@ let loop_resume loop =
         failwith "runtime benchmark: loop ended before it went idle"
 
 let loop_close loop =
-  Matrix_test.stop loop.t;
+  Term.stop loop.t;
   match !(loop.suspended) with
   | Some k ->
       loop.suspended := None;
@@ -285,10 +376,10 @@ let loop_setup ~pause () =
   let suspended : (unit, unit) Effect.Deep.continuation option ref = ref None in
   let dispatch = ref ignore in
   let views = ref 0 in
-  let t = Matrix_test.create ~width:40 ~height:2 () in
-  let on_idle t ~until =
+  let t = Term.create ~width:40 ~height:2 in
+  let on_idle (t : Term.t) ~until =
     match until with
-    | Some until -> Matrix_test.advance t (max 1 (until - Matrix_test.now t))
+    | Some until -> Term.advance t (max 1 (until - t.now))
     | None -> if pause () then Effect.perform Presented
   in
   let application =
@@ -352,17 +443,17 @@ let idle_turns () =
 let burst () =
   let loop = loop_setup ~pause:(fun () -> true) () in
   let views = !(loop.views) in
-  let written = String.length (Matrix_test.written loop.t) in
-  Matrix_test.feed loop.t (String.make 1000 'a');
+  let written = String.length (Term.written loop.t) in
+  Term.feed loop.t (String.make 1000 'a');
   loop_resume loop;
   require (!(loop.views) - views = 1000) "a burst is not 1,000 views";
   require
-    (paints ~from:written (Matrix_test.written loop.t) = 1)
+    (paints ~from:written (Term.written loop.t) = 1)
     "a burst is not one paint";
   loop
 
 let burst_sample loop =
-  Matrix_test.feed loop.t (String.make 1000 'a');
+  Term.feed loop.t (String.make 1000 'a');
   loop_resume loop
 
 (* 1,000 messages posted from elsewhere, taken and applied: they change

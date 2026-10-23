@@ -38,7 +38,7 @@
     + A renderer reads the screen ({!grid}, {!cursor_pos}, {!val-modes}) and the
       scrollback ({!blit_view}), redraws what changed ({!section-dirty}), and
       calls {!clear_dirty}.
-    + The caller acts on the {!requests}, and writes the bytes of its user's
+    + The caller acts on the {!val-requests}, and writes the bytes of its user's
       keys ({!keyboard}) and mouse ({!val-mouse}).
     + {!resize} follows the window's size, and {!reset} returns the terminal to
       its power-up state.
@@ -75,6 +75,11 @@ type palette = {
     blue, from 0 to 255. *)
 
 (** {1:create Creating} *)
+
+val default_palette : palette
+(** [default_palette] is the colors of {!Ansi.Color.indexed}, with indexed color
+    7 as the default foreground and the cursor's color, and 0 as the default
+    background. *)
 
 type identity = {
   attributes : int list;  (** The parameters of its DA1 reply. *)
@@ -122,9 +127,7 @@ val create :
       first. Defaults to [10000]; [0] keeps none.
     - [width_method], how wide characters are ({!section-printing}). Defaults to
       [`Unicode].
-    - [palette], the palette. Defaults to the colors of {!Ansi.Color.indexed},
-      with indexed color 7 as the default foreground and the cursor's color, and
-      0 as the default background. [t] keeps a copy.
+    - [palette], the palette. Defaults to {!default_palette}. [t] keeps a copy.
 
     [rows] and [cols] below [1] are taken as [1].
 

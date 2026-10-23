@@ -1,169 +1,429 @@
-(** Headless terminals for testing Matrix applications.
+(** Terminals emulated in a test's process, and the programs that run on them.
 
-    A [Matrix_test] terminal is a pipe and a file: the run reads its input from
-    the pipe, which the test writes ({!feed}), and writes its output to the
-    file, which the test reads ({!written}). The run is an ordinary
-    {!Matrix.run} on those descriptors ({!val-input}, {!val-output}). The test
-    drives it: it gives each step a time with {!Matrix.val-step} and does its
-    scripting whenever the run has nothing to do, so the run never waits.
+    A {e terminal} ({!Terminal.t}) is an emulator ({!Vte}) playing a {e profile}
+    ({!Profile.t}). It applies what a program writes, answers the program's
+    queries as that terminal does, keeps what the program asks of its host, and
+    gives the bytes it sends for what its user does, in the encoding the program
+    has set. It performs no input or output itself.
 
-    The test's {e clock} gives the steps their times ({!now}). It starts at the
-    run's time when the test first reads it, which must be inside the run and
-    before the first step, and moves only when the test moves it ({!advance}). A
-    step is a function of the run's state, its input and its time, so a run
-    driven by this clock goes the same way however fast the host is. Frames are
-    at least [1 / fps] apart on it too: a frame asked for in the same instant as
-    the last waits until the test moves the clock to its deadline
-    ({!Matrix.deadline}), as {!settle} does.
+    A {e session} ({!t}) runs a program in the test's process on a terminal,
+    with a {e clock} that only the test moves. The program runs on {!Matrix}, or
+    on a library built on it, with the session's configuration ({!config}), and
+    the test {!attach}es the program's steps. From then on the program takes
+    steps only inside the session's functions, and between two calls nothing
+    runs.
 
-    The output is not a terminal, so the run sends no query and has no window.
-    The terminal reports its size in band, as mode 2048 does: once when it is
-    made, which the run takes as it begins, and on each {!resize}. Its
-    capabilities are fixed by {!config}: a plain modern terminal (24-bit colour,
-    Unicode width tables, bracketed paste; no Kitty extensions), so rendering
-    never depends on the environment. Frames are observed by reading the
-    presented cell grid ({!screen}).
+    The terminal shows each write as it is made and sends each input as one
+    write. So the run draws a frame asked for by input, a timer, a message or
+    the runtime itself at the instant it is asked, and decodes a lone ESC as
+    Escape at once. An animation's next frame, asked for from its frame, comes
+    one frame interval later, as on any terminal, and a frame that input brings
+    in between leaves that interval's grid where it was. Time moves only by
+    {!advance} and {!set_time}, and by the wait for an answer of a terminal that
+    gives none ({!Profile.t}'s [answers]).
 
-    A terminal holds its three descriptors from {!create} to {!close}.
+    A session is {e settled} when the program has nothing to do at the session's
+    time and the work handed off its loop has finished or waits for something
+    only the test can change. That work runs on an {e executor}, the session's
+    queue ({!perform}) or the program's own, for which {!attach} takes a
+    [quiesce].
 
-    This test types a key and reads the frame it brings:
+    Two facts of a real terminal stay outside a session. A terminal writes over
+    time, so a lone ESC can wait for what may follow it, and a child on a
+    pseudo-terminal ({!Child}) shows that race. And an animation that moves a
+    step at each frame, rather than by the clock, moves one more for each frame
+    that input brings, so its goldens depend on the input; one that moves by the
+    clock does not.
+
+    The life cycle of a session:
+    + {!Terminal.create} and {!create} make the terminal and the session.
+    + The program starts its run with {!config}.
+    + {!attach} gives the session the program's steps, and settles.
+    + {!input}, {!resize}, {!settle}, {!advance} and {!set_time} drive it, and
+      the readers of {!Terminal} observe it.
+    + The run ends when its steps say it has stopped or the program returns, and
+      the terminal then shows what the run left on it.
+
+    Unless a function's doc says otherwise, a function that takes a session
+    settles it before it returns, and raises [Invalid_argument] if no program is
+    attached or its run has ended.
+
+    This runs a program that counts keys, types two and prints the screen:
     {[
-    let t = Matrix_test.create ~width:20 ~height:1 () in
-    Fun.protect ~finally:(fun () -> Matrix_test.close t) @@ fun () ->
-    Matrix.run ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
-      ~config:(Matrix_test.config t)
-    @@ fun app ->
+    let term = Matrix_test.Terminal.create ~cols:20 ~rows:1 () in
+    let s = Matrix_test.create term in
+    Matrix.run ~config:(Matrix_test.config s (Matrix.config ())) @@ fun app ->
     let keys = ref 0 in
-    let rec until_idle () =
-      match Matrix.step app ~now:(Matrix_test.now t) with
+    let step ~now =
+      match Matrix.step app ~now with
+      | None -> `Idle
+      | Some Stopped -> `Stopped
+      | Some (Event (Key _)) ->
+          incr keys;
+          Matrix.request_redraw app;
+          `Stepped
       | Some Frame ->
           Matrix.draw app (fun grid ->
               Matrix.Grid.draw_text grid ~x:0 ~y:0
                 ~text:(Printf.sprintf "%d keys" !keys));
-          until_idle ()
-      | Some (Event (Key _)) ->
-          incr keys;
-          Matrix.request_redraw app;
-          until_idle ()
-      | Some _ -> until_idle ()
-      | None -> (
-          match Matrix.deadline app with
-          | Some deadline ->
-              Matrix_test.advance t (deadline - Matrix_test.now t);
-              until_idle ()
-          | None -> ())
+          `Stepped
+      | Some _ -> `Stepped
     in
-    until_idle ();
-    Matrix_test.feed t "a";
-    until_idle ();
-    assert (String.trim (Matrix_test.screen t) = "1 keys")
+    Matrix_test.attach s ~step ~deadline:(fun () -> Matrix.deadline app);
+    Matrix_test.input s (Matrix_test.Terminal.text term "ab");
+    print_string (Matrix_test.Screen.text (Matrix_test.Terminal.screen term))
     ]} *)
 
+(** {1:profiles Profiles} *)
+
+(** Terminal profiles, the facts of a terminal that a session plays. *)
+module Profile : sig
+  type t = {
+    tty : bool;
+        (** [false] for an output that is not a terminal, such as a pipe. The
+            run then sets no mode and asks nothing, and the size is reported in
+            band ({!Matrix.run}). *)
+    answers : bool;
+        (** [false] for a terminal that answers no query, such as one behind a
+            link that drops its replies. A run waits for its answers until its
+            wait ends, and the session's clock moves there. *)
+    env : (string * string) list;
+        (** The environment of the program's session, such as [TERM] and
+            [COLORTERM], from which the program guesses what the terminal does
+            until it answers. *)
+    identity : Vte.identity;  (** Its answers to DA1, DA2 and XTVERSION. *)
+    extensions : Vte.extension list;
+        (** The protocols it implements beyond the VT core. *)
+    width_method : Matrix.Text.width_method;  (** How it measures text. *)
+    palette : Vte.palette;  (** The colors its user configured. *)
+    color_scheme : [ `Dark | `Light ];  (** The scheme its user chose. *)
+  }
+  (** The type for profiles. A named terminal enters as a value whose facts cite
+      that terminal's documentation. *)
+
+  val vte : t
+  (** [vte] is matrix's emulator as it is: a terminal that answers, with its own
+      identity ({!Vte.vt100}), every extension, Unicode widths, the default
+      palette, a dark scheme, [TERM=xterm-256color] and [COLORTERM=truecolor].
+  *)
+
+  val pipe : t
+  (** [pipe] is {!vte} as an output that is not a terminal, which measures text
+      by character as a program that guesses does. *)
+end
+
+(** {1:screens Screens} *)
+
+(** What a terminal shows at one moment. *)
+module Screen : sig
+  type t
+  (** The type for screens, the cells and the cursor of a terminal at one
+      moment. A screen does not change. Rows and columns count from 0. *)
+
+  type cursor = {
+    row : int;
+    col : int;
+    shape : Matrix.Ansi.cursor_style;
+    blinking : bool;
+  }
+  (** The type for a visible cursor. *)
+
+  val rows : t -> int
+  (** [rows s] is the number of rows of [s]. *)
+
+  val cols : t -> int
+  (** [cols s] is the number of columns of [s]. *)
+
+  val row : t -> int -> string
+  (** [row s y] is the text of row [y], a space for an empty cell, without the
+      spaces that end it.
+
+      Raises [Invalid_argument] if [y] is not a row of [s]. *)
+
+  val cell : t -> row:int -> col:int -> string * Matrix.Ansi.Style.t
+  (** [cell s ~row ~col] is the grapheme and the style of that cell, [""] for an
+      empty cell or the second column of a wide character.
+
+      Raises [Invalid_argument] if the cell is not one of [s]. *)
+
+  val cursor : t -> cursor option
+  (** [cursor s] is the cursor, [None] when it is hidden. *)
+
+  val find : t -> string -> (int * int) list
+  (** [find s text] is the row and column of each occurrence of [text] within a
+      row of {!val-row}'s text, top to bottom, then left to right.
+
+      Raises [Invalid_argument] if [text] is empty. *)
+
+  (** {2:goldens Goldens}
+
+      A {e golden} is a screen as text, which a test compares with an expected
+      one, such as in an expect test. Its rows are numbered from 01 as
+      ["NN |text"], with as many digits as the last row's number needs, and its
+      last line is the cursor's, ["cursor ROW,COL SHAPE"] counted from 1, with
+      [blinking] after the shape when it blinks, or ["cursor hidden"]. *)
+
+  val text : t -> string
+  (** [text s] is the golden of [s]: each row's {!val-row} text, then the cursor
+      line, each ending with a newline. *)
+
+  val styled : t -> string
+  (** [styled s] is {!text} where each row that holds a cell not in the default
+      style is followed by a line of one {e key} per column, under the row's
+      prefix, naming that cell's style: a space for the default style (the
+      terminal's default colors, no attribute, no hyperlink), and the same key
+      for both columns of a wide character. After the cursor line comes one line
+      for each key, the key and its style. Keys are letters, digits, then other
+      characters, in the order in which styles first appear, left to right and
+      top to bottom. *)
+
+  val diff : t -> t -> string option
+  (** [diff a b] is [None] when [a] and [b] show the same cells and cursor.
+      Otherwise it is each row of [b] that differs from [a]'s, as in a golden,
+      followed by a line with a letter under each column that differs, by the
+      first of these that holds, as Vim's screen dumps mark them: [X] another
+      character, [w] another width, [f] another foreground, [b] another
+      background, [a] other attributes or another hyperlink. Then come both
+      cursor lines, if the cursors differ. Screens of different sizes give both
+      sizes. *)
+end
+
+(** {1:terminals Terminals} *)
+
+(** Terminals, emulators playing a profile. *)
+module Terminal : sig
+  type t
+  (** The type for terminals. *)
+
+  val create : ?profile:Profile.t -> cols:int -> rows:int -> unit -> t
+  (** [create ~cols ~rows ()] is a terminal at power-up playing [profile]
+      (default {!Profile.vte}), [cols] wide and [rows] high. *)
+
+  val profile : t -> Profile.t
+  (** [profile t] is the profile [t] plays. *)
+
+  (** {2:user The user's side}
+
+      Each of these is the bytes the terminal sends for what its user does, in
+      the encoding the program has set, and [""] for a report the program has
+      not asked for. A session ({!input}) or a child ({!Child.send}) delivers
+      them. *)
+
+  val key :
+    t ->
+    ?mods:Matrix.Input.Keystroke.mods ->
+    Matrix.Input.Keystroke.key ->
+    string
+  (** [key t k] is the bytes of [k] pressed with [mods] (default none). A [Char]
+      types its character unless the modifiers make a chord.
+
+      Raises [Invalid_argument] as {!Matrix.Input.Keystroke.encode} does. *)
+
+  val keystroke : t -> Matrix.Input.Keystroke.t -> string
+  (** [keystroke t k] is the bytes of the keystroke [k], with its text, keypad,
+      base layout key and repeat.
+
+      Raises [Invalid_argument] as {!Matrix.Input.Keystroke.encode} does. *)
+
+  val release : t -> Matrix.Input.Keystroke.release -> string
+  (** [release t r] is the bytes of the key release [r], [""] unless the program
+      asked the kitty keyboard protocol for event types.
+
+      Raises [Invalid_argument] as {!Matrix.Input.Keystroke.encode} does. *)
+
+  val text : t -> string -> string
+  (** [text t s] is the bytes of typing each character of [s] as a key.
+
+      Raises [Invalid_argument] if [s] is not UTF-8 or holds a control
+      character. *)
+
+  val paste : t -> string -> string
+  (** [paste t s] is the bytes of pasting [s], between the paste markers when
+      the program has set bracketed paste. *)
+
+  val mouse : t -> Matrix.Input.Mouse_report.t -> string
+  (** [mouse t m] is the report of [m], when the program's mouse tracking
+      reports it.
+
+      Raises [Invalid_argument] as {!Matrix.Input.Mouse_report.encode} does. *)
+
+  val focus : t -> bool -> string
+  (** [focus t focused] is the report of the window gaining focus ([true]) or
+      losing it, when the program has set focus reports. *)
+
+  val color_scheme : t -> [ `Dark | `Light ] -> string
+  (** [color_scheme t c] changes [t]'s color scheme to [c], and is its report
+      when the scheme changed and the program has set color scheme reports. *)
+
+  (** {2:reading Reading} *)
+
+  val screen : t -> Screen.t
+  (** [screen t] is what [t] shows now. *)
+
+  val scrollback : t -> string list
+  (** [scrollback t] is the text of the lines scrolled off the primary screen's
+      top, oldest first. *)
+
+  val title : t -> string
+  (** [title t] is the window title the program last set. *)
+
+  val modes : t -> Vte.modes
+  (** [modes t] is [t]'s modes. *)
+
+  val raw : t -> bool
+  (** [raw t] is [true] while a session's run has [t]'s input in raw mode. *)
+
+  val requests : t -> Vte.request list
+  (** [requests t] is what the program has asked of [t]'s host, oldest first
+      ({!Vte.val-requests}). *)
+
+  val output : t -> string
+  (** [output t] is every byte the program has written to [t]. *)
+
+  val vte : t -> Vte.t
+  (** [vte t] is [t]'s emulator, which a test must only read. *)
+end
+
+(** {1:sessions Sessions} *)
+
 type t
-(** The type for headless terminals. *)
+(** The type for sessions. *)
 
-val create :
-  ?mode:Matrix.mode -> ?fps:float -> width:int -> height:int -> unit -> t
-(** [create ~width ~height ()] is a terminal of [width] columns and [height]
-    rows, with its size already reported on its input.
-    - [mode] is the presentation mode of {!config}. Defaults to [`Alt].
-    - [fps] is the frame bound of {!config}. Defaults to [60.].
+val create : ?now:int -> Terminal.t -> t
+(** [create term] is a session on [term] whose clock reads [now] (default [0])
+    nanoseconds. A terminal must have at most one session. *)
 
-    Raises [Unix.Unix_error] if the pipe or the file cannot be made. *)
+val terminal : t -> Terminal.t
+(** [terminal s] is [s]'s terminal. *)
 
-val input : t -> Unix.file_descr
-(** [input t] is the terminal's input, for {!Matrix.run}'s [input]. *)
+val config : t -> Matrix.config -> Matrix.config
+(** [config s c] is [c] for a run on [s]'s terminal and clock. The run takes no
+    descriptor and no environment of its own, since the terminal's profile has
+    them. *)
 
-val output : t -> Unix.file_descr
-(** [output t] is the terminal's output, for {!Matrix.run}'s [output]. *)
+val perform : t -> (unit -> unit) -> unit
+(** [perform s job] queues [job] on the session's queue, an executor such as
+    [Mosaic.start]'s [process_perform]. Settling runs the queue in order, on the
+    calling thread. A job must return and must not wait for the loop, so work
+    that runs as long as the program does, such as a worker reading a stream,
+    must run on the program's own executor ({!attach}). It does not settle. *)
 
-val config : t -> Matrix.config
-(** [config t] is the configuration a run over [t] uses: its mode and frame
-    bound, and the terminal's fixed capabilities. *)
+val attach :
+  ?quiesce:(unit -> unit) ->
+  t ->
+  step:(now:int -> [ `Stepped | `Idle | `Stopped ]) ->
+  deadline:(unit -> int option) ->
+  unit
+(** [attach s ~step ~deadline] has [s] drive a program, and settles. [step ~now]
+    takes the program's next step at [now], as [Matrix.step] does, and says
+    whether it took one, the program has nothing to do, or its run has stopped.
+    [deadline ()] is [Matrix.deadline] of the program's run. They are
+    [Mosaic.step] and [Mosaic.deadline] for a Mosaic program. [quiesce ()] must
+    return once every piece of work the program's executor was given has
+    finished or waits for something only the test can change. It defaults to
+    running {!perform}'s queue.
 
-val close : t -> unit
-(** [close t] ends the input, as {!stop} does, and closes the terminal's
-    descriptors. A run must not use them after. *)
+    Raises [Invalid_argument] if a program is attached. *)
 
-(** {1:time The clock} *)
+val input : t -> string -> unit
+(** [input s bytes] delivers [bytes] as one write, which the run reads until it
+    has read all of it. *)
 
-val now : t -> int
-(** [now t] is the time of the test's clock, on the clock of the run that holds
-    [t]: the time to give {!Matrix.val-step}. The first call takes the run's
-    time ({!Matrix.now}) as the clock's start.
+val resize : t -> cols:int -> rows:int -> unit
+(** [resize s ~cols ~rows] resizes the terminal and tells the run as the
+    terminal does: by a window signal and the mode 2048 report when the program
+    has set it, or, for an output that is not a terminal, in band. *)
 
-    Raises [Invalid_argument] if it is the first call and no run holds [t]. *)
-
-val elapsed : t -> int
-(** [elapsed t] is how far the test has moved its clock, in nanoseconds: [0]
-    until the first {!advance}. *)
+val settle : t -> unit
+(** [settle s] settles [s], as after the test released work it held. *)
 
 val advance : t -> int -> unit
-(** [advance t ns] moves the clock [ns] nanoseconds forward. The clock never
-    moves otherwise.
+(** [advance s ns] moves the clock [ns] nanoseconds forward, and settles at each
+    deadline on the way ({!deadline}) and at the end. So every timer and every
+    animation frame on the way has an instant of its own.
 
     Raises [Invalid_argument] if [ns] is negative. *)
 
-val frame_owed : t -> bool
-(** [frame_owed t] is [true] iff the run over [t] has a frame to draw that waits
-    for its interval to pass: a driver moves the clock to the run's deadline to
-    have it drawn. [false] when no run holds [t]. *)
+val set_time : t -> int -> unit
+(** [set_time s time] moves the clock to [time] without taking a step, so that
+    input delivered next is read in the same turn as the timers due at [time],
+    and before them. It does not settle.
 
-val settle : t -> until:int option -> bool
-(** [settle t ~until] moves the clock to [until] if the run owes a frame that
-    waits for it, and says whether it did. A driver whose steps must each see
-    the presented frame calls it first whenever the run has nothing to do, with
-    the run's deadline, and takes its step only when it returns [false]. *)
+    Raises [Invalid_argument] if [time] is earlier than the clock. *)
 
-(** {1:input Input} *)
+val now : t -> int
+(** [now s] is the time of [s]'s clock, in nanoseconds. It does not settle. *)
 
-val feed : t -> string -> unit
-(** [feed t bytes] writes [bytes] to the terminal's input, decoded by the run's
-    decoder when it next reads. Complete escape sequences decode then; ambiguous
-    prefixes (a lone [ESC], an Alt chord) wait for the terminal's silence, a
-    deadline the run gives and that passes once the test moves the clock beyond
-    it. It blocks while the pipe is full, so a test feeds at most the pipe's
-    capacity (64 KiB on Linux) between steps.
+val deadline : t -> int option
+(** [deadline s] is the next time the program has something to do, if any. It
+    does not settle.
 
-    Raises [Invalid_argument] if the input has ended ({!stop}). *)
+    Raises [Invalid_argument] if no program is attached. *)
 
-val feed_event : t -> Matrix.event -> unit
-(** [feed_event t event] queues an already-decoded input event for the run that
-    holds [t], bypassing the decoder, ahead of the bytes not yet read.
+val frames : t -> int
+(** [frames s] is the number of frames the run has begun. It does not settle. *)
 
-    Raises [Invalid_argument] if no run ever held [t]. *)
+val steps : t -> int
+(** [steps s] is the number of steps the program has taken. It does not settle.
+*)
 
-val resize : t -> width:int -> height:int -> unit
-(** [resize t ~width ~height] reports the new size on the input, as a terminal
-    in mode 2048 does. The run applies it when it next draws. *)
+val ended : t -> bool
+(** [ended s] is [true] once the program's run has stopped. It does not settle.
+*)
 
-val stop : t -> unit
-(** [stop t] ends the input, as a terminal that closes it: the run decodes what
-    was fed, and {!Matrix.val-step} then returns {!Matrix.Stopped}. *)
+(** {1:children Programs in another process} *)
 
-(** {1:output Output} *)
+(** Programs run as a child process on a pseudo-terminal.
 
-val grid : t -> Matrix.Grid.t
-(** [grid t] is the presented frame ({!Matrix.current_grid}) of the run that
-    holds [t], or of the last run that held it once that run ended. Do not
-    mutate.
+    A {e child} runs on the slave side of a pseudo-terminal whose master a
+    terminal holds, on the real clock. The slave is the child's controlling
+    terminal, so {!resize} signals it as a window does, and the terminal answers
+    its queries as its profile says, as soon as its output is read. Nothing
+    outside the child knows when it is done, so a test waits for what it expects
+    to see, and checks it only where no synchronized update (mode 2026) is open,
+    where a frame is complete. *)
+module Child : sig
+  type t
+  (** The type for children. *)
 
-    Raises [Invalid_argument] if no run ever held it. *)
+  val with_spawn :
+    Terminal.t ->
+    ?env:(string * string) list ->
+    ?cwd:string ->
+    prog:string ->
+    args:string list ->
+    (t -> 'a) ->
+    'a
+  (** [with_spawn term ~prog ~args f] runs [prog] with [args] on a
+      pseudo-terminal of [term]'s size, calls [f] with the child, and ends and
+      reaps the child when [f] returns or raises ({!Pty.with_spawn}). The
+      child's environment is the profile's, then [env], and nothing of the
+      test's, so a program that needs [PATH] or [HOME] is given them. [cwd] is
+      its working directory, by default the test's.
 
-val size : t -> int * int
-(** [size t] is the usable size of that run ({!Matrix.size}): the live region in
-    [`Primary] mode.
+      Raises [Unix.Unix_error] as {!Pty.spawn} does. *)
 
-    Raises [Invalid_argument] if no run ever held it. *)
+  val send : t -> string -> unit
+  (** [send c bytes] writes [bytes] to the child's input. *)
 
-val screen : t -> string
-(** [screen t] is the presented frame as plain text ({!Matrix.Grid.to_text} of
-    {!grid}): styling discarded, rows right-stripped. *)
+  val resize : t -> cols:int -> rows:int -> unit
+  (** [resize c ~cols ~rows] resizes the terminal and the pseudo-terminal, which
+      signals the child, and sends the mode 2048 report when the child has set
+      it. *)
 
-val screen_ansi : t -> string
-(** [screen_ansi t] is the presented frame with ANSI styling
-    ({!Matrix.Grid.to_ansi}). *)
+  val wait : t -> within:float -> (Terminal.t -> bool) -> unit
+  (** [wait c ~within ready] applies the child's output to the terminal and
+      answers it until [ready] holds of the terminal. [ready] is checked at once
+      and whenever the output read has no synchronized update open. It blocks
+      for at most [within] seconds.
 
-val written : t -> string
-(** [written t] is everything the run wrote so far: the raw ANSI stream.
-    Replaying it through a VTE reconstructs {!screen}. *)
+      Raises [Failure], with the screen, if [within] seconds pass or the child's
+      output ends first. *)
+
+  val exit : t -> within:float -> Unix.process_status
+  (** [exit c ~within] applies the child's output until it ends, and is the
+      child's exit status. It blocks for at most [within] seconds of output.
+
+      Raises [Failure], with the screen, if the output has not ended within
+      [within] seconds. *)
+end

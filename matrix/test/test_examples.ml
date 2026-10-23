@@ -41,59 +41,49 @@ let test_next () =
 
 (* [Matrix_test]'s preamble example. *)
 let test_matrix_test () =
-  let t = Matrix_test.create ~width:20 ~height:1 () in
-  Fun.protect ~finally:(fun () -> Matrix_test.close t) @@ fun () ->
-  Matrix.run ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
-    ~config:(Matrix_test.config t)
-  @@ fun app ->
+  let term = Matrix_test.Terminal.create ~cols:20 ~rows:1 () in
+  let s = Matrix_test.create term in
+  Matrix.run ~config:(Matrix_test.config s (Matrix.config ())) @@ fun app ->
   let keys = ref 0 in
-  let rec until_idle () =
-    match Matrix.step app ~now:(Matrix_test.now t) with
+  let step ~now =
+    match Matrix.step app ~now with
+    | None -> `Idle
+    | Some Stopped -> `Stopped
+    | Some (Event (Key _)) ->
+        incr keys;
+        Matrix.request_redraw app;
+        `Stepped
     | Some Frame ->
         Matrix.draw app (fun grid ->
             Matrix.Grid.draw_text grid ~x:0 ~y:0
               ~text:(Printf.sprintf "%d keys" !keys));
-        until_idle ()
-    | Some (Event (Key _)) ->
-        incr keys;
-        Matrix.request_redraw app;
-        until_idle ()
-    | Some _ -> until_idle ()
-    | None -> (
-        match Matrix.deadline app with
-        | Some deadline ->
-            Matrix_test.advance t (deadline - Matrix_test.now t);
-            until_idle ()
-        | None -> ())
+        `Stepped
+    | Some _ -> `Stepped
   in
-  until_idle ();
-  Matrix_test.feed t "a";
-  until_idle ();
-  assert (String.trim (Matrix_test.screen t) = "1 keys")
+  Matrix_test.attach s ~step ~deadline:(fun () -> Matrix.deadline app);
+  Matrix_test.input s (Matrix_test.Terminal.text term "ab");
+  print_string (Matrix_test.Screen.text (Matrix_test.Terminal.screen term));
+  equal ~msg:"the screen" string "2 keys"
+    (Matrix_test.Screen.row (Matrix_test.Terminal.screen term) 0)
 
-(* Steps a run over [t] until it has nothing to do, drawing each frame with
-   [on_frame]. *)
-let until_idle t app on_frame =
-  let rec go () =
-    match Matrix.step app ~now:(Matrix_test.now t) with
+(* A run on a session whose frames [on_frame] draws, settled. *)
+let with_run ?(cols = 20) ?(rows = 3) f =
+  let term = Matrix_test.Terminal.create ~cols ~rows () in
+  let s = Matrix_test.create term in
+  Matrix.run ~config:(Matrix_test.config s (Matrix.config ())) @@ fun app ->
+  let on_frame = ref (fun () -> Matrix.draw app ignore) in
+  let step ~now =
+    match Matrix.step app ~now with
+    | None -> `Idle
+    | Some Stopped -> `Stopped
     | Some Frame ->
-        on_frame ();
-        go ()
-    | Some _ -> go ()
-    | None -> (
-        match Matrix.deadline app with
-        | Some deadline ->
-            Matrix_test.advance t (deadline - Matrix_test.now t);
-            go ()
-        | None -> ())
+        !on_frame ();
+        `Stepped
+    | Some _ -> `Stepped
   in
-  go ()
-
-let with_run f =
-  let t = Matrix_test.create ~width:20 ~height:3 () in
-  Fun.protect ~finally:(fun () -> Matrix_test.close t) @@ fun () ->
-  Matrix.run ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
-    ~config:(Matrix_test.config t) (f t)
+  f s term app (fun draw ->
+      on_frame := draw;
+      Matrix_test.attach s ~step ~deadline:(fun () -> Matrix.deadline app))
 
 let hello grid = Matrix.Grid.draw_text grid ~x:0 ~y:0 ~text:"hello"
 
@@ -101,7 +91,7 @@ let hello grid = Matrix.Grid.draw_text grid ~x:0 ~y:0 ~text:"hello"
    the frame drawn. *)
 let test_dump_every_thirtieth_frame () =
   let dir = Filename.temp_dir "matrix_dumps" "" in
-  with_run @@ fun t app ->
+  with_run @@ fun s _ app attach ->
   let frames = ref 0 in
   let on_frame app view =
     incr frames;
@@ -109,9 +99,10 @@ let test_dump_every_thirtieth_frame () =
         view grid;
         if !frames mod 30 = 0 then Matrix.dump_frame ~dir app)
   in
-  for _ = 1 to 30 do
+  attach (fun () -> on_frame app hello);
+  for _ = 2 to 30 do
     Matrix.request_redraw app;
-    until_idle t app (fun () -> on_frame app hello)
+    Matrix_test.settle s
   done;
   match Sys.readdir dir with
   | [| file |] ->
@@ -136,29 +127,22 @@ let draw_frame overlay app view =
   Matrix.Debug_overlay.record overlay ~start ~ns:(Matrix.clock () - start)
 
 let test_debug_overlay () =
-  let t = Matrix_test.create ~width:40 ~height:30 () in
-  Fun.protect ~finally:(fun () -> Matrix_test.close t) @@ fun () ->
-  Matrix.run ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
-    ~config:(Matrix_test.config t)
-  @@ fun app ->
+  with_run ~cols:40 ~rows:30 @@ fun _ term app attach ->
   let overlay = Matrix.Debug_overlay.create () in
-  until_idle t app (fun () -> draw_frame overlay app hello);
-  let screen = Matrix_test.screen t in
-  let shows sub =
-    let n = String.length sub in
-    Seq.exists
-      (fun i -> String.sub screen i n = sub)
-      (Seq.init (max 0 (String.length screen - n + 1)) Fun.id)
-  in
+  attach (fun () -> draw_frame overlay app hello);
+  let screen = Matrix_test.Terminal.screen term in
+  let shows sub = Matrix_test.Screen.find screen sub <> [] in
   is_true ~msg:"the view" (shows "hello");
   is_true ~msg:"the panel" (shows "frames: 0")
 
 (* [set_cursor]'s example: a cursor shown from the first frame. *)
 let test_cursor_from_the_first_frame () =
-  with_run @@ fun t app ->
+  with_run @@ fun _ term app attach ->
   Matrix.set_cursor app ~visible:true;
-  until_idle t app (fun () -> Matrix.draw app hello);
-  is_true ~msg:"shown" (Matrix.Screen.cursor (Matrix.screen app)).visible
+  attach (fun () -> Matrix.draw app hello);
+  is_true ~msg:"shown" (Matrix.Screen.cursor (Matrix.screen app)).visible;
+  is_true ~msg:"the terminal shows it"
+    (Matrix_test.Screen.cursor (Matrix_test.Terminal.screen term) <> None)
 
 let () =
   run "matrix.examples"

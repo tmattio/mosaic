@@ -119,6 +119,13 @@
   unix
   threads.posix))
 
+(test
+ (name test_matrix_test)
+ (package matrix)
+ (modules test_matrix_test)
+ (deps runtime_child.exe)
+ (libraries windtrap matrix matrix.test matrix.vte unix))
+
 (executable
  (name runtime_child)
  (modules runtime_child)

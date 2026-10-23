@@ -1,8 +1,7 @@
-(* Full-loop tests: a real Mosaic application driven headlessly through
-   matrix.test — the test's clock, byte-level input, frame snapshots. The
-   test drives the program by its steps ([run]); each time the program goes
-   idle, a scripted [on_idle] runs one step of the test, so every step
-   observes a fully rendered, quiescent frame. *)
+(* Full-loop tests: a real Mosaic application driven in a matrix.test session,
+   a terminal emulated in the test's process with a clock only the test
+   moves. Input is the bytes a terminal sends; every call settles, so every
+   step observes a fully rendered, quiescent frame at the session's time. *)
 
 open Windtrap
 
@@ -59,21 +58,60 @@ let app ?(subs = fun _ -> Mosaic.Sub.none) ?(init_cmd = Mosaic.Cmd.none) () =
     subscriptions = subs;
   }
 
+(* A plain modern terminal's capabilities, assumed where the terminal says
+   nothing, so that rendering never depends on the environment. The terminal
+   is an output that is not a terminal, which the run asks nothing. *)
+let caps : Matrix.Terminal.capabilities =
+  {
+    rgb = true;
+    kitty_keyboard = None;
+    kitty_graphics = false;
+    bracketed_paste = true;
+    focus_tracking = true;
+    unicode_width = `Unicode;
+    grapheme_mode = None;
+    sgr_pixels = false;
+    color_scheme_updates = false;
+    explicit_width = false;
+    explicit_cursor_positioning = false;
+    scaled_text = false;
+    sixel = false;
+    sync = false;
+    hyperlinks = false;
+    meta_sends_escape = None;
+    multiplexer = None;
+    identity = None;
+  }
+
+let profile = { Matrix_test.Profile.pipe with width_method = `Unicode }
+
+(* A session and its terminal. *)
+type t = { s : Matrix_test.t; term : Matrix_test.Terminal.t }
+
+let terminal ?(profile = profile) ~width ~height () =
+  let term = Matrix_test.Terminal.create ~profile ~cols:width ~rows:height () in
+  { s = Matrix_test.create term; term }
+
+let config ?(mode = `Alt) t =
+  Matrix_test.config t.s (Matrix.config ~mode ~caps ())
+
+let screen_value t = Matrix_test.Terminal.screen t.term
+
+(* The screen's rows without their trailing blanks, one a line. *)
+let screen t =
+  let s = screen_value t in
+  String.concat "\n"
+    (List.init (Matrix_test.Screen.rows s) (Matrix_test.Screen.row s))
+
+let written t = Matrix_test.Terminal.output t.term
+let elapsed t = Matrix_test.now t.s
+let feed t bytes = Matrix_test.input t.s bytes
+
 let snap t =
-  Matrix_test.screen t |> String.split_on_char '\n'
+  screen t |> String.split_on_char '\n'
   |> List.iter (fun row -> print_endline ("|" ^ row))
 
-(* The round-trip oracle: whatever bytes the runtime emitted must, when
-   replayed through matrix's own VTE, reconstruct the grid the backend
-   believes it painted. It is a strong invariant and a free one — every
-   frame this file snapshots is already both an ANSI stream and a grid — and
-   it catches the class of bug a golden cannot: a frame that looks right in
-   the backend's own accounting but whose escape sequences do not put it on
-   a real terminal. *)
-(* The two sides represent an all-blank tail differently — Matrix_test.screen
-   right-trims each row, Vte.to_string pads to the full width — so rows are
-   compared without their trailing blanks. Nothing about cell content is
-   relaxed: a space the grid actually holds inside a row still counts. *)
+(* The rows of [s] without their trailing blanks. *)
 let rstrip_rows s =
   String.split_on_char '\n' s
   |> List.map (fun row ->
@@ -83,13 +121,6 @@ let rstrip_rows s =
       done;
       String.sub row 0 !n)
   |> String.concat "\n" |> String.trim
-
-let replay_matches t ~width ~height =
-  let vte = Vte.create ~rows:height ~cols:width () in
-  ignore (Vte.feed_string vte (Matrix_test.written t) : _ list);
-  equal ~msg:"replaying the emitted ANSI reconstructs the grid" text
-    (rstrip_rows (Matrix_test.screen t))
-    (rstrip_rows (Vte.to_string vte))
 
 let ns seconds = Float.to_int (Float.round (seconds *. 1e9))
 
@@ -102,93 +133,37 @@ let occurrences ?(from = 0) s sub =
   done;
   !count
 
-(* Whether a run over [t] took the terminal, reading the size the terminal
-   reported as it was made, and gave it back: no run holds it. *)
-let taken t = not (Matrix.Tty.readable (Matrix_test.input t))
-let given_back t = taken t && Matrix.holder () = None
-
-(* The run's time at which the test's clock started. *)
-let start t = Matrix_test.now t - Matrix_test.elapsed t
-
-(* Runs [application] over [t], the test driving it: each step at the
-   test's clock. When the program has nothing to do and nothing has come
-   for it, [on_idle t ~until] scripts what happens next, given the run's
-   deadline; if it returns without acting, it runs again. Without
-   [on_idle], the input ends at the first idle. *)
-let run ?config ?stop ?process_perform ?probe
-    ?(on_idle = fun t ~until:_ -> Matrix_test.stop t) t application =
-  Mosaic.start ~input:(Matrix_test.input t) ~output:(Matrix_test.output t) ?stop
-    ~config:(Option.value config ~default:(Matrix_test.config t))
-    ?process_perform ?probe application
-    (fun r ->
-      let rec loop () =
-        match Mosaic.step r ~now:(Matrix_test.now t) with
-        | `Stepped -> loop ()
-        | `Stopped -> ()
-        | `Idle ->
-            (match Mosaic.deadline r with
-            | Some deadline when deadline <= Matrix_test.now t -> ()
-            | until ->
-                if not (List.exists Matrix.Tty.readable (Mosaic.fds r)) then
-                  on_idle t ~until);
-            loop ()
-      in
-      loop ())
-
-let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
-    steps =
-  let steps = ref steps in
-  (* Tracked so the replay VTE is always the size the backend currently is. *)
-  let dims = ref (width, height) in
-  (* Frames presented since the last step. *)
-  let frames = ref 0 in
-  let on_idle t ~until =
-    (* Every step observes a quiescent frame: the clock moves to each frame's
-       deadline until none is owed. A view settles within a frame or the next
-       (the depth rule); an animation owes a frame after every frame and never
-       does, so a run of frames that long fails the test instead of spinning:
-       drive an animation with a clock of its own, as [run_until] does. *)
-    if Matrix_test.settle t ~until then (
-      incr frames;
-      if !frames > 10_000 then
-        failwith "drive: the view never settles (an endless animation?)")
-    else (
-      frames := 0;
-      match !steps with
-      | [] -> Matrix_test.stop t
-      | `Step_to target :: rest ->
-          (* A driver that honours the loop's requested wait: the clock moves to
-           the armed deadline, or to [target] when that comes first, one idle
-           generation at a time. Every timer deadline before [target] is
-           observed as its own quiescent frame, and the step ends with the
-           clock at exactly [target]. *)
-          let target = start t + ns target in
-          let now = Matrix_test.now t in
-          if now >= target then steps := rest
-          else
-            let step =
-              match until with
-              | Some until when until > now -> min (until - now) (target - now)
-              | Some _ | None -> target - now
-            in
-            Matrix_test.advance t step
-      | ((`Feed _ | `Resize _ | `Advance _ | `Snap | `Run _) as step) :: rest
-        -> (
-          steps := rest;
-          match step with
-          | `Feed bytes -> Matrix_test.feed t bytes
-          | `Resize (width, height) ->
-              dims := (width, height);
-              Matrix_test.resize t ~width ~height
-          | `Advance dt -> Matrix_test.advance t (ns dt)
-          | `Snap ->
-              let width, height = !dims in
-              replay_matches t ~width ~height;
-              snap t
-          | `Run f -> f t))
+(* Runs [application] on [t]'s terminal, attaching the session, and calls
+   [f] with the running program; the program ends when [f] returns. Work
+   off the loop runs on the session's queue unless [process_perform] says
+   otherwise, with [quiesce] for it. *)
+let run ?mode ?stop ?process_perform ?quiesce ?probe t application f =
+  let process_perform =
+    Option.value process_perform ~default:(Matrix_test.perform t.s)
   in
-  let t = Matrix_test.create ?mode ~width ~height () in
-  run ?process_perform ?probe ~on_idle t application
+  Mosaic.start ~config:(config ?mode t) ?stop ~process_perform ?probe
+    application (fun r ->
+      Matrix_test.attach ?quiesce t.s ~step:(Mosaic.step r) ~deadline:(fun () ->
+          Mosaic.deadline r);
+      f r)
+
+let drive ?mode ?(width = 48) ?(height = 2) ?process_perform ?quiesce ?probe
+    application steps =
+  let t = terminal ~width ~height () in
+  run ?mode ?process_perform ?quiesce ?probe t application (fun _ ->
+      List.iter
+        (function
+          | `Feed bytes -> feed t bytes
+          | `Resize (width, height) ->
+              Matrix_test.resize t.s ~cols:width ~rows:height
+          | `Advance dt -> Matrix_test.advance t.s (ns dt)
+          | `Step_to target ->
+              Matrix_test.advance t.s (max 0 (ns target - elapsed t))
+          | `Snap -> snap t
+          | `Run f ->
+              f t;
+              Matrix_test.settle t.s)
+        steps)
 
 let on_keys _ = Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))
 
@@ -269,7 +244,8 @@ let%expect_test "live animation frames deliver their delta in seconds" =
      spinner) animates, the virtual clock advances at the 60 fps render
      cadence, so widgets must observe 1/60 s frames. A canvas records the
      delta it is drawn with; once the timer fires the spinner leaves the view,
-     the loop goes idle, and the recording is checked. *)
+     the loop goes idle, and the recording is checked. A settle draws the
+     first frame only: the spinner's next frames come as the clock moves. *)
   let last_delta = ref Float.nan in
   let application =
     {
@@ -290,7 +266,10 @@ let%expect_test "live animation frames deliver their delta in seconds" =
     }
   in
   drive application
-    [ `Run (fun _ -> Printf.printf "live frame delta: %.4f s\n" !last_delta) ];
+    [
+      `Advance 0.2;
+      `Run (fun _ -> Printf.printf "live frame delta: %.4f s\n" !last_delta);
+    ];
   [%expect {| live frame delta: 0.0167 s |}]
 
 let%expect_test "a pending every-timer renders only when it fires" =
@@ -541,12 +520,12 @@ let%expect_test "replaying the output stream through a VTE matches the grid" =
       `Run
         (fun t ->
           let vte = Vte.create ~rows:2 ~cols:48 () in
-          ignore (Vte.feed_string vte (Matrix_test.written t) : _ list);
-          result := Some (Vte.to_string vte, Matrix_test.screen t));
+          ignore (Vte.feed_string vte (written t) : _ list);
+          result := Some (Vte.to_string vte, screen t));
     ];
   let replayed, screen = Option.get !result in
-  equal ~msg:"replaying the output stream reconstructs the grid" text
-    (String.trim screen) (String.trim replayed);
+  equal ~msg:"replaying the output stream reconstructs the screen" text
+    (rstrip_rows screen) (rstrip_rows replayed);
   print_endline "replayed:";
   String.split_on_char '\n' replayed
   |> List.iter (fun row -> print_endline ("|" ^ row));
@@ -574,7 +553,7 @@ let%expect_test
     [
       `Run
         (fun t ->
-          let output = Matrix_test.written t in
+          let output = written t in
           in_order ~msg:"blinking style follows cursor visibility"
             ~subs:[ "\027[?25h"; "\027[1 q" ]
             output);
@@ -618,13 +597,12 @@ let%expect_test "an every-timer stepped exactly onto its deadline keeps firing"
     |
     |}]
 
-let%expect_test
-    "a lone ESC resolves to Escape once the clock passes the timeout" =
+let%expect_test "a lone ESC is Escape in the turn that reads it" =
   (* A bare ESC is ambiguous (Escape vs. the start of an Alt/CSI sequence), so
-     the parser holds it on a ~50 ms deadline. With no further bytes it must
-     still resolve to Escape once virtual time passes that deadline — the
-     backend drains at the current instant on every read, not only when a chunk
-     arrives. The key must not appear before the step, and must appear after. *)
+     the decoder holds it until the terminal is silent. The session's
+     terminal writes each input whole, so nothing follows the ESC and it is
+     Escape at once; the race of a real terminal's latency is the pty
+     tier's. *)
   drive
     (app
        ~subs:(fun _ ->
@@ -633,7 +611,7 @@ let%expect_test
     [ `Feed "\027"; `Snap; `Advance 0.06; `Snap ];
   [%expect
     {|
-    |keys:[] ticks:0 size:- note:-
+    |keys:[<esc>] ticks:0 size:- note:-
     |
     |keys:[<esc>] ticks:0 size:- note:-
     |
@@ -659,16 +637,16 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
                  dispatch Tick
                done)))
   in
-  let probe = ref None in
-  let on_idle t ~until =
-    if not (Matrix_test.settle t ~until) then
-      match !probe with
-      | Some p when Mosaic.Probe.is_settled p -> Matrix_test.stop t
-      | _ -> Thread.yield ()
+  (* The work runs on threads the test keeps, and quiescence is their end:
+     each dispatch has reached the loop's queue once its thread is joined. *)
+  let threads = ref [] in
+  let process_perform job = threads := Thread.create job () :: !threads in
+  let quiesce () =
+    List.iter Thread.join !threads;
+    threads := []
   in
-  let t = Matrix_test.create ~width:48 ~height:2 () in
-  run ~on_idle t ~probe:(fun p -> probe := Some p) (app ~init_cmd:hammer ());
-  snap t;
+  let t = terminal ~width:48 ~height:2 () in
+  run ~process_perform ~quiesce t (app ~init_cmd:hammer ()) (fun _ -> snap t);
   [%expect {|
     |keys:[] ticks:6000000 size:- note:-
     |
@@ -815,7 +793,7 @@ let%expect_test "model focus follows a remounted editor" =
             (Mosaic.Editor.text !observed);
           equal ~msg:"remounted focused editor paints accepted state" string
             "ab"
-            (String.trim (Matrix_test.screen t)));
+            (String.trim (screen t)));
     ];
   [%expect {| |}]
 
@@ -896,7 +874,7 @@ let%expect_test "a late unfocused editor never steals focus" =
       `Run
         (fun t ->
           not_contains ~msg:"late element must not steal focus" ~sub:"\027[?25h"
-            (Matrix_test.written t));
+            (written t));
     ];
   [%expect {| |}]
 
@@ -935,9 +913,13 @@ let%expect_test "a late width method re-measures existing text" =
     }
   in
   (* Each cell a grapheme starts, and [-] for the cells it spans after its
-     first. *)
-  let cells t =
-    let grid = Matrix_test.grid t in
+     first, as a terminal that measures by [width_method] shows the output:
+     the session's, which measures by grapheme, before the answer, and one
+     that measures by character, the output replayed into it, after. *)
+  let cells ?(width_method = `Unicode) t =
+    let vte = Vte.create ~width_method ~rows:7 ~cols:12 () in
+    ignore (Vte.feed_string vte (written t) : _ list);
+    let grid = Vte.grid vte in
     let width = Matrix.Grid.width grid in
     for y = 0 to Matrix.Grid.height grid - 1 do
       let row = Buffer.create width in
@@ -952,7 +934,11 @@ let%expect_test "a late width method re-measures existing text" =
     done
   in
   drive ~width:12 ~height:7 application
-    [ `Run cells; `Feed "\027[?2027;4$y"; `Run cells ];
+    [
+      `Run (fun t -> cells t);
+      `Feed "\027[?2027;4$y";
+      `Run (fun t -> cells ~width_method:`Wcwidth t);
+    ];
   [%expect
     {|
     |👩‍💻-t|
@@ -997,7 +983,7 @@ let%expect_test "static output follows the terminal's width method" =
       `Run
         (fun t ->
           let vte = Vte.create ~rows:4 ~cols:6 () in
-          ignore (Vte.feed_string vte (Matrix_test.written t) : _ list);
+          ignore (Vte.feed_string vte (written t) : _ list);
           print_string (rstrip_rows (Vte.to_string vte)));
     ];
   [%expect {|
@@ -1017,7 +1003,7 @@ let%expect_test "static commit emits content taller than the viewport" =
     [
       `Run
         (fun t ->
-          let out = Matrix_test.written t in
+          let out = written t in
           List.iter
             (fun line -> contains ~msg:(line ^ " emitted") ~sub:line out)
             lines);
@@ -1064,44 +1050,29 @@ let%expect_test "threaded highlighting wakes an idle application" =
   let application =
     { base with Mosaic.view = (fun _ -> Mosaic.code ~syntax "let x") }
   in
-  let phase = ref 0 in
-  let on_idle t ~until =
-    if Matrix_test.settle t ~until then ()
-    else if !phase = 0 then begin
-      phase := 1;
-      equal ~msg:"plain initial frame" string "let x"
-        (String.trim (Matrix_test.screen t));
-      Atomic.set released true;
-      let tries = ref 0 in
-      while Atomic.get worker = None && !tries < 5000 do
-        incr tries;
-        Thread.delay 0.001
-      done;
-      let thread =
-        match Atomic.get worker with
-        | Some thread -> thread
-        | None -> fail "worker did not start"
-      in
-      join_worker thread;
-      (* The worker's result is posted to the loop, which writes its wake:
-         a loop waiting for its descriptors would wake. *)
-      let woken =
-        match Matrix.holder () with
-        | Some (Held app) -> List.exists Matrix.Tty.readable (Matrix.fds app)
-        | None -> false
-      in
-      is_true ~msg:"completion wakes the loop" woken
-    end
-    else begin
-      equal ~msg:"highlight applied without user input" string "done x"
-        (String.trim (Matrix_test.screen t));
-      Matrix_test.stop t
-    end
-  in
-  let t = Matrix_test.create ~width:20 ~height:1 () in
+  let t = terminal ~width:20 ~height:1 () in
   Fun.protect
     ~finally:(fun () -> Atomic.set released true)
-    (fun () -> run ~on_idle t application);
+    (fun () ->
+      run t application (fun _ ->
+          equal ~msg:"plain initial frame" string "let x"
+            (String.trim (screen t));
+          Atomic.set released true;
+          let tries = ref 0 in
+          while Atomic.get worker = None && !tries < 5000 do
+            incr tries;
+            Thread.delay 0.001
+          done;
+          let thread =
+            match Atomic.get worker with
+            | Some thread -> thread
+            | None -> fail "worker did not start"
+          in
+          join_worker thread;
+          (* The worker's result is posted to the loop. *)
+          Matrix_test.settle t.s;
+          equal ~msg:"highlight applied without user input" string "done x"
+            (String.trim (screen t))));
   [%expect {| |}]
 
 let%expect_test "application exit cancels queued highlighting" =
@@ -1132,7 +1103,7 @@ let%expect_test "application exit cancels queued highlighting" =
                 [ Mosaic.code ~syntax "first"; Mosaic.code ~syntax "queued" ]);
         }
       in
-      let on_idle t ~until:_ =
+      let body _ =
         let tries = ref 0 in
         while Atomic.get worker = None && !tries < 5000 do
           incr tries;
@@ -1140,9 +1111,8 @@ let%expect_test "application exit cancels queued highlighting" =
         done;
         is_true ~msg:"first worker started" (Option.is_some (Atomic.get worker));
         if exceptional then failwith "application failed"
-        else Matrix_test.stop t
       in
-      let t = Matrix_test.create ~width:20 ~height:2 () in
+      let t = terminal ~width:20 ~height:2 () in
       Fun.protect
         ~finally:(fun () -> Atomic.set released true)
         (fun () ->
@@ -1150,8 +1120,8 @@ let%expect_test "application exit cancels queued highlighting" =
             raises_match ~msg:"application failure preserved"
               (function
                 | Failure message -> message = "application failed" | _ -> false)
-              (fun () -> run ~on_idle t application)
-          else run ~on_idle t application);
+              (fun () -> run t application body)
+          else run t application body);
       join_worker (Option.get (Atomic.get worker));
       equal ~msg:"closed application leaves no queued work" (list string)
         [ "first" ] (Atomic.get calls))
@@ -1190,7 +1160,7 @@ let%expect_test
           equal ~msg:"model accepts only second key" string "b"
             (Mosaic.Editor.text !accepted);
           equal ~msg:"screen agrees with model" string "b"
-            (String.trim (Matrix_test.screen t)));
+            (String.trim (screen t)));
     ];
   [%expect {| |}]
 
@@ -1226,7 +1196,7 @@ let%expect_test "normalization is authoritative before the next key in a burst"
           equal ~msg:"model retains normalization" string "AB"
             (Mosaic.Editor.text !accepted);
           equal ~msg:"screen agrees with normalized model" string "AB"
-            (String.trim (Matrix_test.screen t)));
+            (String.trim (screen t)));
     ];
   [%expect {| |}]
 
@@ -1280,7 +1250,7 @@ let%expect_test "global capture updates focus and editor before default editing"
           equal ~msg:"default action edits newly accepted target" string "Rx"
             (Mosaic.Editor.text right);
           equal ~msg:"both accepted editors are painted" string "L\nRx"
-            (String.trim (Matrix_test.screen t)));
+            (String.trim (screen t)));
     ];
   [%expect {| |}]
 
@@ -1319,9 +1289,9 @@ let%expect_test "non-key subscriptions accumulate in declaration order" =
           equal ~msg:"startup geometry reaches both resize subscribers"
             (list string) [ "r1"; "r2" ] !observed.keys);
       `Resize (71, 1);
-      `Run (fun t -> Matrix_test.feed_event t Matrix.Focus_out);
-      `Run (fun t -> Matrix_test.feed_event t Matrix.Focus_in);
-      `Run (fun t -> Matrix_test.feed_event t (Matrix.Color_scheme `Dark));
+      `Feed (Matrix.Input.Decoder.encode_focus false);
+      `Feed (Matrix.Input.Decoder.encode_focus true);
+      `Feed (Matrix.Input.Reply.encode [ Color_scheme `Dark ]);
       `Run
         (fun t ->
           equal ~msg:"every subscriber sees its event in source order"
@@ -1329,7 +1299,7 @@ let%expect_test "non-key subscriptions accumulate in declaration order" =
             [ "r1"; "r2"; "r1"; "r2"; "b1"; "b2"; "f1"; "f2"; "c1"; "c2" ]
             !observed.keys;
           contains ~msg:"screen reflects all delivered messages"
-            ~sub:"keys:[r1,r2,r1,r2,b1,b2,f1,f2,c1,c2]" (Matrix_test.screen t));
+            ~sub:"keys:[r1,r2,r1,r2,b1,b2,f1,f2,c1,c2]" (screen t));
     ];
   [%expect {| |}]
 
@@ -1376,7 +1346,7 @@ let%expect_test
           equal ~msg:"newer timer keeps its later phase" (list string)
             [ "a"; "a"; "b" ] !observed.keys;
           contains ~msg:"screen records timer order" ~sub:"keys:[a,a,b]"
-            (Matrix_test.screen t));
+            (screen t));
     ];
   [%expect {| |}]
 
@@ -1575,18 +1545,18 @@ let%expect_test "an on_size response that resizes its own node presents frames"
     }
   in
   let screens = ref [] in
-  let t = Matrix_test.create ~width:60 ~height:2 () in
-  run
-    ~on_idle:(fun t ~until ->
-      if not (Matrix_test.settle t ~until) then Matrix_test.stop t)
-    t
+  (* A report a frame's layout delivers is applied after the frame, and the
+     frame it asks for waits its interval: the clock moves for each. *)
+  let t = terminal ~width:60 ~height:2 () in
+  run t
     {
       application with
       update =
         (fun message model ->
-          screens := String.trim (Matrix_test.screen t) :: !screens;
+          screens := String.trim (screen t) :: !screens;
           application.update message model);
-    };
+    }
+    (fun _ -> Matrix_test.advance t.s (ns 1.));
   Printf.printf "reports: %s\n"
     (String.concat " " (List.rev_map string_of_int !reports));
   Printf.printf "views per report: %d/%d\n" !views (List.length !reports);
@@ -1642,7 +1612,10 @@ let%expect_test "on_size reports settle within the frame or the next one" =
       subscriptions = (fun _ -> Mosaic.Sub.none);
     }
   in
-  drive ~width:30 ~height:3 application [ `Snap; `Resize (40, 3); `Snap ];
+  (* The frame after the one whose layout reported comes one frame interval
+     later. *)
+  drive ~width:30 ~height:3 application
+    [ `Advance 0.017; `Snap; `Resize (40, 3); `Advance 0.017; `Snap ];
   [%expect {|
     |
     |30 15 16
@@ -1685,33 +1658,29 @@ let%expect_test "a paste is delivered whole and a cut paste is dropped" =
         Mosaic.Sub.on_paste (fun ev ->
             Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev))))
   in
-  let feed event = `Run (fun t -> Matrix_test.feed_event t event) in
   drive ~width:70 ~height:1 application
     [
-      feed Matrix.Paste_start;
-      feed (Matrix.Paste_data "ab");
-      feed (Matrix.Paste_data "cd");
+      `Feed "\027[200~ab";
+      `Feed "cd";
       `Run
         (fun _ ->
           equal ~msg:"nothing is delivered before the end marker" (list string)
             [] !observed.keys);
-      feed (Matrix.Paste_end `Complete);
+      `Feed "\027[201~";
       `Run
         (fun _ ->
           equal ~msg:"the pieces are delivered as one paste" (list string)
             [ "p:abcd" ] !observed.keys);
-      feed Matrix.Paste_start;
-      feed (Matrix.Paste_data "lost");
-      feed (Matrix.Paste_end `Cut);
       `Feed "\027[200~he";
       `Feed "llo\027[201~";
-      feed (Matrix.Text "é");
+      (* Text an input method composed, as the kitty protocol sends it. *)
+      `Feed "\027[0;;233u";
       `Run
         (fun _ ->
           equal
             ~msg:
-              "a cut paste is dropped, a bracketed paste split across reads \
-               arrives whole, and text without a key is a paste"
+              "a bracketed paste split across writes arrives whole, and text \
+               without a key is a paste"
             (list string)
             [ "p:abcd"; "p:hello"; "p:é" ]
             !observed.keys);
@@ -1843,7 +1812,12 @@ let%expect_test "key releases reach on_key_release, not key handlers" =
   drive ~width:70 ~height:1 application
     [
       `Feed "q";
-      `Run (fun t -> Matrix_test.feed_event t (Matrix.Key_release release));
+      (* As a terminal reports releases, under the kitty protocol's event
+         types with every key a sequence. *)
+      `Feed
+        (Matrix.Input.Keystroke.encode_release
+           { Matrix.Input.Keystroke.legacy with kitty = 0b1011 }
+           release);
       `Run
         (fun _ ->
           equal ~msg:"the press reaches key handlers, the release does not"
@@ -2211,23 +2185,25 @@ let%expect_test
   (* What the run wrote: nothing when it never took the terminal, and the
      alternate screen left when it gave it back. *)
   let raises ~msg application =
-    let t = Matrix_test.create ~width:20 ~height:1 () in
-    (match run t application with
+    let t = terminal ~profile:Matrix_test.Profile.vte ~width:20 ~height:1 () in
+    (match run t application ignore with
     | () -> fail (msg ^ ": no exception")
     | exception Failure m -> equal ~msg string msg m);
-    is_true ~msg:"no run holds the terminal" (Matrix.holder () = None);
+    is_false ~msg:"cooked mode" (Matrix_test.Terminal.raw t.term);
     t
   in
   let base = app () in
   let t =
     raises ~msg:"init" { base with Mosaic.init = (fun () -> failwith "init") }
   in
-  is_false ~msg:"the terminal was never taken" (taken t);
+  equal ~msg:"the terminal was never taken" string "" (written t);
   let t =
     raises ~msg:"subscriptions"
       { base with Mosaic.subscriptions = (fun _ -> failwith "subscriptions") }
   in
-  is_true ~msg:"the terminal was given back" (given_back t);
+  is_true ~msg:"the terminal was taken" (written t <> "");
+  is_false ~msg:"and given back"
+    (Matrix_test.Terminal.modes t.term).alternate_screen;
   [%expect {| |}]
 
 (* Ctrl+C quits unless a handler prevented it. *)
@@ -2251,9 +2227,15 @@ let%expect_test "an unprevented Ctrl+C quits" =
    that long to run: the loop cannot run meanwhile, so every deadline in
    between is due at once when it returns. *)
 
-let terminal = ref None
-let stall seconds = Matrix_test.advance (Option.get !terminal) (ns seconds)
-let clock () = Matrix_test.elapsed (Option.get !terminal)
+let current = ref None
+
+(* The clock moves while the update runs: the loop takes its next step at
+   the later time. *)
+let stall seconds =
+  let t = Option.get !current in
+  Matrix_test.set_time t.s (elapsed t + ns seconds)
+
+let clock () = elapsed (Option.get !current)
 
 type timed = Stall | Fired of string * int
 
@@ -2270,19 +2252,12 @@ let timed_app ~subs ~log =
     subscriptions = subs;
   }
 
-(* Runs [application] with a driver that moves the clock to each deadline
-   the loop waits for, frames included, until [seconds]. *)
+(* Runs [application], the clock moving through each deadline, frames
+   included, until [seconds]. *)
 let run_until seconds application =
-  let target = ns seconds in
-  let on_idle t ~until =
-    match until with
-    | Some until when until - start t <= target ->
-        Matrix_test.advance t (until - Matrix_test.now t)
-    | Some _ | None -> Matrix_test.stop t
-  in
-  let t = Matrix_test.create ~width:20 ~height:1 () in
-  terminal := Some t;
-  run ~on_idle t application
+  let t = terminal ~width:20 ~height:1 () in
+  current := Some t;
+  run t application (fun _ -> Matrix_test.advance t.s (ns seconds))
 
 let on_s msg =
   Mosaic.Sub.on_key (fun key -> if key_name key = "s" then Some msg else None)
@@ -2304,7 +2279,7 @@ let%expect_test "T1: timers due together fire once each, in deadline order" =
   in
   drive (timed_app ~subs ~log)
     [
-      `Run (fun t -> terminal := Some t); `Advance 0.05; `Feed "s"; `Step_to 1.5;
+      `Run (fun t -> current := Some t); `Advance 0.05; `Feed "s"; `Step_to 1.5;
     ];
   print_fires !log;
   [%expect
@@ -2377,7 +2352,7 @@ let%expect_test "T3: a timer that missed periods fires once with their count" =
   let before = ref 0 in
   drive application
     [
-      `Run (fun t -> terminal := Some t);
+      `Run (fun t -> current := Some t);
       `Advance 0.05;
       `Run (fun _ -> before := !views);
       `Feed "s";
@@ -2393,8 +2368,8 @@ let%expect_test "T3: a timer that missed periods fires once with their count" =
 
 let%expect_test "after fires once, and a new id restarts it, as a debounce" =
   (* Each key restarts a 0.3 s wait by declaring it under a new id: the
-     message comes 0.3 s after the last key, once. The driver draws each
-     key's frame before the next step, so the last key comes at 416 ms. *)
+     message comes 0.3 s after the last key, once: the frames the keys
+     bring take no time, so the last key comes at 400 ms. *)
   let log = ref [] in
   let application =
     {
@@ -2420,7 +2395,7 @@ let%expect_test "after fires once, and a new id restarts it, as a debounce" =
   in
   drive application
     [
-      `Run (fun t -> terminal := Some t);
+      `Run (fun t -> current := Some t);
       `Feed "s";
       `Advance 0.2;
       `Feed "s";
@@ -2429,7 +2404,7 @@ let%expect_test "after fires once, and a new id restarts it, as a debounce" =
       `Step_to 2.0;
     ];
   print_fires !log;
-  [%expect {| wait-3 x1 at 716 ms |}]
+  [%expect {| wait-3 x1 at 700 ms |}]
 
 let%expect_test
     "after is cancelled by dropping its id, and fires again on return" =
@@ -2457,7 +2432,7 @@ let%expect_test
   in
   drive application
     [
-      `Run (fun t -> terminal := Some t);
+      `Run (fun t -> current := Some t);
       `Feed "s" (* declared at 0 *);
       `Advance 0.4;
       `Feed "s" (* dropped at 0.4: cancelled *);
@@ -2491,17 +2466,11 @@ let%expect_test "T4: a tick's first dt is 0, after any idle time" =
             ]);
     }
   in
-  let t = Matrix_test.create ~width:20 ~height:1 () in
-  run
-    ~on_idle:(fun t ~until ->
-      match until with
-      | _ when Matrix_test.elapsed t = 0 ->
-          Matrix_test.advance t (ns 10.);
-          Matrix_test.feed t "s"
-      | Some until when until - start t <= ns 10.05 ->
-          Matrix_test.advance t (until - Matrix_test.now t)
-      | Some _ | None -> Matrix_test.stop t)
-    t application;
+  let t = terminal ~width:20 ~height:1 () in
+  run t application (fun _ ->
+      Matrix_test.advance t.s (ns 10.);
+      feed t "s";
+      Matrix_test.advance t.s (ns 0.05));
   List.rev !dts
   |> List.iteri (fun i dt -> if i < 3 then Printf.printf "dt %.4f\n" dt);
   [%expect {|
@@ -2512,6 +2481,9 @@ let%expect_test "T4: a tick's first dt is 0, after any idle time" =
 
 let%expect_test "T5: a tick fires once per frame, whatever else wakes the loop"
     =
+  (* A frame the timer's message asks for is drawn when asked, on a terminal
+     in the process: 200 of them, and the 59 of the tick's own interval, each
+     with one tick. *)
   let ticks = ref 0 and total = ref 0. in
   let application =
     {
@@ -2536,7 +2508,7 @@ let%expect_test "T5: a tick fires once per frame, whatever else wakes the loop"
   in
   run_until 1.0 application;
   Printf.printf "%d ticks, %.3f s of dt\n" !ticks !total;
-  [%expect {| 60 ticks, 0.983 s of dt |}]
+  [%expect {| 260 ticks, 1.000 s of dt |}]
 
 (* Work done off the loop. *)
 
@@ -2568,16 +2540,9 @@ let%expect_test "frames keep coming while posted messages are applied" =
       subscriptions = (fun _ -> on_s `Go);
     }
   in
-  let t = Matrix_test.create ~width:20 ~height:1 () in
-  terminal := Some t;
-  run
-    ~on_idle:(fun t ~until ->
-      if not (Matrix_test.settle t ~until) then
-        if Matrix_test.elapsed t = 0 then Matrix_test.feed t "s"
-        else Matrix_test.stop t)
-    t
-    ~process_perform:(fun work -> work ())
-    application;
+  let t = terminal ~width:20 ~height:1 () in
+  current := Some t;
+  run t ~process_perform:(fun work -> work ()) application (fun _ -> feed t "s");
   let views = List.rev !views in
   let gap =
     List.fold_left
@@ -2615,17 +2580,12 @@ let%expect_test "X2: an exception in a perform ends the run" =
       ~subs:(fun _ -> Mosaic.Sub.every ~id:"e" 0.1 (fun k -> Ticks k))
       ()
   in
-  (* The run ends when the loop takes the worker's exception; a minute
-     guards against one that never comes. *)
-  let started = Unix.gettimeofday () in
-  let on_idle t ~until:_ =
-    if Unix.gettimeofday () -. started > 60. then Matrix_test.stop t
-    else Thread.delay 0.001
-  in
-  let t = Matrix_test.create ~width:20 ~height:1 () in
+  (* The perform runs on the session's queue, and the run ends at the step
+     that takes its exception. *)
+  let t = terminal ~profile:Matrix_test.Profile.vte ~width:20 ~height:1 () in
   let err =
     capturing_stderr (fun () ->
-        match run ~on_idle t application with
+        match run t application ignore with
         | () -> print_endline "the run ended without the exception"
         | exception Failure m ->
             let bt = Printexc.get_backtrace () in
@@ -2638,7 +2598,10 @@ let%expect_test "X2: an exception in a perform ends the run" =
             Printf.printf "raised %S, from the worker's raise: %b\n" m
               names_the_raise)
   in
-  Printf.printf "terminal given back: %b; standard error: %S\n" (given_back t)
+  Printf.printf "terminal given back: %b; standard error: %S\n"
+    (not
+       (Matrix_test.Terminal.raw t.term
+       || (Matrix_test.Terminal.modes t.term).alternate_screen))
     err;
   [%expect
     {|
@@ -2646,32 +2609,39 @@ let%expect_test "X2: an exception in a perform ends the run" =
     terminal given back: true; standard error: ""
     |}]
 
-(* Workers run on real threads: the driver waits for what they do. A minute
-   a step guards against what never happens; it measures nothing, so a
-   loaded host only makes a test slower. *)
+(* Workers run as long as the program declares them, so they cannot run on
+   the session's queue, whose work must return: they run on the program's
+   own executor, by default threads, and the test waits for what they do,
+   settling as their messages come. A minute a step guards against what
+   never happens; it measures nothing, so a loaded host only makes a test
+   slower. *)
 type live_step = Until of (unit -> bool) | Type of string | End
 
 let run_live ?process_perform steps application =
-  let steps = ref steps and since = ref (Unix.gettimeofday ()) in
-  let on_idle t ~until =
-    if not (Matrix_test.settle t ~until) then
-      match !steps with
-      | [] | End :: _ -> Matrix_test.stop t
-      | Type bytes :: rest ->
-          steps := rest;
-          since := Unix.gettimeofday ();
-          Matrix_test.feed t bytes
-      | Until ready :: rest ->
-          if ready () then (
-            steps := rest;
-            since := Unix.gettimeofday ())
-          else if Unix.gettimeofday () -. !since > 60. then (
-            print_endline "timed out";
-            Matrix_test.stop t)
-          else Thread.delay 0.001
-  in
-  let t = Matrix_test.create ~width:20 ~height:1 () in
-  run ~on_idle t ?process_perform application
+  let t = terminal ~width:20 ~height:1 () in
+  Mosaic.start ~config:(config t) ?process_perform application (fun r ->
+      Matrix_test.attach ~quiesce:ignore t.s ~step:(Mosaic.step r)
+        ~deadline:(fun () -> Mosaic.deadline r);
+      let rec go = function
+        | [] | End :: _ -> ()
+        | Type bytes :: rest ->
+            feed t bytes;
+            go rest
+        | Until ready :: rest ->
+            let since = Unix.gettimeofday () in
+            let rec wait () =
+              Matrix_test.settle t.s;
+              if ready () then true
+              else if Unix.gettimeofday () -. since > 60. then (
+                print_endline "timed out";
+                false)
+              else (
+                Thread.delay 0.001;
+                wait ())
+            in
+            if wait () then go rest
+      in
+      go steps)
 
 let locked = Mutex.create ()
 let record log s = Mutex.protect locked (fun () -> log := s :: !log)
@@ -2921,34 +2891,30 @@ let%expect_test
     |}]
 
 let%expect_test "a posted message that changes nothing asks for no frame" =
-  (* The driver acts once the first frame is drawn, then reports whether the
-     loop owes a frame when it next goes idle. *)
-  let dispatch = ref ignore and step = ref 0 in
+  (* The frames the run begins count what it was asked for: a frame asked
+     for by a message is drawn when the loop settles. *)
+  let dispatch = ref ignore in
   let application =
     app ~init_cmd:(Mosaic.Cmd.perform (fun d -> dispatch := d)) ()
   in
-  let t = Matrix_test.create ~width:40 ~height:1 () in
-  run
-    ~on_idle:(fun t ~until ->
-      let owed = Matrix_test.frame_owed t in
-      incr step;
-      match !step with
-      | 1 -> ignore (Matrix_test.settle t ~until : bool)
-      | 2 -> List.iter !dispatch [ Ignored; Ignored; Ignored ]
-      | 3 ->
-          Printf.printf "after messages that change nothing: %b\n" owed;
-          !dispatch (Note "changed")
-      | 4 ->
-          Printf.printf "after one that changes the model: %b\n" owed;
-          Matrix_test.stop t
-      | _ -> Matrix_test.stop t)
-    t
+  let t = terminal ~width:40 ~height:1 () in
+  run t
     ~process_perform:(fun work -> work ())
-    application;
+    application
+    (fun _ ->
+      let frames = Matrix_test.frames t.s in
+      List.iter !dispatch [ Ignored; Ignored; Ignored ];
+      Matrix_test.settle t.s;
+      Printf.printf "frames after messages that change nothing: %d\n"
+        (Matrix_test.frames t.s - frames);
+      !dispatch (Note "changed");
+      Matrix_test.settle t.s;
+      Printf.printf "after one that changes the model: %d\n"
+        (Matrix_test.frames t.s - frames));
   [%expect
     {|
-    after messages that change nothing: false
-    after one that changes the model: true
+    frames after messages that change nothing: 0
+    after one that changes the model: 1
     |}]
 
 (* Cost and order. *)
@@ -2975,23 +2941,18 @@ let%expect_test "C1: a read of 1,000 keys is 1,000 updates, painted each frame"
     }
   in
   let mark = ref 0 in
-  let on_idle t ~until =
-    if not (Matrix_test.settle t ~until) then
-      if not !counting then (
-        counting := true;
-        views := 0;
-        mark := String.length (Matrix_test.written t);
-        Matrix_test.feed t (String.make 1000 'a'))
-      else Matrix_test.stop t
-  in
-  let t = Matrix_test.create ~width:20 ~height:1 () in
-  terminal := Some t;
-  run ~on_idle t application;
+  let t = terminal ~width:20 ~height:1 () in
+  current := Some t;
+  run t application (fun _ ->
+      counting := true;
+      views := 0;
+      mark := String.length (written t);
+      feed t (String.make 1000 'a'));
   (* Every frame written begins by hiding the cursor. *)
-  writes := occurrences ~from:!mark (Matrix_test.written t) "\027[?25l";
+  writes := occurrences ~from:!mark (written t) "\027[?25l";
   Printf.printf "%d updates, %d views, %d paints in %d ms\n" !updates !views
     !writes
-    (Matrix_test.elapsed t / 1_000_000);
+    (elapsed t / 1_000_000);
   [%expect {| 1000 updates, 1000 views, 6 paints in 100 ms |}]
 
 let%expect_test "C2: quit ends the run; keys read after it are dropped" =
@@ -3140,8 +3101,8 @@ let%expect_test "timers follow the reference model" =
       }
     in
     let pending = ref None in
-    let t = Matrix_test.create ~width:20 ~height:1 () in
-    terminal := Some t;
+    let t = terminal ~width:20 ~height:1 () in
+    current := Some t;
     let application =
       {
         application with
@@ -3154,33 +3115,35 @@ let%expect_test "timers follow the reference model" =
               ]);
       }
     in
-    run
-      ~on_idle:(fun t ~until ->
-        let now = Matrix_test.elapsed t in
-        let until = Option.map (fun until -> until - start t) until in
-        events := `Turn now :: !events;
-        match !pending with
-        | Some target when now < target ->
-            (* Step to the loop's deadlines as often as past them. *)
-            let step =
-              match until with
-              | Some until when until > now && Random.State.bool rand ->
-                  min (until - now) (target - now)
-              | _ -> target - now
-            in
-            Matrix_test.advance t step
-        | _ -> (
-            match !script with
-            | [] -> Matrix_test.stop t
-            | (set, gap) :: rest ->
-                script := rest;
-                pending := Some (now + gap);
-                events := `Declare (now, set) :: !events;
-                Matrix_test.feed_event t
-                  (Matrix.Key
-                     (Matrix.Input.Keystroke.make (Char (Uchar.of_char 'x'))));
-                declare := set))
-      t application;
+    (* The loop runs at each time the driver moves the clock to, the loop's
+       deadlines as often as past them. *)
+    run t application (fun _ ->
+        let rec loop () =
+          let now = elapsed t in
+          events := `Turn now :: !events;
+          match !pending with
+          | Some target when now < target ->
+              let step =
+                match Matrix_test.deadline t.s with
+                | Some until when until > now && Random.State.bool rand ->
+                    min (until - now) (target - now)
+                | _ -> target - now
+              in
+              Matrix_test.set_time t.s (now + step);
+              Matrix_test.settle t.s;
+              loop ()
+          | _ -> (
+              match !script with
+              | [] -> ()
+              | (set, gap) :: rest ->
+                  script := rest;
+                  pending := Some (now + gap);
+                  events := `Declare (now, set) :: !events;
+                  declare := set;
+                  feed t "x";
+                  loop ())
+        in
+        loop ());
     let expected = reference_timers (List.rev !events) in
     total := !total + List.length expected;
     List.iter (fun (_, _, k) -> if k > 1 then incr counted) expected;
@@ -3193,49 +3156,78 @@ let%expect_test "timers follow the reference model" =
   [%expect
     {|
     0 of 10000 cases differ
-    123306 fires, 79438 with a count above 1
+    128264 fires, 79002 with a count above 1
     |}]
 
-let%expect_test "the driver fails on an animation that never ends" =
-  (* A tick subscription asks for a frame from every frame: no frame is ever
-     quiescent, and the driver says so instead of moving the clock forever. *)
-  (match
-     drive
-       (app
-          ~subs:(fun _ -> Mosaic.Sub.on_tick ~id:"t" (fun ~dt:_ -> Ignored))
-          ())
-       [ `Snap ]
-   with
-  | () -> print_endline "the driver returned"
-  | exception Failure m -> print_endline m);
-  [%expect {| drive: the view never settles (an endless animation?) |}]
+let%expect_test "an animation that never ends settles at each instant" =
+  (* A tick subscription asks for a frame from every frame: that frame waits
+     its interval, so a settle draws one frame and a virtual second at 60
+     frames a second draws 59 more, the 60th coming 20 ns after it, as the
+     interval is 1/60 s rounded to the nanosecond. *)
+  let frames = ref [] in
+  drive
+    (app ~subs:(fun _ -> Mosaic.Sub.on_tick ~id:"t" (fun ~dt:_ -> Ignored)) ())
+    [
+      `Run (fun t -> frames := [ Matrix_test.frames t.s ]);
+      `Advance 1.0;
+      `Run (fun t -> frames := Matrix_test.frames t.s :: !frames);
+    ];
+  (match !frames with
+  | [ after; before ] ->
+      Printf.printf "%d frames, then %d\n" before (after - before)
+  | _ -> ());
+  [%expect {| 1 frames, then 59 |}]
 
 (* A program run with [start] is driven by its caller: [step] never waits,
    [`Idle] leaves the waiting to the caller until [deadline], a message
    dispatched from elsewhere reaches [update], and the end of the input is
    [`Stopped]. *)
 let%expect_test "a caller drives a started program by its steps" =
-  let t = Matrix_test.create ~width:48 ~height:1 () in
-  Mosaic.start ~input:(Matrix_test.input t) ~output:(Matrix_test.output t)
-    ~config:(Matrix_test.config t) (app ~subs:on_keys ()) (fun r ->
+  (* On a pipe the test writes and a file it reads: the program waits for
+     nothing but its frame interval, on the run's own clock. *)
+  let input, writer = Unix.pipe ~cloexec:true () in
+  let path = Filename.temp_file "test_loop" ".out" in
+  let output = Unix.openfile path [ O_RDWR; O_TRUNC; O_CLOEXEC ] 0o600 in
+  Unix.unlink path;
+  (* A pipe has no window: its terminal reports the size in band. *)
+  let report = "\027[48;1;48;0;0t" in
+  ignore (Unix.write_substring writer report 0 (String.length report) : int);
+  let screen () =
+    let vte = Vte.create ~rows:1 ~cols:48 () in
+    let length = (Unix.fstat output).st_size in
+    let b = Bytes.create length in
+    ignore (Unix.lseek output 0 SEEK_SET : int);
+    let rec read off =
+      if off < length then read (off + Unix.read output b off (length - off))
+    in
+    read 0;
+    ignore (Vte.feed vte b 0 length : _ list);
+    String.trim (Vte.text vte 0)
+  in
+  Mosaic.start ~input ~output ~config:(Matrix.config ~caps ())
+    (app ~subs:on_keys ()) (fun r ->
       let rec until_idle () =
-        match Mosaic.step r ~now:(Matrix_test.now t) with
+        match Mosaic.step r ~now:(Matrix.clock ()) with
         | `Stepped -> until_idle ()
         | `Stopped -> print_endline "stopped"
         | `Idle -> (
             match Mosaic.deadline r with
             | Some deadline ->
-                Matrix_test.advance t (max 0 (deadline - Matrix_test.now t));
+                Unix.sleepf
+                  (Float.max 0.
+                     (Float.of_int (deadline - Matrix.clock ()) *. 1e-9));
                 until_idle ()
-            | None -> print_endline (String.trim (Matrix_test.screen t)))
+            | None -> print_endline (screen ()))
       in
       until_idle ();
       Mosaic.dispatch r (Note "dispatched");
       until_idle ();
-      Matrix_test.feed t "a";
+      ignore (Unix.write_substring writer "a" 0 1 : int);
       until_idle ();
-      Matrix_test.stop t;
+      Unix.close writer;
       until_idle ());
+  Unix.close input;
+  Unix.close output;
   [%expect
     {|
     keys:[] ticks:0 size:- note:-
@@ -3249,19 +3241,22 @@ let%expect_test "a caller drives a started program by its steps" =
 let%expect_test "a stop requested before the start ends the program" =
   let stop = Matrix.Stop.create () in
   Matrix.Stop.request stop;
-  let t = Matrix_test.create ~width:48 ~height:1 () in
+  let t = terminal ~width:48 ~height:1 () in
   let updates = ref 0 in
   let base = app ~subs:on_keys () in
-  Matrix_test.feed t "a";
-  run ~stop
-    ~on_idle:(fun _ ~until:_ -> failwith "the program went idle")
-    t
+  Mosaic.start ~config:(config t) ~stop
     {
       base with
       update =
         (fun msg m ->
           incr updates;
           base.update msg m);
-    };
+    }
+    (fun r ->
+      (* A message for the program before its first step. *)
+      Mosaic.dispatch r (Pressed "a");
+      Matrix_test.attach t.s ~step:(Mosaic.step r) ~deadline:(fun () ->
+          Mosaic.deadline r);
+      is_true ~msg:"ended at its first step" (Matrix_test.ended t.s));
   Printf.printf "updates: %d\n" !updates;
   [%expect {| updates: 0 |}]

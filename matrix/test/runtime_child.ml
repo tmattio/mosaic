@@ -4,8 +4,9 @@
    quits. With the arguments [served PATH], it also runs a second session on
    the terminal at [PATH], in a domain of its own, which draws SERVED; with
    [only-served PATH], it runs that session alone. With [keys], it draws
-   every letter typed, until [q]. Without arguments, [x] calls [exit 3]
-   inside the run. *)
+   every letter typed, until [q]. With [goodbye], it draws its size until
+   [q], then prints GOODBYE on the primary screen. Without arguments, [x]
+   calls [exit 3] inside the run. *)
 
 let ready app =
   let frames = ref 0 in
@@ -56,6 +57,21 @@ let keys app =
   in
   loop ()
 
+let goodbye app =
+  let rec loop () =
+    match Matrix.next app with
+    | Stopped -> ()
+    | Frame ->
+        let cols, rows = Matrix.size app in
+        Matrix.draw app (fun grid ->
+            Matrix.Grid.draw_text grid ~x:0 ~y:0
+              ~text:(Printf.sprintf "SIZE %dx%d" cols rows));
+        loop ()
+    | Event (Key { key = Char c; _ }) when Uchar.to_int c = 0x71 (* q *) -> ()
+    | Event _ | Timer _ | Posted _ -> loop ()
+  in
+  loop ()
+
 let served path =
   Domain.spawn (fun () ->
       let fd = Unix.openfile path [ O_RDWR; O_NOCTTY; O_CLOEXEC ] 0 in
@@ -75,6 +91,9 @@ let () =
   match Sys.argv with
   | [| _; "only-served"; path |] -> Domain.join (served path)
   | [| _; "keys" |] -> Matrix.run keys
+  | [| _; "goodbye" |] ->
+      Matrix.run goodbye;
+      print_string "GOODBYE\n"
   | [| _; "primary" |] ->
       Matrix.run ~config:(Matrix.config ~mode:`Primary ()) ready
   | [| _; "served"; path |] ->

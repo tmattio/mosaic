@@ -112,7 +112,7 @@
 (executable
  (name bench_runtime)
  (modules bench_runtime)
- (libraries thumper mosaic matrix matrix.test))
+ (libraries thumper mosaic matrix matrix.vte unix))
 
 (rule
  (alias runtest)
