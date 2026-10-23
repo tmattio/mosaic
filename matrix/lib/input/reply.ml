@@ -332,8 +332,10 @@ let add_nats b l =
       add_nat b n)
     l
 
-(* Rows and columns count from 1 in the bytes. *)
+(* Rows and columns count from 1 in the bytes, so -1 would write 0, which
+   reads back as row or column 0. *)
 let add_position b n =
+  if n < 0 then invalid "a negative number";
   if n = max_int then invalid "a position of max_int";
   add_nat b (n + 1)
 

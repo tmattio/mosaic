@@ -675,6 +675,8 @@ let unencodable () =
       [
         ("a negative number", Primary_attributes [ -1 ]);
         ("a row of max_int", Cursor { row = max_int; col = 0; page = None });
+        ("a negative row", Cursor { row = -1; col = 0; page = None });
+        ("a negative column", Cursor { row = 0; col = -1; page = Some 1 });
         ("page 0", Cursor { row = 0; col = 0; page = Some 0 });
         ( "a channel above 255",
           Color { target = `Foreground; rgb = (256, 0, 0); terminator = `St } );
