@@ -921,9 +921,9 @@ module Sub : sig
   type 'msg t =
     | None  (** No subscription. Equivalent to [batch []]. *)
     | Batch of 'msg t list  (** Activate all subscriptions in the list. *)
-    | Every of string * float * (unit -> 'msg)
-        (** [Every (id, interval, f)] fires [f ()] repeatedly at approximately
-            [interval]-second intervals. *)
+    | Every of string * float * (int -> 'msg)
+        (** [Every (id, period, f)] fires [f k] every [period] seconds; see
+            {!val-every}. *)
     | On_tick of string * (dt:float -> 'msg)
         (** [On_tick (id, f)] fires [f ~dt] on every render frame, where [dt] is
             the elapsed time in seconds since the previous frame. *)
@@ -961,12 +961,23 @@ module Sub : sig
   (** [batch subs] is a subscription that activates every subscription in
       [subs]. *)
 
-  val every : id:string -> float -> (unit -> 'msg) -> 'msg t
-  (** [every ~id interval f] fires on a fixed-rate schedule while subscribed.
-      [id] keeps the schedule stable across reordering. Changing the interval
-      restarts it. Timer and tick IDs must be nonempty and unique within the
-      application's subscriptions. Raises [Invalid_argument] for an empty ID or
-      an interval that is nonpositive or nonfinite. *)
+  val every : id:string -> float -> (int -> 'msg) -> 'msg t
+  (** [every ~id period f] fires on the grid [origin + n * period], [origin] the
+      time [id] first appeared in the subscriptions, and dispatches [f k].
+      [k >= 1] is the number of periods that ended since its previous call: [1]
+      on time, more when the loop could not run for longer than a period (a long
+      [update], a stopped process). The grid does not drift: a late call does
+      not move the next one, and a timer never fires twice in a turn. Timers
+      that come due in the same turn fire in the order of their grid points.
+
+      The subscription is the timer: keeping [id] keeps its grid, declaring it
+      with another [period] starts a new grid at that time, and dropping [id]
+      stops it. A pending timer costs nothing until it fires. Not for animation:
+      use {!val-on_tick}.
+
+      Raises [Invalid_argument] if [id] is empty or [period] is not positive and
+      finite. The run raises it when two subscriptions declare the same id,
+      among those that take one ({!val-every}, {!val-on_tick}). *)
 
   val on_tick : id:string -> (dt:float -> 'msg) -> 'msg t
   (** [on_tick ~id f] fires [f ~dt] on every rendered frame. [dt] is the elapsed

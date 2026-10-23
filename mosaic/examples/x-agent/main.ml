@@ -434,7 +434,7 @@ let view model =
 let subscriptions model =
   let tick =
     match model.state with
-    | Streaming -> Sub.every ~id:"stream" 0.05 (fun () -> Tick)
+    | Streaming -> Sub.every ~id:"stream" 0.05 (fun _periods -> Tick)
     | _ -> Sub.none
   in
   (* The prompt is always focused and types every printable key. While a

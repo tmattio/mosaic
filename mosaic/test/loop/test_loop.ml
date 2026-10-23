@@ -15,6 +15,7 @@ type model = {
 type msg =
   | Pressed of string
   | Tick
+  | Ticks of int
   | Resized of int * int
   | Note of string
   | Ignored
@@ -34,6 +35,7 @@ let update msg model =
   | Pressed name ->
       ({ model with keys = model.keys @ [ name ] }, Mosaic.Cmd.none)
   | Tick -> ({ model with ticks = model.ticks + 1 }, Mosaic.Cmd.none)
+  | Ticks n -> ({ model with ticks = model.ticks + n }, Mosaic.Cmd.none)
   | Resized (w, h) -> ({ model with size = Some (w, h) }, Mosaic.Cmd.none)
   | Note note -> ({ model with note }, Mosaic.Cmd.none)
   | Ignored -> (model, Mosaic.Cmd.none)
@@ -181,7 +183,9 @@ let%expect_test "escape sequences decode as single keys" =
 
 let%expect_test "virtual time drives every-subscriptions deterministically" =
   drive
-    (app ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 1.0 (fun () -> Tick)) ())
+    (app
+       ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 1.0 (fun k -> Ticks k))
+       ())
     [
       `Snap;
       `Advance 1.0;
@@ -219,7 +223,7 @@ let%expect_test "live animation frames deliver a millisecond delta" =
   let application =
     {
       (app
-         ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 0.2 (fun () -> Tick))
+         ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 0.2 (fun k -> Ticks k))
          ())
       with
       Mosaic.view =
@@ -245,7 +249,7 @@ let%expect_test "a pending every-timer renders only when it fires" =
      must move exactly once when the timer fires. *)
   let views = ref 0 in
   let base =
-    app ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 1.0 (fun () -> Tick)) ()
+    app ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 1.0 (fun k -> Ticks k)) ()
   in
   let application =
     {
@@ -482,7 +486,9 @@ let%expect_test "an every-timer stepped exactly onto its deadline keeps firing"
     steps := `Snap :: `Advance 0.1 :: !steps
   done;
   drive
-    (app ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 0.1 (fun () -> Tick)) ())
+    (app
+       ~subs:(fun _ -> Mosaic.Sub.every ~id:"timer" 0.1 (fun k -> Ticks k))
+       ())
     (List.rev !steps);
   [%expect
     {|
@@ -716,10 +722,10 @@ let%expect_test "same-interval timers keep independent phases" =
   let subs model =
     Mosaic.Sub.batch
       (Mosaic.Sub.on_key (fun _ -> Some (Note "on"))
-      :: Mosaic.Sub.every ~id:"first" 1.0 (fun () -> Pressed "a")
+      :: Mosaic.Sub.every ~id:"first" 1.0 (fun _ -> Pressed "a")
       ::
       (if String.equal model.note "on" then
-         [ Mosaic.Sub.every ~id:"second" 1.0 (fun () -> Pressed "b") ]
+         [ Mosaic.Sub.every ~id:"second" 1.0 (fun _ -> Pressed "b") ]
        else []))
   in
   drive (app ~subs ())
@@ -748,7 +754,7 @@ let%expect_test "a timer stepped deadline by deadline keeps the nominal grid" =
      and an exact comparison then lost the final fire beyond the stop (19,
      then 29). The accumulating driver above is the mirror image: there the
      clock is the side that drifts. *)
-  let subs _ = Mosaic.Sub.every ~id:"timer" 0.1 (fun () -> Tick) in
+  let subs _ = Mosaic.Sub.every ~id:"timer" 0.1 (fun k -> Ticks k) in
   drive (app ~subs ()) [ `Step_to 2.0; `Snap; `Step_to 3.0; `Snap ];
   [%expect
     {||keys:[] ticks:20 size:- note:-
@@ -1228,8 +1234,8 @@ let%expect_test
     "reordering timer IDs preserves independent equal-interval phases" =
   let observed = ref initial in
   let subs model =
-    let a = Mosaic.Sub.every ~id:"a" 1.0 (fun () -> Pressed "a") in
-    let b = Mosaic.Sub.every ~id:"b" 1.0 (fun () -> Pressed "b") in
+    let a = Mosaic.Sub.every ~id:"a" 1.0 (fun _ -> Pressed "a") in
+    let b = Mosaic.Sub.every ~id:"b" 1.0 (fun _ -> Pressed "b") in
     let timers =
       match model.note with "-" -> [ a ] | "added" -> [ a; b ] | _ -> [ b; a ]
     in
@@ -1549,7 +1555,7 @@ let%expect_test "timer ids must be unique across every and on_tick" =
   let subs _ =
     Mosaic.Sub.batch
       [
-        Mosaic.Sub.every ~id:"clock" 1. (fun () -> Tick);
+        Mosaic.Sub.every ~id:"clock" 1. (fun k -> Ticks k);
         Mosaic.Sub.on_tick ~id:"clock" (fun ~dt:_ -> Tick);
       ]
   in
@@ -2081,3 +2087,148 @@ let%expect_test "an unprevented Ctrl+C quits" =
   equal ~msg:"prevented, the run goes on" (list string) [ "a"; "c"; "b" ]
     (run ~prevent:true);
   [%expect {| |}]
+
+(* Time. An update that moves the virtual clock stands for one that takes
+   that long to run: the loop cannot run meanwhile, so every deadline in
+   between is due at once when it returns. *)
+
+let terminal = ref None
+let stall seconds = Matrix_test.advance (Option.get !terminal) (ns seconds)
+let clock () = Matrix_test.now (Option.get !terminal)
+
+type timed = Stall | Fired of string * int
+
+let timed_app ~subs ~log =
+  {
+    Mosaic.init = (fun () -> (0, Mosaic.Cmd.none));
+    update =
+      (fun msg views ->
+        (match msg with
+        | Stall -> stall 1.0
+        | Fired (id, periods) -> log := (id, periods, clock ()) :: !log);
+        (views, Mosaic.Cmd.none));
+    view = (fun _ -> Mosaic.text "timers");
+    subscriptions = subs;
+  }
+
+(* Runs [application] with a driver that moves the clock to each deadline
+   the loop waits for, frames included, until [seconds]. *)
+let run_until seconds application =
+  let target = ns seconds in
+  let on_idle t ~until =
+    match until with
+    | Some until when until <= target ->
+        Matrix_test.advance t (until - Matrix_test.now t)
+    | Some _ | None -> Matrix_test.stop t
+  in
+  let t = Matrix_test.create ~on_idle ~width:20 ~height:1 () in
+  terminal := Some t;
+  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+    application
+
+let on_s msg =
+  Mosaic.Sub.on_key (fun key -> if key_name key = "s" then Some msg else None)
+
+let print_fires log =
+  List.rev log
+  |> List.iter (fun (id, periods, at) ->
+      Printf.printf "%s x%d at %d ms\n" id periods (at / 1_000_000))
+
+let%expect_test "T1: timers due together fire once each, in deadline order" =
+  let log = ref [] in
+  let subs _ =
+    Mosaic.Sub.batch
+      [
+        Mosaic.Sub.every ~id:"A" 0.1 (fun k -> Fired ("A", k));
+        Mosaic.Sub.every ~id:"B" 0.25 (fun k -> Fired ("B", k));
+        on_s Stall;
+      ]
+  in
+  drive (timed_app ~subs ~log)
+    [
+      `Run (fun t -> terminal := Some t); `Advance 0.05; `Feed "s"; `Step_to 1.5;
+    ];
+  print_fires !log;
+  [%expect
+    {|
+    A x10 at 1050 ms
+    B x4 at 1050 ms
+    A x1 at 1100 ms
+    A x1 at 1200 ms
+    B x1 at 1250 ms
+    A x1 at 1300 ms
+    A x1 at 1400 ms
+    A x1 at 1500 ms
+    B x1 at 1500 ms
+    |}]
+
+let%expect_test "T2: timers keep their grid over 600 s of frames" =
+  let fires = Hashtbl.create 2 and error = ref 0 in
+  let period = function "A" -> ns 1.0 | _ -> ns 0.1 in
+  let log = ref [] in
+  let subs _ =
+    Mosaic.Sub.batch
+      [
+        Mosaic.Sub.every ~id:"A" 1.0 (fun k -> Fired ("A", k));
+        Mosaic.Sub.every ~id:"B" 0.1 (fun k -> Fired ("B", k));
+        Mosaic.Sub.on_tick ~id:"frames" (fun ~dt:_ -> Stall);
+      ]
+  in
+  let application =
+    {
+      (timed_app ~subs ~log) with
+      update =
+        (fun msg views ->
+          (match msg with
+          | Fired (id, periods) ->
+              let n =
+                periods + Option.value ~default:0 (Hashtbl.find_opt fires id)
+              in
+              Hashtbl.replace fires id n;
+              error := max !error (abs (clock () - (n * period id)))
+          | Stall -> ());
+          (views, Mosaic.Cmd.none));
+    }
+  in
+  run_until 600. application;
+  Printf.printf "A %d, B %d, largest error %d ns\n" (Hashtbl.find fires "A")
+    (Hashtbl.find fires "B") !error;
+  [%expect {| A 600, B 6000, largest error 0 ns |}]
+
+let%expect_test "T3: a timer that missed periods fires once with their count" =
+  let log = ref [] and views = ref 0 in
+  let subs _ =
+    Mosaic.Sub.batch
+      [ Mosaic.Sub.every ~id:"A" 0.1 (fun k -> Fired ("A", k)); on_s Stall ]
+  in
+  let application =
+    {
+      (timed_app ~subs ~log) with
+      update =
+        (fun msg views ->
+          (match msg with
+          | Stall -> stall 10.
+          | Fired (id, periods) -> log := (id, periods, clock ()) :: !log);
+          (views + 1, Mosaic.Cmd.none));
+      view =
+        (fun _ ->
+          incr views;
+          Mosaic.text "timers");
+    }
+  in
+  let before = ref 0 in
+  drive application
+    [
+      `Run (fun t -> terminal := Some t);
+      `Advance 0.05;
+      `Run (fun _ -> before := !views);
+      `Feed "s";
+      `Run
+        (fun _ ->
+          Printf.printf "views after the stall: %d\n" (!views - !before));
+    ];
+  print_fires !log;
+  [%expect {|
+    views after the stall: 2
+    A x100 at 10050 ms
+    |}]

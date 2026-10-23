@@ -240,7 +240,7 @@ module Sub = struct
   type 'msg t =
     | None
     | Batch of 'msg t list
-    | Every of string * float * (unit -> 'msg)
+    | Every of string * float * (int -> 'msg)
     | On_tick of string * (dt:float -> 'msg)
     | On_key of phase * (Event.key -> 'msg option)
     | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
@@ -255,11 +255,11 @@ module Sub = struct
   let none = None
   let batch subs = Batch subs
 
-  let every ~id interval f =
-    if id = "" || (not (Float.is_finite interval)) || interval <= 0. then
+  let every ~id period f =
+    if id = "" || (not (Float.is_finite period)) || period <= 0. then
       invalid_arg
-        "Mosaic.Sub.every: nonempty id and positive finite interval required";
-    Every (id, interval, f)
+        "Mosaic.Sub.every: nonempty id and positive finite period required";
+    Every (id, period, f)
 
   let on_tick ~id f =
     if id = "" then invalid_arg "Mosaic.Sub.on_tick: empty id";
@@ -295,7 +295,7 @@ module Sub = struct
     match sub with
     | None -> None
     | Batch subs -> Batch (List.map (map f) subs)
-    | Every (id, interval, g) -> Every (id, interval, fun () -> f (g ()))
+    | Every (id, period, g) -> Every (id, period, fun k -> f (g k))
     | On_tick (id, g) -> On_tick (id, fun ~dt -> f (g ~dt))
     | On_key (phase, g) -> On_key (phase, fun ev -> Option.map f (g ev))
     | On_key_release g -> On_key_release (fun ev -> Option.map f (g ev))
@@ -316,16 +316,17 @@ type ('model, 'msg) app = {
   subscriptions : 'model -> 'msg Sub.t;
 }
 
-(* Every-timer state. A timer's deadlines are the fixed-rate schedule
-   [origin + n * interval] for [n = 1, 2, ...], in the runtime's integer
-   nanoseconds, computed from the origin and the fire count each time: an
-   exact grid, which a clock read and compared with it reaches exactly. *)
+(* Every-timer state. A timer's grid is [origin + n * interval] for
+   [n = 1, 2, ...], in the runtime's integer nanoseconds, computed from the
+   origin each time: an exact grid, which a clock read and compared with it
+   reaches exactly. [fired] is the last [n] it fired for, so its deadline is
+   the grid point after it. *)
 type 'msg every_timer = {
   id : string;
   interval : int;
   origin : int;
-  fired : int;
-  callback : unit -> 'msg;
+  mutable fired : int;
+  callback : int -> 'msg;
 }
 
 let every_deadline timer = timer.origin + ((timer.fired + 1) * timer.interval)
@@ -661,26 +662,34 @@ let handle_resize runtime ~width ~height =
 let handle_tick runtime ~dt =
   List.iter (fun pair -> push_msg runtime ((snd pair) ~dt)) runtime.tick_sub
 
-(* A paste in progress that has been silent as long as a stall subscription
-   waits dispatches its message, once per silence. *)
-let handle_paste_stalls runtime =
+(* The timers whose deadline the turn reached fire once each, in the order of
+   their deadlines: an every-timer with the periods that ended since it last
+   fired, which is more than one after a stall, and a paste stall. *)
+let handle_timers runtime =
   let now = Matrix.now runtime.matrix_app in
-  List.iter
-    (fun (due, msg) -> if now >= due then push_msg runtime msg)
-    (paste_stalls runtime);
-  runtime.paste_checked <- now
-
-let handle_every_subs runtime =
-  let now = Matrix.now runtime.matrix_app in
-  runtime.every_subs <-
-    List.map
+  let every =
+    List.filter_map
       (fun timer ->
-        if now >= every_deadline timer then begin
-          push_msg runtime (timer.callback ());
-          { timer with fired = timer.fired + 1 }
-        end
-        else timer)
+        let deadline = every_deadline timer in
+        if deadline > now then None
+        else
+          Some
+            ( deadline,
+              fun () ->
+                let ended = (now - timer.origin) / timer.interval in
+                let periods = ended - timer.fired in
+                timer.fired <- ended;
+                timer.callback periods ))
       runtime.every_subs
+  in
+  let stalls =
+    List.filter_map
+      (fun (due, msg) -> if due <= now then Some (due, fun () -> msg) else None)
+      (paste_stalls runtime)
+  in
+  runtime.paste_checked <- now;
+  List.stable_sort (fun (a, _) (b, _) -> Int.compare a b) (every @ stalls)
+  |> List.iter (fun (_, fire) -> push_msg runtime (fire ()))
 
 (* The paste in progress received data: its silence starts again. *)
 let paste_heard runtime =
@@ -933,8 +942,7 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
     match runtime.wakeup with
     | Some (armed, _) when armed = fired ->
         runtime.wakeup <- None;
-        handle_every_subs runtime;
-        handle_paste_stalls runtime;
+        handle_timers runtime;
         synchronize runtime;
         (* A fired timer moved its deadline even when no message re-collected
            subscriptions, so the wakeup re-arms here. *)

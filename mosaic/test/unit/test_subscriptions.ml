@@ -63,22 +63,22 @@ let sub_on_tick_produces_messages () =
 
 let sub_every_produces_messages () =
   (* Verify that Sub.every produces a message when called. *)
-  let sub = Sub.every ~id:"countdown" 1.0 (fun () -> Every_fired) in
+  let sub = Sub.every ~id:"countdown" 1.0 (fun _ -> Every_fired) in
   match sub with
   | Sub.Every (id, interval, f) -> (
       equal ~msg:"stable timer identity" string "countdown" id;
       equal ~msg:"interval" (float 0.001) 1.0 interval;
-      let msg = f () in
+      let msg = f 1 in
       match msg with Every_fired -> () | _ -> fail "expected Every_fired msg")
   | _ -> fail "expected Every sub"
 
 let sub_every_map_preserves_identity () =
-  let original = Sub.every ~id:"refresh" 0.5 (fun () -> 3) in
+  let original = Sub.every ~id:"refresh" 0.5 (fun periods -> 3 * periods) in
   match Sub.map (fun n -> n + 1) original with
   | Sub.Every (id, interval, f) ->
       equal string "refresh" id;
       equal float_exact 0.5 interval;
-      equal int 4 (f ())
+      equal ~msg:"the count reaches the mapped callback" int 7 (f 2)
   | _ -> fail "expected Every sub"
 
 let timer_model_accumulates_elapsed () =
@@ -115,7 +115,7 @@ let sub_batch_flattens () =
       [
         Sub.on_tick ~id:"frame" (fun ~dt -> Tick dt);
         Sub.on_key (fun _ -> None);
-        Sub.every ~id:"batch-timer" 2.0 (fun () -> Every_fired);
+        Sub.every ~id:"batch-timer" 2.0 (fun _ -> Every_fired);
       ]
   in
   let flat = flatten_sub subs in
