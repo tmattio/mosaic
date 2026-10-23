@@ -1,35 +1,35 @@
-(** Unicode property lookups.
+(** The Unicode properties of scalars that segmentation and widths read.
 
-    O(1) property lookups for grapheme segmentation and display-width
-    calculation using compact two-level page tables generated from
-    {{:https://github.com/ocaml/uucp}uucp}. See
-    [matrix/support/gen_unicode_data.ml] for the generator. *)
+    The properties come from tables that [matrix/support/gen_unicode_data.ml]
+    generates from {{:https://github.com/ocaml/uucp}uucp}, in {!Unicode_data}. A
+    lookup reads one table entry and allocates nothing. *)
 
 (** {1:grapheme Grapheme properties} *)
 
 val grapheme_cluster_break : Uchar.t -> int
 (** [grapheme_cluster_break u] is the
-    {{:https://www.unicode.org/reports/tr29/}UAX #29} Grapheme Cluster Break
-    property of [u] as an index in \[0;17\]. *)
+    {{:https://www.unicode.org/reports/tr29/}UAX #29} Grapheme_Cluster_Break
+    property of [u], as an index in \[0;17\] in uucp's order of its values. *)
 
 val indic_conjunct_break : Uchar.t -> int
-(** [indic_conjunct_break u] is the Indic Conjunct Break property of [u] as an
-    index in \[0;3\]. Used for rule GB9c in UAX #29. *)
+(** [indic_conjunct_break u] is the Indic_Conjunct_Break property of [u], as an
+    index in \[0;3\], which rule GB9c of UAX #29 reads. *)
 
 val is_extended_pictographic : Uchar.t -> bool
 (** [is_extended_pictographic u] is [true] iff [u] has the Extended_Pictographic
-    property. Used for rule GB11 in UAX #29. *)
+    property, which rule GB11 of UAX #29 reads. *)
 
 (** {1:width Width} *)
 
 val tty_width_hint : Uchar.t -> int
-(** [tty_width_hint u] is the suggested terminal display width of [u]:
+(** [tty_width_hint u] is the width of [u] in a terminal that measures each
+    scalar alone:
     - [-1] for control characters (C0, DEL, C1).
-    - [0] for non-spacing marks and format characters, and for the Hangul
+    - [0] for nonspacing marks and format characters, and for the Hangul
       conjoining vowels and trailing consonants (U+1160..U+11FF,
-      U+D7B0..U+D7FF): a leading consonant before them composes them into one
-      syllable (Unicode §3.12), as wide as the consonant. wcwidth gives them 0
-      (Markus Kuhn's, glibc's, xterm's).
+      U+D7B0..U+D7FF). A leading consonant before them composes them into one
+      syllable (Unicode §3.12), as wide as the consonant, and the [wcwidth]s of
+      Markus Kuhn, glibc and xterm give them 0.
     - [1] for most characters.
     - [2] for the characters whose East_Asian_Width is Wide (W) or Fullwidth (F)
       ({{:https://www.unicode.org/reports/tr11/}UAX #11}).
@@ -47,24 +47,25 @@ val is_emoji : Uchar.t -> bool
 
 val is_emoji_modifier_base : Uchar.t -> bool
 (** [is_emoji_modifier_base u] is [true] iff [u] has the Emoji_Modifier_Base
-    property: an emoji modifier (U+1F3FB..U+1F3FF) after it makes an emoji
-    modifier sequence, which has the emoji presentation, of width [2], whatever
-    the base's own ({{:https://www.unicode.org/reports/tr51/}UTS #51} §2.7.1).
-    U+261D WHITE UP POINTING INDEX is one of width [1]. *)
+    property. An emoji modifier (U+1F3FB..U+1F3FF) after such a character makes
+    an emoji modifier sequence, which has the emoji presentation, of width [2],
+    whatever the base's own ({{:https://www.unicode.org/reports/tr51/}UTS #51}
+    §2.7.1). U+261D WHITE UP POINTING INDEX is one of width [1]. *)
 
 (** {1:combined Combined lookups} *)
 
 val packed_props : Uchar.t -> int
-(** [packed_props u] is all properties in a single table lookup. Bit layout:
-    bits 0–4 = gcb, bits 5–6 = incb, bit 7 = extpic, bits 8–9 = width encoding
-    (0 = -1, 1 = 0, 2 = 1, 3 = 2), bit 10 = zero width inside a grapheme, bit 11
-    = emoji, bit 12 = emoji modifier base, bit 13 = spacing mark
+(** [packed_props u] is the properties of [u] in one integer. Bits 0 to 4 are
+    {!grapheme_cluster_break}, bits 5 and 6 {!indic_conjunct_break}, bit 7
+    {!is_extended_pictographic}, bits 8 and 9 {!tty_width_hint} plus one, bit 10
+    {!is_zero_in_grapheme}, bit 11 {!is_emoji}, bit 12
+    {!is_emoji_modifier_base}, and bit 13 is set for a spacing mark
     (General_Category Mc). *)
 
 val grapheme_props : Uchar.t -> int
-(** [grapheme_props u] is all grapheme properties in a single lookup. Bit
-    layout: bits 0–4 = gcb, bits 5–6 = incb, bit 7 = extpic. *)
+(** [grapheme_props u] is the low 8 bits of {!packed_props}[ u], the properties
+    that grapheme cluster boundaries read. *)
 
 val is_zero_in_grapheme : Uchar.t -> bool
-(** [is_zero_in_grapheme u] is [true] when [u] contributes no additional width
-    inside a cluster under the wider grapheme policy. *)
+(** [is_zero_in_grapheme u] is [true] iff [u] adds nothing to the width of a
+    cluster it continues under [`Unicode_wide]. *)
