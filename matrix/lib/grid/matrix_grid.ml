@@ -351,16 +351,23 @@ let get_style t idx =
   Ansi.Style.make ~fg:(get_fg t idx) ~bg:(get_bg t idx) ?link ()
   |> Ansi.Style.with_attrs attrs
 
+(* A cell has text when it is neither empty nor a continuation. *)
+let[@inline] has_text c =
+  not (c = Packed_cell.empty || Packed_cell.is_continuation c)
+
 let get_text t idx =
   let c = Buf.get_cell t.chars idx in
-  if c = Packed_cell.empty || Packed_cell.is_continuation c then ""
-  else Packed_cell.to_string t.grapheme_store c
+  if has_text c then Packed_cell.to_string t.grapheme_store c else ""
 
 let cell_text_length t idx =
-  Packed_cell.length t.grapheme_store (Buf.get_cell t.chars idx)
+  let c = Buf.get_cell t.chars idx in
+  if has_text c then Packed_cell.length t.grapheme_store c else 0
 
 let blit_cell_text t idx buf ~pos =
-  Packed_cell.blit t.grapheme_store (Buf.get_cell t.chars idx) buf ~pos
+  if pos < 0 || pos > Bytes.length buf then
+    invalid_arg "Matrix_grid.blit_cell_text: position out of bounds";
+  let c = Buf.get_cell t.chars idx in
+  if has_text c then Packed_cell.blit t.grapheme_store c buf ~pos else 0
 
 let is_empty t idx = Buf.get_cell t.chars idx = Packed_cell.empty
 

@@ -1976,8 +1976,26 @@ let erase_unprotected_keeps_rendition () =
   equal ~msg:"no grapheme left" int 0 (fst (Grid.grapheme_stats grid));
   assert_valid_spans grid
 
+(* A cell's text is what [get_text] gives: nothing for an empty cell and for
+   the continuation cells of a wide grapheme. *)
+let cell_text_of_empty_and_continuation_cells () =
+  let grid = Grid.create ~width:6 ~height:1 () in
+  Grid.draw_text grid ~x:0 ~y:0 ~text:"\u{4E2D}\u{1F469}\u{200D}\u{1F680}";
+  Grid.set_uchar grid ~x:4 ~y:0 ~uchar:Uchar.min ~fg:Ansi.Color.white
+    ~bg:Ansi.Color.black ~attrs:Ansi.Attr.empty ();
+  let buf = Bytes.make 16 'x' in
+  List.iter
+    (fun (name, x) ->
+      equal ~msg:(name ^ ": get_text") string "" (Grid.get_text grid x);
+      equal ~msg:(name ^ ": length") int 0 (Grid.cell_text_length grid x);
+      equal ~msg:(name ^ ": blit") int 0 (Grid.blit_cell_text grid x buf ~pos:0))
+    [ ("inline continuation", 1); ("stored continuation", 3); ("empty", 4) ];
+  equal ~msg:"nothing written" string (String.make 16 'x') (Bytes.to_string buf)
+
 let tests =
   [
+    test "cell text of empty and continuation cells"
+      cell_text_of_empty_and_continuation_cells;
     test "span of every cell" span_of_every_cell;
     test "overwritten hyperlinks are collected"
       overwritten_hyperlinks_are_collected;

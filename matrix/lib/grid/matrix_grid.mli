@@ -148,17 +148,14 @@ val get_text : t -> int -> string
     continuation cell. *)
 
 val cell_text_length : t -> int -> int
-(** [cell_text_length g idx] is the number of bytes {!blit_cell_text} writes for
-    cell [idx]. For a start cell it is the length of its grapheme, and for an
-    empty cell [1], the length of U+0000. For a continuation cell it is the
-    length of its grapheme if the grapheme takes a slot of the storage, and [0]
-    otherwise. *)
+(** [cell_text_length g idx] is the length in bytes of {!get_text}[ g idx], [0]
+    for an empty or a continuation cell, computed without allocating. *)
 
 val blit_cell_text : t -> int -> bytes -> pos:int -> int
-(** [blit_cell_text g idx dst ~pos] writes the UTF-8 of cell [idx] into [dst]
-    from [pos] and is the number of bytes written, [cell_text_length g idx]. It
-    writes U+0000 for an empty cell. It writes nothing and is [0] if the bytes
-    do not fit in [dst].
+(** [blit_cell_text g idx dst ~pos] writes {!get_text}[ g idx] into [dst] from
+    [pos] and is the number of bytes written, [cell_text_length g idx]. It
+    writes nothing and is [0] for an empty or a continuation cell, or if the
+    bytes do not fit in [dst].
 
     Raises [Invalid_argument] if [pos < 0] or [pos > Bytes.length dst]. *)
 
