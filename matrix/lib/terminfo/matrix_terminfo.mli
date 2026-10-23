@@ -86,18 +86,40 @@ val vars : unit -> vars
 (** [vars ()] is a set of static variables, all zero. *)
 
 val expand : ?vars:vars -> string -> param list -> string
-(** [expand ~vars s params] is [s] with its [%] codes evaluated on [params], the
-    first being [%p1], as tparm(3x) does: printf(3)'s conversions [%d], [%o],
-    [%x], [%X] and [%s] with their flags, width and precision ([%:-5d]), [%c],
-    [%p1] to [%p9], the variables [%P] and [%g], the constants [%'c'] and
-    [%{nn}], [%l], the arithmetic, bitwise and logical operators, [%i] and the
-    conditional [%? c %t then %e else %;] with its else-ifs. A parameter not
-    given is [0]. As in ncurses: numbers are C ints (32 bits); a missing stack
-    operand is [0] or [""]; a string popped as a number is [0] and a number
-    popped as a string is [""]; [%i] adds one only once; [%c] of [0] writes the
-    byte 0200; an unknown code writes nothing; and the dynamic variables [a] to
-    [z] start at zero in each expansion. The static ones are [vars], fresh ones
-    if it is not given. Delays are left as they are ({!pieces}). *)
+(** [expand ~vars s params] is [s] with its [%] codes evaluated on [params],
+    as tparm(3x) evaluates them. The first parameter is [%p1], and a parameter
+    not given is [0]. The codes are printf(3)'s conversions [%d], [%o], [%x],
+    [%X] and [%s] with their flags, width and precision ([%:-5d]), [%c], [%p1]
+    to [%p9], the variables [%P] and [%g], the constants [%'c'] and [%{nn}],
+    [%l], the arithmetic, bitwise and logical operators, [%i], and the
+    conditional [%? c %t then %e else %;] with its else-ifs. The static
+    variables are [vars], or fresh ones when it is not given. The dynamic
+    variables, [a] to [z], start at zero in each expansion. Delays stay in
+    the result ({!pieces}).
+
+    Where terminfo(5) leaves a case open, or ncurses' tparm departs from it,
+    [expand] does what tparm does, since those are the bytes every curses
+    program sends for the same description.
+    - Numbers are C ints. Arithmetic wraps at 32 bits, [%/] and [%m] by zero
+      give [0], and [%o], [%x] and [%X] print a negative number as unsigned.
+    - A missing stack operand is [0], or [""] for [%s] and [%l]. A string
+      popped as a number is [0], and a number popped as a string is [""].
+    - The flags [#] and space are read anywhere before the conversion, and
+      [-] only after a [:]. [+] is the addition operator in every position.
+      A width or precision over 10000, or a second [.], drops the flags, the
+      width and the precision.
+    - [%c] of [0] writes the byte 0200, which a C string can hold. Of another
+      value it writes the low byte.
+    - [%i] adds one to the first two numeric parameters once, however often
+      it is written.
+    - [%'c'] and [%{nn}] skip the character after the constant, whatever it
+      is, where terminfo(5) puts the closing [']] or [}].
+    - An unknown code writes nothing, and a [%] that ends [s] is dropped.
+    - A string with no [%p] code, as termcap wrote them ([\E[%d;%dH]), has
+      its parameters pushed for it, at most two, the first on top. [%i] then
+      also sets the stack's two lowest slots, from the bottom, to the
+      incremented first and second parameters, so [\E[%i%d;%dR] on [4] and
+      [9] is [\E[10;5R]. *)
 
 (** {1:padding Delays} *)
 
