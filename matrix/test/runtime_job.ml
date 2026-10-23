@@ -1,11 +1,22 @@
 (* A job-control shell for test_runtime_pty: it runs runtime_child.exe as a
    job of its own process group, in the foreground of the terminal, and
-   reports on its standard output when the job stops or ends. While the job
+   reports on its standard output when the job stops, and by which signal,
+   or ends. While the job
    is stopped it reads a command, a line that ends with it: [f] continues it
    in the foreground, [b] in the background. *)
 
 external setpgid : int -> int -> unit = "runtime_job_setpgid"
 external tcsetpgrp : Unix.file_descr -> int -> unit = "runtime_job_tcsetpgrp"
+
+let signal_name n =
+  List.assoc_opt n
+    [
+      (Sys.sigtstp, "TSTP");
+      (Sys.sigttou, "TTOU");
+      (Sys.sigttin, "TTIN");
+      (Sys.sigstop, "STOP");
+    ]
+  |> Option.value ~default:(string_of_int n)
 
 let () =
   let child = Sys.argv.(1) in
@@ -27,9 +38,9 @@ let () =
       Printf.printf "JOB %d\r\n%!" pid;
       let rec wait () =
         match Unix.waitpid [ Unix.WUNTRACED ] pid with
-        | _, WSTOPPED _ ->
+        | _, WSTOPPED n ->
             tcsetpgrp Unix.stdin (Unix.getpid ());
-            Printf.printf "JOB-STOPPED\r\n%!";
+            Printf.printf "JOB-STOPPED %s\r\n%!" (signal_name n);
             command ()
         | _, WEXITED n -> Printf.printf "JOB-EXIT %d\r\n%!" n
         | _, WSIGNALED n -> Printf.printf "JOB-SIGNALED %d\r\n%!" n

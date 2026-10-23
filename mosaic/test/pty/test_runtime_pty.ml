@@ -424,7 +424,7 @@ let test_suspend () =
   ignore (await s "BACK 0" : int);
   let from = mark s in
   send s "z";
-  ignore (await ~from s "JOB-STOPPED" : int);
+  ignore (await ~from s "JOB-STOPPED TSTP" : int);
   is_true ~msg:"cooked while stopped" (cooked s);
   let from = mark s in
   send s "f\n";

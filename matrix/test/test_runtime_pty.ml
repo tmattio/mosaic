@@ -21,18 +21,23 @@ let spawn () =
 (* Reads what the program writes until [sub] appears after [from]. The
    timeout guards against a program that never writes it; it measures
    nothing, so a loaded host only makes a test slower. *)
-let await ?(timeout = 60.) ?(from = 0) s sub =
+let contains ~from out sub =
+  let n = String.length sub in
+  let rec go i =
+    i + n <= String.length out && (String.sub out i n = sub || go (i + 1))
+  in
+  go from
+
+(* Reads until one of [subs] appears after [from], and is the first of them
+   that has. *)
+let await_any ?(timeout = 60.) ?(from = 0) s subs =
   let deadline = Unix.gettimeofday () +. timeout in
   let buf = Bytes.create 4096 in
   let found () =
     let out = Buffer.contents s.output in
-    let n = String.length sub in
-    let rec go i =
-      i + n <= String.length out && (String.sub out i n = sub || go (i + 1))
-    in
-    go from
+    List.find_opt (contains ~from out) subs
   in
-  while (not (found ())) && Unix.gettimeofday () < deadline do
+  while found () = None && Unix.gettimeofday () < deadline do
     match Unix.select [ Pty.in_fd s.pty ] [] [] 0.05 with
     | [], _, _ -> ()
     | _ -> (
@@ -41,8 +46,15 @@ let await ?(timeout = 60.) ?(from = 0) s sub =
         | _ -> ()
         | exception Unix.Unix_error _ -> ())
   done;
-  if not (found ()) then
-    failf "timed out waiting for %S in %S" sub (Buffer.contents s.output)
+  match found () with
+  | Some sub -> sub
+  | None ->
+      failf "timed out waiting for %s in %S"
+        (String.concat " or " subs)
+        (Buffer.contents s.output)
+
+let await ?timeout ?from s sub =
+  ignore (await_any ?timeout ?from s [ sub ] : string)
 
 let send s bytes =
   ignore (Pty.write_string s.pty bytes 0 (String.length bytes) : int)
@@ -186,9 +198,14 @@ let spawn_job () =
   { pty; pid = Option.get (Pty.pid pty); output = Buffer.create 4096 }
 
 (* The job's process, which the shell reports. *)
+(* A job that stops before its first frame fails the test at once, saying
+   by which signal: no test stops it before then. *)
 let job_pid s =
   await s "JOB ";
-  await s "READY 1";
+  if await_any s [ "READY 1"; "JOB-STOPPED" ] <> "READY 1" then (
+    ignore (await_any s [ "\r\n" ] : string);
+    failf "the job stopped before its first frame: %S"
+      (Buffer.contents s.output));
   let out = Buffer.contents s.output in
   let i = Option.get (String.index_from_opt out 0 'J') in
   Scanf.sscanf (String.sub out i (String.length out - i)) "JOB %d" Fun.id
@@ -218,7 +235,7 @@ let test_sigtstp_stops_the_job () =
   let pid = job_pid s in
   let from = mark s in
   Unix.kill pid Sys.sigtstp;
-  await ~from s "JOB-STOPPED";
+  await ~from s "JOB-STOPPED TSTP";
   equal ~msg:"stopped" string "T" (fst (stat pid));
   await ~from s "\027[?1049l";
   is_true ~msg:"cooked while stopped" (cooked s);
@@ -238,10 +255,10 @@ let test_background_continue_stops_again () =
   let pid = job_pid s in
   let from = mark s in
   Unix.kill pid Sys.sigtstp;
-  await ~from s "JOB-STOPPED";
+  await ~from s "JOB-STOPPED TSTP";
   let from = mark s in
   send s "b\n";
-  await ~from s "JOB-STOPPED";
+  await ~from s "JOB-STOPPED TTOU";
   let state, ticks = stat pid in
   equal ~msg:"stopped again" string "T" state;
   Unix.sleepf 0.3;
