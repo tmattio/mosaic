@@ -2,6 +2,13 @@
 
 - Status: Decided 2026-10-22 and implemented on branch `vte-redesign`; this text states what was
   built, including the decisions taken during implementation (§2.1).
+- Amended 2026-10-23 (Replies, §2): the removal of `?da1`/`?da2` rested partly on a search for
+  clients limited to this repository ("no client was found", §3; "Nothing drained it in the
+  repository's emulators", abbd50de); ocaml-k7 used `?da2` to answer DA2 as xterm.js 5 does.
+  The identity stays a constant VT100 with Advanced Video. `feed` now returns the replies as
+  `Matrix_input.Reply.t` values, which `Reply.encode` writes, so a caller that must pass for
+  another terminal rewrites a reply where it relays it; and the terminal keeps a palette, given to
+  `create` and set, queried and reset by OSC 4, 10–12, 104 and 110–112, which serves themes.
 - Baseline: main @ `07d38086` plus the 35 fix commits of PRs #46–#96 (Thomas Gazagnaire),
   rebased, which this redesign builds on and keeps the tests of.
 - Process: the "Becoming certain" campaign of raven's `doc/dev/design.md`, applied to matrix. For
