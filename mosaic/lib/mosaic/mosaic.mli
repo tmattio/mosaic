@@ -1219,6 +1219,14 @@ val inset_lrtb : int -> int -> int -> int -> length_percentage_auto rect
     not participate in focus. Traversal is application-owned; {!Focus} provides
     pure next/previous selection over application identifiers.
 
+    Focus is the model's, so nothing moves it but a declaration. Removing or
+    hiding the focused element leaves nothing focused, and no event says so:
+    keys reach subscriptions only until the model declares another element
+    focused. The update that removes the focused element is where to choose the
+    next one, such as the row now at its position. Some toolkits (AWT) move
+    focus forward by themselves when the focused component goes; here that would
+    give the model's focus a second owner.
+
     [on_focus_request] supplies the message for an ordinary left-button press on
     an unfocused element. The request runs before caret and selection handling.
     The application accepts it by declaring the element [focused]. Rejecting the

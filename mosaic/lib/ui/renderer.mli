@@ -269,7 +269,9 @@ val dispatch_mouse : t -> path -> Event.mouse -> unit
 (** {1:focus Focus} *)
 
 val focused : t -> Renderable.t option
-(** [focused t] is the currently focused renderable, if any. *)
+(** [focused t] is the currently focused renderable, if any. Destroying,
+    detaching or hiding it leaves nothing focused: nothing moves focus to
+    another node. *)
 
 val focus : t -> Renderable.t -> bool
 (** [focus t node] focuses [node] and is [true] iff [node] is focusable. *)
