@@ -2015,6 +2015,10 @@ let many_distinct_graphemes () =
 
 let tests =
   [
+    test "draw_text rejects a tab width below 1" (fun () ->
+        let grid = Grid.create ~width:4 ~height:1 () in
+        raises_match ~msg:"tab width 0" (Exn.invalid_arg ~substring:"tab width")
+          (fun () -> Grid.draw_text grid ~x:0 ~y:0 ~tab_width:0 ~text:"\t"));
     test "many distinct graphemes" many_distinct_graphemes;
     test "cell text of empty and continuation cells"
       cell_text_of_empty_and_continuation_cells;

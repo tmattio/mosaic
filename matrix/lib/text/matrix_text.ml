@@ -4,11 +4,12 @@ type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
 type line_break_kind = [ `LF | `CR | `CRLF ]
 type position = { byte_offset : int; units : int; columns_used : int }
 
-let default_tab_width = 2
-
 (* ASCII Helpers *)
 
-let[@inline] normalize_tab_width w = if w <= 0 then default_tab_width else w
+(* A tab width below 1 is a mistake, raised at the call that makes it. *)
+let check_tab_width name w =
+  if w < 1 then invalid_arg ("Matrix_text." ^ name ^ ": tab width below 1");
+  w
 
 let check_sub name str ~pos ~len =
   let str_len = String.length str in
@@ -62,7 +63,7 @@ let[@inline] codepoint_width_wcwidth ~tab_width cp =
 
 let uchar_width ~tab_width uchar =
   codepoint_width_wcwidth
-    ~tab_width:(normalize_tab_width tab_width)
+    ~tab_width:(check_tab_width "uchar_width" tab_width)
     (Uchar.to_int uchar)
 
 type grapheme_cluster_break =
@@ -513,7 +514,7 @@ let rec visit_units f seg ~wide ~wcwidth str len tab i start u =
       else visit_units f seg ~wide ~wcwidth str len tab next start u'
 
 let iter_units ~width_method ~tab_width f str =
-  let tab_width = normalize_tab_width tab_width in
+  let tab_width = check_tab_width "iter_units" tab_width in
   let len = Stdlib.String.length str in
   if len > 0 then
     visit_units f (unit_seg width_method)
@@ -614,13 +615,13 @@ let find_pos_units ~width_method ~tab_width ~include_start_before str ~columns =
 
 let find_wrap_pos ~width_method ~tab_width str ~max_columns =
   find_pos_units ~width_method
-    ~tab_width:(normalize_tab_width tab_width)
+    ~tab_width:(check_tab_width "find_wrap_pos" tab_width)
     ~include_start_before:false str ~columns:max_columns
 
 let find_pos ~width_method ~tab_width ?(include_start_before = false) str
     ~columns =
   find_pos_units ~width_method
-    ~tab_width:(normalize_tab_width tab_width)
+    ~tab_width:(check_tab_width "find_pos" tab_width)
     ~include_start_before str ~columns
 
 (* The width of the unit that starts at [i]. *)
@@ -634,7 +635,7 @@ let rec first_unit_width seg ~wide ~wcwidth str len tab i u =
     else first_unit_width seg ~wide ~wcwidth str len tab (i + decoded_len d) u'
 
 let width_at ~width_method ~tab_width str ~byte_offset =
-  let tab_width = normalize_tab_width tab_width in
+  let tab_width = check_tab_width "width_at" tab_width in
   let len = Stdlib.String.length str in
   if byte_offset < 0 || byte_offset >= len then 0
   else
@@ -712,7 +713,7 @@ let rec measure_scalars str limit tab i total =
     measure_scalars str limit tab (i + decoded_len d) (total + w)
 
 let measure ~width_method ~tab_width str =
-  let tab_width = normalize_tab_width tab_width in
+  let tab_width = check_tab_width "measure" tab_width in
   let len = Stdlib.String.length str in
   if len = 0 then 0
   else if is_ascii_only str len 0 then measure_ascii str len tab_width 0 0
@@ -723,7 +724,7 @@ let measure ~width_method ~tab_width str =
       ~wcwidth:(width_method = `Wcwidth) str len tab_width 0 0 0
 
 let measure_sub ~width_method ~tab_width str ~pos ~len:sub_len =
-  let tab_width = normalize_tab_width tab_width in
+  let tab_width = check_tab_width "measure_sub" tab_width in
   if sub_len <= 0 then 0
   else (
     check_sub "Matrix_text.measure_sub" str ~pos ~len:sub_len;
@@ -963,7 +964,7 @@ module Layout = struct
           breaks
 
     let metrics t ~width_method ~tab_width =
-      let tab_width = max 1 tab_width in
+      let tab_width = check_tab_width "Layout" tab_width in
       match t.metrics with
       | Some (m, w, metrics) when m = width_method && w = tab_width -> metrics
       | _ ->

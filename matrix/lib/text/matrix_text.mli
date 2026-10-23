@@ -22,8 +22,8 @@
     {!Segmenter} finds display units in a stream that arrives in pieces, and
     {!Layout} cuts a text into rows of a given width.
 
-    A [tab_width] of [0] or less is [2], except in {!Layout}, which states its
-    own.
+    Every function that takes a [tab_width] raises [Invalid_argument] if it is
+    below [1].
 
     This measures a text with two wide characters and a TAB:
     {[
@@ -335,10 +335,10 @@ module Layout : sig
 
       Unless a function's doc says otherwise, a row, line or boundary out of
       range is clamped to the nearest one, the width method defaults to
-      [`Unicode], and the tab width to [2], and below [1] it is [1]. A TAB is as
-      wide as the tab width wherever it is. Each cluster is as wide as
-      {!measure} makes it, whatever the width method, so a layout follows
-      grapheme clusters even under [`Wcwidth].
+      [`Unicode], and the tab width to [2]. A TAB is as wide as the tab width
+      wherever it is. Each cluster is as wide as {!measure} makes it, whatever
+      the width method, so a layout follows grapheme clusters even under
+      [`Wcwidth].
 
       The life cycle of a layout:
       + {!Source.of_string} indexes a text once.

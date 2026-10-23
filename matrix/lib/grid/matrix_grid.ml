@@ -1110,6 +1110,7 @@ let shift t (r : region) ~dx ~dy ~color =
 (* {1 Text rendering} *)
 
 let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
+  if tab_width < 1 then invalid_arg "Matrix_grid.draw_text: tab width below 1";
   let width_method = Option.value width_method ~default:t.width_method in
   if text = "" || y < 0 || y >= t.height then ()
   else
@@ -1128,7 +1129,7 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
       let attrs = Ansi.Attr.pack s.attrs in
       let link = Option.value s.link ~default:no_link in
       let cur_x = ref x in
-      let tabw = if tab_width <= 0 then 2 else tab_width in
+      let tabw = tab_width in
       let text =
         if String.contains text '\t' then (
           let len = String.length text in

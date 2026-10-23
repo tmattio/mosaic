@@ -114,7 +114,6 @@ let measurement_rows =
     (* A non-positive tab_width falls back to the default rather than
        measuring the tab as nothing. Zero is the value that tells the clamp
        from its off-by-one: `w < 0` would let 0 through as a width. *)
-    ("tab width zero", "\t", `Unicode, 0, 2);
     ("emoji simple", "👋", `Unicode, 8, 2);
     ("emoji ZWJ sequence", "👩\u{200D}🚀", `Unicode, 8, 2);
     ("emoji family", "👨\u{200D}👩\u{200D}👧\u{200D}👦", `Unicode, 8, 2);
@@ -1533,6 +1532,24 @@ let grapheme_cluster_break_agrees_with_segmentation () =
       if v = `PP <> (grapheme_count (s cp ^ "a") = 1) then fail (msg "GB9b"))
   done
 
+(* One rule for a tab width below 1, in measuring and in layouts. *)
+let tab_width_below_one_raises () =
+  let raises name f =
+    raises_match ~msg:name (Exn.invalid_arg ~substring:"tab width") (fun () ->
+        ignore (f () : int))
+  in
+  raises "measure" (fun () -> measure ~width_method:`Unicode ~tab_width:0 "\t");
+  raises "measure_sub" (fun () ->
+      measure_sub ~width_method:`Unicode ~tab_width:(-1) "\t" ~pos:0 ~len:1);
+  raises "uchar_width" (fun () -> uchar_width ~tab_width:0 (Uchar.of_int 9));
+  raises "Layout.create" (fun () ->
+      Layout.row_count
+        (Layout.create ~tab_width:0
+           (Layout.Source.of_string "\t")
+           ~width:10 ~wrap:`None));
+  equal ~msg:"a tab width of 1" int 1
+    (measure ~width_method:`Unicode ~tab_width:1 "\t")
+
 let () =
   run "matrix.text"
     [
@@ -1595,6 +1612,7 @@ let () =
           test "info keeps combining marks with ASCII base"
             grapheme_info_ascii_base_with_combining_mark;
         ];
+      group "Tab width" [ test "below 1 raises" tab_width_below_one_raises ];
       group "Wrap Breaks"
         [
           cases "CJK opportunities" cjk_break_cases

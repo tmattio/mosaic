@@ -70,7 +70,7 @@ let gen_case =
          { text; width; wrap; truncate; width_method; tab_width })
        (quad text
           (pair (int_range (-1) 8) wrap)
-          (pair bool width_method) (int_range 0 3)))
+          (pair bool width_method) (int_range 1 3)))
 
 let layout c =
   Layout.create ~width_method:c.width_method ~tab_width:c.tab_width

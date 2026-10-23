@@ -300,15 +300,17 @@ val draw_text :
     as it is wide. [width_method] defaults to {!width_method}[ g], and [style]
     to {!Ansi.Style.default}, whose absent colors are the default foreground and
     a transparent background. A TAB is [tab_width] spaces, and [tab_width]
-    defaults to [2], and is [2] if [0] or less. Units of width [0], such as
-    U+200B alone and the control characters, newlines among them, take no cell.
-    A unit that would cross the right edge leaves spaces in [style] up to it,
-    and nothing is drawn if both colors of [style] are transparent.
+    defaults to [2]. Units of width [0], such as U+200B alone and the control
+    characters, newlines among them, take no cell. A unit that would cross the
+    right edge leaves spaces in [style] up to it, and nothing is drawn if both
+    colors of [style] are transparent.
 
     A space on a translucent background keeps the text of the cell it covers,
     tints its colors and gives it the hyperlink of [style]. It tints a wide
     grapheme whole when it covers the start cell, and leaves it as it is
-    otherwise. *)
+    otherwise.
+
+    Raises [Invalid_argument] if [tab_width < 1]. *)
 
 module Border = Border
 (** Box-drawing characters. *)
