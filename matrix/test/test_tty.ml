@@ -102,8 +102,8 @@ let with_handler s f =
     ~finally:(fun () -> ignore (Sys.signal s previous : Sys.signal_behavior))
     (fun () -> f called)
 
-let with_holder ~controlling f =
-  let h = Signal.hold ~controlling in
+let with_holder ?output ~controlling f =
+  let h = Signal.hold ~controlling ~output in
   Fun.protect ~finally:(fun () -> Signal.release h) (fun () -> f h)
 
 let readable_now fd =
@@ -247,8 +247,8 @@ let test_restore_all () =
   if Sys.unix then
     with_pty (fun _ input ->
         with_pipe (fun r output ->
-            with_holder ~controlling:false (fun h ->
-                Signal.keep_settings h ~input ~output;
+            with_holder ~output ~controlling:false (fun h ->
+                Signal.keep_settings h ~input;
                 let _ = Matrix_tty.raw input in
                 Signal.set_reset h "\027[?25h";
                 Signal.restore_all ();
@@ -266,8 +266,8 @@ let test_restore_all_long () =
   if Sys.unix then
     with_pty (fun _ input ->
         with_pipe (fun r output ->
-            with_holder ~controlling:false (fun h ->
-                Signal.keep_settings h ~input ~output;
+            with_holder ~output ~controlling:false (fun h ->
+                Signal.keep_settings h ~input;
                 let reset =
                   String.init 20_000 (fun i -> Char.chr (65 + (i mod 26)))
                 in

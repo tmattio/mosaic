@@ -153,10 +153,12 @@ module Signal : sig
   type holder
   (** The type for a holder of a terminal: what the handlers know of it. *)
 
-  val hold : controlling:bool -> holder
-  (** [hold ~controlling] registers a holder of a terminal, the controlling one
-      if [controlling], with a wake pipe of its own. It takes no action: see
-      {!take}.
+  val hold : controlling:bool -> output:Unix.file_descr option -> holder
+  (** [hold ~controlling ~output] registers a holder of a terminal, the
+      controlling one if [controlling], with a wake pipe of its own. Its reset
+      bytes ({!set_reset}) are written to [output] if the process ends where no
+      OCaml code runs: the terminal it writes to, if it is one, whatever its
+      input is. It takes no action: see {!take}.
 
       Raises [Unix.Unix_error] if the pipe cannot be made, and [Failure] on
       Windows, which has no such pipe. *)
@@ -181,21 +183,20 @@ module Signal : sig
   (** [terminating h] is [true] iff a signal that ends the process was received
       for [h] and not yet taken with {!received}. *)
 
-  val keep_settings :
-    holder -> input:Unix.file_descr -> output:Unix.file_descr -> unit
-  (** [keep_settings h ~input ~output] saves the settings [input] has now,
-      restored if the process ends where no OCaml code runs, with [h]'s reset
-      bytes ({!set_reset}) written to [output]. *)
+  val keep_settings : holder -> input:Unix.file_descr -> unit
+  (** [keep_settings h ~input] saves the settings [input] has now, put back if
+      the process ends where no OCaml code runs. *)
 
   val forget_settings : holder -> unit
   (** [forget_settings h] drops the settings {!keep_settings} saved: they were
       put back. *)
 
   val set_reset : holder -> string -> unit
-  (** [set_reset h bytes] has [bytes] written to [h]'s output if the process
-      ends where no OCaml code runs: the bytes that reset the modes [h] set, of
-      any length. [""] once [h] gave the terminal back. The bytes replace the
-      previous ones whole: a signal reads one or the other, never a mix.
+  (** [set_reset h bytes] has [bytes] written to [h]'s output ({!hold}) if the
+      process ends where no OCaml code runs: the bytes that reset the modes [h]
+      set, of any length. [""] once [h] gave the terminal back. The bytes
+      replace the previous ones whole: a signal reads one or the other, never a
+      mix.
 
       Bytes that describe what a write leaves on the terminal are set once that
       write has returned, not before: a signal in between would reset for a

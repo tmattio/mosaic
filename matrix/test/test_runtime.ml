@@ -2738,6 +2738,35 @@ let test_unix_write_cut_by_a_signal () =
       equal ~msg:"the bytes written, once" int n (Buffer.length received);
       is_true ~msg:"in order" (Buffer.to_bytes received = sent))
 
+(* A run whose output is a terminal and whose input is not (a program
+   given its input by a pipe) sets modes on that terminal all the same: an
+   abort resets them, as for any run. *)
+let test_unix_reset_without_terminal_input () =
+  let master, slave = Pty.open_pty () in
+  let devnull = Unix.openfile "/dev/null" [ O_RDONLY; O_CLOEXEC ] 0 in
+  Fun.protect
+    ~finally:(fun () ->
+      Unix.close devnull;
+      Pty.close master;
+      Pty.close slave)
+    (fun () ->
+      let output = Pty.file_descr slave in
+      let b = Matrix.Backend.unix ~input:devnull ~output () in
+      Fun.protect ~finally:b.cleanup (fun () ->
+          b.on_fatal "RESET";
+          (* What an abort does, from OCaml. *)
+          Matrix_tty.Signal.restore_all ();
+          b.on_fatal "";
+          let master = Pty.file_descr master in
+          let buf = Bytes.create 64 in
+          let n =
+            match Unix.select [ master ] [] [] 1. with
+            | [], _, _ -> 0
+            | _ -> Unix.read master buf 0 64
+          in
+          equal ~msg:"the reset bytes reach the terminal" string "RESET"
+            (Bytes.sub_string buf 0 n)))
+
 let () =
   Windtrap.run "matrix.runtime"
     [
@@ -2948,5 +2977,7 @@ let () =
           test "a pseudo-terminal is not the controlling terminal"
             test_unix_controlling;
           test "a write cut by a signal goes on" test_unix_write_cut_by_a_signal;
+          test "reset with no terminal input"
+            test_unix_reset_without_terminal_input;
         ];
     ]

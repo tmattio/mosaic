@@ -177,8 +177,9 @@ CAMLprim value matrix_tty_stop_group(value u) {
   (void)u;
   return Val_unit;
 }
-CAMLprim value matrix_tty_hold(value controlling) {
+CAMLprim value matrix_tty_hold(value controlling, value output) {
   (void)controlling;
+  (void)output;
   caml_failwith("Matrix_tty.Signal.hold: no wake pipe on Windows");
 }
 CAMLprim value matrix_tty_unhold(value id) {
@@ -194,10 +195,9 @@ CAMLprim value matrix_tty_terminating(value id) {
   (void)id;
   return Val_false;
 }
-CAMLprim value matrix_tty_keep_settings(value id, value i, value o) {
+CAMLprim value matrix_tty_keep_settings(value id, value i) {
   (void)id;
   (void)i;
-  (void)o;
   return Val_unit;
 }
 CAMLprim value matrix_tty_forget_settings(value id) {
@@ -278,12 +278,12 @@ static struct holder *find_holder(value id) {
   caml_invalid_argument("Matrix_tty.Signal: unknown holder");
 }
 
-/* Registers a holder and gives its id and its wake pipe's ends, [(id, read,
-   write)]. A node is reused once its holder has ended, with its pipe,
+/* Registers a holder whose reset bytes go to [output], if [Some], and
+   gives its id and its wake pipe's ends, [(id, read, write)]. A node is reused once its holder has ended, with its pipe,
    emptied: a pipe is never closed, so a handler that wakes a holder as it
    ends never writes to a descriptor reused since. */
-CAMLprim value matrix_tty_hold(value controlling) {
-  CAMLparam1(controlling);
+CAMLprim value matrix_tty_hold(value controlling, value output) {
+  CAMLparam2(controlling, output);
   CAMLlocal1(result);
   pthread_mutex_lock(&holders_lock);
   struct holder *h = holders_head();
@@ -309,7 +309,8 @@ CAMLprim value matrix_tty_hold(value controlling) {
   }
   for (int s = 0; s < SIGNALS; s++) h->pending[s] = 0;
   h->have_settings = 0;
-  h->in = h->out = -1;
+  h->in = -1;
+  h->out = Is_some(output) ? Int_val(Some_val(output)) : -1;
   h->controlling = Bool_val(controlling);
   __atomic_store_n(&h->active, 1, __ATOMIC_RELEASE);
   int id = h->id, rd = h->wake_r, wr = h->wake;
@@ -356,15 +357,13 @@ CAMLprim value matrix_tty_terminating(value id) {
                   h->pending[SIGHUP] || h->pending[SIGQUIT]);
 }
 
-/* Saves the settings of the holder's terminal on [input], restored with its
-   reset bytes written to [output] if the process ends where no OCaml code
-   runs. */
-CAMLprim value matrix_tty_keep_settings(value id, value input, value output) {
+/* Saves the settings of the holder's terminal on [input], restored if the
+   process ends where no OCaml code runs. */
+CAMLprim value matrix_tty_keep_settings(value id, value input) {
   struct holder *h = find_holder(id);
   struct termios t;
   h->have_settings = 0;
   h->in = Int_val(input);
-  h->out = Int_val(output);
   if (tcgetattr(h->in, &t) == 0) {
     h->settings = t;
     h->have_settings = 1;

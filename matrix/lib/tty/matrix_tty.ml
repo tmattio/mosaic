@@ -60,22 +60,23 @@ module Signal = struct
 
   type holder = { id : int; wake_r : Unix.file_descr; wake_w : Unix.file_descr }
 
-  external hold : bool -> int * Unix.file_descr * Unix.file_descr
+  external hold :
+    bool -> Unix.file_descr option -> int * Unix.file_descr * Unix.file_descr
     = "matrix_tty_hold"
 
   external unhold : int -> unit = "matrix_tty_unhold"
   external received : int -> int -> bool = "matrix_tty_received"
   external terminating : int -> bool = "matrix_tty_terminating"
 
-  external keep_settings : int -> Unix.file_descr -> Unix.file_descr -> unit
+  external keep_settings : int -> Unix.file_descr -> unit
     = "matrix_tty_keep_settings"
 
   external forget_settings : int -> unit = "matrix_tty_forget_settings"
   external set_reset : int -> string -> unit = "matrix_tty_set_reset"
   external restore_all : unit -> unit = "matrix_tty_restore_all"
 
-  let hold ~controlling =
-    let id, wake_r, wake_w = hold controlling in
+  let hold ~controlling ~output =
+    let id, wake_r, wake_w = hold controlling output in
     { id; wake_r; wake_w }
 
   let release h = unhold h.id
@@ -89,7 +90,7 @@ module Signal = struct
 
   let received h s = received h.id s
   let terminating h = terminating h.id
-  let keep_settings h ~input ~output = keep_settings h.id input output
+  let keep_settings h ~input = keep_settings h.id input
   let forget_settings h = forget_settings h.id
   let set_reset h bytes = set_reset h.id bytes
 

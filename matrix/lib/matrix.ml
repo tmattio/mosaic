@@ -118,7 +118,10 @@ module Backend = struct
     let controlling =
       Matrix_tty.is_controlling input || Matrix_tty.is_controlling output
     in
-    let holder = Signal.hold ~controlling in
+    let holder =
+      Signal.hold ~controlling
+        ~output:(if output_is_tty then Some output else None)
+    in
     let wake_r = Signal.wake_fd holder in
     let wake () = Signal.wake holder in
     Mutex.protect pipes_lock (fun () -> pipes := (wake, wake_r) :: !pipes);
@@ -126,7 +129,7 @@ module Backend = struct
     let set_raw_mode raw =
       match (raw, !saved) with
       | true, None when input_is_tty ->
-          Signal.keep_settings holder ~input ~output;
+          Signal.keep_settings holder ~input;
           saved := Some (Matrix_tty.raw input)
       | false, Some termios ->
           saved := None;
