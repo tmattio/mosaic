@@ -768,6 +768,47 @@ let parser_finish () =
     (show (Parser.parse "a\x1bPq#0\xC3"))
     (finished [ "a\x1bPq#0\xC3" ])
 
+(* A boundary is where every byte fed belongs to a reported token. *)
+let parser_at_boundary () =
+  let after feeds =
+    let p = Parser.create () in
+    List.iter
+      (fun s ->
+        Parser.feed p (Bytes.of_string s) ~off:0 ~len:(String.length s) ignore)
+      feeds;
+    p
+  in
+  let check msg expected feeds =
+    equal ~msg bool expected (Parser.at_boundary (after feeds))
+  in
+  check "a new parser" true [];
+  check "after text" true [ "abc" ];
+  check "after a control" true [ "a\n" ];
+  check "after a complete sequence" true [ "\x1b[1;31m" ];
+  check "after a complete string" true [ "\x1b]0;t\x07" ];
+  check "after ST" true [ "\x1bPq\x1b\\" ];
+  check "a cut character" false [ "X\xF0\x9F" ];
+  check "a lone ESC" false [ "\x1b" ];
+  check "a sequence without its final byte" false [ "\x1b[3" ];
+  check "an escape sequence's intermediate" false [ "\x1b(" ];
+  check "a DCS header" false [ "\x1bP1" ];
+  check "an open string" false [ "\x1b]0;t" ];
+  check "an ESC in a string" false [ "\x1b]0;t\x1b" ];
+  check "a malformed sequence before its final byte" false [ "\x1b[1<" ];
+  check "the character completed" true [ "X\xF0\x9F"; "\x9A\x80" ];
+  check "the sequence completed" true [ "\x1b["; "3"; "m" ];
+  (* Asking changes nothing: the sequence still completes. *)
+  let p = after [ "\x1b[3" ] in
+  ignore (Parser.at_boundary p);
+  equal ~msg:"asking leaves the sequence in progress" string "CSI 3 m"
+    (show (feed_to_list p (Bytes.of_string "m") 0 1));
+  let p = after [ "\x1b]0;t" ] in
+  Parser.finish p ignore;
+  equal ~msg:"finish returns to a boundary" bool true (Parser.at_boundary p);
+  let p = after [ "\x1b[3" ] in
+  Parser.reset p;
+  equal ~msg:"reset returns to a boundary" bool true (Parser.at_boundary p)
+
 let parser_c1_controls () =
   (* In UTF-8, U+0080..U+009F are not C1 controls: they are dropped, whatever
      the state, and the text around them stays. *)
@@ -1552,6 +1593,7 @@ let tests =
         test "utf8 split invariance" parser_utf8_split_invariance;
         test "c1 controls" parser_c1_controls;
         test "finish" parser_finish;
+        test "at_boundary" parser_at_boundary;
         test "charset selection split" parser_charset_selection_split;
         test "unknown escape sequences" parser_unknown_escape_sequences;
         test "sgr colon subparameters" parser_sgr_colon_subparameters;

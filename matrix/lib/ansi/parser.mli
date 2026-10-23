@@ -197,6 +197,22 @@ val finish : t -> (token -> unit) -> unit
     an open string is closed [`Aborted], and an unfinished sequence has no
     effect. [p] is then at the start of a stream, as after {!reset}. *)
 
+val at_boundary : t -> bool
+(** [at_boundary p] is [true] iff no character, sequence or string is in
+    progress: every byte fed so far is done with, reported in a token or
+    dropped. The next byte then starts afresh, whatever it is, and {!finish}
+    would report nothing. Otherwise the bytes fed end inside something that only
+    later bytes complete: a UTF-8 character cut short, an ESC or a control
+    sequence without its final byte, or a control string without its terminator.
+
+    This is the question a reader of a live stream asks before it acts on
+    silence. A key decoder that has received a lone ESC cannot tell the Escape
+    key from the start of a sequence; it waits for more bytes while
+    [at_boundary] is [false], and calls {!finish} only when it decides that the
+    stream has stopped. A program that hands the stream to another reader, or
+    cuts a recording into pieces, does so at a boundary, where no token
+    straddles the cut. Unlike {!finish}, it changes nothing. *)
+
 val parse : string -> token list
 (** [parse s] are the tokens of the complete stream [s]: those {!feed} and
     {!finish} give. *)

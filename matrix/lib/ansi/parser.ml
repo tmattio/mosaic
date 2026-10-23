@@ -494,6 +494,8 @@ let finish p emit =
   (match p.state with String | String_esc -> close p `Aborted emit | _ -> ());
   reset p
 
+let at_boundary p = p.state = Ground && p.held_len = 0
+
 let parse s =
   let p = create () in
   let tokens = ref [] in
