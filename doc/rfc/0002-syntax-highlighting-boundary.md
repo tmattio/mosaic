@@ -151,10 +151,12 @@ The decided text also fixed two surfaces:
 
 ## 6. Using it, and verification
 
-The recipe, the worker's lifetime, scope styling and editable annotations are in
-[doc/highlighting.md](../highlighting.md), whose snippets compile in CI (D4). The contracts are in
-`mosaic/lib/ui/syntax_highlight.mli`, `syntax_style.mli`, `renderables/code.mli` and
-`renderables/markdown.mli`. This RFC does not copy them.
+The recipe is in [doc/highlighting.md](../highlighting.md), whose snippets compile in CI (D4); it
+states no rule and links to the interfaces. The contracts, including the worker's lifetime, failures,
+the pending display, the scope vocabulary and editable annotations, are in
+`mosaic/lib/ui/syntax_highlight.mli`, `syntax_style.mli`, `renderables/code.mli`,
+`renderables/markdown.mli`, `renderables/diff.mli` and `renderables/textarea.mli`. This RFC does
+not copy them.
 
 - **Build.** A fresh-directory install with the same lock and cache took 60.4 s instead of
   89.6 s, with no tree-sitter compilation (`8e31eee7`). The standalone bindings and a mosaic-only
@@ -165,7 +167,9 @@ The recipe, the worker's lifetime, scope styling and editable annotations are in
   closure capturing a theme (20 with a closure capturing nothing); 20 after R6.
 - **The guide.** `mosaic/test/doc` fails mosaic's build when an API the guide uses changes.
 
-## 7. Open
+## 7. Closed: the guide and the `.mli`
 
 design.md makes the `.mli` the source of truth and rules out a guide re-explaining interfaces,
-while R2 chose a cookbook page: should the recipe move into `code.mli` and the guide go?
+while R2 chose a cookbook page. Answered on 2026-10-23: the contracts the guide restated moved into
+the `.mli` files above, and the guide keeps only the recipe, glue that needs a parser package mosaic
+does not depend on. R2 stands.

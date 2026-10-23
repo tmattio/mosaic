@@ -29,7 +29,7 @@ runtime dependencies.
 
 [matrix-eio](matrix-eio/) provides an Eio-based runtime for Matrix.
 
-Syntax highlighting is backend-neutral. See the [highlighting guide](doc/highlighting.md)
+Syntax highlighting is backend-neutral. See the [tree-sitter recipe](doc/highlighting.md)
 and the independent [Tree-sitter bindings](https://github.com/invariant-hq/ocaml-tree-sitter).
 
 ## Quick start
