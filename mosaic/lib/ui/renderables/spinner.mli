@@ -103,6 +103,10 @@ val elapsed : t -> float
 (** [elapsed t] is the accumulated time in seconds since the last frame advance
     of [t]. *)
 
+val animates : t -> bool
+(** [animates t] is [true] iff [t]'s frame set has more than one frame and a
+    positive interval. The node of [t] is live exactly while it animates. *)
+
 (** {1:setters Setters} *)
 
 val set_frame_set : t -> frame_set -> unit

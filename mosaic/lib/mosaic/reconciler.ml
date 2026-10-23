@@ -42,6 +42,13 @@ let node_of = function
   | Diff_instance d -> Diff.node d
   | Tree_instance tr -> Tree.node tr
 
+(* A spinner's node is live while its element is declared live and its
+   frame set animates. The widget sets the node live from its frame set alone
+   whenever its props are applied, so this runs after it. *)
+let set_spinner_live spinner (attrs : Vnode.attrs) =
+  Renderable.set_live (Spinner.node spinner)
+    (attrs.live && Spinner.animates spinner)
+
 let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
     (attrs : Vnode.attrs) : instance =
   let inst =
@@ -178,7 +185,9 @@ let create_instance ~(parent : Renderable.t) (kind : Vnode.kind)
   let node = node_of inst in
   Renderable.set_focusable node (attrs.focusable || attrs.focused);
   if attrs.buffered then Renderable.set_buffered node true;
-  if attrs.live then Renderable.set_live node true;
+  (match inst with
+  | Spinner_instance spinner -> set_spinner_live spinner attrs
+  | _ -> if attrs.live then Renderable.set_live node true);
   inst
 
 let update_common (node : Renderable.t) ~(old_attrs : Vnode.attrs)
@@ -350,6 +359,9 @@ let update_instance (inst : instance) ~(old_attrs : Vnode.attrs)
               invalid_arg "Reconciler: instance and kind mismatch during update"
           )
     in
+    (match inst with
+    | Spinner_instance spinner -> set_spinner_live spinner new_attrs
+    | _ -> ());
     common_changed || style_changed || kind_changed
 
 let commit_update (inst : instance) : unit =

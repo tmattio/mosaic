@@ -103,9 +103,11 @@ let render t _self grid ~delta:_ =
    while the frame set animates, so on_frame ticks without callers wiring
    liveness themselves. A single frame or non-positive interval renders a
    static glyph and needs no per-frame work. *)
-let update_live t =
+let animates t =
   let fs = t.props.frame_set in
-  Renderable.set_live t.node (fs.interval > 0. && Array.length fs.frames > 1)
+  fs.interval > 0. && Array.length fs.frames > 1
+
+let update_live t = Renderable.set_live t.node (animates t)
 
 let on_frame t _node ~delta =
   let interval = t.props.frame_set.interval in

@@ -656,8 +656,8 @@ val spinner :
     by the frame-based animation system.
 
     Spinner-specific attributes:
-    - [live] enables continuous rendering. Defaults to [true]; spinners animate
-      by default.
+    - [live] lets the spinner animate. While it is [false] the spinner shows its
+      current frame and requests no frames. Defaults to [true].
     - [frame_set] is the set of animation frames and their interval. Defaults to
       {!Spinner.dots}.
     - [color] is the spinner foreground color. Defaults to {!Ansi.Color.white}.

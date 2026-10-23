@@ -539,6 +539,30 @@ let render_single_spinner () =
   do_frame renderer;
   equal ~msg:"one child" int 1 (child_count renderer)
 
+(* A spinner animates only while its element is live and its frame set has
+   frames to cycle: [~live:false] holds it, at mount and across a change of
+   its props, and [~live:true] does not animate a single frame. *)
+let spinner_follows_declared_live () =
+  let renderer, reconciler = make () in
+  let live () = Renderable.live (List.hd (children_of renderer)) in
+  render_view reconciler (Vnode.spinner ~live:false ());
+  do_frame renderer;
+  is_false ~msg:"held at mount" (live ());
+  render_view reconciler (Vnode.spinner ~live:false ~color:Ansi.Color.red ());
+  do_frame renderer;
+  is_false ~msg:"held across a props change" (live ());
+  render_view reconciler (Vnode.spinner ~color:Ansi.Color.red ());
+  do_frame renderer;
+  is_true ~msg:"released" (live ());
+  let still = { Spinner.frames = [| "*" |]; interval = 0.1 } in
+  render_view reconciler (Vnode.spinner ~frame_set:still ());
+  do_frame renderer;
+  is_false ~msg:"a single frame never animates" (live ());
+  render_view reconciler (Vnode.spinner ~live:false ());
+  render_view reconciler (Vnode.spinner ~frame_set:still ());
+  do_frame renderer;
+  is_false ~msg:"released onto a single frame" (live ())
+
 let render_single_progress_bar () =
   let renderer, reconciler = make () in
   render_view reconciler (Vnode.progress_bar ());
@@ -1073,6 +1097,7 @@ let () =
           test "declared scroll survives rerender and remount"
             declared_scroll_survives_rerender_and_remount;
           test "single spinner" render_single_spinner;
+          test "spinner follows declared live" spinner_follows_declared_live;
           test "single progress_bar" render_single_progress_bar;
           test "scroll_bar orientation applies at mount"
             scroll_bar_orientation_applies_at_mount;
