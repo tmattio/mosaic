@@ -14,6 +14,9 @@
       gives no key from its bytes once the bytes have committed it.
     - {b Totality}: no input or call order raises, and the decoder holds bounded
       memory outside a string reply.
+    - {b Encoding}: a reply, keystroke or mouse report encoded reads back as
+      itself, less what its encoding cannot carry; what the decoder reads of a
+      keystroke's bytes encodes to bytes it reads the same.
 
     The counts run in a few seconds. [MATRIX_FUZZ_SCALE=N] multiplies them, for
     long sessions. *)
@@ -685,6 +688,267 @@ let unencodable () =
       ];
   equal ~msg:"no replies, no bytes" string "" (R.encode [])
 
+(* Encoding keys and mouse reports -------------------------------------------- *)
+
+module M = I.Mouse_report
+
+let decode_all bytes =
+  let d = D.create () in
+  let got = ref [] in
+  D.feed d (Bytes.of_string bytes) ~off:0 ~len:(String.length bytes) (fun e ->
+      got := e :: !got);
+  D.idle d (fun e -> got := e :: !got);
+  List.rev !got
+
+let keys : K.key list =
+  K.
+    [
+      Enter;
+      Tab;
+      Backspace;
+      Escape;
+      Up;
+      Down;
+      Left;
+      Right;
+      Home;
+      End;
+      Page_up;
+      Page_down;
+      Insert;
+      Delete;
+      Begin;
+      Print_screen;
+      Pause;
+      Menu;
+      Scroll_lock;
+      Caps_lock;
+      Num_lock;
+      Media Play;
+      Media Mute;
+      Modifier Left_shift;
+      Modifier Right_meta;
+      Unidentified 63000;
+    ]
+  @ List.init 35 (fun i -> K.F (i + 1))
+
+(* A character a key types: a letter with Shift and Caps Lock applied, the
+   shifted symbol of a US key, or a character Shift does not change. Shift is
+   consumed when it changed the character. *)
+let typed_gen =
+  let open Gen in
+  let lower = "abcdefghijklmnopqrstuvwxyz`1234567890-=[]\\;',./" in
+  let upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ~!@#$%^&*()_+{}|:\"<>?" in
+  one_of
+    [
+      map
+        (fun (i, shift, caps) ->
+          let letter = i < 26 in
+          let c =
+            if letter then if shift <> caps then upper.[i] else lower.[i]
+            else if shift then upper.[i]
+            else lower.[i]
+          in
+          (Uchar.of_char c, false))
+        (triple (int_range 0 (String.length lower - 1)) bool bool);
+      map
+        (fun (c, shift) -> (Uchar.of_int c, shift))
+        (pair (of_list [ 0x20; 0xE9; 0x65E5; 0x1F600 ]) bool);
+    ]
+
+let mods_gen =
+  Gen.map
+    (fun b ->
+      let bit n = b land n <> 0 in
+      {
+        K.shift = bit 1;
+        alt = bit 2;
+        ctrl = bit 4;
+        super = bit 8;
+        hyper = bit 16;
+        meta = bit 32;
+        caps_lock = bit 64;
+        num_lock = bit 128;
+      })
+    (Gen.int_range 0 255)
+
+let utf_8 u =
+  let b = Buffer.create 4 in
+  Buffer.add_utf_8_uchar b u;
+  Buffer.contents b
+
+(* A keystroke as a terminal reads it: Shift set on a character only when
+   it did not change it, the text typed unless it is a chord, the keypad on
+   a key it has, and a base layout key on a character. *)
+let keystroke_gen =
+  let open Gen in
+  map
+    (fun ((key, shift), mods, (keypad, base), repeat) ->
+      let mods = { mods with K.shift = mods.K.shift || shift } in
+      let chord =
+        mods.alt || mods.ctrl || mods.super || mods.hyper || mods.meta
+      in
+      let mods, text =
+        match key with
+        | K.Char c ->
+            let mods = if shift then mods else { mods with shift = false } in
+            (mods, if chord then "" else utf_8 c)
+        | _ -> (mods, "")
+      in
+      let keypad =
+        keypad
+        &&
+        match key with
+        | K.Char c ->
+            Uchar.to_int c < 0x80
+            && String.contains "0123456789.,/*-+=" (Uchar.to_char c)
+            && not mods.shift
+        | Enter | Up | Down | Left | Right | Home | End | Page_up | Page_down
+        | Insert | Delete ->
+            true
+        | _ -> false
+      in
+      let keypad = keypad || key = K.Begin in
+      let base =
+        match key with K.Char _ -> Option.map Uchar.of_char base | _ -> None
+      in
+      { K.key; mods; text; base; keypad; repeat })
+    (quad
+       (one_of
+          [
+            map (fun k -> (k, false)) (of_list keys);
+            map (fun (c, s) -> (K.Char c, s)) typed_gen;
+            map
+              (fun c -> (K.Char (Uchar.of_char c), false))
+              (of_list (List.init 10 (fun i -> Char.chr (0x30 + i))));
+          ])
+       mods_gen
+       (pair bool (option (of_list [ 'c'; 'q'; '1' ])))
+       bool)
+
+let keyboard_gen =
+  Gen.map
+    (fun (cursor_keys, keypad, modify_other_keys, kitty) ->
+      { K.cursor_keys; keypad; new_line = false; modify_other_keys; kitty })
+    (Gen.quad Gen.bool Gen.bool (Gen.int_range 0 2) (Gen.int_range 0 31))
+
+let pp_keyboard ppf (e : K.encoding) =
+  Format.fprintf ppf "{ckm %b kp %b mok %d kitty %d}" e.cursor_keys e.keypad
+    e.modify_other_keys e.kitty
+
+let show_events l = String.concat "; " (List.map show l)
+
+(* What the decoder reads from a keystroke's bytes encodes to bytes it reads
+   the same: the encoding loses facts, never makes another keystroke. *)
+let prop_key_projection (e, k) =
+  match K.encode e k with
+  | exception Invalid_argument _ -> ()
+  | bytes -> (
+      match decode_all bytes with
+      | [ D.Key k' ] -> (
+          let again = K.encode e k' in
+          match decode_all again with
+          | [ D.Key k'' ] when k'' = k' -> ()
+          | l ->
+              failf "%a: %S reads %a, which encodes to %S, read as %s" K.pp k
+                bytes K.pp k' again (show_events l))
+      | l -> failf "%a encodes to %S, read as %s" K.pp k bytes (show_events l))
+
+(* With every enhancement of the kitty protocol, the bytes carry every fact
+   of a keystroke and of its release. *)
+let prop_key_exact ((cursor_keys, keypad), k) =
+  let e =
+    {
+      K.cursor_keys;
+      keypad;
+      new_line = false;
+      modify_other_keys = 0;
+      kitty = 31;
+    }
+  in
+  match K.encode e k with
+  | exception Invalid_argument _ -> ()
+  | bytes -> (
+      (match decode_all bytes with
+      | [ D.Key k' ] when k' = k -> ()
+      | l -> failf "%S reads %s" bytes (show_events l));
+      (* A release has no text, so it carries the key before Caps Lock. *)
+      let key =
+        match k.key with
+        | Char c
+          when k.text <> "" && k.mods.caps_lock
+               && Uchar.to_int c >= 0x41
+               && Uchar.to_int c <= 0x5A ->
+            K.Char (Uchar.of_int (Uchar.to_int c + 32))
+        | key -> key
+      in
+      let r = { K.key; mods = k.mods; base = k.base; keypad = k.keypad } in
+      let bytes = K.encode_release e r in
+      match decode_all bytes with
+      | [ D.Key_release r' ] when r' = r -> ()
+      | l -> failf "release %S reads %s" bytes (show_events l))
+
+let mouse_gen =
+  let open Gen in
+  map
+    (fun ((kind, x, y), (shift, alt, ctrl)) ->
+      { M.kind; x; y; shift; alt; ctrl })
+    (pair
+       (triple
+          (one_of
+             [
+               map
+                 (fun b -> M.Press b)
+                 (of_list M.[ Left; Middle; Right; Extra 8; Extra 11 ]);
+               map
+                 (fun b -> M.Release b)
+                 (option (of_list M.[ Left; Right; Extra 9 ]));
+               map (fun b -> M.Motion b) (option (of_list M.[ Left; Middle ]));
+               map (fun d -> M.Scroll d) (of_list [ `Up; `Down; `Left; `Right ]);
+             ])
+          (int_range 0 400) (int_range 0 400))
+       (triple bool bool bool))
+
+let mouse_encoding_gen =
+  Gen.map
+    (fun (tracking, format) -> { M.tracking; format })
+    (Gen.pair
+       (Gen.of_list [ `X10; `Normal; `Button; `Any ])
+       (Gen.of_list [ `X10; `Sgr; `Urxvt ]))
+
+(* A report reads back as itself, less the release's button outside SGR and
+   the modifiers of X10 tracking; one not reported, or out of X10's range,
+   has no bytes. *)
+let prop_mouse ((e : M.encoding), (m : M.t)) =
+  let bytes = M.encode e m in
+  let reported =
+    match (m.kind, e.tracking) with
+    | Press (Left | Middle | Right), _ -> true
+    | _, `X10 -> false
+    | (Press _ | Release _ | Scroll _), _ -> true
+    | Motion (Some _), (`Button | `Any) -> true
+    | Motion None, `Any -> true
+    | Motion _, _ -> false
+  in
+  let fits = e.format <> `X10 || (m.x <= 222 && m.y <= 222) in
+  if not (reported && fits) then equal string ~msg:"no report" "" bytes
+  else
+    let expected =
+      {
+        m with
+        kind =
+          (match m.kind with
+          | Release _ when e.format <> `Sgr -> Release None
+          | k -> k);
+        shift = m.shift && e.tracking <> `X10;
+        alt = m.alt && e.tracking <> `X10;
+        ctrl = m.ctrl && e.tracking <> `X10;
+      }
+    in
+    match decode_all bytes with
+    | [ D.Mouse m' ] when m' = expected -> ()
+    | l -> failf "%S reads %s" bytes (show_events l)
+
 let () =
   run "matrix.input.decoder.props"
     [
@@ -706,5 +970,22 @@ let () =
           prop ~count:(count 5000) "decoding an encoded reply gives it back"
             (Gen.with_pp R.pp reply) prop_round_trip;
           test "what has no bytes raises" unencodable;
+          prop ~count:(count 20_000) "a keystroke read encodes to itself"
+            (Gen.with_pp
+               (fun ppf (e, k) ->
+                 Format.fprintf ppf "%a %a" pp_keyboard e K.pp k)
+               (Gen.pair keyboard_gen keystroke_gen))
+            prop_key_projection;
+          prop ~count:(count 20_000)
+            "every kitty enhancement carries every fact"
+            (Gen.with_pp
+               (fun ppf (_, k) -> K.pp ppf k)
+               (Gen.pair (Gen.pair Gen.bool Gen.bool) keystroke_gen))
+            prop_key_exact;
+          prop ~count:(count 20_000) "a mouse report reads back"
+            (Gen.with_pp
+               (fun ppf (_, m) -> M.pp ppf m)
+               (Gen.pair mouse_encoding_gen mouse_gen))
+            prop_mouse;
         ];
     ]

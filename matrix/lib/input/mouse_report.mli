@@ -55,3 +55,34 @@ type t = {
 
 val pp : Format.formatter -> t -> unit
 (** [pp ppf m] formats [m] for debugging, as in [Press Left at 4,7 ctrl]. *)
+
+(** {1:encoding Encoding}
+
+    A terminal reports the events its {e tracking} mode asks for, in its
+    {e format}, and the program sets both (xterm's Control Sequences, "Mouse
+    Tracking"):
+    - X10 tracking (mode 9) reports the presses of the left, middle and right
+      buttons, without modifiers;
+    - normal tracking (mode 1000) also reports releases, wheel notches and the
+      buttons 8 to 11, with Shift, Meta and Control;
+    - button-event tracking (mode 1002) also reports motion while a button is
+      held, and any-event tracking (mode 1003) every motion.
+
+    The format is SGR (mode 1006), URXVT (mode 1015) or, with neither, X10's raw
+    bytes, which carry columns and rows up to 223. A release in SGR says which
+    button was released, and in the others it does not. *)
+
+type encoding = {
+  tracking : [ `X10 | `Normal | `Button | `Any ];
+  format : [ `X10 | `Sgr | `Urxvt ];
+}
+(** The type for the mouse reporting a program has set. *)
+
+val encode : encoding -> t -> string
+(** [encode e m] is the report a terminal in [e] sends for [m], and [""] when
+    [e] reports no such event or, in X10's format, cannot carry its position.
+    {!Decoder} reads it back as [m], less what the format cannot carry: the
+    button of a release outside SGR, and the modifiers in X10 tracking.
+
+    Raises [Invalid_argument] if [m]'s position is negative or its button is
+    [Extra n] with [n] outside 8..11. *)

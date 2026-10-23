@@ -99,6 +99,11 @@ type event =
 val pp_event : Format.formatter -> event -> unit
 (** [pp_event ppf e] formats [e] for debugging. *)
 
+val encode_focus : bool -> string
+(** [encode_focus focused] is the report a terminal with focus reporting on
+    (mode 1004) sends when it gains focus ([true], [CSI I]) or loses it
+    ([false], [CSI O]). *)
+
 (** {1:decoders Decoders} *)
 
 type t
@@ -277,6 +282,12 @@ val cut_paste : t -> (event -> unit) -> unit
     wait no longer for its end marker. It calls [f] on the bytes of an end
     marker it held, as {!Paste_data}, then on [Paste_end `Cut]. The bytes that
     follow decode as input. *)
+
+val encode_paste : bracketed:bool -> string -> string
+(** [encode_paste ~bracketed s] is the bytes a terminal sends when its user
+    pastes [s]: [s] between the start and end markers when [bracketed] (mode
+    2004 set), and [s] as typed otherwise. The terminal sends [s] as it is, so
+    an end marker inside [s] ends the paste there. *)
 
 (** {1:text Text}
 

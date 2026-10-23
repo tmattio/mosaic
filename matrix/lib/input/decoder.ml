@@ -1154,3 +1154,10 @@ let settle d (o : owed) =
   then invalid_arg "Matrix_input.Decoder.settle: more than is owed";
   d.cursor_reports <- d.cursor_reports - o.cursor_reports;
   d.string_replies <- d.string_replies - o.string_replies
+
+(* Encoding *)
+
+let encode_paste ~bracketed s =
+  if bracketed then "\x1b[200~" ^ s ^ paste_end else s
+
+let encode_focus focused = if focused then "\x1b[I" else "\x1b[O"

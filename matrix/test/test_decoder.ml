@@ -5,7 +5,8 @@
     [decoder.mli]: keys in every encoding, mouse reports, paste, replies,
     strings, silence and what is owed. Then come the regressions of the defects
     found in the previous parser, the attack cases its redesign was checked
-    against, and the bytes a real xterm sends for a set of chords. *)
+    against, and the bytes a real xterm sends for a set of chords, which the
+    encoder must send too. *)
 
 module I = Matrix_input
 module D = I.Decoder
@@ -1494,6 +1495,179 @@ let key_equivalence () =
 
 let equivalence_tests = [ test "one value per keystroke" key_equivalence ]
 
+(* Encoding ------------------------------------------------------------------ *)
+
+let keyboard ?(cursor_keys = false) ?(keypad = false) ?(new_line = false)
+    ?(modify_other_keys = 0) ?(kitty = 0) () =
+  { K.cursor_keys; keypad; new_line; modify_other_keys; kitty }
+
+(* The rows of [measured] whose keystroke the decoder reads whole: xterm's
+   Alt arrives as an ESC (metaSendsEscape, which the encoder always is), and
+   modifyOtherKeys 2 applies Caps Lock to a chord, which the value read
+   back has lost. Each keystroke read encodes to the bytes xterm sent. *)
+let xterm_bytes () =
+  let has_prefix p s =
+    String.length s >= String.length p && String.sub s 0 (String.length p) = p
+  in
+  let contains_alt s =
+    let rec go i =
+      i + 3 <= String.length s && (String.sub s i 3 = "Alt" || go (i + 1))
+    in
+    go 0
+  in
+  List.iter
+    (fun (chord, config, bytes, _) ->
+      let e =
+        match config with
+        | "all" | "mse" -> Some (keyboard ())
+        | "legacy" when not (contains_alt chord) -> Some (keyboard ())
+        | "moOK1" -> Some (keyboard ~modify_other_keys:1 ())
+        | "moOK2 mse" when not (has_prefix "Caps" chord) ->
+            Some (keyboard ~modify_other_keys:2 ())
+        | _ -> None
+      in
+      Option.iter
+        (fun e ->
+          equal string
+            ~msg:(Printf.sprintf "%s, %s" chord config)
+            bytes
+            (K.encode e (decode_key bytes)))
+        e)
+    measured
+
+(* The decoder reads the encoder's bytes for every keystroke of the
+   equivalence table as it reads the bytes the terminals send. *)
+let encoded_equivalence () =
+  String.iter
+    (fun k ->
+      List.iter
+        (fun m ->
+          List.iter
+            (fun caps ->
+              List.iter
+                (fun (encoding, e) ->
+                  match encoding k m ~caps with
+                  | None -> ()
+                  | Some bytes ->
+                      let read = decode_key bytes in
+                      let again = K.encode e read in
+                      let read' = decode_key again in
+                      if read' <> read then
+                        failf "%S reads %a, which encodes to %S, read as %a"
+                          bytes K.pp read again K.pp read')
+                [
+                  (legacy, keyboard ());
+                  (kitty ~flag4:true, keyboard ~kitty:5 ());
+                  (kitty ~flag4:false, keyboard ~kitty:1 ());
+                  (kitty_all, keyboard ~kitty:31 ());
+                ])
+            [ false; true ])
+        chords)
+    unshifted
+
+let press ?(mods = K.no_mods) ?(text = "") ?base ?(keypad = false)
+    ?(repeat = false) key =
+  { K.key; mods; text; base; keypad; repeat }
+
+let char c = K.Char (Uchar.of_char c)
+let ctrl = { K.no_mods with ctrl = true }
+
+(* The losses [keystroke.mli] states, each in the bytes that carry it. *)
+let stated_losses () =
+  let read e k = Format.asprintf "%a" K.pp (decode_key (K.encode e k)) in
+  let loses msg e k expected = equal string ~msg expected (read e k) in
+  loses "legacy bytes lose Shift under Ctrl" (keyboard ())
+    (press ~mods:ctrl (char 'A'))
+    "Ctrl+'a'";
+  loses "modifyOtherKeys carries it"
+    (keyboard ~modify_other_keys:1 ())
+    (press ~mods:ctrl (char 'A'))
+    "Ctrl+'A'";
+  loses "kitty without alternate keys sends the unshifted key"
+    (keyboard ~kitty:1 ())
+    (press ~mods:ctrl (char '!'))
+    "Ctrl+Shift+'1'";
+  loses "with them, the character" (keyboard ~kitty:5 ())
+    (press ~mods:ctrl (char '!'))
+    "Ctrl+'!'";
+  loses "Ctrl+h is Backspace in legacy bytes" (keyboard ())
+    (press ~mods:ctrl (char 'h'))
+    "Backspace";
+  loses "Ctrl+[ is Escape in legacy bytes" (keyboard ())
+    (press ~mods:ctrl (char '['))
+    "Escape";
+  loses "the kitty protocol's disambiguation keeps it" (keyboard ~kitty:1 ())
+    (press ~mods:ctrl (char 'h'))
+    "Ctrl+'h'";
+  loses "legacy bytes send a keypad key as its main-keyboard twin" (keyboard ())
+    (press ~keypad:true ~text:"5" (char '5'))
+    "'5' text \"5\"";
+  loses "the application keypad keeps it" (keyboard ~keypad:true ())
+    (press ~keypad:true ~text:"5" (char '5'))
+    "'5' keypad text \"5\"";
+  loses "legacy bytes never report the locks" (keyboard ())
+    (press ~mods:{ ctrl with caps_lock = true } (char 's'))
+    "Ctrl+'s'";
+  loses "the kitty protocol reports them on chords" (keyboard ~kitty:1 ())
+    (press ~mods:{ ctrl with caps_lock = true } (char 's'))
+    "Ctrl+'s' caps_lock";
+  loses "a repeat is a press without event types" (keyboard ~kitty:1 ())
+    (press ~repeat:true Escape)
+    "Escape";
+  loses "with them, a repeat" (keyboard ~kitty:3 ())
+    (press ~repeat:true Escape)
+    "Escape repeat";
+  equal string ~msg:"LNM: Enter is CR LF" "\r\n"
+    (K.encode (keyboard ~new_line:true ()) (press Enter));
+  equal string ~msg:"DECCKM: SS3 forms" "\027OA"
+    (K.encode (keyboard ~cursor_keys:true ()) (press Up));
+  equal string ~msg:"DECCKM: modified keys keep CSI" "\027[1;5A"
+    (K.encode (keyboard ~cursor_keys:true ()) (press ~mods:ctrl Up));
+  let release =
+    { K.key = Escape; mods = K.no_mods; base = None; keypad = false }
+  in
+  equal string ~msg:"no release without event types" ""
+    (K.encode_release (keyboard ~kitty:1 ()) release);
+  equal string ~msg:"a release" "\027[27;1:3u"
+    (K.encode_release (keyboard ~kitty:3 ()) release);
+  equal string ~msg:"no release of a key sent as text" ""
+    (K.encode_release (keyboard ~kitty:3 ()) { release with key = char 'a' })
+
+let unencodable () =
+  let raises msg e k =
+    raises_match ~msg (Exn.invalid_arg ~substring:"Keystroke.encode") (fun () ->
+        K.encode e k)
+  in
+  raises "a media key in legacy bytes" (keyboard ()) (press (Media Play));
+  raises "F21 in legacy bytes" (keyboard ()) (press (F 21));
+  raises "F36" (keyboard ~kitty:1 ()) (press (F 36));
+  raises "a modifier key without every key a sequence" (keyboard ~kitty:1 ())
+    (press (Modifier Left_shift));
+  raises "a control character" (keyboard ()) (press (char '\001'));
+  raises "an unidentified key outside the functional range"
+    (keyboard ~kitty:1 ()) (press (Unidentified 65));
+  equal string ~msg:"a media key in the kitty protocol" "\027[57428u"
+    (K.encode (keyboard ~kitty:1 ()) (press (Media Play)))
+
+let paste_and_focus () =
+  check
+    (D.encode_paste ~bracketed:true "a\027[A")
+    [ "Paste_start"; "Paste_data \"a\\027[A\""; "Paste_end" ];
+  check
+    (D.encode_paste ~bracketed:false "ab")
+    [ "Key 'a' text \"a\""; "Key 'b' text \"b\"" ];
+  check (D.encode_focus true) [ "Focus_in" ];
+  check (D.encode_focus false) [ "Focus_out" ]
+
+let encoding_tests =
+  [
+    test "a keystroke read encodes to xterm's bytes" xterm_bytes;
+    test "every keystroke of the table, encoded" encoded_equivalence;
+    test "the stated losses" stated_losses;
+    test "what no terminal sends raises" unencodable;
+    test "paste and focus reports" paste_and_focus;
+  ]
+
 (* Ctrl+C, however the terminal encodes it, and nothing else. *)
 let interrupt () =
   List.iter
@@ -1548,6 +1722,7 @@ let () =
       group "regressions" regressions;
       group "attacks" attacks;
       group "measured" measured_tests;
+      group "encoding" encoding_tests;
       group "key equivalence" equivalence_tests;
       group "interrupt" interrupt_tests;
       group "make" make_tests;

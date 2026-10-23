@@ -244,6 +244,60 @@ val is_interrupt : t -> bool
     and no other modifier. In raw mode the terminal sends it as this key, and
     the application decides what it means. *)
 
+(** {1:encoding Encoding}
+
+    A terminal sends a keystroke in the encoding its program has asked for. Its
+    {e keyboard state} ({!type-encoding}) is what decides the bytes. xterm's
+    DECCKM and DECKPAM select the application forms of the cursor keys and of
+    the keypad (SS3), LNM has Enter send CR LF, and then come xterm's
+    modifyOtherKeys level and the kitty protocol's enhancement flags.
+
+    With a flag that disambiguates (1) or reports every key as a sequence (8),
+    the kitty protocol decides, as its "Progressive enhancement" section says.
+    Otherwise legacy bytes decide, with xterm's sequences for the keys that type
+    nothing. modifyOtherKeys then sends [CSI 27 ; m ; code ~] for the chords of
+    a character, Enter, Tab, Backspace and Escape: at level 1 for a chord whose
+    legacy bytes {!Decoder} would read as another keystroke, and from level 2
+    for every one. A key the kitty protocol numbers is typed on a US PC-101
+    layout, so the code of [Char '$'] is 4's, with Shift held.
+
+    {!Decoder} reads [encode e k] back as [k], less the facts that [e] cannot
+    carry, which the sections above list. *)
+
+type encoding = {
+  cursor_keys : bool;  (** DECCKM: unmodified cursor keys send SS3 forms. *)
+  keypad : bool;  (** DECKPAM: the keypad sends its application forms. *)
+  new_line : bool;  (** LNM: Enter sends CR LF. *)
+  modify_other_keys : int;  (** xterm's modifyOtherKeys level, [0] when off. *)
+  kitty : int;  (** The kitty protocol's enhancement flags, [0] when off. *)
+}
+(** The type for keyboard states. *)
+
+val legacy : encoding
+(** [legacy] is a terminal's keyboard state at power-up, with every field off.
+*)
+
+val encode : encoding -> t -> string
+(** [encode e k] is the bytes a terminal in the keyboard state [e] sends for
+    [k]. A repeat is sent as a press unless [e] asks the kitty protocol for
+    event types (flag 2).
+
+    Raises [Invalid_argument] if no terminal in [e] sends [k]: a [Char] that is
+    a control character, a key above F20 or one with no xterm sequence (a lock
+    key, Print_screen, Pause, Menu, a media, modifier or unidentified key)
+    without the kitty protocol, a key above F35, a modifier key unless every key
+    is a sequence (flag 8), or an unidentified key outside the kitty protocol's
+    functional range. *)
+
+val encode_release : encoding -> release -> string
+(** [encode_release e r] is the bytes a terminal in [e] sends for [r]. It is
+    [""] unless [e] asks the kitty protocol for event types (flag 2), and for a
+    key whose press goes as legacy bytes (a key that types text, and Enter, Tab
+    and Backspace unmodified, unless every key is a sequence), whose release the
+    protocol does not report.
+
+    Raises [Invalid_argument] as {!encode} does. *)
+
 (** {1:fmt Formatting} *)
 
 val pp_key : Format.formatter -> key -> unit
