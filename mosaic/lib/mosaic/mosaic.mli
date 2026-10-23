@@ -807,13 +807,14 @@ type 'msg mailbox = {
           [update], [view] or a command takes, or from a fiber or a coroutine
           that shares the loop's thread. *)
 }
-(** The type for the way work done off the loop ({!Cmd.val-perform},
-    {!Sub.val-worker}) gives the program messages, from any thread, any number
-    of times. Each piece of work's messages come in the order it gave them; the
-    loop applies each with [update] when it takes it, a step of a turn as an
-    event is. A worker's give nothing once its stop is requested, and a message
-    it gave before and the loop has not taken is dropped: no message of a worker
-    reaches [update] after the update that removed it. *)
+(** The type for the way a worker ({!Sub.val-worker}) gives the program
+    messages, from any thread, any number of times. The work of
+    {!Cmd.val-perform} is given [dispatch] alone. Each piece of work's messages
+    come in the order it gave them; the loop applies each with [update] when it
+    takes it, a step of a turn as an event is. A worker's give nothing once its
+    stop is requested, and a message it gave before and the loop has not taken
+    is dropped: no message of a worker reaches [update] after the update that
+    removed it. *)
 
 (** {1:commands Commands} *)
 
@@ -828,7 +829,7 @@ module Cmd : sig
     | None  (** No command. Equivalent to [batch []]. *)
     | Batch of 'msg t list
         (** Start the commands in list order. See {!val-batch}. *)
-    | Perform of ('msg mailbox -> unit)
+    | Perform of (('msg -> unit) -> unit)
         (** Run a function off the loop. See {!val-perform}. *)
     | Exec of (unit -> 'msg)
         (** Give the terminal to a function and dispatch its result. See
@@ -874,19 +875,19 @@ module Cmd : sig
       the loop ({!val-perform}) starts in that order too, but its messages
       arrive in the order it finishes, which nothing promises. *)
 
-  val perform : ('msg mailbox -> unit) -> 'msg t
-  (** [perform f] runs [f mailbox] off the loop, by {!val-run}'s
+  val perform : (('msg -> unit) -> unit) -> 'msg t
+  (** [perform f] runs [f dispatch] off the loop, by {!val-run}'s
       [process_perform] (by default a thread of a helper domain), so that long
-      work never holds the loop. [f] gives the program messages with
-      [mailbox.dispatch], or [mailbox.send] to keep pace with the loop
-      ({!type-mailbox}).
+      work never holds the loop. [f] gives the program messages with [dispatch],
+      which is a mailbox's [dispatch] ({!type-mailbox}): it never blocks.
 
       An exception [f] raises ends the run: {!val-run} gives the terminal back
       and raises it, with the backtrace of where [f] raised it (when backtraces
-      are recorded, {!Printexc.record_backtrace}). After the run, [mailbox] does
-      nothing, and an exception from [f] has no run left to end: it is dropped.
-      [f] cannot be stopped: work the program may stop wanting is a
-      {!Sub.val-worker}. *)
+      are recorded, {!Printexc.record_backtrace}). After the run, [dispatch]
+      does nothing, and an exception from [f] has no run left to end: it is
+      dropped. [f] cannot be stopped, and cannot wait for the loop to apply its
+      messages: work the program may stop wanting, or that keeps pace with the
+      loop with [send], is a {!Sub.val-worker}. *)
 
   val exec : (unit -> 'msg) -> 'msg t
   (** [exec f] gives the terminal to [f] and dispatches [f ()]'s result once the
@@ -1280,8 +1281,8 @@ end
     [select(2)], and runs the work of {!Cmd.val-perform} and {!Sub.val-worker}
     on threads. A program with threads of its own needs nothing more. A thread
     ends the run with a stop request ([stop]), and gives the program messages
-    through the mailbox of that work, or with {!val-dispatch} from a thread the
-    program did not start ({{!event_loops}Event loops}). *)
+    through the [dispatch] or the mailbox of that work, or with {!val-dispatch}
+    from a thread the program did not start ({{!event_loops}Event loops}). *)
 
 val run :
   ?input:Unix.file_descr ->
@@ -1384,9 +1385,9 @@ val deadline : 'msg running -> int option
 
 val dispatch : 'msg running -> 'msg -> unit
 (** [dispatch r msg] gives [msg] to [r]'s [update] in a later step, as the
-    mailbox of work done off the loop does ({!type-mailbox}). It never blocks.
-    Any thread, domain or fiber may call it; after the run ends it does nothing.
-*)
+    [dispatch] of work done off the loop does ({!type-mailbox}). It never
+    blocks. Any thread, domain or fiber may call it; after the run ends it does
+    nothing. *)
 
 (** {1:dim_helpers Dimension helpers} *)
 

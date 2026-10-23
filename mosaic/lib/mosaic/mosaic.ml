@@ -196,7 +196,7 @@ module Cmd = struct
   type 'msg t =
     | None
     | Batch of 'msg t list
-    | Perform of ('msg mailbox -> unit)
+    | Perform of (('msg -> unit) -> unit)
     | Exec of (unit -> 'msg)
     | Suspend
     | Quit
@@ -232,7 +232,7 @@ module Cmd = struct
     match cmd with
     | None -> None
     | Batch cmds -> Batch (List.map (map f) cmds)
-    | Perform g -> Perform (fun mailbox -> g (map_mailbox f mailbox))
+    | Perform g -> Perform (fun dispatch -> g (fun msg -> dispatch (f msg)))
     | Exec g -> Exec (fun () -> f (g ()))
     | Suspend -> Suspend
     | Quit -> Quit
@@ -575,7 +575,8 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
   | Cmd.None -> ()
   | Cmd.Batch cmds -> List.iter (process_cmd runtime) cmds
   | Cmd.Perform f ->
-      off_loop runtime runtime.process_perform (fun () -> f (mailbox runtime))
+      off_loop runtime runtime.process_perform (fun () ->
+          f (mailbox runtime).dispatch)
   | Cmd.Exec f -> push_msg runtime (Matrix.release runtime.matrix_app f)
   | Cmd.Suspend -> Matrix.stop_job runtime.matrix_app
   | Cmd.Quit -> runtime.quit <- true

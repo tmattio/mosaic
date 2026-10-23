@@ -115,9 +115,9 @@ let storm () =
       dispatch (`Msg (p, i))
     done
   in
-  let thread p = M.Cmd.perform (fun m -> produce p m.dispatch) in
+  let thread p = M.Cmd.perform (produce p) in
   let domain p =
-    M.Cmd.perform (fun { dispatch; _ } ->
+    M.Cmd.perform (fun dispatch ->
         Domain.join (Domain.spawn (fun () -> produce p dispatch)))
   in
   let writes () =

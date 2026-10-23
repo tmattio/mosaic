@@ -62,7 +62,7 @@ let update msg model =
       let duration = random_duration () in
       let job = { id; name = random_job_name (); duration; status = Pending } in
       let cmd =
-        Cmd.perform (fun { dispatch; _ } ->
+        Cmd.perform (fun dispatch ->
             dispatch (Job_started id);
             model.sleep duration;
             dispatch (Job_done id))

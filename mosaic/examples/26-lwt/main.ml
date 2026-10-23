@@ -15,7 +15,7 @@ let update msg model =
   | Add ->
       let id = model.next and seconds = 1. +. Random.float 3. in
       let timer = { id; seconds; rang = false } in
-      let ring { dispatch; _ } =
+      let ring dispatch =
         Lwt.async (fun () ->
             Lwt.map (fun () -> dispatch (Rang id)) (Lwt_unix.sleep seconds))
       in
