@@ -492,6 +492,14 @@ let test_hit_grid_integration () =
   hit_id := Screen.query_hit frame ~x:7 ~y:0;
   equal ~msg:"no hit at (7,0)" int 0 !hit_id
 
+let test_single_cell_frame_keeps_hits () =
+  let r = Screen.create () in
+  Screen.build r ~width:1 ~height:1 (fun _grid hits ->
+      Screen.Hit_grid.add hits ~x:0 ~y:0 ~width:1 ~height:1 ~id:5);
+  ignore (Screen.render r : string);
+  equal ~msg:"hit id at (0,0) of a 1x1 frame" int 5
+    (Screen.query_hit r ~x:0 ~y:0)
+
 (* The ids of a hit grid, row by row, "." for an empty cell. *)
 let show_hits hits ~width ~height =
   String.concat "/"
@@ -1201,6 +1209,8 @@ let () =
           test "Hit grid cleared each frame" test_hit_grid_cleared_each_frame;
           test "Hit grid swap happens on render" test_hit_grid_swap_on_render;
           test "Add hit region helper" test_add_hit_region_helper;
+          test "A 1x1 frame keeps its hit regions"
+            test_single_cell_frame_keeps_hits;
         ];
       group "Statistics" [ test "Stats tracking" test_stats_tracking ];
       group "Configuration"

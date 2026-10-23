@@ -498,8 +498,8 @@ let create ?width_method ?(cursor_visible = true) ?(explicit_width = false) () =
     current_valid = true;
     next_state = Pristine;
     scroll_baseline = Grid.create_like current ~width:1 ~height:1;
-    hit_current = Hit_grid.create ~width:0 ~height:0;
-    hit_next = Hit_grid.create ~width:0 ~height:0;
+    hit_current = Hit_grid.create ~width:1 ~height:1;
+    hit_next = Hit_grid.create ~width:1 ~height:1;
     sgr_state;
     row_offset = 0;
     prefer_explicit_width = explicit_width;
