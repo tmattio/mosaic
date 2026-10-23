@@ -117,6 +117,18 @@ let hit_rect_is_clipped_to_the_image () =
     Screen.Hit_grid.empty_id
     (Screen.Hit_grid.get hits ~x:3 ~y:0)
 
+(* Every crop clips what remains, a crop of nothing included. *)
+let crop_of_nothing_clips () =
+  let wide =
+    Image.custom ~width:3 ~height:1 (fun grid _ ~x ~y ->
+        Grid.draw_text grid ~x ~y ~text:"ABCDE")
+  in
+  let grid = Grid.create ~width:6 ~height:1 () in
+  Image.draw (Image.crop wide) grid;
+  for x = 0 to 5 do
+    equal ~msg:(Printf.sprintf "cell %d" x) bool (x < 3) (cell_written grid x 0)
+  done
+
 let hsnap_defaults_to_center () =
   let grid = Grid.create ~width:3 ~height:1 () in
   let img = Image.hsnap 3 (Image.text "x") in
@@ -156,6 +168,7 @@ let () =
           test "cropped padding stays empty" cropped_padding_stays_empty;
           test "composed clips stay empty" composed_clips_stay_empty;
           test "custom hits follow crop" custom_hits_follow_crop;
+          test "a crop of nothing clips" crop_of_nothing_clips;
           test "a hit rectangle is clipped to the image"
             hit_rect_is_clipped_to_the_image;
         ];

@@ -361,26 +361,24 @@ let apply_crop ?(left = 0) ?(right = 0) ?(top = 0) ?(bottom = 0) child =
   let child = if right < 0 then pad ~right:(-right) child else child in
   let child = if top < 0 then pad ~top:(-top) child else child in
   let child = if bottom < 0 then pad ~bottom:(-bottom) child else child in
-  if left = 0 && right = 0 && top = 0 && bottom = 0 then child
+  let left = normalize_crop left child.width in
+  let right = normalize_crop right (child.width - left) in
+  let top = normalize_crop top child.height in
+  let bottom = normalize_crop bottom (child.height - top) in
+  let width = child.width - left - right in
+  let height = child.height - top - bottom in
+  if width <= 0 || height <= 0 then empty
   else
-    let left = normalize_crop left child.width in
-    let right = normalize_crop right (child.width - left) in
-    let top = normalize_crop top child.height in
-    let bottom = normalize_crop bottom (child.height - top) in
-    let width = child.width - left - right in
-    let height = child.height - top - bottom in
-    if width <= 0 || height <= 0 then empty
-    else
-      let ops =
-        Array.map
-          (fun prim -> shift_primitive prim ~dx:(-left) ~dy:(-top))
-          child.ops
-      in
-      let base_clip = shift_clip_opt child.clip ~dx:(-left) ~dy:(-top) in
-      let clip =
-        merge_clip base_clip (Some { Grid.x = 0; y = 0; width; height })
-      in
-      { width; height; ops; clip }
+    let ops =
+      Array.map
+        (fun prim -> shift_primitive prim ~dx:(-left) ~dy:(-top))
+        child.ops
+    in
+    let base_clip = shift_clip_opt child.clip ~dx:(-left) ~dy:(-top) in
+    let clip =
+      merge_clip base_clip (Some { Grid.x = 0; y = 0; width; height })
+    in
+    { width; height; ops; clip }
 
 let hcrop left right child = apply_crop ~left ~right child
 let vcrop top bottom child = apply_crop ~top ~bottom child
