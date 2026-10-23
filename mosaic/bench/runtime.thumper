@@ -7,7 +7,7 @@
 
 loop/burst-1000-keys	alloc_words	exact	3514882
 loop/idle-turns-10000	alloc_words	exact	11
-loop/posts-1000	alloc_words	exact	135015
+loop/posts-1000	alloc_words	exact	138030
 primary-transcript-5000/keystroke-to-present	alloc_words	batch=16	n=22	2.620e+04	2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04 2.620e+04
 primary-transcript-5000/wheel-roundtrip-2x8	alloc_words	exact	105560
 transcript-20000/keystroke-to-present	alloc_words	exact	35833
