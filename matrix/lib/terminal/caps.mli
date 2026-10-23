@@ -131,8 +131,8 @@ val env :
   ?terminfo:Matrix_terminfo.t -> (string -> string option) -> win32:bool -> env
 (** [env ~terminfo getenv ~win32] reads the environment through [getenv], such
     as [Sys.getenv_opt]; an empty value counts as unset. [terminfo] is the
-    description of [TERM], if there is one ([Matrix_tty.terminfo] finds it).
-    [win32] says the terminal is a Windows console. *)
+    description of [TERM], if there is one ([Tty.terminfo] finds it). [win32]
+    says the terminal is a Windows console. *)
 
 (** {1:evidence Evidence} *)
 

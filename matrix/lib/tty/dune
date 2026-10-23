@@ -3,7 +3,7 @@
   (backend ppx_windtrap.coverage))
  (instrumentation
   (backend ppx_windtrap.mutate))
- (name matrix_tty)
+ (name tty)
  (public_name matrix.tty)
  (libraries unix matrix.terminfo)
  (foreign_stubs

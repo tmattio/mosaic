@@ -3,7 +3,9 @@ module Grid = Matrix_grid
 module Input = Matrix_input
 module Screen = Matrix_screen
 module Terminal = Matrix_terminal
+module Terminfo = Matrix_terminfo
 module Text = Matrix_text
+module Tty = Tty
 
 (* Types *)
 
@@ -44,7 +46,7 @@ let pp_event ppf = function
   | Invalid s -> Format.fprintf ppf "Invalid %S" s
   | Reply r -> Format.fprintf ppf "Reply %a" Input.Reply.pp r
 
-module Signal = Matrix_tty.Signal
+module Signal = Tty.Signal
 
 module Backend = struct
   type signal = Winch | Cont | Tstp | Terminate of int
@@ -113,11 +115,9 @@ module Backend = struct
     | exception Unix.Unix_error ((Unix.EAGAIN | Unix.EWOULDBLOCK), _, _) -> -1
 
   let unix ?(input = Unix.stdin) ?(output = Unix.stdout) () =
-    let input_is_tty = Matrix_tty.is_tty input in
-    let output_is_tty = Matrix_tty.is_tty output in
-    let controlling =
-      Matrix_tty.is_controlling input || Matrix_tty.is_controlling output
-    in
+    let input_is_tty = Tty.is_tty input in
+    let output_is_tty = Tty.is_tty output in
+    let controlling = Tty.is_controlling input || Tty.is_controlling output in
     let holder =
       Signal.hold ~controlling
         ~output:(if output_is_tty then Some output else None)
@@ -130,7 +130,7 @@ module Backend = struct
       match (raw, !saved) with
       | true, None when input_is_tty ->
           Signal.keep_settings holder ~input;
-          saved := Some (Matrix_tty.raw input)
+          saved := Some (Tty.raw input)
       | false, Some termios ->
           saved := None;
           (* Restoring from the background would stop the process with
@@ -138,7 +138,7 @@ module Backend = struct
           let mask = Thread.sigmask SIG_BLOCK [ Sys.sigttou ] in
           Fun.protect
             ~finally:(fun () -> ignore (Thread.sigmask SIG_SETMASK mask))
-            (fun () -> Matrix_tty.restore input termios);
+            (fun () -> Tty.restore input termios);
           Signal.forget_settings holder
       | _ -> ()
     in
@@ -147,8 +147,7 @@ module Backend = struct
       let timeout =
         match until with
         | None -> -1.
-        | Some until ->
-            Float.max 0. (Float.of_int (until - Matrix_tty.now ()) *. 1e-9)
+        | Some until -> Float.max 0. (Float.of_int (until - Tty.now ()) *. 1e-9)
       in
       let readable, _, _ =
         try Unix.select fds [] [] timeout
@@ -158,7 +157,7 @@ module Backend = struct
       reading && List.mem input readable
     in
     {
-      now = Matrix_tty.now;
+      now = Tty.now;
       wait;
       wake;
       take_signals = signals_from_handlers holder;
@@ -167,10 +166,9 @@ module Backend = struct
       (* A descriptor with no window, a pipe or a file, is given the size
          of a classic terminal. *)
       terminal_size =
-        (fun () -> Option.value (Matrix_tty.window output) ~default:(80, 24));
+        (fun () -> Option.value (Tty.window output) ~default:(80, 24));
       set_raw_mode;
-      flush_input =
-        (fun () -> if input_is_tty then Matrix_tty.flush_input input);
+      flush_input = (fun () -> if input_is_tty then Tty.flush_input input);
       input_is_tty;
       output_is_tty;
       controlling;
@@ -187,7 +185,7 @@ module Backend = struct
       env =
         (let terminfo =
            match Sys.getenv_opt "TERM" with
-           | Some term -> Result.to_option (Matrix_tty.terminfo term)
+           | Some term -> Result.to_option (Tty.terminfo term)
            | None -> None
          in
          Terminal.Caps.env ?terminfo Sys.getenv_opt ~win32:Sys.win32);
@@ -1274,7 +1272,7 @@ let run_undos t ~exiting =
         undos);
   Option.iter (fun (exn, bt) -> Printexc.raise_with_backtrace exn bt) !first
 
-(* Signals, which the runtime takes as Matrix_tty.Signal's policy says, for
+(* Signals, which the runtime takes as Tty.Signal's policy says, for
    a run on a terminal. *)
 
 let stopping_signals = [ Sys.sigtstp; Sys.sigterm; Sys.sighup ]

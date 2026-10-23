@@ -12,6 +12,7 @@
   matrix.screen
   matrix.input
   matrix.terminal
+  matrix.terminfo
   matrix.text
   matrix.tty
   threads.posix

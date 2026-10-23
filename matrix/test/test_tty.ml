@@ -17,14 +17,14 @@ let with_pipe f =
 (* The device *)
 
 let test_is_tty () =
-  with_pty (fun _ fd -> is_true ~msg:"a pseudo-terminal" (Matrix_tty.is_tty fd));
-  with_pipe (fun r _ -> is_false ~msg:"a pipe" (Matrix_tty.is_tty r))
+  with_pty (fun _ fd -> is_true ~msg:"a pseudo-terminal" (Tty.is_tty fd));
+  with_pipe (fun r _ -> is_false ~msg:"a pipe" (Tty.is_tty r))
 
 (* A pseudo-terminal the process opened is not the one its job runs in. *)
 let test_is_controlling () =
   with_pty (fun _ fd ->
-      is_false ~msg:"an opened pseudo-terminal" (Matrix_tty.is_controlling fd));
-  with_pipe (fun r _ -> is_false ~msg:"a pipe" (Matrix_tty.is_controlling r))
+      is_false ~msg:"an opened pseudo-terminal" (Tty.is_controlling fd));
+  with_pipe (fun r _ -> is_false ~msg:"a pipe" (Tty.is_controlling r))
 
 let size = Testable.(option (pair int int))
 
@@ -32,17 +32,17 @@ let size = Testable.(option (pair int int))
 let test_window () =
   with_pty ~winsize:{ rows = 30; cols = 100; xpixel = 0; ypixel = 0 }
     (fun master fd ->
-      equal ~msg:"the size set" size (Some (100, 30)) (Matrix_tty.window fd);
+      equal ~msg:"the size set" size (Some (100, 30)) (Tty.window fd);
       Pty.resize master ~rows:12 ~cols:40;
-      equal ~msg:"a resize" size (Some (40, 12)) (Matrix_tty.window fd));
+      equal ~msg:"a resize" size (Some (40, 12)) (Tty.window fd));
   with_pty ~winsize:{ rows = 0; cols = 0; xpixel = 0; ypixel = 0 } (fun _ fd ->
-      equal ~msg:"a size never set" size None (Matrix_tty.window fd));
-  with_pipe (fun r _ -> equal ~msg:"a pipe" size None (Matrix_tty.window r))
+      equal ~msg:"a size never set" size None (Tty.window fd));
+  with_pipe (fun r _ -> equal ~msg:"a pipe" size None (Tty.window r))
 
 let test_now () =
-  let a = Matrix_tty.now () in
+  let a = Tty.now () in
   Unix.sleepf 0.01;
-  let b = Matrix_tty.now () in
+  let b = Tty.now () in
   is_true ~msg:"10 ms later, by at least 10 ms" (b - a >= 10_000_000)
 
 (* Settings *)
@@ -55,13 +55,13 @@ let test_raw_and_restore () =
       (* A fresh line discipline has IEXTEN set: the kernel then takes
          VDISCARD (^O) and VLNEXT (^V) even with ICANON off. *)
       is_true ~msg:"IEXTEN set at first" (get_iexten fd);
-      let saved = Matrix_tty.raw fd in
+      let saved = Tty.raw fd in
       let t = Unix.tcgetattr fd in
       is_false ~msg:"no echo" t.c_echo;
       is_false ~msg:"no line editing" t.c_icanon;
       is_false ~msg:"no signal characters" t.c_isig;
       is_false ~msg:"no IEXTEN" (get_iexten fd);
-      Matrix_tty.restore fd saved;
+      Tty.restore fd saved;
       let t = Unix.tcgetattr fd in
       is_true ~msg:"echo again" t.c_echo;
       is_true ~msg:"line editing again" t.c_icanon;
@@ -69,7 +69,7 @@ let test_raw_and_restore () =
 
 let test_raw_not_a_terminal () =
   with_pipe (fun r _ ->
-      match Matrix_tty.raw r with
+      match Tty.raw r with
       | _ -> fail "a pipe has no settings"
       | exception Unix.Unix_error _ -> ())
 
@@ -130,7 +130,7 @@ let test_terminfo_order () =
   Out_channel.with_open_bin
     (Filename.concat (Filename.concat dot "m") name)
     (fun oc -> Out_channel.output_string oc (fixture "l/linux"));
-  let look vars = with_env vars (fun () -> Matrix_tty.terminfo name) in
+  let look vars = with_env vars (fun () -> Tty.terminfo name) in
   let dirs = ("TERMINFO_DIRS", Some ("/nonexistent::" ^ dirs)) in
   equal ~msg:"TERMINFO first" string "dumb"
     (found "all"
@@ -147,7 +147,7 @@ let test_terminfo_order () =
 let test_terminfo_hex_directory () =
   with_database [ ("6d", name, fixture "d/dumb") ] @@ fun dir ->
   with_env [ ("TERMINFO", Some dir) ] @@ fun () ->
-  equal ~msg:"6d for m" string "dumb" (found "hex" (Matrix_tty.terminfo name))
+  equal ~msg:"6d for m" string "dumb" (found "hex" (Tty.terminfo name))
 
 let hex s =
   String.concat ""
@@ -181,12 +181,12 @@ let test_terminfo_encoded () =
       with_env
         [ ("TERMINFO", Some value); ("HOME", None); ("TERMINFO_DIRS", None) ]
       @@ fun () ->
-      equal ~msg:form string "dumb" (found form (Matrix_tty.terminfo "dumb"));
+      equal ~msg:form string "dumb" (found form (Tty.terminfo "dumb"));
       equal
         ~msg:(form ^ ", by another of its names")
         string "dumb"
-        (found form (Matrix_tty.terminfo "80-column dumb tty"));
-      not_found (form ^ " for another name") (Matrix_tty.terminfo name))
+        (found form (Tty.terminfo "80-column dumb tty"));
+      not_found (form ^ " for another name") (Tty.terminfo name))
     [ ("hex", "hex:" ^ hex dumb); ("b64", "b64:" ^ b64 dumb) ]
 
 (* The first description that reads; a broken one is skipped. *)
@@ -196,23 +196,22 @@ let test_terminfo_invalid () =
   with_env
     [ ("TERMINFO", Some broken); ("HOME", None); ("TERMINFO_DIRS", Some good) ]
     (fun () ->
-      equal ~msg:"the next one" string "dumb"
-        (found "skip" (Matrix_tty.terminfo name)));
+      equal ~msg:"the next one" string "dumb" (found "skip" (Tty.terminfo name)));
   with_env
     [ ("TERMINFO", Some broken); ("HOME", None); ("TERMINFO_DIRS", None) ]
     (fun () ->
-      match Matrix_tty.terminfo name with
+      match Tty.terminfo name with
       | Error (`Invalid _) -> ()
       | _ -> fail "only a broken description: invalid")
 
 let test_terminfo_names () =
   List.iter
-    (fun n -> not_found n (Matrix_tty.terminfo n))
+    (fun n -> not_found n (Tty.terminfo n))
     [ ""; "."; ".."; "../x/xterm"; "x/xterm" ]
 
 (* Signals *)
 
-module Signal = Matrix_tty.Signal
+module Signal = Tty.Signal
 
 (* Linux's view of what the process catches, from /proc/self/status:
    [Sys.signal] reads a handler installed in C as the default, and putting
@@ -386,7 +385,7 @@ let test_restore_all () =
         with_pipe (fun r output ->
             with_holder ~output ~controlling:false (fun h ->
                 Signal.keep_settings h ~input;
-                let _ = Matrix_tty.raw input in
+                let _ = Tty.raw input in
                 Signal.set_reset h "\027[?25h";
                 Signal.restore_all ();
                 let buf = Bytes.create 64 in

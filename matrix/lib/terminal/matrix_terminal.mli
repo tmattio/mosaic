@@ -4,8 +4,7 @@
     through a caller-provided {e output} callback. The caller ({e runtime}) owns
     all I/O: this library reads no descriptor, waits for nothing, starts no
     thread and handles no signal, so a program with no operating system under it
-    can use it. The device itself, its settings and its signals, is
-    [Matrix_tty]'s.
+    can use it. The device itself, its settings and its signals, is [Tty]'s.
 
     {2:caps_detect Capabilities}
 

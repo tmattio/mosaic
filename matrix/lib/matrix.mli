@@ -31,7 +31,7 @@
 
     {1:sub_libraries Sub-libraries}
 
-    {!modules:Ansi Grid Input Screen Terminal Text} *)
+    {!modules:Ansi Grid Input Screen Terminal Terminfo Text Tty} *)
 
 (** {1:sub Sub-libraries} *)
 
@@ -50,8 +50,14 @@ module Screen = Matrix_screen
 module Terminal = Matrix_terminal
 (** Terminal protocol state machine. *)
 
+module Terminfo = Matrix_terminfo
+(** Terminal descriptions from the terminfo database. *)
+
 module Text = Matrix_text
 (** Terminal text measurement and segmentation. *)
+
+module Tty = Tty
+(** The terminal device and the signals it sends. *)
 
 (** {1:types Types} *)
 
@@ -208,10 +214,9 @@ module Backend : sig
       [CLOCK_MONOTONIC], its signals are those the runtime's handlers record for
       it (see {{!signals}Signals}), and its environment is the process's, with
       the description the terminfo database has for its [TERM]
-      ({!Matrix_tty.terminfo}). It holds its wake pipe from [unix ()] to its
-      [cleanup]. On Linux the monotonic clock stops while the system sleeps: a
-      deadline is that much later on the wall clock. On macOS it does not stop.
-  *)
+      ({!Tty.terminfo}). It holds its wake pipe from [unix ()] to its [cleanup].
+      On Linux the monotonic clock stops while the system sleeps: a deadline is
+      that much later on the wall clock. On macOS it does not stop. *)
 
   val wake_fd : t -> Unix.file_descr
   (** [wake_fd b] is the read end of the wake pipe of [b], a backend {!unix}
@@ -508,8 +513,8 @@ val stop_job : 'msg app -> unit
 
 (** {1:signals Signals}
 
-    A run holds its terminal's signals as {!Matrix_tty.Signal} says every holder
-    of a terminal in the process does: a run on a terminal, whichever, takes the
+    A run holds its terminal's signals as {!Tty.Signal} says every holder of a
+    terminal in the process does: a run on a terminal, whichever, takes the
     signals that end the process, SIGINT, SIGTERM, SIGHUP, SIGQUIT and SIGABRT,
     and a run on the controlling terminal ({!Backend.t}'s [controlling]) also
     SIGTSTP, SIGWINCH and SIGCONT. All but SIGWINCH and SIGCONT are taken only

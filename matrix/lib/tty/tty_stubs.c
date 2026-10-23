@@ -180,7 +180,7 @@ CAMLprim value matrix_tty_stop_group(value u) {
 CAMLprim value matrix_tty_hold(value controlling, value output) {
   (void)controlling;
   (void)output;
-  caml_failwith("Matrix_tty.Signal.hold: no wake pipe on Windows");
+  caml_failwith("Tty.Signal.hold: no wake pipe on Windows");
 }
 CAMLprim value matrix_tty_unhold(value id) {
   (void)id;
@@ -275,7 +275,7 @@ static struct holder *find_holder(value id) {
   int n = Int_val(id);
   for (struct holder *h = holders_head(); h != NULL; h = h->next)
     if (h->id == n) return h;
-  caml_invalid_argument("Matrix_tty.Signal: unknown holder");
+  caml_invalid_argument("Tty.Signal: unknown holder");
 }
 
 /* Registers a holder whose reset bytes go to [output], if [Some], and
@@ -489,7 +489,7 @@ extern int caml_convert_signal_number(int);
 static int system_signal(value s) {
   int n = caml_convert_signal_number(Int_val(s));
   if (n <= 0 || n >= SIGNALS)
-    caml_invalid_argument("Matrix_tty.Signal: signal number");
+    caml_invalid_argument("Tty.Signal: signal number");
   return n;
 }
 
@@ -502,7 +502,7 @@ static pthread_mutex_t takers_lock = PTHREAD_MUTEX_INITIALIZER;
 CAMLprim value matrix_tty_take(value vs) {
   int s = system_signal(vs);
   if (!in_policy(s))
-    caml_invalid_argument("Matrix_tty.Signal.take: not a terminal's signal");
+    caml_invalid_argument("Tty.Signal.take: not a terminal's signal");
   struct sigaction old, sa;
   int taken = 0;
   pthread_mutex_lock(&takers_lock);

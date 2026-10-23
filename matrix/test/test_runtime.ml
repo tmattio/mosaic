@@ -2760,7 +2760,7 @@ let test_unix_reset_without_terminal_input () =
       Fun.protect ~finally:b.cleanup (fun () ->
           b.on_fatal "RESET";
           (* What an abort does, from OCaml. *)
-          Matrix_tty.Signal.restore_all ();
+          Tty.Signal.restore_all ();
           b.on_fatal "";
           let master = Pty.file_descr master in
           let buf = Bytes.create 64 in

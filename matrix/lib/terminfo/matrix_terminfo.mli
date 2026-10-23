@@ -12,7 +12,7 @@
     reads, in either of term(5)'s formats, the legacy one (magic number 0432)
     and ncurses 6.1's with 32-bit numbers (01036), with the extended section
     that holds user-defined capabilities and their names. Finding the file for a
-    name is the system's affair: [Matrix_tty.terminfo] does it.
+    name is the system's affair: [Tty.terminfo] does it.
 
     A description is the database's statement about a kind of terminal, not the
     terminal's own: it may be missing (a new terminal over ssh), and it often
