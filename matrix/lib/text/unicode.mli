@@ -58,7 +58,8 @@ val packed_props : Uchar.t -> int
 (** [packed_props u] is all properties in a single table lookup. Bit layout:
     bits 0–4 = gcb, bits 5–6 = incb, bit 7 = extpic, bits 8–9 = width encoding
     (0 = -1, 1 = 0, 2 = 1, 3 = 2), bit 10 = zero width inside a grapheme, bit 11
-    = emoji, bit 12 = emoji modifier base. *)
+    = emoji, bit 12 = emoji modifier base, bit 13 = spacing mark
+    (General_Category Mc). *)
 
 val grapheme_props : Uchar.t -> int
 (** [grapheme_props u] is all grapheme properties in a single lookup. Bit

@@ -8,7 +8,8 @@
    0-17) - bits 5-6: incb (indic_conjunct_break, values 0-3) - bit 7: extpic
    (extended_pictographic, boolean) - bits 8-9: width (encoded: 0=-1, 1=0, 2=1,
    3=2) - bit 10: zero width inside a grapheme - bit 11: emoji
-   (boolean) - bit 12: emoji modifier base (boolean) *)
+   (boolean) - bit 12: emoji modifier base (boolean) - bit 13: spacing mark
+   (General_Category Mc) *)
 
 (* Surrogate packing: skip 0xD800-0xDFFF range *)
 let[@inline] pack_u u = if u > 0xd7ff then u - 0x800 else u

@@ -168,7 +168,8 @@ let may_continue u v =
        ~is_extpic:(pv land 0x80 <> 0))
 
 (* Combined boundary check + width extraction in one property lookup.
-   Returns packed int: bit 2 = is_boundary, bits 0-1 = width_enc.
+   Returns packed int: bit 3 = spacing mark (General_Category Mc),
+   bit 2 = is_boundary, bits 0-1 = width_enc.
    Width encoding: 0 → -1, 1 → 0, 2 → 1, 3 → 2. *)
 let[@inline] check_boundary_with_width s u =
   let packed = Unicode.packed_props u in
@@ -178,4 +179,7 @@ let[@inline] check_boundary_with_width s u =
   let is_break = break s right right_incb ~is_extpic in
   update_left s right right_incb ~is_extpic;
   let width_enc = (packed lsr 8) land 0x03 in
+  let width_enc =
+    if packed land 0x2000 <> 0 then width_enc lor 8 else width_enc
+  in
   if is_break then width_enc lor 4 else width_enc

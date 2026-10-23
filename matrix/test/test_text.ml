@@ -145,6 +145,14 @@ let measurement_rows =
     ("Thai word with spacing mark", "คำว่า", `Unicode, 8, 4);
     ("Thai tone mark", "ว่", `Unicode, 8, 1);
     ("Thai standalone spacing mark", "ำ", `Unicode, 8, 1);
+    (* A spacing mark has no width of its own: alone, or after a lone
+       combining mark, it leaves its cluster no cells, as kitty, WezTerm and
+       foot draw it. A wide one keeps its two cells. *)
+    ("Indic spacing mark alone", "\u{093F}", `Unicode, 8, 0);
+    ("spacing mark after a combining mark", "\u{0301}\u{0940}", `Unicode, 8, 0);
+    ("spacing mark alone wcwidth", "\u{093F}", `Wcwidth, 8, 1);
+    ("wide spacing mark alone", "\u{302E}", `Unicode, 8, 2);
+    ("spacing marks after a base", "\u{0915}\u{093E}\u{0903}", `Unicode, 8, 1);
     ("Thai repeated spacing marks", "น้ำำ", `Unicode, 8, 2);
     ("Thai repeated spacing marks wcwidth", "น้ำำ", `Wcwidth, 8, 3);
     ("Thai spacing mark after wide base", "界ำ", `Unicode, 8, 2);
@@ -1100,16 +1108,6 @@ let measured_rows =
 let per_character = [ "xterm 398"; "VTE 0.80.1"; "st 0.9.2" ]
 let clustering = [ "kitty 0.49.2"; "WezTerm 20240203"; "foot 1.21.0" ]
 
-(* The rows where [`Unicode] departs from what the clustering terminals agree
-   on, and why. A spacing mark that starts a cluster keeps its width; the
-   terminals discard it, as kitty's protocol does a code point of no width
-   with no cell before it (its marks, Mc included, have no width). *)
-let unicode_departures =
-  [
-    ("w06", "a spacing mark alone");
-    ("d5", "a spacing mark after a lone combining mark");
-  ]
-
 let check_measured r =
   let measure m = measure ~width_method:m ~tab_width:8 r.text in
   List.iter
@@ -1119,13 +1117,8 @@ let check_measured r =
       | None -> ())
     per_character;
   match List.map (fun t -> List.assoc t r.widths) clustering with
-  | Some w :: rest when List.for_all (( = ) (Some w)) rest -> (
-      match List.assoc_opt r.id unicode_departures with
-      | Some why ->
-          is_true ~msg:("Unicode departs: " ^ why) (measure `Unicode <> w)
-      | None ->
-          check_width "Unicode as the clustering terminals" w (measure `Unicode)
-      )
+  | Some w :: rest when List.for_all (( = ) (Some w)) rest ->
+      check_width "Unicode as the clustering terminals" w (measure `Unicode)
   | _ -> ()
 
 (* The units of [chunks], fed one scalar at a time with [Segmenter.add], or

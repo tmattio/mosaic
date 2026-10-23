@@ -374,7 +374,8 @@ let test_adjacent_cells_stay_apart () =
     [
       ("a", "\u{1F3FB}") (* an emoji modifier extends any character *);
       ("\u{0D4E}", "a") (* a Prepend character extends the next one *);
-      ("a", "\u{0903}") (* a spacing mark *);
+      ("a", "\u{302E}")
+      (* a spacing mark, wide: a narrow one alone has no cell to keep *);
     ]
 
 let test_resize_smaller () =

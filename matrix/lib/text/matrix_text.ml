@@ -235,6 +235,10 @@ let[@inline] unit_step seg ~wide ~wcwidth ~tab cp u =
         (Uchar.unsafe_of_int cp)
     in
     let cp_w = (bw land 3) - 1 in
+    (* Under [`Unicode] a spacing mark has no width of its own: one after a
+       base adds none, and one that starts a cluster leaves it zero wide.
+       A wide one (U+302E, U+302F) keeps its two cells. *)
+    let cp_w = if (not wide) && bw land 8 <> 0 && cp_w = 1 then 0 else cp_w in
     if bw land 4 <> 0 || unit_kind u <> kind_text then
       unit_make (ws_step ~wide cp cp_w 0) kind_text
     else unit_extend u (ws_step ~wide cp cp_w (unit_ws u))

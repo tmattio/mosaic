@@ -41,5 +41,6 @@ val may_continue : Uchar.t -> Uchar.t -> bool
 val check_boundary_with_width : t -> Uchar.t -> int
 (** [check_boundary_with_width s u] is like {!check_boundary} but
     also extracts the display width from a single property-table
-    lookup. The result is a packed integer: bit 2 = is_boundary,
-    bits 0–1 = width encoding (0 = -1, 1 = 0, 2 = 1, 3 = 2). *)
+    lookup. The result is a packed integer: bit 3 = [u] is a spacing mark
+    (General_Category Mc), bit 2 = is_boundary, bits 0–1 = width encoding
+    (0 = -1, 1 = 0, 2 = 1, 3 = 2). *)

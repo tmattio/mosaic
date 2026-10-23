@@ -20,7 +20,10 @@ type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
       cluster mode (mode 2027 of "Unicode in Terminals"; kitty's text-sizing
       protocol): what continues a cluster takes no cells of its own, be it a
       mark, a joined emoji or a conjoined consonant, so the conjunct क्ष (U+0915
-      U+094D U+0937) takes the one cell of क. A cluster is two cells wide when
+      U+094D U+0937) takes the one cell of क. A spacing mark (General_Category
+      Mc) has no width of its own, as kitty's protocol gives every mark none:
+      one that starts a cluster, as U+093F does alone, leaves the cluster no
+      cells, unless the mark is wide (U+302E). A cluster is two cells wide when
       VS16 follows an emoji or an emoji modifier follows a modifier base, as in
       ☝🏽 (U+261D U+1F3FD), both of which have the emoji presentation
       ({{:https://www.unicode.org/reports/tr51/}UTS #51} §2.7.1, §4); for a pair
