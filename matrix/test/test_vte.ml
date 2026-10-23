@@ -2368,8 +2368,21 @@ let erase_scrollback_marks_a_change () =
   feed vte "\027[3J";
   is_false ~msg:"erasing an empty scrollback changes nothing" (Vte.is_dirty vte)
 
+(* A size report that repeats the size changes nothing, as resize states. *)
+let resize_to_the_same_size () =
+  let vte = Vte.create ~rows:5 ~cols:10 () in
+  feed vte "\027[2;4r\027[1;10Hx";
+  Vte.clear_dirty vte;
+  Vte.resize vte ~rows:5 ~cols:10;
+  is_false ~msg:"no change marked" (Vte.is_dirty vte);
+  is_true ~msg:"Last Column Flag kept" (Vte.last_column vte);
+  feed vte "\027[4;1H\n";
+  equal ~msg:"margins kept: a line feed at the bottom margin scrolls"
+    (pair int int) (3, 0) (Vte.cursor_pos vte)
+
 let tests =
   [
+    test "resize to the same size" resize_to_the_same_size;
     test "ED 3 marks a change" erase_scrollback_marks_a_change;
     test "hyperlinks survive styles and scrollback"
       hyperlinks_survive_styles_and_scrollback;

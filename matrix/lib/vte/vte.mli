@@ -339,7 +339,9 @@ val resize : t -> rows:int -> cols:int -> unit
     move with their rows and lose the Last Column Flag, the margins become the
     whole screen, and a unit in progress is ended. Tab stops stay, and new
     columns have one every eight columns. [rows] and [cols] below [1] are taken
-    as [1].
+    as [1]. A resize to the current size changes nothing, so a size report that
+    repeats the size keeps the margins, the Last Column Flag and the changes
+    ({!section-dirty}).
 
     Raises [Invalid_argument], and changes nothing, if
     [cols > Matrix_grid.max_width]. *)
