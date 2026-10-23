@@ -75,22 +75,16 @@ let close ?(wait = true) t =
   if t.closed then ()
   else (
     t.closed <- true;
-    (* While the slave is held, a child exiting as session leader waits for
-       the master to read its output: hang up first, so that it can exit. *)
-    (match t.slave with
-    | Some slave ->
-        close_fd t.fd;
-        close_fd slave
-    | None -> ());
-    (* Terminate and reap child process if spawned *)
+    (* Hang up first: a child whose exit waits for its output to be read can
+       then exit, so the reap below does not wait on it. *)
+    close_fd t.fd;
+    Option.iter close_fd t.slave;
     (match t.pid with
     | Some pid ->
-        (* Try SIGTERM first for graceful shutdown *)
         (try Unix.kill pid Sys.sigterm with Unix.Unix_error _ -> ());
         if wait then reap pid
     | None -> ());
-    t.pid <- None;
-    if t.slave = None then close_fd t.fd)
+    t.pid <- None)
 
 let get_winsize t = get_winsize_raw (live_fd t "get_winsize")
 let set_winsize t ws = set_winsize_raw (live_fd t "set_winsize") ws

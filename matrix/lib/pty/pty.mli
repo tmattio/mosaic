@@ -99,7 +99,11 @@ type winsize = {
 val open_pty : ?winsize:winsize -> unit -> t * t
 (** [open_pty ()] is [(master, slave)], a fresh PTY pair.
 
-    Both handles must be closed with {!close}.
+    Both handles must be closed with {!close}. On macOS, OpenBSD and NetBSD the
+    slave's last close discards the output the master has not read: a program
+    that runs its own child on the slave keeps that output by holding its slave
+    handle until it has read it, as {!spawn} does (see
+    {{!platform}platform notes}).
 
     Both descriptors are close-on-exec, so no program that the process starts
     inherits them by accident: while any process holds the slave open, the
@@ -130,11 +134,17 @@ val spawn :
     stdin/stdout/stderr to the slave, and executes [prog]. The child's PID is
     available via {!pid}.
 
-    On macOS, OpenBSD and NetBSD the last close of the slave discards the output
-    that the master has not read, so the parent holds the slave until {!close}.
-    The child, exiting as session leader, then waits for its output to be read:
-    read it before waiting for the child with [Unix.waitpid]. Elsewhere the
-    slave is closed in the parent.
+    {b Read before waiting.} What the child writes stays readable from the
+    master until it is read. As with a pipe, the child blocks in a write while
+    the terminal's buffer is full. On macOS, OpenBSD and NetBSD its exit also
+    waits until the master has read all its output, even after {!kill}: the
+    child leads the terminal's session, and these kernels let a session leader
+    finish exiting only once its terminal's output is delivered. A child whose
+    output nobody reads may thus never finish. Read to the end of output, or
+    {!close}, before waiting for the child with [Unix.waitpid] on {!pid}. The
+    end of output is {!read} returning [0] or raising
+    [Unix.Unix_error (EIO, _, _)], once every process that had the terminal open
+    has closed it.
 
     Optional arguments:
     - [env] is the child environment as ["KEY=value"] strings. Defaults to the
@@ -147,7 +157,7 @@ val spawn :
 
     Raises [Unix.Unix_error] if PTY creation or [fork] fails. Child setup and
     exec failures are not reported as exceptions; the child exits with status
-    [127]. Monitor via [Unix.waitpid] on {!pid}.
+    [127], which [Unix.waitpid] on {!pid} reports.
 
     {b Note.} The child receives [SIGHUP] when the master is closed. *)
 
@@ -179,13 +189,16 @@ val pid : t -> int option
     the child), [None] otherwise. *)
 
 val close : ?wait:bool -> t -> unit
-(** [close pty] closes the file descriptor and, for {!spawn} PTYs, terminates
-    and reaps the child process:
+(** [close pty] closes the file descriptor and, for {!spawn} PTYs, ends and
+    reaps the child process, in this order:
+    - Closes the master, and the slave that a {!spawn} handle holds. This hangs
+      up the terminal: output not yet read is lost, the child's session gets
+      [SIGHUP], and a child whose exit waits for its output to be read (see
+      {!spawn}) can finish.
     - Sends [SIGTERM].
     - If [wait] is [true] (the default), reaps immediately when the child has
       already exited; otherwise polls briefly (up to ~100ms) before escalating
-      to [SIGKILL].
-    - Reaps with [waitpid] to prevent zombies.
+      to [SIGKILL], then reaps it with [waitpid] to prevent a zombie.
 
     [wait] defaults to [true]. Set to [false] for non-blocking close; you must
     then call [Unix.waitpid] yourself.
@@ -202,7 +215,9 @@ val terminate : t -> unit
 
 val kill : t -> unit
 (** [kill pty] sends [SIGKILL] to the child. Unlike {!terminate} this signal
-    cannot be caught. Unix errors from [kill] are silently ignored.
+    cannot be caught. Unix errors from [kill] are silently ignored. A killed
+    child may still not finish exiting until its output is read (see {!spawn});
+    {!close} hangs up the terminal first.
 
     Raises [Invalid_argument] if [pty] has no child. *)
 
