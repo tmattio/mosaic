@@ -105,9 +105,10 @@ make.
 
 The generator (`gen.ml`) is weighted and seeded. Case `i` of seed `s` depends
 on `(s, i)` only. Cases are 1 to 40 tokens drawn from printable ASCII,
-Latin-1, wide CJK, combining marks, emoji with VS15/VS16, skin tones and ZWJ,
-Prepend, regional indicators, Hangul jamo, a Devanagari conjunct; the C0
-controls; every control function matrix implements, with parameters at the
+Latin-1, wide CJK, combining and spacing marks, emoji with VS15/VS16, skin
+tones (on U+261D too) and ZWJ, Prepend, regional indicators, Hangul jamo, a
+Devanagari conjunct; the C0 controls; every control function matrix
+implements, with parameters at the
 edges (absent, 0, 1, the screen's size and its neighbours, 2^16, 2^31, 2^32,
 20 digits); charsets and shifts; strings (OSC, DCS, APC, PM, SOS) with each
 terminator; C1 controls in UTF-8 and raw; ill-formed UTF-8; and malformed

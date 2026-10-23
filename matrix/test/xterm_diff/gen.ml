@@ -83,16 +83,19 @@ let csi ?(marker = "") ?(inter = "") label params final =
 
 (* {1 Text}
 
-   The alphabet: printable ASCII, Latin-1, wide CJK, combining marks, emoji
-   with VS15/VS16, skin tones and ZWJ, Prepend, regional indicators, Hangul
-   jamo, a conjunct. [alphabet] lists every non-ASCII scalar so that the
-   driver can measure xterm's width of each. *)
+   The alphabet: printable ASCII, Latin-1, wide CJK, combining marks, spacing
+   marks, emoji with VS15/VS16, skin tones (on a wide base and on U+261D,
+   which is narrow) and ZWJ, Prepend, regional indicators, Hangul jamo, a
+   conjunct. [alphabet] lists every non-ASCII scalar so that the driver can
+   measure xterm's width of each. *)
 
 let cjk = [ 0x4E00; 0x4E2D; 0x30A2; 0xD55C; 0xFF21; 0x3000 ]
 let combining = [ 0x0301; 0x0308; 0x0323; 0x20DD; 0x0345; 0x1AB0 ]
+let spacing = [ 0x0940; 0x093F; 0x0903; 0x302E ]
 let emoji = [ 0x1F600; 0x1F44D; 0x1F468; 0x1F469; 0x1F467; 0x1F308 ]
 let emoji_vs = [ 0x2764; 0x263A; 0x2702; 0x1F3F3; 0x0023 ]
 let skin = [ 0x1F3FB; 0x1F3FD ]
+let narrow_base = 0x261D
 let prepend = [ 0x0600; 0x0601; 0x06DD; 0x070F; 0x0D4E; 0x110BD ]
 let regional = [ 0x1F1EB; 0x1F1F7 ]
 let jamo = [ 0x1100; 0x1161; 0x11A8 ]
@@ -116,7 +119,19 @@ let other =
 
 let alphabet =
   List.concat
-    [ cjk; combining; emoji; emoji_vs; skin; prepend; regional; jamo; other ]
+    [
+      cjk;
+      combining;
+      spacing;
+      emoji;
+      emoji_vs;
+      skin;
+      [ narrow_base ];
+      prepend;
+      regional;
+      jamo;
+      other;
+    ]
 
 let ascii_run st =
   let n = 1 + Random.State.int st 8 in
@@ -154,6 +169,18 @@ let text st cfg =
       ( 2,
         fun () -> tok "text.emoji+skin" (one emoji ^ one skin) ~simpler:[ "a" ]
       );
+      ( 1,
+        fun () ->
+          tok "text.narrow+skin" (utf8 narrow_base ^ one skin) ~simpler:[ "a" ]
+      );
+      ( 3,
+        fun () ->
+          tok "text.base+spacing"
+            ((if Random.State.bool st then "x" else utf8 0x0915)
+            ^ one spacing
+            ^ if Random.State.bool st then one spacing else "")
+            ~simpler:[ "x" ] );
+      (1, fun () -> tok "text.spacing" (one spacing));
       ( 3,
         fun () ->
           tok "text.zwj"

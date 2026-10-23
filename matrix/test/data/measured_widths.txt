@@ -1,0 +1,75 @@
+# Display widths measured in terminals, 2026-10-23.
+#
+# Each terminal ran a program as its child that, for each row, cleared the
+# screen, homed the cursor, wrote the code points and asked the cursor's
+# position (CPR); the width is the column reached minus one. The terminals ran
+# as they start, mode 2027 untouched, under Xvfb (xterm, VTE, st, kitty,
+# WezTerm) or a headless wlroots compositor (foot):
+# - xterm 398 (Debian 398-1), default resources; mkWidth and cjkWidth gave the
+#   same widths on these rows. DECRQM 2027: 0 (not recognized).
+# - VTE 0.80.1, in sakura 3.8.9. DECRQM 2027: 0.
+# - st 0.9.2, with glibc 2.41's wcwidth. No DECRQM answer.
+# - kitty 0.41.1 (Debian 13) and kitty 0.49.2 (release of 2026-10-01).
+#   DECRQM 2027: 0.
+# - WezTerm 20240203-110809-5046fc22 (release .deb). DECRQM 2027: 3
+#   (permanently set).
+# - foot 1.21.0, built with grapheme clustering (+graphemes). DECRQM 2027: 1
+#   (set).
+# "-" marks a row not measured in that terminal. Rows whose characters are
+# newer than Unicode 15.0 are left out: the terminals' tables differ in
+# version (VTE 15.0, xterm and glibc 16, kitty 0.49.2 17), and a row of them
+# tests a table, not a way of placing text. So are a TAB, which moves to a tab
+# stop, and a + virama + ssa, which Unicode 18's GB9c makes one cluster where
+# the terminals' older rules make two.
+#
+# id | code points | xterm 398 | VTE 0.80.1 | st 0.9.2 | kitty 0.41.1 | kitty 0.49.2 | WezTerm 20240203 | foot 1.21.0 | what
+w01 | 0068 0065 006C 006C 006F | 5 | 5 | 5 | 5 | 5 | 5 | 5 | ASCII
+w02 | 754C 754C | 4 | 4 | 4 | 4 | 4 | 4 | 4 | two CJK ideographs
+w03 | 0065 0301 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | a combining mark
+w04 | 0078 0940 | 2 | 2 | 2 | 1 | 1 | 1 | 1 | a spacing mark
+w05 | 0915 093F | 2 | 2 | 2 | 1 | 1 | 1 | 1 | a consonant and its vowel sign
+w06 | 093F | 1 | 1 | 1 | 0 | 0 | 0 | 0 | a spacing mark alone
+w07 | 0E01 0E33 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | Thai consonant and SARA AM
+w08 | 0E81 0EB3 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | Lao consonant and AM
+w09 | 1F389 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | an emoji
+w10 | 1F468 200D 1F469 200D 1F467 | 6 | 6 | 6 | 6 | 2 | 2 | 2 | a ZWJ family
+w11 | 1F1EB 1F1F7 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | a flag
+w12 | 1F1EB | 1 | 1 | 1 | 2 | 2 | 1 | 1 | a lone regional indicator
+w13 | 0031 FE0F 20E3 | 1 | 1 | 1 | 2 | 2 | 1 | 2 | a keycap
+w14 | 2764 FE0F | 1 | 1 | 1 | 2 | 2 | 1 | 2 | heart with VS16
+w15 | 2600 FE0F | 1 | 1 | 1 | 2 | 2 | 1 | 2 | sun with VS16
+w16 | 2600 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | sun, text by default
+w17 | 0061 FE0F | 1 | 1 | 1 | 1 | 1 | 1 | 1 | VS16 with no emoji
+w18 | 1F44D 1F3FD | 4 | 4 | 4 | 2 | 2 | 2 | 2 | a skin tone
+w19 | 231A | 2 | 2 | 2 | 2 | 2 | 2 | 2 | a watch, wide
+w20 | 00B1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | an ambiguous sign
+w21 | 1100 1161 11A8 | 2 | 2 | 2 | 4 | 2 | 2 | 2 | Hangul syllable of jamo
+w22 | 0061 200B 0062 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | a zero-width space
+d1 | 261D 1F3FD | 3 | 3 | 3 | 2 | 2 | 2 | 2 | index finger and skin tone
+d2 | 2764 200D 1F469 | 3 | 3 | 3 | 3 | 1 | 2 | 2 | ZWJ before a wide emoji
+d3 | 0D4E 754C | 3 | 3 | 3 | 3 | 1 | 2 | 2 | prepend before CJK
+d4 | 0915 094D 0937 | 2 | 2 | 2 | 2 | 1 | 2 | 2 | the conjunct kssa
+d5 | 0301 0940 | 1 | 1 | 1 | 0 | 0 | 0 | 0 | a spacing mark, alone (after a lone combining mark)
+d6 | 200D 302E | 2 | 2 | 2 | 0 | 2 | 0 | 2 | a wide spacing mark after ZWJ
+d7 | 0D4E FE0F 754C | 3 | 3 | 3 | 3 | 3 | 3 | 3 | a stray VS16, then CJK
+x1 | 754C 302E | 4 | 4 | 4 | 2 | 2 | 2 | 2 | CJK and a wide spacing mark
+x2 | 0915 093E 0903 | 3 | 3 | 3 | 1 | 1 | 1 | 1 | consonant, two spacing marks
+x4 | 0915 094D 0937 093F | 3 | 3 | 3 | 2 | 1 | 2 | 2 | conjunct and vowel sign
+x5 | 1100 1161 | 2 | 2 | 2 | 3 | 2 | 2 | 2 | Hangul LV jamo
+x6 | 0E01 0E33 0E01 | 3 | 3 | 3 | 3 | 3 | 3 | 3 | SARA AM then consonant
+x7 | 0915 0903 | 2 | 2 | 2 | 1 | 1 | 1 | 1 | consonant and visarga (Mc)
+x8 | 0BA4 0BCA | 2 | 2 | 2 | 1 | 1 | 1 | 1 | Tamil consonant and two-part vowel O (Mc)
+y1 | 0915 094D 0915 094D 0915 | 3 | 3 | - | - | 1 | 3 | 2 | three-consonant Devanagari conjunct
+y2 | 0D15 0D4D 0D15 | 2 | 2 | - | - | 1 | 2 | 2 | Malayalam conjunct kka
+y3 | 0D30 0D3F | 2 | 2 | - | - | 1 | 1 | 1 | Malayalam ra + vowel sign i (Mc)
+y4 | 0B95 0BCD 0BB7 | 2 | 2 | - | - | 2 | 2 | 2 | Tamil k.ssa
+y5 | 0915 094D 0937 0947 | 2 | 2 | - | - | 1 | 2 | 2 | conjunct + vowel sign e (Mn)
+y6 | 1F469 200D 1F680 | 4 | 4 | - | - | 2 | 2 | 2 | woman astronaut ZWJ
+y7 | 1F3F3 FE0F 200D 1F308 | 3 | 3 | - | - | 2 | 2 | 2 | rainbow flag
+y8 | 0E01 0E49 0E33 | 2 | 2 | - | - | 2 | 2 | 2 | Thai consonant tone mark AM
+y9 | 0915 0940 0902 | 2 | 2 | - | - | 1 | 1 | 1 | consonant, Mc, Mn
+y10 | 2764 FE0E | 1 | 1 | - | - | 1 | 1 | 1 | heart VS15
+y11 | 231A FE0E | 2 | 2 | - | - | 1 | 2 | 1 | watch VS15
+y12 | 1F468 1F3FB | 4 | 4 | - | - | 2 | 2 | 2 | man light skin
+y13 | 0023 20E3 | 1 | 1 | - | - | 1 | 1 | 1 | keycap without VS16
+y14 | 0E33 | 1 | 1 | - | - | 1 | 1 | 1 | lone SARA AM

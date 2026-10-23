@@ -14,7 +14,7 @@ let uchar_to_utf8 cp =
   Buffer.add_utf_8_uchar buf (Uchar.of_int cp);
   Buffer.contents buf
 
-let grapheme_break_test_path () =
+let data_path name =
   let here = Filename.dirname Sys.argv.(0) in
   let rec find_root dir =
     if Sys.file_exists (Filename.concat dir "dune-project") then Some dir
@@ -25,16 +25,16 @@ let grapheme_break_test_path () =
   let root = Option.value (find_root (Sys.getcwd ())) ~default:here in
   let candidates =
     [
-      Filename.concat here "data/GraphemeBreakTest.txt";
-      Filename.concat root "matrix/test/data/GraphemeBreakTest.txt";
+      Filename.concat here ("data/" ^ name);
+      Filename.concat root ("matrix/test/data/" ^ name);
     ]
   in
   match List.find_opt Sys.file_exists candidates with
   | Some p -> p
-  | None -> fail "Could not find data/GraphemeBreakTest.txt"
+  | None -> fail ("Could not find data/" ^ name)
 
 let run_grapheme_conformance () =
-  let path = grapheme_break_test_path () in
+  let path = data_path "GraphemeBreakTest.txt" in
   let ic = open_in path in
   try
     let rec loop lineno =
@@ -149,6 +149,8 @@ let measurement_rows =
     ("Thai repeated spacing marks wcwidth", "น้ำำ", `Wcwidth, 8, 3);
     ("Thai spacing mark after wide base", "界ำ", `Unicode, 8, 2);
     ("Lao spacing mark", "\u{0E99}\u{0EB3}", `Unicode, 8, 2);
+    ("Lao spacing mark wcwidth", "\u{0E99}\u{0EB3}", `Wcwidth, 8, 2);
+    ("Thai spacing mark wide", "น้ำ", `Unicode_wide, 8, 2);
     ("Indic spacing mark retains base width", "क\u{093E}", `Unicode, 8, 1);
     ("Indic spacing mark wcwidth", "क\u{093E}", `Wcwidth, 8, 2);
     (* A conjunct takes its first consonant's cell, in every script. *)
@@ -1034,6 +1036,98 @@ let unicode_18 () =
   equal ~msg:"Extend after the linker keeps the binding" int 1
     (grapheme_count "\u{094D}\u{0951}\u{0937}")
 
+(* Widths measured in seven terminals: data/measured_widths.txt, whose header
+   says how. Each method is checked against the terminals whose way of placing
+   text it models: [`Wcwidth] against xterm, VTE and st, which place each
+   character by itself, on every row; [`Unicode] against kitty 0.49.2,
+   WezTerm and foot, which place grapheme clusters, on the rows where the
+   three agree. *)
+type measured = {
+  id : string;
+  text : string;
+  what : string;
+  widths : (string * int option) list;
+}
+
+let measured_rows =
+  let utf8 cps =
+    let b = Buffer.create 16 in
+    List.iter
+      (fun cp ->
+        Buffer.add_utf_8_uchar b (Uchar.of_int (int_of_string ("0x" ^ cp))))
+      (Stdlib.String.split_on_char ' ' cps |> List.filter (( <> ) ""));
+    Buffer.contents b
+  in
+  let fields line =
+    List.map Stdlib.String.trim (Stdlib.String.split_on_char '|' line)
+  in
+  let lines =
+    In_channel.with_open_bin
+      (data_path "measured_widths.txt")
+      In_channel.input_lines
+  in
+  (* "# id | code points | terminal ... | what" *)
+  let terminals =
+    let header = List.find (Stdlib.String.starts_with ~prefix:"# id |") lines in
+    let columns = fields header in
+    List.filteri (fun i _ -> i >= 2 && i < List.length columns - 1) columns
+  in
+  List.filter_map
+    (fun line ->
+      if line = "" || line.[0] = '#' then None
+      else
+        match fields line with
+        | id :: cps :: rest ->
+            let widths =
+              List.mapi
+                (fun i t ->
+                  ( t,
+                    match List.nth rest i with
+                    | "-" -> None
+                    | w -> Some (int_of_string w) ))
+                terminals
+            in
+            Some
+              {
+                id;
+                text = utf8 cps;
+                what = List.nth rest (List.length terminals);
+                widths;
+              }
+        | _ -> failwith ("measured_widths.txt: " ^ line))
+    lines
+
+let per_character = [ "xterm 398"; "VTE 0.80.1"; "st 0.9.2" ]
+let clustering = [ "kitty 0.49.2"; "WezTerm 20240203"; "foot 1.21.0" ]
+
+(* The rows where [`Unicode] departs from what the clustering terminals agree
+   on, and why. A spacing mark that starts a cluster keeps its width; the
+   terminals discard it, as kitty's protocol does a code point of no width
+   with no cell before it (its marks, Mc included, have no width). *)
+let unicode_departures =
+  [
+    ("w06", "a spacing mark alone");
+    ("d5", "a spacing mark after a lone combining mark");
+  ]
+
+let check_measured r =
+  let measure m = measure ~width_method:m ~tab_width:8 r.text in
+  List.iter
+    (fun t ->
+      match List.assoc t r.widths with
+      | Some w -> check_width ("Wcwidth as " ^ t) w (measure `Wcwidth)
+      | None -> ())
+    per_character;
+  match List.map (fun t -> List.assoc t r.widths) clustering with
+  | Some w :: rest when List.for_all (( = ) (Some w)) rest -> (
+      match List.assoc_opt r.id unicode_departures with
+      | Some why ->
+          is_true ~msg:("Unicode departs: " ^ why) (measure `Unicode <> w)
+      | None ->
+          check_width "Unicode as the clustering terminals" w (measure `Unicode)
+      )
+  | _ -> ()
+
 (* The units of [chunks], fed one scalar at a time with [Segmenter.add], or
    with [Segmenter.ascii_run] wherever it applies when [runs]. Each unit is
    its bytes and its width when it closed. *)
@@ -1388,6 +1482,9 @@ let () =
           test "bounded row and horizontal iteration" layout_bounded_iteration;
           test "measurement and rows agree at edges" layout_edge_cases;
         ];
+      cases "Measured widths" measured_rows
+        ~name:(fun r -> r.id ^ " " ^ r.what)
+        check_measured;
       group "Conformance"
         [ test "UAX #29 grapheme boundaries" run_grapheme_conformance ];
       group "Measurement"

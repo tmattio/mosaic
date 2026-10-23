@@ -10,6 +10,7 @@
  (name test_text)
  (package matrix)
  (modules test_text)
+ (deps data/GraphemeBreakTest.txt data/measured_widths.txt)
  (libraries windtrap matrix.text))
 
 (test
