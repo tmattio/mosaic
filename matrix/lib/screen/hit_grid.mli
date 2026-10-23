@@ -50,6 +50,23 @@ val get : t -> x:int -> y:int -> id
 (** [get t ~x ~y] is the element ID at [(x, y)], or {!empty_id} if the
     coordinates are out of bounds. *)
 
+val draw : src:t -> dst:t -> x:int -> y:int -> unit
+(** [draw ~src ~dst ~x ~y] paints the regions of [src] onto [dst], with [src]'s
+    top-left cell at [(x, y)] in [dst]. A cell of [src] that holds an element
+    overwrites the cell of [dst] it lands on, as {!add} does; a cell of [src]
+    that holds {!empty_id} leaves [dst] unchanged. The cells that land outside
+    [dst] or its active clip are skipped. Identifiers are copied unchanged.
+
+    This embeds a surface's hits in a larger one: draw the surface's elements
+    into a hit grid of its own size, then draw that grid at the surface's
+    position. The containers already under it keep the cells it left empty, as
+    they keep the cells it left undrawn on screen. For a copy that also replaces
+    [dst]'s cells with [src]'s empty ones, {!add} the region with {!empty_id}
+    first; {!resize} [dst] to [src]'s dimensions, which clears it, then draw at
+    [(0, 0)] for a copy of the whole grid.
+
+    [src] may be [dst]: the result is that of drawing a copy of [src]. *)
+
 (** {1:clipping Clipping}
 
     Hierarchical clipping for hit regions. When a clip is active, {!add}

@@ -121,3 +121,23 @@ let get t ~x ~y =
   else
     let idx = (y * t.width) + x in
     Bigarray.Array1.unsafe_get t.data idx
+
+let draw ~src ~dst ~x ~y =
+  let src =
+    if src != dst then src
+    else
+      let len = src.width * src.height in
+      let copy = Bigarray.Array1.create Bigarray.int Bigarray.c_layout len in
+      Bigarray.Array1.blit (Bigarray.Array1.sub src.data 0 len) copy;
+      { src with capacity = len; data = copy }
+  in
+  let x0, y0, x1, y1 =
+    clip_region dst ~x ~y ~width:src.width ~height:src.height
+  in
+  for row = y0 to y1 - 1 do
+    let s = ((row - y) * src.width) - x and d = row * dst.width in
+    for col = x0 to x1 - 1 do
+      let id = Bigarray.Array1.unsafe_get src.data (s + col) in
+      if id <> empty_id then Bigarray.Array1.unsafe_set dst.data (d + col) id
+    done
+  done

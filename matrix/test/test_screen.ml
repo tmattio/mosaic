@@ -491,6 +491,62 @@ let test_hit_grid_integration () =
   hit_id := Screen.query_hit frame ~x:7 ~y:0;
   equal ~msg:"no hit at (7,0)" int 0 !hit_id
 
+(* The ids of a hit grid, row by row, "." for an empty cell. *)
+let show_hits hits ~width ~height =
+  String.concat "/"
+    (List.init height (fun y ->
+         String.concat ""
+           (List.init width (fun x ->
+                match Screen.Hit_grid.get hits ~x ~y with
+                | 0 -> "."
+                | id -> string_of_int id))))
+
+let test_hit_grid_draw () =
+  let module H = Screen.Hit_grid in
+  let sub () =
+    (* 2x2: one element on the left column, the right column empty. *)
+    let g = H.create ~width:2 ~height:2 in
+    H.add g ~x:0 ~y:0 ~width:1 ~height:2 ~id:7;
+    g
+  in
+  let parent () =
+    let g = H.create ~width:4 ~height:3 in
+    H.add g ~x:0 ~y:0 ~width:4 ~height:3 ~id:1;
+    g
+  in
+  let dst = parent () in
+  H.draw ~src:(sub ()) ~dst ~x:1 ~y:1;
+  equal ~msg:"empty cells keep what is under them" string "1111/1711/1711"
+    (show_hits dst ~width:4 ~height:3);
+  let dst = parent () in
+  H.draw ~src:(sub ()) ~dst ~x:(-1) ~y:2;
+  equal ~msg:"cells outside the grid are skipped" string "1111/1111/1111"
+    (show_hits dst ~width:4 ~height:3);
+  let dst = parent () in
+  H.draw ~src:(sub ()) ~dst ~x:3 ~y:2;
+  equal ~msg:"clipped at the far edges" string "1111/1111/1117"
+    (show_hits dst ~width:4 ~height:3);
+  let dst = parent () in
+  H.with_clip dst { Grid.x = 0; y = 0; width = 4; height = 2 } (fun () ->
+      H.draw ~src:(sub ()) ~dst ~x:0 ~y:1);
+  equal ~msg:"the active clip applies" string "1111/7111/1111"
+    (show_hits dst ~width:4 ~height:3);
+  (* A copy of the whole grid: resize clears, then draw at the origin. *)
+  let src = H.create ~width:3 ~height:1 in
+  H.add src ~x:1 ~y:0 ~width:1 ~height:1 ~id:5;
+  let dst = parent () in
+  H.resize dst ~width:3 ~height:1;
+  H.draw ~src ~dst ~x:0 ~y:0;
+  equal ~msg:"resize then draw copies" string ".5."
+    (show_hits dst ~width:3 ~height:1);
+  (* Drawing a grid onto itself reads the cells before any is written. *)
+  let g = H.create ~width:3 ~height:1 in
+  H.add g ~x:0 ~y:0 ~width:1 ~height:1 ~id:1;
+  H.add g ~x:1 ~y:0 ~width:1 ~height:1 ~id:2;
+  H.draw ~src:g ~dst:g ~x:1 ~y:0;
+  equal ~msg:"self draw reads a snapshot" string "112"
+    (show_hits g ~width:3 ~height:1)
+
 let test_hit_grid_cleared_each_frame () =
   let r = Screen.create () in
 
@@ -1114,6 +1170,7 @@ let () =
       group "Hit Grid Integration"
         [
           test "Hit grid integration" test_hit_grid_integration;
+          test "Hit grid draw" test_hit_grid_draw;
           test "Hit grid cleared each frame" test_hit_grid_cleared_each_frame;
           test "Hit grid swap happens on render" test_hit_grid_swap_on_render;
           test "Add hit region helper" test_add_hit_region_helper;
