@@ -74,7 +74,7 @@ An application is four functions:
 `Sub.t` declares event sources: `Sub.on_keys`, `Sub.on_key`, `Sub.on_mouse`,
 `Sub.on_paste`, `Sub.on_resize`, `Sub.on_tick`, `Sub.every`, `Sub.on_focus`,
 `Sub.on_blur`. Key, mouse and paste listeners run after the elements, on the
-events no element used, unless declared `~phase:Capture`.
+events no element stopped, unless declared `~phase:Capture`.
 
 Components compose via `map : ('a -> 'b) -> 'a t -> 'b t`.
 

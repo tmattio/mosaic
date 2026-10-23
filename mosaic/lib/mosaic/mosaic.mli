@@ -895,13 +895,16 @@ module Sub : sig
       The application is one node: its listeners of a phase all see what reaches
       the phase, in declaration order, whatever the others did with it. A
       [Capture] listener sees every event before any element, and can keep it
-      from them. A [Bubble] listener sees an event that nothing used, neither
-      stopped nor prevented: a shortcut on [q] declared there does not fire
-      while [q] is typed into a focused input. A key the application takes
-      whatever is focused, such as Tab moving focus, belongs in [Capture], with
-      {!Event.Key.prevent_default} so the focused element does not act on it
-      too. One [Capture] listener cannot hide an event from another; while a
-      dialog owns the keyboard, stop declaring the listeners it overrides.
+      from them. A [Bubble] listener sees every event no element stopped,
+      prevented or not, and reads {!Event.Key.default_prevented} to know whether
+      something used it. A behavior that acts also stops the event, so a
+      [Bubble] listener never sees a key typed into a focused input: a shortcut
+      on [q] declared there does not fire while [q] is typed. A key the
+      application takes whatever is focused, such as Tab moving focus, belongs
+      in [Capture], with {!Event.Key.prevent_default} so the focused element
+      does not act on it too. One [Capture] listener cannot hide an event from
+      another; while a dialog owns the keyboard, stop declaring the listeners it
+      overrides.
 
       A listener's message goes through [update] at once. The path is taken when
       the event is dispatched, so a focus change that message makes moves the
@@ -912,8 +915,7 @@ module Sub : sig
   (** The type for the phase a listener runs in. *)
   type phase =
     | Capture  (** Before the elements, for every event. *)
-    | Bubble
-        (** After the elements, for the events nothing stopped or prevented. *)
+    | Bubble  (** After the elements, for the events no element stopped. *)
 
   (** The type for subscriptions. *)
   type 'msg t =
@@ -978,9 +980,10 @@ module Sub : sig
   val on_keys : ?phase:phase -> (Shortcut.t * 'msg) list -> 'msg t
   (** [on_keys bindings] dispatches the message bound to a key that reaches
       [phase] (defaults to [Bubble]; see {!section-phases}) with its default not
-      prevented, and prevents it. Later equivalent shortcuts override earlier
-      ones. Resolution tries the key, then the base-layout key, as widget
-      bindings do. See {!Shortcut} for how keys and modifiers match. *)
+      prevented, and prevents it: a binding is a default action of its key, so a
+      key something prevented fires none. Later equivalent shortcuts override
+      earlier ones. Resolution tries the key, then the base-layout key, as
+      widget bindings do. See {!Shortcut} for how keys and modifiers match. *)
 
   val on_key_release : (Matrix.Input.Keystroke.release -> 'msg option) -> 'msg t
   (** [on_key_release f] delivers key releases to [f], which no widget sees. A
@@ -996,10 +999,10 @@ module Sub : sig
   val on_paste : ?phase:phase -> (Event.paste -> 'msg option) -> 'msg t
   (** [on_paste f] calls [f] on each paste that reaches [phase] (defaults to
       [Bubble]; see {!section-phases}) and dispatches the message it returns.
-      The focused editor's behavior inserts a paste, so a [Bubble] listener sees
-      a paste no editor took; a [Capture] listener can prevent the insertion
-      with {!Event.Paste.prevent_default}. A bracketed paste is delivered whole
-      once its end marker arrives, and dropped when cut short
+      The focused editor's behavior inserts a paste and stops it, so a [Bubble]
+      listener sees a paste no editor took; a [Capture] listener can prevent the
+      insertion with {!Event.Paste.prevent_default}. A bracketed paste is
+      delivered whole once its end marker arrives, and dropped when cut short
       ({!Cmd.abort_paste}, or the end of the input); see {!val-on_paste_stalled}
       for a paste whose end marker never comes. Text a terminal reports without
       a key, such as an input method's, is delivered as a paste too. *)

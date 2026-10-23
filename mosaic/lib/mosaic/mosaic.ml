@@ -646,10 +646,10 @@ let deliver runtime msg =
   if not runtime.delivering then synchronize runtime
 
 (* An event goes from the application's [Capture] listeners down its path
-   and back up to the application's [Bubble] listeners, which see it only if
-   nothing used it. The application is one node: its listeners of a phase all
-   see what reaches the phase, in declaration order. *)
-let listen runtime ~used listeners dispatch event =
+   and back up to the application's [Bubble] listeners, which see it unless
+   an element stopped it. The application is one node: its listeners of a
+   phase all see what reaches the phase, in declaration order. *)
+let listen runtime ~stopped listeners dispatch event =
   let phase p =
     List.iter
       (fun (q, f) -> if q = p then Option.iter (deliver runtime) (f event))
@@ -657,16 +657,7 @@ let listen runtime ~used listeners dispatch event =
   in
   phase Sub.Capture;
   dispatch event;
-  if not (used event) then phase Sub.Bubble
-
-let key_used e =
-  Event.Key.propagation_stopped e || Event.Key.default_prevented e
-
-let mouse_used e =
-  Event.Mouse.propagation_stopped e || Event.Mouse.default_prevented e
-
-let paste_used e =
-  Event.Paste.propagation_stopped e || Event.Paste.default_prevented e
+  if not (stopped event) then phase Sub.Bubble
 
 let handle_resize runtime ~width ~height =
   runtime.view_dirty <- true;
@@ -706,7 +697,7 @@ let paste_heard runtime =
 
 let dispatch_paste runtime text =
   let path = Renderer.focus_path runtime.renderer in
-  listen runtime ~used:paste_used runtime.paste_subs
+  listen runtime ~stopped:Event.Paste.propagation_stopped runtime.paste_subs
     (Renderer.dispatch_paste runtime.renderer path)
     (Event.Paste.of_text text)
 
@@ -724,7 +715,7 @@ let handle_input runtime (input : Matrix.event) =
         runtime.color_scheme_sub
   | Key key ->
       let path = Renderer.focus_path runtime.renderer in
-      listen runtime ~used:key_used runtime.key_subs
+      listen runtime ~stopped:Event.Key.propagation_stopped runtime.key_subs
         (Renderer.dispatch_key runtime.renderer path)
         (Event.Key.of_input key)
   | Key_release release ->
@@ -733,7 +724,7 @@ let handle_input runtime (input : Matrix.event) =
         runtime.key_release_subs
   | Mouse mouse ->
       let path, event = Renderer.mouse_path runtime.renderer mouse in
-      listen runtime ~used:mouse_used runtime.mouse_subs
+      listen runtime ~stopped:Event.Mouse.propagation_stopped runtime.mouse_subs
         (Renderer.dispatch_mouse runtime.renderer path)
         event
   | Paste_start ->

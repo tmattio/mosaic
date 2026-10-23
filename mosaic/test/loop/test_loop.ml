@@ -606,12 +606,15 @@ let%expect_test "paste capture runs before the focused editor" =
     |
     |}]
 
-let%expect_test "a mouse press consumed by a widget skips on_mouse" =
+let%expect_test "a mouse press a widget stops skips on_mouse" =
   (* A capture listener sees the press before the widget; a bubble listener
-     after it, and only if the widget did not use it. *)
+     after it, unless the widget stopped it, and reads whether the widget
+     prevented it ("m!"). *)
   let log_downs tag ev =
     match Mosaic.Event.Mouse.kind ev with
-    | Mosaic.Event.Mouse.Down _ -> Some (Pressed tag)
+    | Mosaic.Event.Mouse.Down _ ->
+        let used = Mosaic.Event.Mouse.default_prevented ev in
+        Some (Pressed (if used then tag ^ "!" else tag))
     | _ -> None
   in
   let subs _ =
@@ -622,24 +625,32 @@ let%expect_test "a mouse press consumed by a widget skips on_mouse" =
       ]
   in
   let base = app ~subs () in
-  let consume_down ev =
+  let on_down f ev =
     (match Mosaic.Event.Mouse.kind ev with
-    | Mosaic.Event.Mouse.Down _ -> Mosaic.Event.Mouse.prevent_default ev
+    | Mosaic.Event.Mouse.Down _ -> f ev
     | _ -> ());
     None
   in
-  let view consuming model =
+  let view handler model =
     Mosaic.box
       ~size:(Mosaic.size ~width:48 ~height:2)
-      ?on_mouse:(if consuming then Some consume_down else None)
+      ?on_mouse:handler
       [ base.Mosaic.view model ]
   in
   let press = "\027[<0;41;2M\027[<0;41;2m" in
-  drive { base with Mosaic.view = view true } [ `Feed press; `Snap ];
-  drive { base with Mosaic.view = view false } [ `Feed press; `Snap ];
+  List.iter
+    (fun handler ->
+      drive { base with Mosaic.view = view handler } [ `Feed press; `Snap ])
+    [
+      Some (on_down Mosaic.Event.Mouse.stop_propagation);
+      Some (on_down Mosaic.Event.Mouse.prevent_default);
+      None;
+    ];
   [%expect
     {|
     |keys:[M] ticks:0 size:- note:-
+    |
+    |keys:[M,m!] ticks:0 size:- note:-
     |
     |keys:[M,m] ticks:0 size:- note:-
     |
@@ -1964,4 +1975,43 @@ let%expect_test "removing the focused element leaves nothing focused" =
   equal ~msg:"declaring b focused gives it the next key" (list pair)
     [ ("b", "y") ]
     !inputs;
+  [%expect {| |}]
+
+let%expect_test "a bubble listener sees a prevented key; a shortcut does not" =
+  (* The input's own handler prevents z without stopping it: the input does
+     not type it, a bubble listener sees it and can read the flag, and a
+     shortcut, a default action of the key, does not fire. *)
+  let seen = ref [] in
+  let application =
+    {
+      Mosaic.init = (fun () -> ((), Mosaic.Cmd.none));
+      update =
+        (fun name () ->
+          seen := name :: !seen;
+          ((), Mosaic.Cmd.none));
+      view =
+        (fun () ->
+          Mosaic.input
+            ~size:(Mosaic.size ~width:20 ~height:1)
+            ~state:Mosaic.Editor.empty ~focused:true
+            ~on_key:(fun key ->
+              Mosaic.Event.Key.prevent_default key;
+              None)
+            ~on_change:(fun _ -> "edit")
+            ());
+      subscriptions =
+        (fun () ->
+          Mosaic.Sub.batch
+            [
+              Mosaic.Sub.on_keys [ (Mosaic.Shortcut.char 'z', "shortcut") ];
+              Mosaic.Sub.on_key (fun key ->
+                  Some
+                    (if Mosaic.Event.Key.default_prevented key then "prevented"
+                     else "unused"));
+            ]);
+    }
+  in
+  drive ~width:20 ~height:1 application [ `Feed "z" ];
+  equal ~msg:"only the plain listener, told the key was used" (list string)
+    [ "prevented" ] (List.rev !seen);
   [%expect {| |}]
