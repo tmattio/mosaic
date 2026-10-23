@@ -178,6 +178,18 @@ let attr_extended_ordering () =
   equal ~msg:"no-op when unchanged" string ""
     (Style.sgr_sequence ~prev:style style)
 
+(* The transition ignores links, in to_sgr_codes and sgr_sequence as in
+   emit, so a style with a link and default colors goes to CSI 0 m. *)
+let style_transition_ignores_links () =
+  let bold = Style.make ~bold:true () in
+  let linked = Style.make ~link:"http://a" () in
+  equal ~msg:"codes" (list int) [ 0 ] (Style.to_sgr_codes ~prev:bold linked);
+  let emitted = Ansi.to_string (Style.emit ~prev:bold linked) in
+  equal ~msg:"sgr_sequence is emit's" string emitted
+    (Style.sgr_sequence ~prev:bold linked);
+  equal ~msg:"links alone change nothing" (list int) []
+    (Style.to_sgr_codes ~prev:linked (Style.make ~link:"http://b" ()))
+
 let style_shared_disable_codes () =
   (* Bold and Dim share disable code 22. When transitioning from bold+dim to
      dim-only, we must re-enable dim after disabling bold. *)
@@ -1683,6 +1695,7 @@ let tests =
       ];
     group "SGR Engine"
       [
+        test "the transition ignores links" style_transition_ignores_links;
         test "state diffing" sgr_state_transitions;
         test "foreground-only change does not reset"
           sgr_foreground_only_change_does_not_reset;

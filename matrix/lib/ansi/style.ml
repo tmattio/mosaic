@@ -155,10 +155,12 @@ let emit_sgr_diff ~prev t push =
   (* Emit enable codes for added attributes *)
   Sgr_attrs.iter_enabled push attrs_to_enable
 
+(* A transition compares colors and attributes alone: links are written by
+   the hyperlink layer. *)
 let to_sgr_codes ?prev t =
   let prev = Option.value prev ~default in
-  if equal prev t then []
-  else if equal t default then [ 0 ]
+  if visual_equal prev t then []
+  else if visual_equal t default then [ 0 ]
   else
     let rev_codes = ref [] in
     emit_sgr_diff ~prev t (fun code -> rev_codes := code :: !rev_codes);
@@ -166,7 +168,6 @@ let to_sgr_codes ?prev t =
 
 let emit ?prev t (w : Writer.t) =
   let prev = Option.value prev ~default in
-  (* Check visual properties only - link changes are handled by segment layer *)
   if visual_equal prev t then ()
   else if visual_equal t default then Escape.sgr [ 0 ] w
   else Escape.sgr_direct (emit_sgr_diff ~prev t) w

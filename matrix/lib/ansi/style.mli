@@ -179,8 +179,9 @@ val hash : t -> int
 
 val to_sgr_codes : ?prev:t -> t -> int list
 (** [to_sgr_codes ~prev s] is the codes of the transition from [prev] to [s]. It
-    is [[]] if [prev] and [s] are equal, and [[0]] if [s] is {!default} and
-    [prev] is not. [prev] defaults to {!default}. *)
+    is [[]] if [prev] and [s] have the same colors and attributes, and [[0]] if
+    [s] has those of {!default} and [prev] does not. [prev] defaults to
+    {!default}. *)
 
 val sgr_sequence : ?prev:t -> t -> string
 (** [sgr_sequence ~prev s] is the SGR sequence of {!to_sgr_codes}[ ~prev s], and
