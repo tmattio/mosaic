@@ -122,6 +122,7 @@ type t = {
   cluster : cluster;
   default_fg : Ansi.Color.t;
   default_bg : Ansi.Color.t;
+  palette : [ `Fg | `Bg | `Cursor | `Index of int ] -> Ansi.Color.t;
   parser : Ansi.Parser.t;
   mutable osc : osc;
   osc_text : Buffer.t;
@@ -1005,9 +1006,18 @@ let check_cols fn cols =
 
 (* The structure, which RIS gives its power-up state. *)
 let create ?(scrollback = 10000) ?(width_method = `Unicode)
-    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ~rows
-    ~cols () =
+    ?(default_fg = Ansi.Color.white) ?(default_bg = Ansi.Color.black) ?palette
+    ~rows ~cols () =
   check_cols "create" cols;
+  let palette =
+    match palette with
+    | Some palette -> palette
+    | None -> (
+        function
+        | `Fg | `Cursor -> default_fg
+        | `Bg -> default_bg
+        | `Index i -> Ansi.Color.indexed i)
+  in
   let rows = max 1 rows and cols = max 1 cols in
   let screen () =
     let grid = Grid.create ~width:cols ~height:rows ~width_method () in
@@ -1047,6 +1057,7 @@ let create ?(scrollback = 10000) ?(width_method = `Unicode)
         };
       default_fg;
       default_bg;
+      palette;
       parser = Ansi.Parser.create ();
       osc = Osc_skip;
       osc_text = Buffer.create 64;
@@ -1122,6 +1133,37 @@ let dsr t = function
 
 let decxcpr t =
   Printf.bprintf t.replies "\027[?%d;%d;1R" (report_row t) (t.cursor.col + 1)
+
+(* 1048 is not a mode: it saves or restores the cursor and keeps no state. *)
+let dec_mode t mode =
+  let m = t.modes in
+  match mode with
+  | 1 -> Some m.cursor_keys
+  | 6 -> Some m.origin
+  | 7 -> Some m.auto_wrap
+  | 25 -> Some m.cursor_visible
+  | 42 -> Some m.national
+  | 45 -> Some m.reverse_wrap
+  | 47 | 1047 | 1049 -> Some m.alternate_screen
+  | 2004 -> Some m.bracketed_paste
+  | _ -> None
+
+let decrqm t mode =
+  let pm =
+    match dec_mode t mode with None -> 0 | Some true -> 1 | Some false -> 2
+  in
+  Printf.bprintf t.replies "\027[?%d;%d$y" mode pm
+
+(* A [Default] colour is the renderer's, unknown here. *)
+let report_colour t ending prefix slot =
+  let c = t.palette slot in
+  match Ansi.Color.intent c with
+  | Default -> ()
+  | Indexed _ | Rgb ->
+      let r, g, b = Ansi.Color.to_rgb c in
+      Printf.bprintf t.replies "\027]%srgb:%04x/%04x/%04x%s" prefix (r * 257)
+        (g * 257) (b * 257)
+        (match ending with `Bel -> "\007" | `St -> "\027\\")
 
 (* {1:dispatch Dispatch}
 
@@ -1218,6 +1260,7 @@ let csi t (s : Ansi.Parser.sequence) =
   | Some '?', "", 'K' -> decsel t (ps 0)
   | Some '?', "", 'n' when ps 0 = 6 -> decxcpr t
   | Some '>', "", 'c' when ps 0 = 0 -> da2 t
+  | Some '?', "$", 'p' -> decrqm t (ps 0)
   | None, "!", 'p' -> decstr t
   | None, "\"", 'q' -> decsca t (ps 0)
   | None, " ", '@' -> sl t (pn 0)
@@ -1232,7 +1275,8 @@ let csi t (s : Ansi.Parser.sequence) =
    longer one is dropped whole, as xterm drops an over-long string. It is
    performed when it ends with ST or BEL, never when it is cut short. OSC 0 and
    2 set the title; OSC 8 opens a hyperlink, [8 ; params ; URI], or closes it
-   when the URI is empty. *)
+   when the URI is empty. OSC 4, 10, 11 and 12 are answered when they ask for
+   a colour with [?]; a colour they set is ignored. *)
 
 let osc_budget = 65536
 
@@ -1252,7 +1296,7 @@ let rec osc_number t s i n =
     match s.[i] with
     | '0' .. '9' as c ->
         osc_number t s (i + 1) (min 1000 ((max n 0 * 10) + Char.code c - 48))
-    | ';' when n = 0 || n = 2 || n = 8 ->
+    | ';' when n = 0 || n = 2 || n = 4 || n = 8 || (n >= 10 && n <= 12) ->
         t.osc <- Osc_text n;
         osc_keep t s (i + 1)
     | _ -> osc_drop t
@@ -1263,6 +1307,46 @@ let osc_hyperlink t text =
   | Some i ->
       let uri = String.sub text (i + 1) (String.length text - i - 1) in
       t.pen <- { t.pen with link = (if uri = "" then None else Some uri) }
+
+let palette_index c =
+  if
+    c = ""
+    || not (String.for_all (function '0' .. '9' -> true | _ -> false) c)
+  then None
+  else
+    match int_of_string_opt c with Some i when i < 256 -> Some i | _ -> None
+
+(* Stop at the first [c ; spec] pair that is not one, as xterm does. *)
+let osc_palette t ending text =
+  let rec go = function
+    | c :: spec :: rest -> (
+        match palette_index c with
+        | None -> ()
+        | Some i ->
+            if spec = "?" then
+              report_colour t ending (Printf.sprintf "4;%d;" i) (`Index i);
+            go rest)
+    | _ -> ()
+  in
+  go (String.split_on_char ';' text)
+
+(* OSC 10, 11 and 12 take a spec for their own colour, then for the next
+   ones: [OSC 10 ; ? ; ?] asks for the foreground and the background. *)
+let osc_dynamic t ending n text =
+  List.iteri
+    (fun k spec ->
+      let slot =
+        match n + k with
+        | 10 -> Some `Fg
+        | 11 -> Some `Bg
+        | 12 -> Some `Cursor
+        | _ -> None
+      in
+      match slot with
+      | Some slot when spec = "?" ->
+          report_colour t ending (Printf.sprintf "%d;" (n + k)) slot
+      | _ -> ())
+    (String.split_on_char ';' text)
 
 let open_string t (o : Ansi.Parser.opening) =
   match o with Osc -> t.osc <- Osc_number (-1) | _ -> t.osc <- Osc_skip
@@ -1277,6 +1361,10 @@ let close_string t ending =
   (match (t.osc, ending) with
   | Osc_text (0 | 2), (`St | `Bel) -> t.title <- Buffer.contents t.osc_text
   | Osc_text 8, (`St | `Bel) -> osc_hyperlink t (Buffer.contents t.osc_text)
+  | Osc_text 4, ((`St | `Bel) as e) ->
+      osc_palette t e (Buffer.contents t.osc_text)
+  | Osc_text ((10 | 11 | 12) as n), ((`St | `Bel) as e) ->
+      osc_dynamic t e n (Buffer.contents t.osc_text)
   | _ -> ());
   osc_drop t
 

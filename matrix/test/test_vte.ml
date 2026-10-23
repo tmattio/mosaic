@@ -998,6 +998,46 @@ let replies_by_parameter_value () =
   equal ~msg:"DA2 and DECXCPR" string "\x1b[>0;0;0c\x1b[?1;1;1R"
     (Vte.feed_string vte "\x1b[>00c\x1b[?6;1n\x1b[>1c\x1b[?5n")
 
+let colour_queries () =
+  let vte = Vte.create ~rows:1 ~cols:5 () in
+  equal ~msg:"OSC 10, 11 and 12" string
+    "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x1b\\\x1b]12;rgb:c0c0/c0c0/c0c0\x07"
+    (Vte.feed_string vte "\x1b]10;?\x07\x1b]11;?\x1b\\\x1b]12;?\x07");
+  equal ~msg:"each [?] asks for the next colour" string
+    "\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:0000/0000/0000\x07\x1b]12;rgb:c0c0/c0c0/c0c0\x07"
+    (Vte.feed_string vte "\x1b]10;?;?\x07\x1b]11;;?\x07");
+  equal ~msg:"OSC 4" string
+    "\x1b]4;1;rgb:8080/0000/0000\x1b\\\x1b]4;196;rgb:ffff/0000/0000\x1b\\"
+    (Vte.feed_string vte "\x1b]4;1;?;196;?\x1b\\");
+  equal ~msg:"no answer to a colour set, cut short or out of range" string ""
+    (Vte.feed_string vte
+       "\x1b]10;red\x07\x1b]4;1;red\x07\x1b]11;?\x18\x1b]4;256;?\x07\x1b]13;?\x07");
+  let palette = function
+    | `Bg -> Ansi.Color.of_rgb 0x1e 0x1e 0x2e
+    | `Index 1 -> Ansi.Color.of_rgb 0xf3 0x8b 0xa8
+    | `Index i -> Ansi.Color.indexed i
+    | `Fg | `Cursor -> Ansi.Color.default_fg
+  in
+  let vte =
+    Vte.create ~default_fg:Ansi.Color.default_fg
+      ~default_bg:Ansi.Color.default_bg ~palette ~rows:1 ~cols:5 ()
+  in
+  equal ~msg:"the palette's colours" string
+    "\x1b]11;rgb:1e1e/1e1e/2e2e\x07\x1b]4;1;rgb:f3f3/8b8b/a8a8\x07"
+    (Vte.feed_string vte "\x1b]10;?;?;?\x07\x1b]4;1;?\x07")
+
+let mode_queries () =
+  let vte = Vte.create ~rows:1 ~cols:5 () in
+  equal ~msg:"DEC private modes at power-up" string
+    "\x1b[?7;1$y\x1b[?2004;2$y\x1b[?1049;2$y\x1b[?2026;0$y"
+    (Vte.feed_string vte "\x1b[?7$p\x1b[?2004$p\x1b[?1049$p\x1b[?2026$p");
+  equal ~msg:"DEC private modes changed" string
+    "\x1b[?7;2$y\x1b[?2004;1$y\x1b[?1049;1$y"
+    (Vte.feed_string vte
+       "\x1b[?7l\x1b[?2004h\x1b[?1049h\x1b[?7$p\x1b[?2004$p\x1b[?1049$p");
+  equal ~msg:"no answer to the ANSI form" string ""
+    (Vte.feed_string vte "\x1b[4$p\x1b[20$p")
+
 (* In UTF-8, U+0080..U+009F are not controls: they do nothing. *)
 let utf8_c1_is_not_a_control () =
   let vte = Vte.create ~rows:3 ~cols:10 () in
@@ -2174,6 +2214,8 @@ let tests =
     test "OSC acts only when terminated" osc_acts_only_when_terminated;
     test "zero counts mean one" zero_counts_mean_one;
     test "replies by parameter value" replies_by_parameter_value;
+    test "colour queries" colour_queries;
+    test "mode queries" mode_queries;
     test "UTF-8 C1 is not a control" utf8_c1_is_not_a_control;
     test "two-byte designators" two_byte_designators;
     test "resize preserves content" resize_preserves_content;

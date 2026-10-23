@@ -148,7 +148,17 @@
       from the top margin in origin mode;
     - DECXCPR ([CSI ? 6 n]) with [CSI ? r ; c ; 1 R]. The VT510 manual shows no
       [?]; xterm sends it, as DEC's other answers to [CSI ? ... n] carry it, and
-      it keeps the answer apart from a modified F3 key ([CSI 1 ; 2 R]).
+      it keeps the answer apart from a modified F3 key ([CSI 1 ; 2 R]);
+    - DECRQM for a DEC private mode ([CSI ? Ps $ p]) with [CSI ? Ps ; Pm $ y],
+      [Pm] 1 for set, 2 for reset and 0 for a mode not in {!type-modes}; 47,
+      1047 and 1049 report the alternate screen. ctlseqs gives DECRQM to a VT300
+      and up; the private form is answered anyway, since programs ask it, and
+      the ANSI form ([CSI Ps $ p]) is not;
+    - OSC 10, 11 and 12 with [?] (the default foreground, background and cursor
+      colour) with [OSC Ps ; rgb:RRRR/GGGG/BBBB], and OSC 4 with [c ; ?]
+      (palette entry [c]) with [OSC 4 ; c ; rgb:RRRR/GGGG/BBBB], ended as the
+      query was. As in xterm, a further [?] asks for the next colour and OSC 4
+      takes several pairs. A colour they set is ignored.
 
     {2:resets Resets}
 
@@ -171,6 +181,7 @@ val create :
   ?width_method:Matrix_text.width_method ->
   ?default_fg:Ansi.Color.t ->
   ?default_bg:Ansi.Color.t ->
+  ?palette:([ `Fg | `Bg | `Cursor | `Index of int ] -> Ansi.Color.t) ->
   rows:int ->
   cols:int ->
   unit ->
@@ -183,6 +194,11 @@ val create :
       none or sets the default (SGR 39, 49). Default to {!Ansi.Color.white} and
       {!Ansi.Color.black}; {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}
       keep the terminal default in the cells.
+    - [palette], the colours the terminal reports ({!section-replies}): [`Fg],
+      [`Bg] and [`Cursor] for OSC 10, 11 and 12, [`Index i] for entry [i] of OSC
+      4. Defaults to [default_fg] for [`Fg] and [`Cursor], [default_bg] for
+      [`Bg] and [Ansi.Color.indexed i] for [`Index i]. A colour whose intent is
+      [Default] is not reported: only the renderer knows it.
 
     [rows] and [cols] below [1] are taken as [1].
 
@@ -192,8 +208,8 @@ val create :
 
 val feed : t -> bytes -> int -> int -> string
 (** [feed t b off len] applies the [len] bytes of [b] from [off] and is the
-    replies they asked for (DA, DA2, DSR, CPR, DECXCPR), in order: write them to
-    the program's input. It is [""], with no allocation, when there are none. A
+    replies they asked for ({!section-replies}), in order: write them to the
+    program's input. It is [""], with no allocation, when there are none. A
     sequence split across calls is answered by the call that completes it.
 
     Raises [Invalid_argument] if [off] and [len] do not designate a range of
