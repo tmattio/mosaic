@@ -96,15 +96,26 @@ val flush_input : Unix.file_descr -> unit
 (** [flush_input fd] discards the input [fd] has received and nobody has read
     ([tcflush], [TCIFLUSH]). It does nothing if [fd] is not a terminal. *)
 
-val enable_vt : Unix.file_descr -> unit
+type console
+(** The type for what {!enable_vt} changes in a Windows console, the mode of the
+    console and the output code page of the process's console. *)
+
+val enable_vt : Unix.file_descr -> console
 (** [enable_vt fd] has the Windows console [fd] interpret the control functions
-    written to it as a VT100 does, and sets the output code page of the
-    process's console to UTF-8. The console also defers the wrap
-    ([DISABLE_NEWLINE_AUTO_RETURN]). A character written in the last column
-    leaves the cursor there, and the cursor moves to the next line only when the
-    next printable character comes, so a line that fills the width and ends with
-    a line feed takes one row. Nothing restores the console's mode or code page.
-    It does nothing on other systems, or if [fd] is not a console. *)
+    written to it as a VT100 does, sets the output code page of the process's
+    console to UTF-8, and returns the mode and code page it replaced. The
+    console also defers the wrap ([DISABLE_NEWLINE_AUTO_RETURN]). A character
+    written in the last column leaves the cursor there, and the cursor moves to
+    the next line only when the next printable character comes, so a line that
+    fills the width and ends with a line feed takes one row. The console is
+    shared by every process attached to it, the shell among them, so a program
+    must give the result to {!restore_console} before it ends. It does nothing
+    on other systems, or if [fd] is not a console. *)
+
+val restore_console : Unix.file_descr -> console -> unit
+(** [restore_console fd c] sets the mode of the console [fd] and the output code
+    page of the process's console back to those [c] holds. It does nothing when
+    the {!enable_vt} that returned [c] did nothing. *)
 
 (** {1:descriptions Terminal descriptions}
 

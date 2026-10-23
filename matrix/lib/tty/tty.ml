@@ -38,9 +38,14 @@ let restore fd s =
 let flush_input fd =
   try Unix.tcflush fd Unix.TCIFLUSH with Unix.Unix_error _ -> ()
 
-external enable_vt : Unix.file_descr -> unit = "matrix_tty_enable_vt"
+(* The console's mode and output code page before [enable_vt], or [None]
+   where it changed nothing. *)
+type console = (int * int) option
 
-let enable_vt fd = try enable_vt fd with Failure _ -> ()
+external enable_vt : Unix.file_descr -> console = "matrix_tty_enable_vt"
+
+external restore_console : Unix.file_descr -> console -> unit
+  = "matrix_tty_restore_console"
 
 (* Terminal descriptions *)
 

@@ -57,13 +57,18 @@ CAMLprim value matrix_tty_window(value fd) {
   CAMLreturn(result);
 }
 
+/* The console's mode and output code page before the change,
+   [Some (mode, code_page)], or [None] where nothing changed: on other
+   systems, or when [fd] is no console. */
 CAMLprim value matrix_tty_enable_vt(value fd) {
   CAMLparam1(fd);
+  CAMLlocal2(saved, result);
 #ifdef _WIN32
   HANDLE h = Handle_val(fd);
-  if (h == INVALID_HANDLE_VALUE) caml_failwith("Invalid handle");
   DWORD mode;
-  if (!GetConsoleMode(h, &mode)) caml_failwith("GetConsoleMode failed");
+  if (h == INVALID_HANDLE_VALUE || !GetConsoleMode(h, &mode))
+    CAMLreturn(Val_none);
+  UINT code_page = GetConsoleOutputCP();
   /* DISABLE_NEWLINE_AUTO_RETURN defers the wrap after the last column until
      the next printable character, as a VT100 does (terminfo's xenl): without
      it, a line that fills the width moves the cursor down at once, and the
@@ -71,11 +76,35 @@ CAMLprim value matrix_tty_enable_vt(value fd) {
   if (!SetConsoleMode(h, mode | ENABLE_PROCESSED_OUTPUT |
                              ENABLE_VIRTUAL_TERMINAL_PROCESSING |
                              DISABLE_NEWLINE_AUTO_RETURN))
-    caml_failwith("SetConsoleMode failed");
+    CAMLreturn(Val_none);
   /* UTF-8 output. This affects the whole process, not only this handle. */
   SetConsoleOutputCP(CP_UTF8);
+  saved = caml_alloc_tuple(2);
+  Store_field(saved, 0, Val_long(mode));
+  Store_field(saved, 1, Val_long(code_page));
+  result = caml_alloc_some(saved);
+  CAMLreturn(result);
 #else
   (void)fd;
+  (void)saved;
+  (void)result;
+  CAMLreturn(Val_none);
+#endif
+}
+
+CAMLprim value matrix_tty_restore_console(value fd, value saved) {
+  CAMLparam2(fd, saved);
+#ifdef _WIN32
+  if (Is_some(saved)) {
+    value s = Some_val(saved);
+    HANDLE h = Handle_val(fd);
+    if (h != INVALID_HANDLE_VALUE)
+      SetConsoleMode(h, (DWORD)Long_val(Field(s, 0)));
+    SetConsoleOutputCP((UINT)Long_val(Field(s, 1)));
+  }
+#else
+  (void)fd;
+  (void)saved;
 #endif
   CAMLreturn(Val_unit);
 }

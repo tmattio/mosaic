@@ -97,6 +97,16 @@ let test_raw_not_a_terminal () =
       | _ -> fail "a pipe has no settings"
       | exception Unix.Unix_error _ -> ())
 
+(* Elsewhere than on Windows a terminal has no console mode: enable_vt
+   changes nothing, and restoring what it returns changes nothing either. *)
+let test_enable_vt_elsewhere () =
+  if not Sys.win32 then
+    with_pty (fun _ fd ->
+        let before = Unix.tcgetattr fd in
+        let console = Tty.enable_vt fd in
+        Tty.restore_console fd console;
+        is_true ~msg:"the settings as they were" (Unix.tcgetattr fd = before))
+
 (* Terminal descriptions *)
 
 let fixture name =
@@ -518,6 +528,7 @@ let () =
         [
           test "raw and restore" test_raw_and_restore;
           test "raw on a pipe" test_raw_not_a_terminal;
+          test "enable_vt elsewhere than on Windows" test_enable_vt_elsewhere;
         ];
       group "descriptions"
         [
