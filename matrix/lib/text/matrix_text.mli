@@ -271,11 +271,12 @@ val iter_graphemes : (offset:int -> len:int -> unit) -> string -> unit
 
     A {e break opportunity} is a place where a line may wrap. One follows each
     grapheme cluster that holds a space, HT, [-], [/], a backslash, [,], [;],
-    [:], [!], [?], a bracket, a brace or a parenthesis, or one of U+00A0,
-    U+1680, U+2000..U+200A, U+200B, U+202F, U+205F, U+3000, U+00AD, U+2010,
-    U+3001, U+3002, U+FF01 and U+FF1F. One also falls between a cluster that
-    starts with an ASCII letter, digit or [_] and one that starts with a CJK
-    character (Han, kana or Hangul), in either order.
+    [:], [!], [?], a bracket, a brace or a parenthesis, or one of U+1680,
+    U+2000..U+2006, U+2008..U+200A, U+200B, U+205F, U+3000, U+00AD, U+2010,
+    U+3001, U+3002, U+FF01 and U+FF1F. The no-break spaces U+00A0, U+2007 and
+    U+202F, of class GL (glue) in UAX #14, make none. One also falls between a
+    cluster that starts with an ASCII letter, digit or [_] and one that starts
+    with a CJK character (Han, kana or Hangul), in either order.
 
     An opportunity is reported as [~break_byte_offset], the offset of the
     cluster before it, [~next_byte_offset], the offset of the cluster after it,

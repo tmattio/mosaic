@@ -361,8 +361,17 @@ let wrap_breaks_unicode_spaces () =
   let nbsp = "\xC2\xA0" in
   let zwsp = "\xE2\x80\x8B" in
   let ideographic = "\xE3\x80\x80" in
-  equal ~msg:"break after NBSP" int 1
-    (Array.length (wrap_breaks ("a" ^ nbsp ^ "b")));
+  (* UAX #14 class GL: glue, which forbids a break on either side. *)
+  List.iter
+    (fun (name, glue) ->
+      equal ~msg:("no break after " ^ name) int 0
+        (Array.length (wrap_breaks ("a" ^ glue ^ "b"))))
+    [
+      ("NBSP", nbsp);
+      ("FIGURE SPACE", "\xE2\x80\x87");
+      ("NNBSP", "\xE2\x80\xAF");
+      ("NON-BREAKING HYPHEN", "\xE2\x80\x91");
+    ];
   equal ~msg:"break after ZWSP" int 1
     (Array.length (wrap_breaks ("a" ^ zwsp ^ "b")));
   equal ~msg:"break after ideographic space" int 1
@@ -413,16 +422,16 @@ let wrap_break_points_ascii_space () =
     resumes.(0)
 
 let wrap_break_points_unicode_space () =
-  let nbsp = "\xC2\xA0" in
-  let s = "a" ^ nbsp ^ "b" in
+  let en_space = "\xE2\x80\x82" in
+  let s = "a" ^ en_space ^ "b" in
   let points = wrap_break_points s in
   let resumes = wrap_breaks s in
-  equal ~msg:"one break point for one NBSP" int 1 (Array.length points);
-  equal ~msg:"point offset at NBSP grapheme start" wrap_break_testable
+  equal ~msg:"one break point for one EN SPACE" int 1 (Array.length points);
+  equal ~msg:"point offset at EN SPACE grapheme start" wrap_break_testable
     { byte_offset = 1; grapheme_offset = 1 }
     points.(0);
-  equal ~msg:"resume offset after NBSP grapheme" wrap_break_testable
-    { byte_offset = 3; grapheme_offset = 1 }
+  equal ~msg:"resume offset after EN SPACE grapheme" wrap_break_testable
+    { byte_offset = 4; grapheme_offset = 1 }
     resumes.(0)
 
 let wrap_breaks_mixed_cjk_ascii_transitions () =
@@ -1608,7 +1617,7 @@ let () =
           test "empty string" wrap_breaks_empty_string;
           test "ZWJ sequence" wrap_breaks_zwj_sequence;
           test "ASCII space break point" wrap_break_points_ascii_space;
-          test "Unicode NBSP break point" wrap_break_points_unicode_space;
+          test "Unicode space break point" wrap_break_points_unicode_space;
           test "mixed CJK/ASCII transitions"
             wrap_breaks_mixed_cjk_ascii_transitions;
           test "fullwidth CJK punctuation" wrap_breaks_fullwidth_cjk_punctuation;

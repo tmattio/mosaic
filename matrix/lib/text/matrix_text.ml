@@ -751,12 +751,15 @@ let[@inline] is_ascii_wrap_break b =
       true
   | _ -> false
 
+(* Spaces and hyphens of UAX #14 class BA (break after) and ZW, and CJK
+   closing punctuation. The spaces of class GL (glue), U+00A0, U+2007 and
+   U+202F, forbid a break on either side and are left out. *)
 let[@inline] is_unicode_wrap_break cp =
   match cp with
-  | 0x00A0 | 0x1680 | 0x202F | 0x205F | 0x3000 | 0x200B | 0x00AD | 0x2010
-  | 0x3001 | 0x3002 | 0xFF01 | 0xFF1F ->
+  | 0x1680 | 0x205F | 0x3000 | 0x200B | 0x00AD | 0x2010 | 0x3001 | 0x3002
+  | 0xFF01 | 0xFF1F ->
       true
-  | cp when cp >= 0x2000 && cp <= 0x200A -> true
+  | cp when cp >= 0x2000 && cp <= 0x200A -> cp <> 0x2007
   | _ -> false
 
 type word_class = Ascii_word | Cjk_word | Other
