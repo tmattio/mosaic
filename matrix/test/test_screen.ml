@@ -894,6 +894,18 @@ let test_explicit_width_sequences () =
   in
   is_true ~msg:"contains explicit width sequence" contains_explicit_width
 
+let test_explicit_width_off_repositions () =
+  let r = Screen.create ~explicit_width:true () in
+  Screen.apply_capabilities r ~explicit_width:true
+    ~explicit_cursor_positioning:true ~hyperlinks:true ~color_depth:`Truecolor;
+  Screen.set_explicit_width r false;
+  Screen.build r ~width:10 ~height:1 (fun grid _hits ->
+      Grid.draw_text grid ~x:0 ~y:0 ~text:"\u{4E2D}");
+  let output = Screen.render r in
+  not_contains ~msg:"no OSC 66" ~sub:"\027]66;" output;
+  contains ~msg:"the cursor moves past the wide grapheme" ~sub:"\027[1;3H"
+    output
+
 let test_hyperlink_capability_gating () =
   (* Test that hyperlinks are only emitted when capability is enabled *)
   let r1 = Screen.create () in
@@ -1233,6 +1245,8 @@ let () =
           test "Resize clears hit grids" test_resize_hit_grid_cleared;
           test "Wide grapheme emission" test_wide_grapheme_emission;
           test "Explicit width sequences" test_explicit_width_sequences;
+          test "Turning explicit width off repositions the cursor"
+            test_explicit_width_off_repositions;
           test "Hyperlink capability gating" test_hyperlink_capability_gating;
           test "Scroll hint clips to viewport"
             test_scroll_hint_clips_to_viewport;

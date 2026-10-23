@@ -97,11 +97,12 @@ type t = {
   (* Retained ANSI output capacity; grows only past its high-water mark.
      [render_writer] is used only by the string-returning convenience API. *)
   render_writer : Ansi.writer;
-  (* Capabilities *)
+  (* Capabilities: what the program asks for and what the terminal takes.
+     Whether a render writes OSC 66 or repositions the cursor is derived from
+     these in [emit_frame] alone. *)
   mutable prefer_explicit_width : bool;
   mutable explicit_width_capable : bool;
-  mutable use_explicit_width : bool;
-  mutable use_explicit_cursor_positioning : bool;
+  mutable explicit_cursor_positioning_capable : bool;
   mutable hyperlinks_capable : bool;
 }
 
@@ -427,8 +428,9 @@ let emit_frame (r : t) ~(mode : render_mode) ~scroll_hint ~viewport
   c.row_offset <- row_offset;
   c.width <- Grid.width r.next;
   c.height <- clamp_height r.next height;
-  c.explicit_width <- r.use_explicit_width;
-  c.explicit_cursor_positioning <- r.use_explicit_cursor_positioning;
+  c.explicit_width <- r.prefer_explicit_width && r.explicit_width_capable;
+  c.explicit_cursor_positioning <-
+    (not c.explicit_width) && r.explicit_cursor_positioning_capable;
   c.hyperlinks <- r.hyperlinks_capable;
   let width_method = Grid.width_method r.next in
   if width_method <> c.units_method then (
@@ -504,8 +506,7 @@ let create ?width_method ?(cursor_visible = true) ?(explicit_width = false) () =
     row_offset = 0;
     prefer_explicit_width = explicit_width;
     explicit_width_capable = true;
-    use_explicit_width = explicit_width;
-    use_explicit_cursor_positioning = false;
+    explicit_cursor_positioning_capable = false;
     hyperlinks_capable = true;
     diff =
       {
@@ -645,15 +646,11 @@ let cursor t = t.cursor
 let apply_capabilities r ~explicit_width ~explicit_cursor_positioning
     ~hyperlinks ~color_depth =
   r.explicit_width_capable <- explicit_width;
-  r.use_explicit_width <- r.prefer_explicit_width && explicit_width;
-  r.use_explicit_cursor_positioning <-
-    (not r.use_explicit_width) && explicit_cursor_positioning;
+  r.explicit_cursor_positioning_capable <- explicit_cursor_positioning;
   r.hyperlinks_capable <- hyperlinks;
   Ansi.Sgr_state.set_color_depth r.sgr_state color_depth
 
-let set_explicit_width t flag =
-  t.prefer_explicit_width <- flag;
-  t.use_explicit_width <- flag && t.explicit_width_capable
+let set_explicit_width t flag = t.prefer_explicit_width <- flag
 
 let set_width_method (t : t) (method_ : Matrix_text.width_method) =
   Grid.set_width_method t.current method_;
