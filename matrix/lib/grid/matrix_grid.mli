@@ -339,7 +339,10 @@ val draw_box :
     is at least four cells wider than the title. [title_alignment] places it two
     cells from the left, which is the default, two cells from the right, or
     centered. It is drawn in [title_style], or in the foreground of [style], on
-    the border's background. *)
+    the border's background.
+
+    Raises [Invalid_argument] if a character of [border] is wider than one cell.
+*)
 
 type line_symbols = {
   h : string;  (** Horizontal segment. *)

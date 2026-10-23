@@ -2015,6 +2015,14 @@ let many_distinct_graphemes () =
 
 let tests =
   [
+    test "draw_box rejects a wide border character" (fun () ->
+        let grid = Grid.create ~width:6 ~height:3 () in
+        let border =
+          { Grid.Border.single with horizontal = Uchar.of_int 0x4E2D }
+        in
+        raises_match ~msg:"a wide horizontal"
+          (Exn.invalid_arg ~substring:"draw_box") (fun () ->
+            Grid.draw_box grid ~x:0 ~y:0 ~width:6 ~height:3 ~border ()));
     test "accessors check their index" (fun () ->
         let grid = Grid.create ~width:3 ~height:2 () in
         let buf = Bytes.create 8 in

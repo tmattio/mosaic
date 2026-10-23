@@ -1227,6 +1227,26 @@ let draw_text ?style ?(tab_width = 2) ?width_method t ~x ~y ~text =
 let draw_box t ~x ~y ~width ~height ?(border = Border.single)
     ?(sides = Border.all) ?(style = Ansi.Style.default) ?fill ?title
     ?title_alignment ?title_style () =
+  (* A border cell holds one character in one cell: a wide one would cover
+     its neighbor on the side. *)
+  let wide u = Packed_cell.cell_width (Packed_cell.of_uchar u) > 1 in
+  let b = border in
+  if
+    List.exists wide
+      [
+        b.top_left;
+        b.top_right;
+        b.bottom_left;
+        b.bottom_right;
+        b.horizontal;
+        b.vertical;
+        b.top_t;
+        b.bottom_t;
+        b.left_t;
+        b.right_t;
+        b.cross;
+      ]
+  then invalid_arg "Matrix_grid.draw_box: a border character wider than a cell";
   if width <= 0 || height <= 0 then ()
   else
     let target = Rect.{ x; y; width; height } in
