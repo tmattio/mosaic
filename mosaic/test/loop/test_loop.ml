@@ -2498,3 +2498,213 @@ let%expect_test "X2: an exception in a perform ends the run" =
     raised "perform-thread", from the worker's raise: true
     terminal given back: true; standard error: ""
     |}]
+
+(* Workers run on real threads: the driver waits for what they do, at most
+   five seconds a step. *)
+type live_step = Until of (unit -> bool) | Type of string | End
+
+let run_live ?process_perform steps application =
+  let steps = ref steps and since = ref (Unix.gettimeofday ()) in
+  let on_idle t ~until =
+    if not (Matrix_test.settle t ~until) then
+      match !steps with
+      | [] | End :: _ -> Matrix_test.stop t
+      | Type bytes :: rest ->
+          steps := rest;
+          since := Unix.gettimeofday ();
+          Matrix_test.feed t bytes
+      | Until ready :: rest ->
+          if ready () then (
+            steps := rest;
+            since := Unix.gettimeofday ())
+          else if Unix.gettimeofday () -. !since > 5. then (
+            print_endline "timed out";
+            Matrix_test.stop t)
+          else Thread.delay 0.001
+  in
+  let t = Matrix_test.create ~on_idle ~width:20 ~height:1 () in
+  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+    ?process_perform application
+
+let locked = Mutex.create ()
+let record log s = Mutex.protect locked (fun () -> log := s :: !log)
+let read log = Mutex.protect locked (fun () -> List.rev !log)
+
+let%expect_test "a worker runs while declared and stops when dropped" =
+  let log = ref [] and received = Atomic.make 0 and late = Atomic.make 0 in
+  let ended = Atomic.make false in
+  let worker stop (mailbox : _ Mosaic.Sub.mailbox) =
+    Mosaic.Sub.Stop.on_request stop (fun () -> record log "stop requested");
+    while not (Mosaic.Sub.Stop.requested stop) do
+      mailbox.dispatch `Tick;
+      Thread.delay 0.001
+    done;
+    (* Dispatching after the stop does nothing. *)
+    mailbox.dispatch `Tick;
+    Atomic.set ended true
+  in
+  let application =
+    {
+      Mosaic.init = (fun () -> (true, Mosaic.Cmd.none));
+      update =
+        (fun msg on ->
+          match msg with
+          | `Toggle ->
+              record log (if on then "dropped" else "declared");
+              (not on, Mosaic.Cmd.none)
+          | `Tick ->
+              if on then Atomic.incr received else Atomic.incr late;
+              (on, Mosaic.Cmd.none));
+      view = (fun _ -> Mosaic.text "worker");
+      subscriptions =
+        (fun on ->
+          Mosaic.Sub.batch
+            [
+              on_s `Toggle;
+              (if on then Mosaic.Sub.worker ~id:"w" worker else Mosaic.Sub.none);
+            ]);
+    }
+  in
+  run_live
+    [
+      Until (fun () -> Atomic.get received >= 5);
+      Type "s";
+      Until (fun () -> Atomic.get ended);
+      End;
+    ]
+    application;
+  List.iter print_endline (read log);
+  Printf.printf "messages after the drop: %d\n" (Atomic.get late);
+  [%expect
+    {|
+    dropped
+    stop requested
+    messages after the drop: 0
+    |}]
+
+let%expect_test "send returns once update has applied the message" =
+  let log = ref [] in
+  let worker _ (mailbox : _ Mosaic.Sub.mailbox) =
+    for i = 1 to 3 do
+      mailbox.send i;
+      record log (Printf.sprintf "send %d returned" i)
+    done
+  in
+  let application =
+    {
+      Mosaic.init = (fun () -> (0, Mosaic.Cmd.none));
+      update =
+        (fun i _ ->
+          (* The worker cannot return from [send] while [update] runs. *)
+          Thread.delay 0.005;
+          record log (Printf.sprintf "applied %d" i);
+          (i, Mosaic.Cmd.none));
+      view = (fun _ -> Mosaic.text "send");
+      subscriptions = (fun _ -> Mosaic.Sub.worker ~id:"w" worker);
+    }
+  in
+  run_live [ Until (fun () -> List.length (read log) = 6); End ] application;
+  List.iter print_endline (read log);
+  [%expect
+    {|
+    applied 1
+    send 1 returned
+    applied 2
+    send 2 returned
+    applied 3
+    send 3 returned
+    |}]
+
+let%expect_test "send on the loop's thread raises" =
+  let application =
+    {
+      Mosaic.init = (fun () -> ((), Mosaic.Cmd.none));
+      update = (fun () () -> ((), Mosaic.Cmd.none));
+      view = (fun () -> Mosaic.text "send");
+      subscriptions =
+        (fun () ->
+          Mosaic.Sub.worker ~id:"w" (fun _ (mailbox : _ Mosaic.Sub.mailbox) ->
+              mailbox.send ()));
+    }
+  in
+  (match
+     run_live ~process_perform:(fun work -> work ()) [ End ] application
+   with
+  | () -> print_endline "no exception"
+  | exception Invalid_argument m -> print_endline m);
+  [%expect {| Mosaic.Sub.worker: send on the loop's thread |}]
+
+let%expect_test
+    "a worker's exception ends the run, unless its stop was requested" =
+  let failing ~after_stop stop _ =
+    let unblocked = Atomic.make false in
+    Mosaic.Sub.Stop.on_request stop (fun () -> Atomic.set unblocked true);
+    if after_stop then
+      while not (Atomic.get unblocked) do
+        Thread.delay 0.001
+      done;
+    failwith "worker"
+  in
+  let run ~after_stop =
+    let application =
+      {
+        Mosaic.init = (fun () -> (true, Mosaic.Cmd.none));
+        update = (fun `Toggle on -> (not on, Mosaic.Cmd.none));
+        view = (fun _ -> Mosaic.text "worker");
+        subscriptions =
+          (fun on ->
+            Mosaic.Sub.batch
+              [
+                on_s `Toggle;
+                (if on then Mosaic.Sub.worker ~id:"w" (failing ~after_stop)
+                 else Mosaic.Sub.none);
+              ]);
+      }
+    in
+    let steps =
+      if after_stop then
+        [
+          Type "s";
+          Until
+            (fun () ->
+              Thread.delay 0.05;
+              true);
+          End;
+        ]
+      else [ Until (fun () -> false) ]
+    in
+    match run_live steps application with
+    | () -> print_endline "the run ended normally"
+    | exception Failure m -> Printf.printf "the run raised %S\n" m
+  in
+  run ~after_stop:false;
+  run ~after_stop:true;
+  [%expect {|
+    the run raised "worker"
+    the run ended normally
+    |}]
+
+let%expect_test "the run's end requests every worker's stop" =
+  let stopped = Atomic.make false and started = Atomic.make false in
+  let application =
+    {
+      Mosaic.init = (fun () -> ((), Mosaic.Cmd.none));
+      update = (fun () () -> ((), Mosaic.Cmd.none));
+      view = (fun () -> Mosaic.text "worker");
+      subscriptions =
+        (fun () ->
+          Mosaic.Sub.worker ~id:"w" (fun stop _ ->
+              Atomic.set started true;
+              while not (Mosaic.Sub.Stop.requested stop) do
+                Thread.delay 0.001
+              done;
+              Atomic.set stopped true));
+    }
+  in
+  run_live [ Until (fun () -> Atomic.get started); End ] application;
+  let deadline = Unix.gettimeofday () +. 5. in
+  while (not (Atomic.get stopped)) && Unix.gettimeofday () < deadline do
+    Thread.delay 0.001
+  done;
+  Printf.printf "stopped: %b\n" (Atomic.get stopped);
+  [%expect {| stopped: true |}]

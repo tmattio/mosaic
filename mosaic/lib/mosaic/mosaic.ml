@@ -237,6 +237,37 @@ end
 module Sub = struct
   type phase = Capture | Bubble
 
+  module Stop = struct
+    type t = {
+      lock : Mutex.t;
+      mutable requested : bool;
+      mutable on_request : (unit -> unit) list;
+    }
+
+    let create () =
+      { lock = Mutex.create (); requested = false; on_request = [] }
+
+    let requested t = Mutex.protect t.lock (fun () -> t.requested)
+
+    let on_request t f =
+      let already =
+        Mutex.protect t.lock (fun () ->
+            if not t.requested then t.on_request <- f :: t.on_request;
+            t.requested)
+      in
+      if already then f ()
+
+    let request t =
+      Mutex.protect t.lock (fun () ->
+          let callbacks = if t.requested then [] else List.rev t.on_request in
+          t.requested <- true;
+          t.on_request <- [];
+          callbacks)
+      |> List.iter (fun f -> f ())
+  end
+
+  type 'msg mailbox = { dispatch : 'msg -> unit; send : 'msg -> unit }
+
   type 'msg t =
     | None
     | Batch of 'msg t list
@@ -252,6 +283,7 @@ module Sub = struct
     | On_focus of 'msg
     | On_blur of 'msg
     | On_color_scheme of ([ `Dark | `Light ] -> 'msg option)
+    | Worker of string * (Stop.t -> 'msg mailbox -> unit)
 
   let none = None
   let batch subs = Batch subs
@@ -298,6 +330,10 @@ module Sub = struct
   let on_blur msg = On_blur msg
   let on_color_scheme f = On_color_scheme f
 
+  let worker ~id f =
+    if id = "" then invalid_arg "Mosaic.Sub.worker: empty id";
+    Worker (id, f)
+
   let rec map (f : 'a -> 'b) (sub : 'a t) : 'b t =
     match sub with
     | None -> None
@@ -315,6 +351,15 @@ module Sub = struct
     | On_blur msg -> On_blur (f msg)
     | On_color_scheme g ->
         On_color_scheme (fun scheme -> Option.map f (g scheme))
+    | Worker (id, g) ->
+        Worker
+          ( id,
+            fun stop mailbox ->
+              g stop
+                {
+                  dispatch = (fun msg -> mailbox.dispatch (f msg));
+                  send = (fun msg -> mailbox.send (f msg));
+                } )
 end
 
 type ('model, 'msg) app = {
@@ -362,9 +407,15 @@ let nanoseconds seconds = Float.to_int (Float.round (seconds *. 1e9))
    exception that work raised, which ends the run. *)
 type 'msg post =
   | Message of 'msg
+  | From of Sub.Stop.t * 'msg
+  | Sent of Sub.Stop.t * 'msg * latch
   | Redraw
   | Wake
   | Failed of exn * Printexc.raw_backtrace
+
+(* Whether the loop has taken a message sent with [send], guarded by the
+   runtime's [sync]. *)
+and latch = { mutable received : bool }
 
 type ('model, 'msg) runtime = {
   mutable model : 'model;
@@ -382,6 +433,19 @@ type ('model, 'msg) runtime = {
   app : ('model, 'msg) app;
   matrix_app : 'msg post Matrix.app;
   process_perform : (unit -> unit) -> unit;
+  (* The executor as given, which runs workers: the probe counts performs
+     only, since a worker may run as long as the program. *)
+  executor : (unit -> unit) -> unit;
+  loop_thread : int;
+  (* The workers running, by id, and those the subscriptions declare. *)
+  mutable workers : (string * Sub.Stop.t) list;
+  mutable worker_subs :
+    (string * (Sub.Stop.t -> 'msg Sub.mailbox -> unit)) list;
+  (* Senders waiting for the loop to take their message wait on [taken]
+     until it has, or the run is [closed]. *)
+  sync : Mutex.t;
+  taken : Condition.t;
+  mutable closed : bool;
   renderer : Renderer.t;
   reconciler : Reconciler.t;
   mutable key_subs : (Sub.phase * (Event.key -> 'msg option)) list;
@@ -460,20 +524,53 @@ let post_msg runtime msg =
   Atomic.incr runtime.posted_msgs;
   Matrix.post runtime.matrix_app (Message msg)
 
-(* Runs [work] off the loop. Its exception is the run's: the loop raises it,
-   with the backtrace of where [work] raised it. *)
-let off_loop runtime work =
-  runtime.process_perform (fun () ->
+(* Runs [work] off the loop with [executor]. Its exception is the run's: the
+   loop raises it, with the backtrace of where [work] raised it. *)
+let off_loop runtime executor work =
+  executor (fun () ->
       try work ()
       with exn ->
         let bt = Printexc.get_raw_backtrace () in
         Matrix.post runtime.matrix_app (Failed (exn, bt)))
 
+let release_senders runtime latch =
+  Mutex.protect runtime.sync (fun () ->
+      Option.iter (fun latch -> latch.received <- true) latch;
+      Condition.broadcast runtime.taken)
+
+(* A worker's way to the loop. Its messages are dropped once its stop is
+   requested, those already posted included: the loop drops them when it
+   takes them. An exception it raises after that is dropped too. *)
+let start_worker runtime id f =
+  let stop = Sub.Stop.create () in
+  let dispatch msg =
+    if not (Sub.Stop.requested stop) then (
+      Atomic.incr runtime.posted_msgs;
+      Matrix.post runtime.matrix_app (From (stop, msg)))
+  in
+  let send msg =
+    if Thread.id (Thread.self ()) = runtime.loop_thread then
+      invalid_arg "Mosaic.Sub.worker: send on the loop's thread";
+    if not (Sub.Stop.requested stop) then (
+      let latch = { received = false } in
+      Atomic.incr runtime.posted_msgs;
+      Matrix.post runtime.matrix_app (Sent (stop, msg, latch));
+      Mutex.protect runtime.sync (fun () ->
+          while not (latch.received || runtime.closed) do
+            Condition.wait runtime.taken runtime.sync
+          done))
+  in
+  off_loop runtime runtime.executor (fun () ->
+      try f stop { Sub.dispatch; send }
+      with exn when Sub.Stop.requested stop -> ignore exn);
+  (id, stop)
+
 let rec process_cmd runtime (cmd : _ Cmd.t) =
   match cmd with
   | Cmd.None -> ()
   | Cmd.Batch cmds -> List.iter (process_cmd runtime) cmds
-  | Cmd.Perform f -> off_loop runtime (fun () -> f (post_msg runtime))
+  | Cmd.Perform f ->
+      off_loop runtime runtime.process_perform (fun () -> f (post_msg runtime))
   | Cmd.Quit -> runtime.quit <- true
   | Cmd.Set_title title ->
       let term = Matrix.terminal runtime.matrix_app in
@@ -542,6 +639,7 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   | Sub.On_blur msg -> runtime.blur_sub <- msg :: runtime.blur_sub
   | Sub.On_color_scheme f ->
       runtime.color_scheme_sub <- f :: runtime.color_scheme_sub
+  | Sub.Worker (id, f) -> runtime.worker_subs <- (id, f) :: runtime.worker_subs
 
 (* The instants at which a paste in progress has been silent as long as a
    stall subscription waits, that the loop has not yet checked. *)
@@ -585,6 +683,25 @@ let animating runtime =
   runtime.tick_sub <> []
   || Renderable.Private.live_count (Renderer.root runtime.renderer) > 0
 
+(* A worker runs from the update that declares its id to the one that no
+   longer does. *)
+let update_workers runtime =
+  let declared = List.rev runtime.worker_subs in
+  let gone, kept =
+    List.partition
+      (fun (id, _) -> not (List.mem_assoc id declared))
+      runtime.workers
+  in
+  let started =
+    List.filter_map
+      (fun (id, f) ->
+        if List.mem_assoc id kept then None
+        else Some (start_worker runtime id f))
+      declared
+  in
+  runtime.workers <- kept @ started;
+  List.iter (fun (_, stop) -> Sub.Stop.request stop) gone
+
 let update_subscriptions runtime =
   let prev_timers = runtime.timers in
   runtime.key_subs <- [];
@@ -595,6 +712,7 @@ let update_subscriptions runtime =
   runtime.resize_sub <- [];
   runtime.tick_sub <- [];
   runtime.timers <- [];
+  runtime.worker_subs <- [];
   runtime.focus_sub <- [];
   runtime.blur_sub <- [];
   runtime.color_scheme_sub <- [];
@@ -615,6 +733,7 @@ let update_subscriptions runtime =
     Hashtbl.add ids id ()
   in
   List.iter (fun (id, _) -> check_id id) runtime.tick_sub;
+  List.iter (fun (id, _) -> check_id id) runtime.worker_subs;
   Hashtbl.filter_map_inplace
     (fun id last ->
       if List.mem_assoc id runtime.tick_sub then Some last else None)
@@ -632,6 +751,7 @@ let update_subscriptions runtime =
         | Some prev -> { timer with origin = prev.origin; fired = prev.fired }
         | None -> { timer with origin = now })
       runtime.timers;
+  update_workers runtime;
   if animating runtime then Matrix.request_redraw runtime.matrix_app;
   arm_wakeup runtime
 
@@ -841,17 +961,17 @@ module Probe = struct
   let is_settled t = not (List.exists (fun check -> check.is_pending ()) t)
 end
 
-let program matrix_app ~process_perform ?probe app (model, init_cmd) =
+let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) =
   (* When a probe is requested, count in-flight performs and wake the loop on
      completion so a driver blocked on quiescence re-evaluates. *)
   let in_flight_performs = Atomic.make 0 in
   let process_perform =
     match probe with
-    | None -> process_perform
+    | None -> executor
     | Some _ ->
         fun thunk ->
           Atomic.incr in_flight_performs;
-          process_perform (fun () ->
+          executor (fun () ->
               Fun.protect thunk ~finally:(fun () ->
                   Atomic.decr in_flight_performs;
                   Matrix.post matrix_app Wake))
@@ -893,6 +1013,13 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
       app;
       matrix_app;
       process_perform;
+      executor;
+      loop_thread;
+      workers = [];
+      worker_subs = [];
+      sync = Mutex.create ();
+      taken = Condition.create ();
+      closed = false;
       renderer;
       reconciler;
       key_subs = [];
@@ -1038,15 +1165,37 @@ let program matrix_app ~process_perform ?probe app (model, init_cmd) =
       | Posted Redraw ->
           redraw ();
           loop ()
+      | Posted (From (stop, msg)) ->
+          Atomic.decr runtime.posted_msgs;
+          if not (Sub.Stop.requested stop) then (
+            push_msg runtime msg;
+            process_pending_msgs runtime);
+          loop ()
+      | Posted (Sent (stop, msg, latch)) ->
+          Atomic.decr runtime.posted_msgs;
+          Fun.protect
+            ~finally:(fun () -> release_senders runtime (Some latch))
+            (fun () ->
+              if not (Sub.Stop.requested stop) then (
+                push_msg runtime msg;
+                process_pending_msgs runtime));
+          loop ()
       | Posted Wake -> loop ()
       | Posted (Failed (exn, bt)) -> Printexc.raise_with_backtrace exn bt
       | Frame ->
           frame ();
           loop ()
   in
-  Fun.protect
-    ~finally:(fun () -> Reconciler.unmount runtime.reconciler)
-    (fun () ->
+  (* The run's end stops the workers and the senders' waits. *)
+  let finish () =
+    Mutex.protect runtime.sync (fun () -> runtime.closed <- true);
+    release_senders runtime None;
+    List.iter
+      (fun (_, stop) -> try Sub.Stop.request stop with _ -> ())
+      runtime.workers;
+    Reconciler.unmount runtime.reconciler
+  in
+  Fun.protect ~finally:finish (fun () ->
       let width, height = Matrix.size matrix_app in
       handle_resize runtime ~width ~height;
       loop ())

@@ -924,6 +924,59 @@ module Sub : sig
     | Capture  (** Before the elements, for every event. *)
     | Bubble  (** After the elements, for the events no element stopped. *)
 
+  (** {1:workers Workers}
+
+      A worker is work that runs off the loop for as long as the program
+      declares it: following a file, reading a socket, watching a process. Its
+      lifetime is its subscription's, as a timer's is: it starts in the update
+      whose subscriptions first declare its id, and its stop is requested in the
+      update whose subscriptions no longer do, or when the run ends. OCaml
+      cannot interrupt a thread, so a worker stops itself: it reads
+      {!Stop.requested} between steps, and a step that blocks (a read, a wait)
+      is unblocked from {!Stop.on_request}, for example by closing what it waits
+      on. *)
+
+  (** Stop requests. *)
+  module Stop : sig
+    type t
+    (** The type for a worker's stop request, as the DOM's [AbortSignal]. *)
+
+    val requested : t -> bool
+    (** [requested t] is [true] once the worker's stop was requested. Any thread
+        may call it. *)
+
+    val on_request : t -> (unit -> unit) -> unit
+    (** [on_request t f] calls [f ()] once, when the stop is requested, on the
+        loop's thread; at once, on the calling thread, if it was already. [f]
+        runs on the loop, so it should only unblock the worker. An exception it
+        raises ends the run, or is dropped when the run is ending. *)
+  end
+
+  type 'msg mailbox = {
+    dispatch : 'msg -> unit;
+        (** [dispatch msg] queues [msg] for the loop and returns: it never
+            blocks. The queue has no bound, so a worker that dispatches faster
+            than the loop applies its messages grows memory, and collecting it
+            slows the loop. *)
+    send : 'msg -> unit;
+        (** [send msg] queues [msg] as [dispatch] does and returns once the loop
+            has taken it and [update] applied it, or the run has ended: a worker
+            that sends keeps pace with the loop. A worker that produces values
+            faster than they are shown, such as progress, keeps the latest and
+            sends it when the previous [send] returns.
+
+            [send] waits for the loop, so it deadlocks the loop's thread and
+            anything the loop waits for: it raises [Invalid_argument] on the
+            loop's thread, and must not be called while holding a lock that
+            [update], [view] or a command takes, or from a fiber or a coroutine
+            that shares the loop's thread. *)
+  }
+  (** The type for the way a worker gives the program messages. Messages of one
+      worker come in the order it gave them. Once the worker's stop is requested
+      both do nothing, and a message given before but not yet taken by the loop
+      is dropped: no message of a worker reaches [update] after the update that
+      removed it. *)
+
   (** The type for subscriptions. *)
   type 'msg t =
     | None  (** No subscription. Equivalent to [batch []]. *)
@@ -963,6 +1016,9 @@ module Sub : sig
             scheme, both as the reply to {!Cmd.query_color_scheme} and as
             unsolicited DEC 2031 notifications. [f] returns [None] to ignore a
             report. *)
+    | Worker of string * (Stop.t -> 'msg mailbox -> unit)
+        (** [Worker (id, f)] runs [f] off the loop while [id] is declared; see
+            {!val-worker}. *)
 
   val none : 'msg t
   (** [none] is the empty subscription. Produces no events. *)
@@ -987,7 +1043,8 @@ module Sub : sig
 
       Raises [Invalid_argument] if [id] is empty or [period] is not positive and
       finite. The run raises it when two subscriptions declare the same id,
-      among those that take one ({!val-every}, {!val-after}, {!val-on_tick}). *)
+      among those that take one ({!val-every}, {!val-after}, {!val-on_tick},
+      {!val-worker}). *)
 
   val after : id:string -> float -> 'msg -> 'msg t
   (** [after ~id delay msg] dispatches [msg] once, [delay] seconds after [id]
@@ -1075,6 +1132,20 @@ module Sub : sig
   (** [on_color_scheme f] delivers the terminal's light/dark colour scheme to
       [f], both as the reply to {!Cmd.query_color_scheme} and as unsolicited DEC
       2031 notifications. [f] returns [None] to ignore a report. *)
+
+  val worker : id:string -> (Stop.t -> 'msg mailbox -> unit) -> 'msg t
+  (** [worker ~id f] runs [f stop mailbox] off the loop, on {!val-run}'s
+      [process_perform] executor, from the update whose subscriptions first
+      declare [id] (see {{!workers}Workers}). Declaring [id] again, with any
+      function, keeps the worker that runs. [f] returning ends the worker; it
+      starts again only if [id] leaves the subscriptions and returns.
+
+      An exception [f] raises ends the run, as one from {!Cmd.val-perform} does,
+      unless its stop was requested before: the program no longer waits for
+      anything from it.
+
+      Raises [Invalid_argument] if [id] is empty. The run raises it when two
+      subscriptions declare the same id, among those that take one. *)
 
   val map : ('a -> 'b) -> 'a t -> 'b t
   (** [map f sub] is [sub] with every produced message transformed by [f]. Use

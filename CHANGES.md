@@ -6,6 +6,7 @@
 
 #### Added
 
+- **Workers** – `Sub.worker ~id f` runs `f stop mailbox` off the loop while `id` is declared, and requests its stop (`Sub.Stop.requested`, `Sub.Stop.on_request`) in the update that drops it or when the run ends; its messages are dropped from then on. `mailbox.dispatch` never blocks; `mailbox.send` returns once `update` has applied the message, for a worker that must keep pace with the loop
 - **One-shot timers** – `Sub.after ~id delay msg` dispatches `msg` once, `delay` seconds after `id` appears in the subscriptions; dropping `id` first cancels it, so a debounce is an `after` declared under a new id by each update that restarts the wait
 - **Shortcut subscriptions** – `Mosaic.Shortcut` and `Sub.on_keys` bind keys to messages declaratively, with base-key and modifier matching
 - **Runtime probe** – `Mosaic.run ~probe` hands test harnesses a quiescence probe (`Probe.is_settled`) for deterministic settling in headless tests
