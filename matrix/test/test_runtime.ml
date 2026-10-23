@@ -2498,20 +2498,33 @@ let index_of s sub =
   in
   go 0
 
-(* A terminal that answers every query, as xterm with the kitty keyboard
-   protocol does: the probe with a mode report, its two cursor reports,
-   XTVERSION, the kitty flags and DA1, a cursor query with the cursor on row
-   10, and the flags and pixel size when asked. *)
-let answers_everything s =
-  let has sub = index_of s sub <> None in
-  if String.starts_with ~prefix:"\027 F" s then
-    [
-      "\027[?2026;1$y\027[1;2R\027[1;3R\027P>|XTerm(398)\027\\\027[?0u\027[?64;1c";
-    ]
-  else if s = "\027[6n" then [ "\027[10;1R" ]
-  else if has "\027[?u" then [ "\027[?5u" ]
-  else if has "\027[14t" then [ "\027[4;480;800t" ]
-  else []
+(* A terminal that answers every query it knows, as xterm does: mode
+   reports, cursor reports with the cursor on row 10 unless the write moved
+   it (the probe's width tests ignore OSC 66, so their column is 1), XTVERSION
+   when [xtversion], DA1 and the pixel size. *)
+let xterm ?(xtversion = true) s =
+  let module P = Matrix.Ansi.Parser in
+  let row = ref 10 and out = Buffer.create 64 in
+  P.parse s
+  |> List.iter (function
+    | P.Csi { final = 'H'; marker = None; params; _ } ->
+        row := P.Params.pn params 0 ~default:1
+    | Csi { final = 'n'; marker = None; params; _ }
+      when P.Params.value params 0 = Some 6 ->
+        Buffer.add_string out (Printf.sprintf "\027[%d;1R" !row)
+    | Csi { final = 'p'; marker = Some '?'; intermediates = "$"; params } ->
+        Buffer.add_string out
+          (Printf.sprintf "\027[?%d;2$y" (P.Params.ps params 0 ~default:0))
+    | Csi { final = 'q'; marker = Some '>'; _ } ->
+        if xtversion then Buffer.add_string out "\027P>|XTerm(398)\027\\"
+    | Csi { final = 'c'; marker = None; params; _ }
+      when P.Params.count params = 0 ->
+        Buffer.add_string out "\027[?64;1c"
+    | Csi { final = 't'; marker = None; params; _ }
+      when P.Params.value params 0 = Some 14 ->
+        Buffer.add_string out "\027[4;480;800t"
+    | _ -> ());
+  if Buffer.length out = 0 then [] else [ Buffer.contents out ]
 
 (* However slow the link, up to the 5 s a batch stays owed, no reply is
    typed: the application receives exactly what the user typed. A cursor
@@ -2527,8 +2540,7 @@ let test_late_replies_never_typed () =
       List.iter
         (fun latency ->
           let ((app, c) as t) =
-            clocked_app ~mode ~rtt:latency ~answer:answers_everything ~limit:12.
-              typed
+            clocked_app ~mode ~rtt:latency ~answer:xterm ~limit:12. typed
           in
           run_clocked t;
           let msg =
@@ -2557,6 +2569,22 @@ let test_late_replies_never_typed () =
               (Matrix.size app))
         [ 0.01; 0.3; 0.55; 0.8; 1.; 2.; 3.; 4.; 4.9 ])
     [ `Alt; `Primary ]
+
+(* The probe's width tests report from the second row, so their cursor
+   reports are never a modified F3, even after the probe was given up: from a
+   terminal that answers with no control string, nothing is typed however
+   late it answers. *)
+let test_probe_reports_never_keys () =
+  List.iter
+    (fun latency ->
+      let ((_, c) as t) =
+        clocked_app ~rtt:latency ~answer:(xterm ~xtversion:false) ~limit:20. []
+      in
+      run_clocked t;
+      equal
+        ~msg:(Printf.sprintf "latency %g s" latency)
+        (list input_event) [] (events c))
+    [ 6.; 10. ]
 
 (* The startup payload starts with S7C1T and sets the reports that need no
    answer; a late answer changes the modes by their difference: the kitty
@@ -2949,6 +2977,7 @@ let () =
           test "an unanswered batch is given up"
             test_unanswered_batch_is_given_up;
           test "late replies are never typed" test_late_replies_never_typed;
+          test "probe reports are never keys" test_probe_reports_never_keys;
           test "a late answer changes modes" test_late_answer_changes_modes;
           test "metaSendsEscape set is kept" test_meta_sends_escape_kept;
           test "paste streams and aborts" test_paste_streams_and_aborts;

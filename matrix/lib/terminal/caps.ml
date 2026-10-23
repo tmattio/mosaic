@@ -366,7 +366,7 @@ type batch = Probe | Passthrough | Outer
 let s7c1t = "\027 F"
 let da1 = Ansi.(to_string (query Device_attributes))
 let cursor_report = Ansi.(to_string (query Cursor_position))
-let home = Ansi.(to_string home)
+let second_row = Ansi.(to_string (cursor_position ~row:2 ~col:1))
 let graphics_query = Ansi.(to_string (query Kitty_graphics))
 let wrap s = Ansi.(to_string (tmux_passthrough (literal s)))
 
@@ -382,10 +382,10 @@ let probe ~graphics =
       Ansi.(to_string (query Bracketed_paste_mode));
       Ansi.(to_string (query Sync_mode));
       "\027[?1036$p";
-      home;
+      second_row;
       Ansi.(to_string (query Explicit_width_support));
       cursor_report;
-      home;
+      second_row;
       Ansi.(to_string (query Scaled_text_support));
       cursor_report;
       Ansi.(to_string (query Terminal_identity));
@@ -417,14 +417,17 @@ let ask ev = function
       ( wrap graphics_query ^ wrap da1,
         { cursor_reports = 0; string_replies = 1 } )
 
-(* The probe writes a space of width 1, then one of scale 2, at the top left,
-   and asks where the cursor went: a terminal without OSC 66 skips the string
-   and leaves the cursor in place. *)
-let cursor ev batch ~index ~row ~col =
+(* The probe writes a space of width 1, then one of scale 2, at the start of
+   a row, and asks where the cursor went: a terminal without OSC 66 skips the
+   string and leaves the cursor in place. The column says it; the row is the
+   second, so that a report, [CSI 2 ; col R], is never the modified F3
+   [CSI 1 ; m R] if it comes after the probe was given up, but a terminal of
+   one row has only the first. *)
+let cursor ev batch ~index ~row:_ ~col =
   match (batch, index) with
-  | Probe, 0 -> { ev with explicit = Some (row = 0 && col = 1) }
+  | Probe, 0 -> { ev with explicit = Some (col = 1) }
   | Probe, 1 ->
-      let scaled = row = 0 && col = 2 in
+      let scaled = col = 2 in
       {
         ev with
         scaled = Some scaled;

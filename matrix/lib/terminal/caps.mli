@@ -136,9 +136,10 @@ type batch =
   | Probe
       (** The startup batch, to the terminal that does the work. It starts with
           S7C1T, so that no reply comes with 8-bit controls, then asks for the
-          mode reports, two OSC 66 widths each followed by a cursor position
-          report, XTVERSION, the kitty keyboard flags, the kitty graphics query
-          unless a multiplexer is in the way, and DA1. *)
+          mode reports, two OSC 66 widths, each written at the start of the
+          second row and followed by a cursor position report, XTVERSION, the
+          kitty keyboard flags, the kitty graphics query unless a multiplexer is
+          in the way, and DA1. *)
   | Passthrough
       (** DA1 alone, wrapped for tmux: answered only when tmux passes it on. *)
   | Outer

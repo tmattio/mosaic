@@ -784,10 +784,12 @@ let test_probe_payload () =
       "\027[?2026$p";
       "\027[?2031$p";
       "\027[?1036$p";
+      "\027[2;1H";
       "\027[>0q";
       "\027[?u";
       "\027_Gi=31337";
     ];
+  not_contains ~msg:"no cursor report can be a modified F3" ~sub:"\027[H" bytes;
   not_contains ~msg:"one DA1" ~sub:"\027[c"
     (String.sub bytes 0 (String.length bytes - 3));
   not_contains ~msg:"nothing wrapped" ~sub:"\027Ptmux;" bytes;
@@ -896,17 +898,17 @@ let test_silence_before_da1 () =
   in
   is_true ~msg:"a late answer" (Caps.derive tmux).kitty_graphics
 
-(* The probe writes a space of width 1 and one of scale 2 at the top left;
-   where the cursor went says whether the terminal sized them. Positions are
-   from 0. *)
+(* The probe writes a space of width 1 and one of scale 2 at the start of the
+   second row; the column the cursor went to says whether the terminal sized
+   them, and a terminal of one row reports the first. Positions are from 0. *)
 let probe_cursor_cases =
   [
-    ("both", [ (0, 1); (0, 2) ], (true, true));
-    ("explicit width only", [ (0, 1); (0, 0) ], (true, false));
-    ("scaled implies explicit width", [ (0, 0); (0, 2) ], (true, true));
-    ("wrong slots", [ (0, 2); (0, 1) ], (false, false));
-    ("wrong row", [ (1, 1); (1, 2) ], (false, false));
-    ("far columns", [ (0, 19); (0, 29) ], (false, false));
+    ("both", [ (1, 1); (1, 2) ], (true, true));
+    ("explicit width only", [ (1, 1); (1, 0) ], (true, false));
+    ("scaled implies explicit width", [ (1, 0); (1, 2) ], (true, true));
+    ("wrong slots", [ (1, 2); (1, 1) ], (false, false));
+    ("any row", [ (0, 1); (0, 2) ], (true, true));
+    ("far columns", [ (1, 19); (1, 29) ], (false, false));
     ("none", [], (false, false));
   ]
 
