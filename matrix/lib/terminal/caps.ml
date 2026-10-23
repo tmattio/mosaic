@@ -316,8 +316,8 @@ let derive ev =
           when_ (env.force_wcwidth || env.vhs) `Wcwidth;
           when_ (is "ghostty" && ghostty_wide version) `Unicode_wide;
           (match List.assoc_opt 2027 ev.modes with
-          | Some (Set | Permanently_set) -> Some `Unicode
-          | Some (Reset | Permanently_reset) -> Some `Wcwidth
+          | Some (Set | Reset | Permanently_set) -> Some `Unicode
+          | Some Permanently_reset -> Some `Wcwidth
           | Some Not_recognized | None -> None);
           (* kitty answers mode 2027 as not recognized, and places grapheme
              clusters (measured: 0.49.2 as [`Unicode] does; 0.41.1, older than

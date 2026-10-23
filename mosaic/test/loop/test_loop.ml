@@ -840,7 +840,7 @@ let%expect_test "a late width method re-measures existing text" =
     done
   in
   drive ~width:12 ~height:7 application
-    [ `Run cells; `Feed "\027[?2027;2$y"; `Run cells ];
+    [ `Run cells; `Feed "\027[?2027;4$y"; `Run cells ];
   [%expect
     {|
     |👩‍💻-t|
@@ -880,7 +880,7 @@ let%expect_test "static output follows the terminal's width method" =
   in
   drive ~mode:`Primary ~width:6 ~height:4 application
     [
-      `Feed "\027[?2027;2$y";
+      `Feed "\027[?2027;4$y";
       `Feed "s";
       `Run
         (fun t ->

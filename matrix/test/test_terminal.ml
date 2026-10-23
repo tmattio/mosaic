@@ -611,7 +611,9 @@ let precedence_cases =
     ( "an answer beats identity",
       [],
       [
-        Reply.Version "kitty(0.35.2)"; mode 2027 Reset; mode 2026 Not_recognized;
+        Reply.Version "kitty(0.35.2)";
+        mode 2027 Permanently_reset;
+        mode 2026 Not_recognized;
       ],
       [ Width `Wcwidth; Sync false; Identity (Some ("kitty", "0.35.2")) ] );
     ( "identity beats a guess",
@@ -657,8 +659,9 @@ let precedence_cases =
 
 (* The width method from the answer for mode 2027, as DECRPM states it
    (VT510): 0 not recognized, 1 set, 2 reset, 3 permanently set, 4
-   permanently reset. A terminal without the mode, or with it reset, measures
-   by character, unless its identity says it places clusters. The rows are
+   permanently reset. A terminal without the mode, or with it permanently
+   reset, measures by character, unless its identity says it places clusters;
+   one with the mode reset can set it, and the runtime does. The rows are
    terminals measured (CPR after each cluster), with the replies they gave
    to the probe; iTerm2's is read from its source (VT100Terminal.m). *)
 let width_answer_cases =
@@ -700,7 +703,8 @@ let width_answer_cases =
       [ ("TERM_PROGRAM", "iTerm.app") ],
       [ mode 2027 Permanently_reset ],
       `Wcwidth );
-    ("reset", [], [ mode 2027 Reset ], `Wcwidth);
+    (* The terminal has the mode, off: the runtime sets it. *)
+    ("reset", [], [ mode 2027 Reset ], `Unicode);
   ]
 
 (* The capabilities once the probe's DA1 is answered after [replies]: what
@@ -814,7 +818,9 @@ let test_assume () =
   List.iter
     (fun caps -> equal caps_testable caps (Caps.derive (Caps.assume caps)))
     [ plain; kitty; tmux ];
-  let caps = Caps.derive (Caps.add (Caps.assume tmux) (mode 2027 Reset)) in
+  let caps =
+    Caps.derive (Caps.add (Caps.assume tmux) (mode 2027 Permanently_reset))
+  in
   equal ~msg:"an answer still applies" width_method `Wcwidth caps.unicode_width
 
 (* A guess gives sync, an answer takes it back, and a later answer gives it

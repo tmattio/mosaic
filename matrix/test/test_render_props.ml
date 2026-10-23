@@ -801,7 +801,7 @@ let start_frame r app (frame : frame) =
   if r.case.report = Some r.index then begin
     Buffer.add_string r.replies
       (match r.case.width_method with
-      | `Wcwidth -> "\027[?2027;2$y"
+      | `Wcwidth -> "\027[?2027;4$y"
       | `Unicode | `Unicode_wide -> "\027[?2027;1$y");
     r.reported <- true
   end;

@@ -741,6 +741,34 @@ let test_ghostty_profile_reaches_runtime () =
         (Matrix.Grid.width_method grid = `Unicode_wide));
   contains ~sub:"\027[?2027h" (output f)
 
+(* A terminal that answers mode 2027 reset has grapheme clustering, off: the
+   runtime sets the mode, measures by grapheme clusters, and resets the mode
+   when it gives the terminal back. *)
+let test_reset_grapheme_mode_is_set () =
+  let f = fake ~tty:true () in
+  f.answer <-
+    (fun s ->
+      if String.starts_with ~prefix:"\027 F" s then
+        "\027[?2027;2$y\027[1;1R\027[1;1R\027[?62;4c"
+      else "");
+  let backend = { (backend f) with env = env [ ("TERM", "xterm-256color") ] } in
+  Matrix.run ~backend (fun app ->
+      is_true ~msg:"grapheme clusters"
+        ((Matrix.capabilities app).unicode_width = `Unicode));
+  let out = output f in
+  let at sub =
+    let n = String.length sub in
+    let rec go i =
+      if i + n > String.length out then -1
+      else if String.sub out i n = sub then i
+      else go (i + 1)
+    in
+    go 0
+  in
+  let set = at "\027[?2027h" and reset = at "\027[?2027l" in
+  is_true ~msg:"the mode is set" (set >= 0);
+  is_true ~msg:"and reset after" (reset > set)
+
 let test_cursor_visibility_preserves_blinking () =
   let f = fake ~tty:true () in
   f.answer <- probe_answer;
@@ -2356,6 +2384,7 @@ let () =
             test_startup_and_late_cpr_do_not_enable_width;
           test "Ghostty profile reaches runtime"
             test_ghostty_profile_reaches_runtime;
+          test "a reset grapheme mode is set" test_reset_grapheme_mode_is_set;
           test "cursor visibility preserves blinking"
             test_cursor_visibility_preserves_blinking;
           test "giving back leaves untouched appearance alone"

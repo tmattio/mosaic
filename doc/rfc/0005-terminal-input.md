@@ -15,17 +15,19 @@
   runtime switched over and the parser removed), and a final review with its own fuzzers and
   probes, whose findings were fixed (§2.1).
 - Compatibility: none before 1.0. Breaks are listed in §4 and stated in their commits.
-- Amended 2026-10-23 (the width method; settles §6 questions 8 and 9's first half): a DECRQM
-  2027 answer of 0 (not recognized), or none, means `Wcwidth` unless the terminal's identity says
-  it places clusters (kitty, which answers 0); 3 means `Unicode` and 4 `Wcwidth`, as DECRPM
-  states them (VT510) and as mode 2027's specification has a terminal with the mode off behave,
-  "as if this specification was not implemented at all". The default width method is `Wcwidth`.
+- Amended 2026-10-23 (the width method; settles §6 questions 8 and 9): a DECRQM 2027 answer of 0
+  (not recognized), or none, means `Wcwidth` unless the terminal's identity says it places
+  clusters (kitty, which answers 0). 1 and 3 mean `Unicode`. 2 (reset) says the terminal has
+  grapheme clustering and it is off: the runtime sets the mode, as it already did for `Unicode`,
+  resets it on exit, and measures by `Unicode`. 4 means `Wcwidth`. Readings: DECRPM's settings
+  (VT510), and mode 2027's specification, under which a terminal with the mode off behaves "as
+  if this specification was not implemented at all". The default width method is `Wcwidth`.
   Measured, by a cursor report after each of 50 clusters written in the terminal as it starts:
   xterm 398 and VTE 0.80.1 answer 0 and st 0.9.2 nothing, and all three place every cluster as
-  `Wcwidth` does (50/50, 50/50, 36/36; `Unicode` 26/50), where matrix chose `Unicode`; kitty
-  0.49.2 answers 0 and places them as `Unicode` does on 46/50 (`Wcwidth` 22/50); WezTerm
-  20240203 answers 3 and foot 1.21.0 answers 1. Whether "reset" should make the runtime set the
-  mode stays open: no measured terminal answered 2.
+  `Wcwidth` does (50/50, 50/50, 36/36; `Unicode` 24/50), where matrix chose `Unicode`; kitty
+  0.49.2 answers 0 and places them as `Unicode` does on 48/50 (`Wcwidth` 22/50); WezTerm
+  20240203 answers 3 and foot 1.21.0 answers 1. No measured terminal answered 2; iTerm2 answers
+  4 by its source (unmeasured) and gets `Wcwidth`.
 
 ## Summary
 
@@ -271,8 +273,8 @@ Questions 1–5 were adjudicated as §1–§2 state, for the maintainer to confi
    outer-terminal fact is needed, so batches do not queue behind it for 5 s?
 8. Since xterm answers 2027 with 0 and measures by code point, should xterm get an identity row
    of `Wcwidth`? (Settled 2026-10-23: no row is needed, since "not recognized" means `Wcwidth`.)
-9. Should a 2027 answer of "not recognized" mean `Wcwidth` (settled 2026-10-23: yes), and
-   "reset" mean that the runtime sets the mode?
+9. Should a 2027 answer of "not recognized" mean `Wcwidth`, and "reset" mean that the runtime
+   sets the mode? (Settled 2026-10-23: yes to both.)
 10. Should tmux's rows keep 2004 and 1004 from 3.6, when it began answering, though it had both
     earlier?
 11. Should input-method `Text` reach mosaic widgets as a paste, or as an event of its own?
