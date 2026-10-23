@@ -2429,6 +2429,7 @@ val textarea :
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?focused:bool ->
   ?annotations:Mosaic_ui.Text_buffer.Annotations.t ->
+  ?syntax:Code.syntax ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->

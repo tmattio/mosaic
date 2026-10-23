@@ -161,6 +161,7 @@ module Props = struct
   type t = {
     state : Editor.t;
     annotations : Text_buffer.Annotations.t option;
+    syntax : Syntax_session.syntax option;
     ghost_text : string option;
     ghost_text_color : Ansi.Color.t;
     placeholder : string;
@@ -180,7 +181,7 @@ module Props = struct
     key_bindings : key_binding list;
   }
 
-  let make ~state ?annotations ?ghost_text
+  let make ~state ?annotations ?syntax ?ghost_text
       ?(ghost_text_color = default_ghost_text_color) ?(placeholder = "")
       ?(wrap = `Word) ?(text_color = default_text_color)
       ?(background_color = default_background_color)
@@ -199,10 +200,15 @@ module Props = struct
         let accepted = Editor.text state in
         if content != accepted && not (String.equal content accepted) then
           invalid_arg
-            "Edit_surface.Props.make: annotations do not match editor source");
+            "Edit_surface.Props.make: annotations do not match editor source";
+        if Option.is_some syntax then
+          invalid_arg
+            "Edit_surface.Props.make: both annotations and syntax style the \
+             text");
     {
       state;
       annotations;
+      syntax;
       ghost_text;
       ghost_text_color;
       placeholder;
@@ -227,6 +233,7 @@ module Props = struct
   let equal a b =
     a.state == b.state
     && Option.equal ( == ) a.annotations b.annotations
+    && Option.equal Syntax_session.equal a.syntax b.syntax
     && Option.equal String.equal a.ghost_text b.ghost_text
     && Ansi.Color.equal a.ghost_text_color b.ghost_text_color
     && String.equal a.placeholder b.placeholder
@@ -251,6 +258,7 @@ end
 type t = {
   node : Renderable.t;
   text_buf : Text_buffer.t;
+  session : Syntax_session.t;
   mutable styled_content : bool;
   surface : Text_surface.t;
   mutable props : Props.t;
@@ -333,12 +341,25 @@ let propose t ~base next =
 
 (* Sync *)
 
+(* The paint of the accepted text: the given annotations, or the captures the
+   syntax shows for it, without concealment, as editable text shows every
+   byte. *)
+let paint t =
+  match (t.props.annotations, t.props.syntax) with
+  | Some annotations, _ -> Some annotations
+  | None, None -> None
+  | None, Some syntax ->
+      Option.map
+        (Syntax_highlight.to_annotations ~style:(Syntax_session.style syntax))
+        (Syntax_session.shown t.session ~conceal:false)
+
 let sync_content t =
   let source = Editor.source t.props.state in
-  t.styled_content <- Option.is_some t.props.annotations;
+  let paint = paint t in
+  t.styled_content <- Option.is_some paint;
   Text_buffer.set_text t.text_buf (Editor.text t.props.state);
   Text_buffer.set_source t.text_buf source;
-  Option.iter (Text_buffer.set_annotations t.text_buf) t.props.annotations
+  Option.iter (Text_buffer.set_annotations t.text_buf) paint
 
 let sync t =
   sync_content t;
@@ -447,6 +468,7 @@ let measure_single_line t ~known_dimensions ~available_space:_ ~style:_ =
 (* Rendering *)
 
 let render_before t _self grid ~delta:_ =
+  if Syntax_session.poll t.session then sync_content t;
   show_viewport t;
   let w = Renderable.width t.node in
   let h = Renderable.height t.node in
@@ -744,8 +766,8 @@ let handle_paste t text =
 (* Construction *)
 
 let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
-    ?annotations ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
-    ?background_color ?focused_text_color ?focused_background_color
+    ?annotations ?syntax ?ghost_text ?ghost_text_color ?placeholder ?wrap
+    ?text_color ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?(mode = `Multiline)
     ?key_bindings ~on_change ?on_submit () =
@@ -753,8 +775,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
     Renderable.create ~parent ?index ?id ?style ?visible ?z_index ?opacity ()
   in
   let props =
-    Props.make ~state ?annotations ?ghost_text ?ghost_text_color ?placeholder
-      ?wrap ?text_color ?background_color ?focused_text_color
+    Props.make ~state ?annotations ?syntax ?ghost_text ?ghost_text_color
+      ?placeholder ?wrap ?text_color ?background_color ?focused_text_color
       ?focused_background_color ?placeholder_color ?selection_color
       ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking ?selectable
       ?show_cursor ?key_bindings ()
@@ -762,10 +784,15 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
   let text_buf = Text_buffer.create () in
   let surface = Text_surface.create node text_buf in
   Text_surface.set_wrap surface props.wrap;
+  let session =
+    Syntax_session.create ~notify:(fun () -> Renderable.request_render node)
+  in
+  Syntax_session.set session ~content:(Editor.text state) props.syntax;
   let t =
     {
       node;
       text_buf;
+      session;
       styled_content = false;
       surface;
       props;
@@ -796,6 +823,14 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
   Renderable.on_mouse node (handle_mouse t);
   register_selection t;
   register_text_rows t;
+  Renderable.set_pending_provider node
+    (Some
+       (fun () ->
+         if Syntax_session.is_highlighting session then
+           let label = Option.bind t.props.syntax Syntax_session.language in
+           Some (Renderable.Pending.make ?label ~kind:"textarea.highlight" ())
+         else None));
+  Renderable.Private.set_cleanup node (fun () -> Syntax_session.cancel session);
   sync t;
   sync_style t ~focused:false;
   t
@@ -805,6 +840,9 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
 let apply_props t (props : Props.t) =
   let annotations_changed =
     not (Option.equal ( == ) t.props.annotations props.annotations)
+  in
+  let syntax_changed =
+    not (Option.equal Syntax_session.equal t.props.syntax props.syntax)
   in
   let selectable_changed = t.props.selectable <> props.selectable in
   let keymap_changed =
@@ -831,8 +869,10 @@ let apply_props t (props : Props.t) =
   if keymap_changed then
     t.keymap <- Action.keymap ~custom:props.key_bindings t.mode;
   if selectable_changed then register_selection t;
+  if source_changed || syntax_changed then
+    Syntax_session.set t.session ~content:(Editor.text props.state) props.syntax;
   if style_changed then sync_style t ~focused:(Renderable.focused t.node);
-  if source_changed || annotations_changed then sync t;
+  if source_changed || annotations_changed || syntax_changed then sync t;
   if state_changed then show_viewport t;
   Renderable.request_render t.node
 

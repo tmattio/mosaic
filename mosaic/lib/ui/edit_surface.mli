@@ -68,6 +68,7 @@ module Props : sig
   val make :
     state:Editor.t ->
     ?annotations:Text_buffer.Annotations.t ->
+    ?syntax:Syntax_session.syntax ->
     ?ghost_text:string ->
     ?ghost_text_color:Ansi.Color.t ->
     ?placeholder:string ->
@@ -108,6 +109,7 @@ val create :
   ?opacity:float ->
   state:Editor.t ->
   ?annotations:Text_buffer.Annotations.t ->
+  ?syntax:Syntax_session.syntax ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->

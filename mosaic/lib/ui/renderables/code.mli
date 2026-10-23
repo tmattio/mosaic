@@ -22,7 +22,7 @@
 type t
 (** The type for code display renderables. *)
 
-type syntax
+type syntax = Syntax_session.syntax
 (** The type for source-code syntax settings.
 
     Syntax settings are values: their language, style and ranges compare by

@@ -1743,11 +1743,12 @@ let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
     ?grid_auto_rows ?grid_auto_columns ?grid_auto_flow ?grid_template_areas
     ?grid_template_column_names ?grid_template_row_names ?grid_row ?grid_column
     ?visible ?z_index ?opacity ?buffered ?live ?on_mouse ?on_key ?on_paste
-    ?on_click ?on_focus_request ?on_size ?focused ?annotations ?ghost_text
-    ?ghost_text_color ?placeholder ?wrap ?text_color ?background_color
-    ?focused_text_color ?focused_background_color ?placeholder_color
-    ?selection_color ?selection_fg ?cursor_style ?cursor_color ?cursor_blinking
-    ?selectable ?show_cursor ?key_bindings ~on_change ?on_submit ~state () =
+    ?on_click ?on_focus_request ?on_size ?focused ?annotations ?syntax
+    ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
+    ?background_color ?focused_text_color ?focused_background_color
+    ?placeholder_color ?selection_color ?selection_fg ?cursor_style
+    ?cursor_color ?cursor_blinking ?selectable ?show_cursor ?key_bindings
+    ~on_change ?on_submit ~state () =
   let style =
     layout_style ?display ?box_sizing ?position ?overflow ?scrollbar_width
       ?text_align ?inset ?size ?min_size ?max_size ?aspect_ratio ?margin
@@ -1760,8 +1761,8 @@ let textarea ?key ?display ?box_sizing ?position ?overflow ?scrollbar_width
   in
   Vnode.textarea ~state ?key ~style ?visible ?z_index ?opacity ?buffered ?live
     ?on_mouse ?on_key ?on_paste ?on_click ?on_focus_request ?on_size ?focused
-    ?annotations ?ghost_text ?ghost_text_color ?placeholder ?wrap ?text_color
-    ?background_color ?focused_text_color ?focused_background_color
+    ?annotations ?syntax ?ghost_text ?ghost_text_color ?placeholder ?wrap
+    ?text_color ?background_color ?focused_text_color ?focused_background_color
     ?placeholder_color ?selection_color ?selection_fg ?cursor_style
     ?cursor_color ?cursor_blinking ?selectable ?show_cursor ~on_change
     ?key_bindings ?on_submit ()

@@ -95,6 +95,7 @@ val create :
   ?opacity:float ->
   state:Editor.t ->
   ?annotations:Text_buffer.Annotations.t ->
+  ?syntax:Code.syntax ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->
@@ -119,7 +120,8 @@ val create :
 (** [create ~parent ~state ~on_change ()] renders the accepted [state]. Default
     editing events propose a complete next state through [on_change]; they do
     not mutate the accepted editor. Apply new properties to accept a proposal.
-    [on_submit] reports accepted text. Focus and blur do not commit edits. *)
+    [on_submit] reports accepted text. Focus and blur do not commit edits. See
+    {!Props.make} for [annotations] and [syntax]. *)
 
 (** {1:accessors Accessors} *)
 
@@ -141,6 +143,7 @@ module Props : sig
   val make :
     state:Editor.t ->
     ?annotations:Text_buffer.Annotations.t ->
+    ?syntax:Code.syntax ->
     ?ghost_text:string ->
     ?ghost_text_color:Ansi.Color.t ->
     ?placeholder:string ->
@@ -161,18 +164,28 @@ module Props : sig
     unit ->
     t
   (** [make ~state ()] describes [state] with the widget's visual defaults.
-      [annotations] must describe the same bytes as [Editor.text state]. Raises
-      [Invalid_argument] on a mismatch, before applying any properties. Omit
-      annotations while awaiting a result for a changed source. Annotations
-      depend only on the source bytes: the same annotations stay valid while the
-      caret and selection move. *)
+
+      The text is styled by [annotations] or by [syntax], not both:
+      - [annotations] are styles the application resolved itself, such as search
+        matches or diagnostics. They must describe the same bytes as
+        [Editor.text state]. Raises [Invalid_argument] on a mismatch, before
+        applying any properties. Omit annotations while awaiting a result for a
+        changed source. Annotations depend only on the source bytes: the same
+        annotations stay valid while the caret and selection move.
+      - [syntax] highlights the text as {!Code} does: a highlighter receives
+        each accepted text, with the edit from the latest result, and while a
+        result is pending the text shows as {!Code.with_highlighter} states.
+        Editable text shows every byte, so captures never conceal.
+
+      Raises [Invalid_argument] if both [annotations] and [syntax] are given. *)
 
   val default : t
   (** [default] is [make ~state:Editor.empty ()]. *)
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] refer to the same editor value and
-      the same annotations, and have equal visual properties. *)
+      the same annotations, and have equal syntax settings (see {!Code.syntax})
+      and visual properties. *)
 end
 
 val apply_props : t -> Props.t -> unit

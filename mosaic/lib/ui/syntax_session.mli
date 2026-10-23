@@ -4,8 +4,8 @@
     requests captures from a highlighter, at most one request at a time,
     coalesces the changes made meanwhile, keeps the latest result and the
     highlighter's state for the next request, and says which captures describe
-    the content shown. Each {!Code} view holds one, and documents highlighters
-    and syntax settings. *)
+    the content shown. {!Code} and the editable surface of {!Textarea} each hold
+    one. {!Code} documents highlighters and syntax settings. *)
 
 (** {1:highlighters Highlighters} *)
 

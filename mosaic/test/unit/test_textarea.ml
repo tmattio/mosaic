@@ -1150,6 +1150,100 @@ let visual_end_keeps_previous_wrapped_row () =
   send_key_with_mod ta ~modifier:super_mod Matrix_input.Keystroke.Left;
   equal int 0 (Editor.cursor (Textarea.state ta))
 
+(* ── Syntax ── *)
+
+let keyword_style =
+  Syntax_style.make ~base:Ansi.Style.default
+    [ ("keyword", Ansi.Style.make ~fg:Ansi.Color.red ()) ]
+
+let syntax_highlights_and_shows_pending_edits () =
+  let ctx = make_ctx () in
+  let root = make_root ctx in
+  let requests = ref [] in
+  let highlighter =
+    Code.Highlighter.async (fun request ~notify:_ ->
+        let outcome = ref None in
+        requests := (request, outcome) :: !requests;
+        Code.Highlighter.job
+          ~poll:(fun () ->
+            let result = !outcome in
+            outcome := None;
+            result)
+          ~cancel:ignore)
+  in
+  let syntax =
+    Code.with_highlighter ~language:"ocaml" ~style:keyword_style highlighter
+  in
+  let complete () =
+    match !requests with
+    | ((request : unit Code.Highlighter.request), outcome) :: _ ->
+        let meta = { Syntax_highlight.default_meta with conceal = Some "" } in
+        outcome :=
+          Some
+            (Ok
+               ( Syntax_highlight.make ~content:request.content
+                   [
+                     Syntax_highlight.range ~meta ~start_byte:0
+                       ~end_byte:(String.length request.content - 2)
+                       ~scope:"keyword" ();
+                   ],
+                 () ))
+    | [] -> fail "expected a request"
+  in
+  let state = Editor.of_string "letter x" in
+  let ta =
+    Textarea.create ~parent:root ~state ~syntax ~on_change:ignore
+      ~text_color:Ansi.Color.white ~show_cursor:false ()
+  in
+  let red_at grid x =
+    Ansi.Color.equal Ansi.Color.red (Matrix_grid.get_fg grid x)
+  in
+  complete ();
+  let grid = render_textarea ta ~width:12 ~height:1 in
+  equal ~msg:"editable text never conceals" string "letter x"
+    (Text_buffer.plain_text (Text_surface.buffer (Textarea.surface ta)));
+  is_true ~msg:"result shown" (red_at grid 0 && red_at grid 5);
+  let state = Editor.of_string "letXter x" in
+  Textarea.apply_props ta
+    (Textarea.Props.make ~state ~syntax ~show_cursor:false ());
+  (match !requests with
+  | (request, _) :: _ -> (
+      match request.previous with
+      | Some { edit = { start; removed; inserted }; _ } ->
+          equal ~msg:"edit from the latest result" (triple int int int)
+            (3, 0, 1) (start, removed, inserted)
+      | None -> fail "expected the latest result")
+  | [] -> fail "expected a request");
+  is_some ~msg:"pending work reported"
+    (Renderable.Private.pending_work (Textarea.node ta));
+  let grid = render_textarea ta ~width:12 ~height:1 in
+  is_true ~msg:"bytes before the edit keep their style" (red_at grid 2);
+  is_false ~msg:"the inserted byte is plain" (red_at grid 3);
+  is_true ~msg:"bytes after the edit keep their style" (red_at grid 6)
+
+let syntax_mismatch_shows_plain () =
+  let ctx = make_ctx () in
+  let root = make_root ctx in
+  let syntax =
+    Code.syntax ~style:keyword_style
+      (Syntax_highlight.of_triples ~content:"other" [ (0, 3, "keyword") ])
+  in
+  let ta =
+    Textarea.create ~parent:root ~state:(Editor.of_string "hello") ~syntax
+      ~on_change:ignore ~text_color:Ansi.Color.white ~show_cursor:false ()
+  in
+  let grid = render_textarea ta ~width:10 ~height:1 in
+  is_true ~msg:"captures of other bytes show plain"
+    (Ansi.Color.equal Ansi.Color.white (Matrix_grid.get_fg grid 0))
+
+let annotations_and_syntax_exclude_each_other () =
+  let state = Editor.of_string "hello" in
+  let annotations = Text_buffer.Annotations.make ~content:"hello" [] in
+  let syntax = Code.syntax (Syntax_highlight.make ~content:"hello" []) in
+  raises_match ~msg:"both style the text"
+    (function Invalid_argument _ -> true | _ -> false)
+    (fun () -> ignore (Textarea.Props.make ~state ~annotations ~syntax ()))
+
 let () =
   run "mosaic.textarea"
     [
@@ -1180,6 +1274,14 @@ let () =
           test "surface accessible" create_surface_accessible;
           test "registers line info provider"
             create_registers_text_rows_provider;
+        ];
+      group "Syntax"
+        [
+          test "highlights and shows pending edits"
+            syntax_highlights_and_shows_pending_edits;
+          test "a mismatch shows plain" syntax_mismatch_shows_plain;
+          test "annotations and syntax exclude each other"
+            annotations_and_syntax_exclude_each_other;
         ];
       group "Paint"
         [

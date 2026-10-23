@@ -792,6 +792,7 @@ val textarea :
   ?on_focus_request:'msg ->
   ?on_size:(w:int -> h:int -> 'msg option) ->
   ?annotations:Text_buffer.Annotations.t ->
+  ?syntax:Code.syntax ->
   ?ghost_text:string ->
   ?ghost_text_color:Ansi.Color.t ->
   ?placeholder:string ->
@@ -821,8 +822,9 @@ val textarea :
 
     [annotations] styles source byte ranges without copying text. Its source
     bytes must match [state]; stale annotations raise [Invalid_argument] before
-    changing the widget. Omit annotations while awaiting a highlighter result
-    for newly edited content. Other visual options follow {!Textarea}. *)
+    changing the widget. [syntax] highlights the text instead, as {!Code} does;
+    giving both raises [Invalid_argument]. Other visual options follow
+    {!Textarea}. *)
 
 val table :
   ?key:string ->

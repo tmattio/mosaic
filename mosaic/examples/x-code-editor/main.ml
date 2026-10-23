@@ -388,12 +388,15 @@ let completion_panel model =
                     (prefix ^ item)));
           ]
 
-let highlight_ocaml code =
-  Toy_highlighter.highlight ~language:"ocaml" ~content:code
-  |> Syntax_highlight.to_annotations ~style:Syntax_style.default
+(* The editor highlights each accepted text as a code view does. A highlighter
+   is a resource, so it is created once. *)
+let highlighter =
+  Code.Highlighter.sync (fun { language; content; _ } ->
+      (Toy_highlighter.highlight ~language ~content, ()))
+
+let syntax = Code.with_highlighter ~language:"ocaml" highlighter
 
 let view model =
-  let annotations = highlight_ocaml (Editor.text model.editor) in
   let ghost_text = ghost_text model in
   box ~flex_direction:Column
     ~size:{ width = pct 100; height = pct 100 }
@@ -420,7 +423,7 @@ let view model =
                 ~line_colors:(active_line_colors model.editor)
                 (textarea
                    ~size:{ width = pct 100; height = pct 100 }
-                   ~focused:true ~state:model.editor ~annotations ?ghost_text
+                   ~focused:true ~state:model.editor ~syntax ?ghost_text
                    ~ghost_text_color:(Ansi.Color.grayscale ~level:10)
                    ~wrap:`None ~cursor_style:`Line
                    ~on_key:(fun ev -> editor_on_key model ev)

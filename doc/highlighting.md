@@ -94,26 +94,19 @@ query relates.
 
 ## Editable text
 
-A textarea takes annotations instead of a highlighter. Resolve the captures
-once when they arrive, keep both in the model, and pass the annotations while
-they still describe the editor's text:
+A textarea takes the same syntax settings as a code view, and may share its
+highlighter:
 
 ```ocaml
-let highlighted captures =
-  ( captures,
-    Mosaic.Syntax_highlight.to_annotations ~style:Mosaic.Syntax_style.default
-      captures )
-
-let editor_view state (captures, annotations) =
-  let annotations =
-    if
-      String.equal (Mosaic.Editor.text state)
-        (Mosaic.Syntax_highlight.content captures)
-    then Some annotations
-    else None
-  in
-  Mosaic.textarea ~state ?annotations ~on_change:(fun state -> Edit state) ()
+let editor_view highlighter state =
+  Mosaic.textarea ~state
+    ~syntax:(Mosaic.Code.with_highlighter ~language:"ocaml" highlighter)
+    ~on_change:(fun state -> Edit state)
+    ()
 ```
+
+Styles the application resolves itself, such as search matches or
+diagnostics, go in `~annotations` instead.
 
 ## Where the rules live
 
@@ -128,8 +121,8 @@ let editor_view state (captures, annotations) =
   [`Diff`](../mosaic/lib/ui/renderables/diff.mli): how fenced code blocks and
   diff panes use a highlighter.
 - [`Textarea`](../mosaic/lib/ui/renderables/textarea.mli) and
-  [`Text_buffer.Annotations`](../mosaic/lib/ui/text_buffer.mli): annotations
-  on editable text.
+  [`Text_buffer.Annotations`](../mosaic/lib/ui/text_buffer.mli): syntax and
+  annotations on editable text.
 
 Mosaic's [examples](../mosaic/examples/common/toy_highlighter.ml) use a small
 lexical highlighter in place of a parser package.
