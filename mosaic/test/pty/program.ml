@@ -235,6 +235,9 @@ let () =
   in
   match name with
   | "idle" -> idle ()
+  | "idle-nohup" ->
+      Sys.set_signal Sys.sighup Sys.Signal_ignore;
+      idle ()
   | "idle-after-perform" -> idle_after_perform ()
   | "idle-every" -> idle_every ()
   | "idle-tick" -> idle_tick ()

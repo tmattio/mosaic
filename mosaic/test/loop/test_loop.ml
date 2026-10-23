@@ -97,10 +97,20 @@ let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
   let steps = ref steps in
   (* Tracked so the replay VTE is always the size the backend currently is. *)
   let dims = ref (width, height) in
+  (* Frames presented since the last step. *)
+  let frames = ref 0 in
   let on_idle t ~until =
-    (* Every step observes a presented frame: the clock moves to the frame's
-       deadline first. *)
-    if not (Matrix_test.settle t ~until) then
+    (* Every step observes a quiescent frame: the clock moves to each frame's
+       deadline until none is owed. A view settles within a frame or the next
+       (the depth rule); an animation owes a frame after every frame and never
+       does, so a run of frames that long fails the test instead of spinning:
+       drive an animation with a clock of its own, as [run_until] does. *)
+    if Matrix_test.settle t ~until then (
+      incr frames;
+      if !frames > 10_000 then
+        failwith "drive: the view never settles (an endless animation?)")
+    else (
+      frames := 0;
       match !steps with
       | [] -> Matrix_test.stop t
       | `Step_to target :: rest ->
@@ -132,7 +142,7 @@ let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
               let width, height = !dims in
               replay_matches t ~width ~height;
               snap t
-          | `Run f -> f t)
+          | `Run f -> f t))
   in
   let t = Matrix_test.create ?mode ~on_idle ~width ~height () in
   Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
@@ -3030,3 +3040,17 @@ let%expect_test "timers follow the reference model" =
     0 of 10000 cases differ
     123306 fires, 79438 with a count above 1
     |}]
+
+let%expect_test "the driver fails on an animation that never ends" =
+  (* A tick subscription asks for a frame from every frame: no frame is ever
+     quiescent, and the driver says so instead of moving the clock forever. *)
+  (match
+     drive
+       (app
+          ~subs:(fun _ -> Mosaic.Sub.on_tick ~id:"t" (fun ~dt:_ -> Ignored))
+          ())
+       [ `Snap ]
+   with
+  | () -> print_endline "the driver returned"
+  | exception Failure m -> print_endline m);
+  [%expect {| drive: the view never settles (an endless animation?) |}]

@@ -1,6 +1,14 @@
 ; MIGRATION NOTE (windtrap 0.2): see mosaic/test/expect/dune — this was
 ; an (executables) stanza whose let%expect_test bodies never ran.
 
+; A test whose driver never ends fails after a minute instead of spinning:
+; nothing else would stop a runner that dune left behind.
+
+(env
+ (_
+  (env-vars
+   (WINDTRAP_TIMEOUT 60))))
+
 (library
  (name mosaic_loop_expect)
  (inline_tests)

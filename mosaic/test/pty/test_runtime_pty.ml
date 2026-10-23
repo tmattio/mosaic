@@ -428,6 +428,28 @@ let test_suspend () =
   send s "q";
   ignore (await s "JOB-EXIT 0" : int)
 
+(* A program whose terminal goes away (the emulator closed, the session
+   hung up) ends: its reads fail, or its input ends, and it does not spin. *)
+let test_terminal_gone name () =
+  let s = spawn name in
+  ignore (await s "N=0" : int);
+  pause s 0.2;
+  (* The emulator closes its side: the kernel hangs the terminal up. *)
+  Unix.close (Pty.file_descr s.pty);
+  let deadline = Unix.gettimeofday () +. 5. in
+  let rec reap () =
+    match Unix.waitpid [ Unix.WNOHANG ] s.pid with
+    | 0, _ when Unix.gettimeofday () < deadline ->
+        Unix.sleepf 0.01;
+        reap ()
+    | 0, _ ->
+        Unix.kill s.pid Sys.sigkill;
+        ignore (Unix.waitpid [] s.pid : int * Unix.process_status);
+        fail "the program outlived its terminal"
+    | _ -> ()
+  in
+  reap ()
+
 let supported =
   Sys.os_type = "Unix"
   && Sys.file_exists "/proc/self/status"
@@ -508,6 +530,15 @@ let () =
                test "R-F: a flood from a domain" (test_flood "flood-domain");
                test "R-X: an exception in a perform" test_perform_exception;
                test "R-X2: an exception in init" test_init_exception;
+             ]);
+        group "Terminal gone"
+          (if not supported then []
+           else
+             [
+               test "a program ends with its terminal"
+                 (test_terminal_gone "idle");
+               test "one that ignores SIGHUP too"
+                 (test_terminal_gone "idle-nohup");
              ]);
         group "Handoff"
           (if not supported then []
