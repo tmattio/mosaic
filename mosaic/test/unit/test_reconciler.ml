@@ -554,7 +554,7 @@ let spinner_follows_declared_live () =
   render_view reconciler (Vnode.spinner ~color:Ansi.Color.red ());
   do_frame renderer;
   is_true ~msg:"released" (live ());
-  let still = { Spinner.frames = [| "*" |]; interval = 0.1 } in
+  let still = { Spinner.frames = [| "*" |]; period = 0.1 } in
   render_view reconciler (Vnode.spinner ~frame_set:still ());
   do_frame renderer;
   is_false ~msg:"a single frame never animates" (live ());

@@ -1974,7 +1974,7 @@ let width_method_change_remeasures () =
   let text = Text.create ~parent:root ~content:emoji () in
   let spinner =
     Spinner.create ~parent:root
-      ~frame_set:{ Spinner.frames = [| emoji |]; interval = 0. }
+      ~frame_set:{ Spinner.frames = [| emoji |]; period = 0. }
       ()
   in
   let widths () =

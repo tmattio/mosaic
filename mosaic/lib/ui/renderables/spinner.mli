@@ -1,9 +1,9 @@
 (** Animated spinner cycling through configurable frame sets.
 
-    A spinner cycles through an array of text frames at a fixed interval,
+    A spinner cycles through an array of text frames at a fixed period,
     rendering the current frame with a configurable foreground color. Animation
     advances on each tick: elapsed time accumulates and the frame index advances
-    by one or more steps when the interval threshold is reached.
+    by one for each whole period accumulated.
 
     Several built-in frame sets are provided ({!dots}, {!line}, {!arc}, etc.).
     Custom frame sets can be constructed directly as {!type-frame_set} records.
@@ -16,10 +16,10 @@ type t
 
 type frame_set = {
   frames : string array;  (** Frames to cycle through. *)
-  interval : float;  (** Time between frames, in seconds. *)
+  period : float;  (** Time between frames, in seconds. *)
 }
 (** The type for animation frame sets. The spinner advances one frame each time
-    {!field-interval} seconds have elapsed. *)
+    {!field-period} seconds have elapsed. *)
 
 (** {1:frame_sets Built-in frame sets} *)
 
@@ -64,7 +64,7 @@ val create :
       {!Ansi.Color.white}.
 
     The spinner manages its own liveness: the node is made live while the frame
-    set animates (more than one frame and a positive interval), so the animation
+    set animates (more than one frame and a positive period), so the animation
     runs without further wiring, and is taken out of the live set when a static
     frame set makes per-frame ticks pointless. *)
 
@@ -105,7 +105,7 @@ val elapsed : t -> float
 
 val animates : t -> bool
 (** [animates t] is [true] iff [t]'s frame set has more than one frame and a
-    positive interval. The node of [t] is live exactly while it animates. *)
+    positive period. The node of [t] is live exactly while it animates. *)
 
 (** {1:setters Setters} *)
 

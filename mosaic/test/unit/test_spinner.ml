@@ -65,7 +65,7 @@ let create_is_live () =
 
 let static_frame_set_is_not_live () =
   let _t, spinner =
-    make_spinner ~frame_set:{ Spinner.frames = [| "x" |]; interval = 0.08 } ()
+    make_spinner ~frame_set:{ Spinner.frames = [| "x" |]; period = 0.08 } ()
   in
   is_false ~msg:"single frame needs no ticks"
     (Renderable.live (Spinner.node spinner));

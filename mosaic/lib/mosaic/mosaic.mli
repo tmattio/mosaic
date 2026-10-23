@@ -548,7 +548,7 @@ end
 module Spinner : sig
   type frame_set = Mosaic_ui.Spinner.frame_set = {
     frames : string array;  (** Characters cycled as animation frames. *)
-    interval : float;  (** Time in seconds between frame advances. *)
+    period : float;  (** Time in seconds between frame advances. *)
   }
   (** The type for animation frame sets. *)
 

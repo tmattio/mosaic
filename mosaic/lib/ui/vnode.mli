@@ -656,13 +656,13 @@ val spinner :
 (** [spinner ()] is an animated spinner leaf element. Spinner does not accept
     children.
 
-    The spinner cycles through Unicode frame strings at a fixed interval driven
-    by the frame-based animation system.
+    The spinner cycles through Unicode frame strings at a fixed period driven by
+    the frame-based animation system.
 
     Spinner-specific attributes:
     - [live] lets the spinner animate. While it is [false] the spinner shows its
       current frame and requests no frames. Defaults to [true].
-    - [frame_set] is the set of animation frames and their interval. Defaults to
+    - [frame_set] is the set of animation frames and their period. Defaults to
       {!Spinner.dots}.
     - [color] is the spinner foreground color. Defaults to {!Ansi.Color.white}.
 *)

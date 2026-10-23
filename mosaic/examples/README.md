@@ -59,7 +59,7 @@ text attributes (bold, italic, underline), and different wrap modes.
 ### `03-spinner` – Loading indicators
 
 Animated spinners using built-in presets (Dots, Line, Circle, Bounce, Bar,
-Arrow). Demonstrates start/stop control and custom frame intervals.
+Arrow). Demonstrates start/stop control and custom frame periods.
 
 ### `04-input` – Text input
 

@@ -1,22 +1,22 @@
 (* ───── Frame Sets ───── *)
 
-type frame_set = { frames : string array; interval : float }
+type frame_set = { frames : string array; period : float }
 
 let dots =
   {
     frames = [| "⠋"; "⠙"; "⠹"; "⠸"; "⠼"; "⠴"; "⠦"; "⠧"; "⠇"; "⠏" |];
-    interval = 0.08;
+    period = 0.08;
   }
 
-let line = { frames = [| "-"; "\\"; "|"; "/" |]; interval = 0.13 }
+let line = { frames = [| "-"; "\\"; "|"; "/" |]; period = 0.13 }
 
 let dots2 =
-  { frames = [| "⣾"; "⣽"; "⣻"; "⢿"; "⡿"; "⣟"; "⣯"; "⣷" |]; interval = 0.08 }
+  { frames = [| "⣾"; "⣽"; "⣻"; "⢿"; "⡿"; "⣟"; "⣯"; "⣷" |]; period = 0.08 }
 
-let arc = { frames = [| "◜"; "◠"; "◝"; "◞"; "◡"; "◟" |]; interval = 0.1 }
+let arc = { frames = [| "◜"; "◠"; "◝"; "◞"; "◡"; "◟" |]; period = 0.1 }
 
-let bounce = { frames = [| "⠁"; "⠂"; "⠄"; "⠂" |]; interval = 0.12 }
-let circle = { frames = [| "◡"; "⊙"; "◠" |]; interval = 0.12 }
+let bounce = { frames = [| "⠁"; "⠂"; "⠄"; "⠂" |]; period = 0.12 }
+let circle = { frames = [| "◡"; "⊙"; "◠" |]; period = 0.12 }
 let default_frame_set = dots
 
 (* ───── Props ───── *)
@@ -37,7 +37,7 @@ module Props = struct
     loop 0
 
   let equal a b =
-    Float.equal a.frame_set.interval b.frame_set.interval
+    Float.equal a.frame_set.period b.frame_set.period
     && frames_equal a.frame_set.frames b.frame_set.frames
     && Ansi.Color.equal a.color b.color
 end
@@ -101,24 +101,24 @@ let render t _self grid ~delta:_ =
 
 (* The animation invariant belongs to the widget: the node is live exactly
    while the frame set animates, so on_frame ticks without callers wiring
-   liveness themselves. A single frame or non-positive interval renders a
+   liveness themselves. A single frame or non-positive period renders a
    static glyph and needs no per-frame work. *)
 let animates t =
   let fs = t.props.frame_set in
-  fs.interval > 0. && Array.length fs.frames > 1
+  fs.period > 0. && Array.length fs.frames > 1
 
 let update_live t = Renderable.set_live t.node (animates t)
 
 let on_frame t _node ~delta =
-  let interval = t.props.frame_set.interval in
-  if interval > 0. then (
+  let period = t.props.frame_set.period in
+  if period > 0. then (
     t.elapsed <- t.elapsed +. delta;
-    if t.elapsed >= interval then
+    if t.elapsed >= period then
       let n = Array.length t.props.frame_set.frames in
       if n > 0 then (
-        let advance = int_of_float (t.elapsed /. interval) in
+        let advance = int_of_float (t.elapsed /. period) in
         t.frame_index <- (t.frame_index + advance) mod n;
-        t.elapsed <- Float.rem t.elapsed interval;
+        t.elapsed <- Float.rem t.elapsed period;
         Renderable.request_render t.node))
 
 (* ───── Construction ───── *)
@@ -162,7 +162,7 @@ let set_color t c =
 
 let apply_props t (props : Props.t) =
   let reset_animation =
-    (not (Float.equal t.props.frame_set.interval props.frame_set.interval))
+    (not (Float.equal t.props.frame_set.period props.frame_set.period))
     || not (Props.frames_equal t.props.frame_set.frames props.frame_set.frames)
   in
   t.props <- props;
