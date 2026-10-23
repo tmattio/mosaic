@@ -501,10 +501,15 @@ let scalar_writes_preserve_spans () =
     [ 0; 9; 10; 27; 127; 0x0301 ];
   assert_valid_spans grid
 
+(* A grapheme [width] cells wide at [(x, 0)], as a terminal places text it
+   is told the size of (OSC 66): no text measures wider than two cells. *)
+let span grid ~x width =
+  Grid.set_grapheme grid ~x ~y:0 ~width ~fg:Ansi.Color.default_fg
+    ~bg:Ansi.Color.default_bg ~attrs:Ansi.Attr.empty "w" ~pos:0 ~len:1
+
 let clipped_multi_column_grapheme () =
   let src = Grid.create ~width:6 ~height:1 () in
-  (* A conjunct of four consonants, four columns wide. *)
-  Grid.draw_text src ~x:0 ~y:0 ~text:"क्क्क्क";
+  span src ~x:0 4;
   equal ~msg:"fixture spans four columns" int 4 (Grid.cell_width src 0);
   List.iter
     (fun transfer ->
@@ -1684,13 +1689,10 @@ let draw_text_overflow_clears_row_tail () =
   equal ~msg:"prefix preserved" string "XY"
     (String.sub (row_to_string grid 0) 0 2)
 
-(* A conjunct of [n] consonants is [n] columns wide. *)
-let conjunct n = String.concat "\u{094D}" (List.init n (fun _ -> "\u{0915}"))
-
 let wide_span_beyond_four_cells () =
   let n = 300 in
   let grid = Grid.create ~width:(n + 2) ~height:1 () in
-  Grid.draw_text grid ~x:1 ~y:0 ~text:(conjunct n);
+  span grid ~x:1 n;
   equal ~msg:"start spans the grapheme" int n (Grid.cell_width grid 1);
   is_true ~msg:"last cell continues it" (Grid.is_continuation grid n);
   is_false ~msg:"cell after it is free" (Grid.is_continuation grid (n + 1));
@@ -1703,7 +1705,7 @@ let wide_span_beyond_four_cells () =
 
 let wide_span_survives_moves () =
   let grid = Grid.create ~width:12 ~height:2 () in
-  Grid.draw_text grid ~x:0 ~y:0 ~text:(conjunct 6);
+  span grid ~x:0 6;
   Grid.blit_region ~src:grid ~dst:grid ~src_x:0 ~src_y:0 ~width:12 ~height:1
     ~dst_x:3 ~dst_y:1;
   equal ~msg:"copy keeps the width" int 6 (Grid.cell_width grid 15);

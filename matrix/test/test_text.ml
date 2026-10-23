@@ -133,6 +133,14 @@ let measurement_rows =
     ("Lao spacing mark", "\u{0E99}\u{0EB3}", `Unicode, 8, 2);
     ("Indic spacing mark retains base width", "क\u{093E}", `Unicode, 8, 1);
     ("Indic spacing mark wcwidth", "क\u{093E}", `Wcwidth, 8, 2);
+    (* A conjunct takes its first consonant's cell, in every script. *)
+    ("Devanagari conjunct", "\u{0915}\u{094D}\u{0937}", `Unicode, 8, 1);
+    ( "conjunct of three consonants",
+      "\u{0915}\u{094D}\u{0915}\u{094D}\u{0915}",
+      `Unicode,
+      8,
+      1 );
+    ("Malayalam conjunct", "\u{0D15}\u{0D4D}\u{0D15}", `Unicode, 8, 1);
     ("zero width space", "\u{200B}", `Unicode, 8, 0);
     ("C1 control", uchar_to_utf8 0x008A, `Unicode, 8, 0);
   ]

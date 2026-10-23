@@ -14,7 +14,15 @@
 type width_method = [ `Unicode | `Unicode_wide | `Wcwidth ]
 (** The type for width calculation methods.
 
-    - [`Unicode] uses full grapheme segmentation with emoji ZWJ composition.
+    - [`Unicode] places each extended grapheme cluster
+      ({{:https://www.unicode.org/reports/tr29/}UAX #29}) in one unit, as wide
+      as its first scalar of positive width, as a terminal does in grapheme
+      cluster mode (mode 2027 of "Unicode in Terminals"; kitty's text-sizing
+      protocol): what continues a cluster takes no cells of its own, be it a
+      mark, a joined emoji or a conjoined consonant, so the conjunct क्ष (U+0915
+      U+094D U+0937) takes the one cell of क. A cluster is two cells wide when
+      VS16 follows an emoji, for a pair of regional indicators, and with Thai
+      SARA AM (U+0E33) or Lao AM (U+0EB3), which kitty's protocol widens.
     - [`Unicode_wide] uses grapheme segmentation and promotes clusters with
       additional visible components to at least two cells, matching modern
       Ghostty's width policy.
