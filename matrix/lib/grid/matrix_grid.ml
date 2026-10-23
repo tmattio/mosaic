@@ -370,7 +370,8 @@ let is_continuation t idx =
 let cell_width t idx = Packed_cell.cell_width (Buf.get_cell t.chars idx)
 
 let span t idx =
-  if idx < 0 || idx >= t.width * t.height then invalid_arg "Matrix_grid.span";
+  if idx < 0 || idx >= t.width * t.height then
+    invalid_arg "Matrix_grid.span: index outside the grid";
   let code = Buf.get_cell t.chars idx in
   let left = span_left code in
   (idx - left, left + span_right code + 1)
@@ -1607,3 +1608,71 @@ let to_ansi ?(reset = true) ?(complete_rows = false) ?rows t =
         done;
 
         if reset then Ansi.emit Ansi.reset w)
+
+(* {1 Checked accessors}
+
+   The accessors a program calls check the index; the code above uses the
+   unchecked ones, which these shadow from here on. *)
+
+let[@inline never] outside name =
+  invalid_arg ("Matrix_grid." ^ name ^ ": index outside the grid")
+
+let[@inline] check name t idx =
+  if idx < 0 || idx >= t.width * t.height then outside name
+
+let[@inline] get_codepoint t idx =
+  check "get_codepoint" t idx;
+  get_codepoint t idx
+
+let[@inline] get_attrs t idx =
+  check "get_attrs" t idx;
+  get_attrs t idx
+
+let[@inline] get_link t idx =
+  check "get_link" t idx;
+  get_link t idx
+
+let[@inline] get_fg t idx =
+  check "get_fg" t idx;
+  get_fg t idx
+
+let[@inline] get_bg t idx =
+  check "get_bg" t idx;
+  get_bg t idx
+
+let[@inline] get_text t idx =
+  check "get_text" t idx;
+  get_text t idx
+
+let[@inline] cell_text_length t idx =
+  check "cell_text_length" t idx;
+  cell_text_length t idx
+
+let[@inline] blit_cell_text t idx buf ~pos =
+  check "blit_cell_text" t idx;
+  blit_cell_text t idx buf ~pos
+
+let[@inline] get_style t idx =
+  check "get_style" t idx;
+  get_style t idx
+
+let[@inline] is_empty t idx =
+  check "is_empty" t idx;
+  is_empty t idx
+
+let[@inline] is_continuation t idx =
+  check "is_continuation" t idx;
+  is_continuation t idx
+
+let[@inline] cell_width t idx =
+  check "cell_width" t idx;
+  cell_width t idx
+
+let[@inline] cells_equal t1 idx1 t2 idx2 =
+  check "cells_equal" t1 idx1;
+  check "cells_equal" t2 idx2;
+  cells_equal t1 idx1 t2 idx2
+
+let[@inline] is_protected t idx =
+  check "is_protected" t idx;
+  is_protected t idx

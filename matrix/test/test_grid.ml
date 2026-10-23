@@ -2015,6 +2015,38 @@ let many_distinct_graphemes () =
 
 let tests =
   [
+    test "accessors check their index" (fun () ->
+        let grid = Grid.create ~width:3 ~height:2 () in
+        let buf = Bytes.create 8 in
+        List.iter
+          (fun idx ->
+            let raises name f =
+              raises_match ~msg:(Printf.sprintf "%s %d" name idx)
+                (Exn.invalid_arg ~substring:name) (fun () ->
+                  ignore (f () : string))
+            in
+            let str f () = string_of_int (f ()) in
+            let bool f () = string_of_bool (f ()) in
+            raises "get_codepoint" (str (fun () -> Grid.get_codepoint grid idx));
+            raises "get_attrs" (str (fun () -> Grid.get_attrs grid idx));
+            raises "get_link" (fun () -> Grid.get_link grid idx);
+            raises "get_fg" (fun () -> Ansi.Color.to_hex (Grid.get_fg grid idx));
+            raises "get_bg" (fun () -> Ansi.Color.to_hex (Grid.get_bg grid idx));
+            raises "get_text" (fun () -> Grid.get_text grid idx);
+            raises "cell_text_length"
+              (str (fun () -> Grid.cell_text_length grid idx));
+            raises "blit_cell_text"
+              (str (fun () -> Grid.blit_cell_text grid idx buf ~pos:0));
+            raises "get_style" (fun () ->
+                Format.asprintf "%a" Ansi.Style.pp (Grid.get_style grid idx));
+            raises "is_empty" (bool (fun () -> Grid.is_empty grid idx));
+            raises "is_continuation"
+              (bool (fun () -> Grid.is_continuation grid idx));
+            raises "cell_width" (str (fun () -> Grid.cell_width grid idx));
+            raises "cells_equal"
+              (bool (fun () -> Grid.cells_equal grid idx grid 0));
+            raises "is_protected" (bool (fun () -> Grid.is_protected grid idx)))
+          [ -1; 6; max_int ]);
     test "draw_text rejects a tab width below 1" (fun () ->
         let grid = Grid.create ~width:4 ~height:1 () in
         raises_match ~msg:"tab width 0" (Exn.invalid_arg ~substring:"tab width")

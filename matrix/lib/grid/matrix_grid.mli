@@ -47,10 +47,9 @@
     memory limits how many distinct graphemes the grids hold.
 
     Unless a function's doc says otherwise, the parts of a write outside the
-    grid are left out, and a function that takes an index does not check it. An
-    index must be in \[[0];[width g * height g - 1]\], and reading outside it is
-    undefined. A grid, and grids that share storage, must not be used by two
-    domains in parallel.
+    grid are left out, and a function that takes an index raises
+    [Invalid_argument] if it is not in \[[0];[width g * height g - 1]\]. A grid,
+    and grids that share storage, must not be used by two domains in parallel.
 
     The life cycle of a frame:
     + {!create} makes a grid, and {!create_like} a second one for the frame
@@ -185,10 +184,7 @@ val span : t -> int -> int * int
     cell and its continuations, gives the same span, whose [width] is the start
     cell's {!cell_width}. A program acts on the whole span of a wide grapheme,
     such as the cells to select, to redraw, or to report under the pointer. It
-    reads one cell.
-
-    Raises [Invalid_argument] if [idx] is not in
-    \[[0];[width g * height g - 1]\]. *)
+    reads one cell. *)
 
 val cells_equal : t -> int -> t -> int -> bool
 (** [cells_equal g1 idx1 g2 idx2] is [true] iff the two cells have the same
