@@ -2909,12 +2909,17 @@ let%expect_test "a posted message that changes nothing asks for no frame" =
         (Matrix_test.frames t.s - frames);
       !dispatch (Note "changed");
       Matrix_test.settle t.s;
-      Printf.printf "after one that changes the model: %d\n"
-        (Matrix_test.frames t.s - frames));
+      Printf.printf "after one that changes the model: %d, %s\n"
+        (Matrix_test.frames t.s - frames)
+        (match Matrix_test.deadline t.s with
+        | None -> "no frame owed"
+        | Some _ -> "a frame owed");
+      Printf.printf "on the screen: %s\n" (String.trim (screen t)));
   [%expect
     {|
     frames after messages that change nothing: 0
-    after one that changes the model: 1
+    after one that changes the model: 1, no frame owed
+    on the screen: keys:[] ticks:0 size:- note:changed
     |}]
 
 (* Cost and order. *)

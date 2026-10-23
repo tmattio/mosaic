@@ -1126,10 +1126,12 @@ let program matrix_app ~process_perform app (model, init_cmd) f =
     let dt = Float.of_int (now - !last_frame) *. 1e-9 in
     last_frame := now;
     runtime.framing <- true;
+    (* The frame renders what its ticks and the messages it applies change,
+       so the requests to render they make are this frame's. *)
+    Atomic.set rendering true;
     handle_tick runtime;
     synchronize runtime;
     frame_delta := dt;
-    Atomic.set rendering true;
     runtime.delivering <- true;
     Fun.protect
       ~finally:(fun () ->
