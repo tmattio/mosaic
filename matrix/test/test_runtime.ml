@@ -402,6 +402,202 @@ let test_timer_order_property () =
         is_true ~msg:"the heap returns the sorted list" (got = expected))
   done
 
+(* A backend whose turns are recorded: the time each wait returned, which is
+   the clock the turn reads. *)
+let recording_turns ?(on_turn = ignore) f =
+  let turns = ref [] in
+  let b = backend f in
+  ( turns,
+    {
+      b with
+      wait =
+        (fun ~until ~reading ->
+          let ready = b.wait ~until ~reading in
+          turns := f.now :: !turns;
+          on_turn f.now;
+          ready);
+    } )
+
+(* Frames under random requests, idle times and resizes: frames are an
+   interval apart; a frame is drawn only when asked for; one asked for is
+   drawn at the end of the first turn whose time is an interval past the
+   previous frame (handlers here take no time, so in that turn: the first
+   frame after a pause is drawn in the turn that asked); a request made
+   while a frame is drawn asks for the next; a resize is reported with the
+   latest size, before the frame drawn at it. *)
+let test_frame_property () =
+  let rand = Random.State.make [| 7 |] in
+  let interval = 16_666_667 in
+  for _ = 1 to 300 do
+    let f = fake () in
+    let frames = ref [] and pending = ref true and last = ref (min_int / 2) in
+    (* The turns that began owing a frame whose interval had passed. *)
+    let due = ref [] in
+    let turns, backend =
+      recording_turns f ~on_turn:(fun now ->
+          if !pending && now >= !last + interval && not f.eof then
+            due := now :: !due)
+    in
+    let waits = ref 0 in
+    let resizes_ok = ref true in
+    Matrix.run ~backend ~config:(quiet ()) (fun app ->
+        f.on_wait <-
+          (fun f ~until ->
+            incr waits;
+            if !waits > 60 then f.eof <- true
+            else (
+              (match Random.State.int rand 4 with
+              | 0 -> ( match until with Some u -> f.now <- u | None -> ())
+              | 1 ->
+                  f.now <- f.now + Random.State.int rand (ms 50);
+                  Matrix.post app `Request
+              | 2 ->
+                  f.size <-
+                    (10 + Random.State.int rand 70, 5 + Random.State.int rand 20);
+                  f.signals <- [ Matrix.Backend.Winch ];
+                  (* A resize asks for a frame. *)
+                  pending := true;
+                  f.now <- f.now + Random.State.int rand (ms 5)
+              | _ -> f.now <- f.now + Random.State.int rand (ms 5));
+              if until = None && f.now = 0 then f.now <- 1));
+        let rec loop () =
+          match Matrix.next app with
+          | Stopped -> ()
+          | Frame ->
+              if not !pending then fail "a frame no one asked for";
+              frames := f.now :: !frames;
+              last := f.now;
+              pending := false;
+              if Random.State.int rand 3 = 0 then (
+                Matrix.request_redraw app;
+                pending := true);
+              Matrix.draw app ignore;
+              loop ()
+          | Posted `Request ->
+              Matrix.request_redraw app;
+              pending := true;
+              loop ()
+          | Event (Resize (w, h)) ->
+              if (w, h) <> f.size then resizes_ok := false;
+              loop ()
+          | Event _ | Timer _ -> loop ()
+        in
+        loop ());
+    ignore !turns;
+    List.iter
+      (fun t ->
+        if not (List.mem t !frames) then
+          failf "a frame due at %d ns was not drawn in that turn" t)
+      !due;
+    let frames = List.rev !frames in
+    ignore
+      (List.fold_left
+         (fun previous t ->
+           if t - previous < interval then
+             failf "frames %d ns apart, under the interval" (t - previous);
+           t)
+         (min_int / 2) frames
+        : int);
+    is_true ~msg:"a resize reports the latest size" !resizes_ok
+  done
+
+(* The turn budget under random input, timers and posts from three
+   producers, each step taking up to 10 ms: events and each producer's posts
+   come in order, and a turn's work ends within one frame interval and one
+   step of its clock, unless the steps it owes each kind take longer. *)
+let test_turn_budget_property () =
+  let rand = Random.State.make [| 11 |] in
+  let interval = 16_666_667 and cost = ms 10 in
+  for _ = 1 to 300 do
+    let f = fake () in
+    let turns, backend = recording_turns f in
+    let keys = ref [] and posts = Array.make 3 [] in
+    let typed = ref 0 and posted = Array.make 3 0 and waits = ref 0 in
+    let work = ref [] in
+    Matrix.run ~backend ~config:(quiet ()) (fun app ->
+        f.on_wait <-
+          (fun f ~until ->
+            incr waits;
+            if !waits > 30 then f.eof <- true
+            else
+              let chunk =
+                String.init (Random.State.int rand 6) (fun _ ->
+                    let c = Char.chr (Char.code 'a' + (!typed mod 26)) in
+                    incr typed;
+                    c)
+              in
+              if chunk <> "" then f.input <- f.input @ [ chunk ];
+              for p = 0 to 2 do
+                for _ = 1 to Random.State.int rand 4 do
+                  Matrix.post app (p, posted.(p));
+                  posted.(p) <- posted.(p) + 1
+                done
+              done;
+              (match until with
+              | Some u when Random.State.bool rand -> f.now <- max f.now u
+              | _ -> ());
+              f.now <- f.now + Random.State.int rand (ms 30));
+        let step () =
+          let start = f.now in
+          f.now <- f.now + Random.State.int rand cost;
+          work := (List.hd !turns, start, f.now) :: !work
+        in
+        for _ = 1 to Random.State.int rand 4 do
+          ignore (Matrix.at app (ms (Random.State.int rand 200)) : Matrix.timer)
+        done;
+        let rec loop () =
+          match Matrix.next app with
+          | Stopped -> ()
+          | Frame ->
+              Matrix.draw app ignore;
+              loop ()
+          | Event (Key { text; _ }) ->
+              keys := text :: !keys;
+              step ();
+              if Random.State.int rand 3 = 0 then
+                ignore
+                  (Matrix.at app (f.now + ms (Random.State.int rand 100))
+                    : Matrix.timer);
+              loop ()
+          | Posted (p, n) ->
+              posts.(p) <- n :: posts.(p);
+              step ();
+              loop ()
+          | Timer _ ->
+              step ();
+              loop ()
+          | Event _ -> loop ()
+        in
+        loop ());
+    let keys = String.concat "" (List.rev !keys) in
+    equal ~msg:"events in order" string
+      (String.init (String.length keys) (fun i ->
+           Char.chr (Char.code 'a' + (i mod 26))))
+      keys;
+    Array.iteri
+      (fun p got ->
+        equal ~msg:"a producer's posts in order" (list int)
+          (List.init (List.length got) Fun.id)
+          (List.rev got);
+        ignore p)
+      posts;
+    (* The steps of each turn, by the clock the turn read. *)
+    let by_turn = Hashtbl.create 16 in
+    List.iter
+      (fun (turn, start, stop) ->
+        let first, last, n =
+          Option.value ~default:(start, stop, 0) (Hashtbl.find_opt by_turn turn)
+        in
+        Hashtbl.replace by_turn turn (min first start, max last stop, n + 1))
+      !work;
+    Hashtbl.iter
+      (fun turn (_, last, n) ->
+        let bound = max (interval + cost) (min n 3 * cost) in
+        if last - turn > bound then
+          failf "a turn's work took %d ns, over %d" (last - turn) bound)
+      by_turn
+  done
+
 (* [post] is the one call another thread may make: each producer's posts
    come in order, and a post wakes the loop. Every other call raises off the
    loop's thread. *)
@@ -2357,6 +2553,8 @@ let () =
             test_input_read_when_nothing_is_queued;
           test "timers" test_timers;
           test "timer order against a sorted list" test_timer_order_property;
+          test "frames, a property" test_frame_property;
+          test "the turn budget, a property" test_turn_budget_property;
           test "post from other domains" test_post_from_other_domains;
           test "post after the run" test_post_after_the_run;
           test "frame calls outside a frame" test_frame_calls_outside_a_frame;
