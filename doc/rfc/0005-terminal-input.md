@@ -3,6 +3,9 @@
 - Status: Decided 2026-10-23 and implemented on `next`: phase 1 `ec529e49`–`66b4e45f` (with
   `d4fdec96`), phase 2 `ba3626ff`–`7b5ec572`, and the final review's fixes `49a8cce0`–`9d897c96`.
   This text states what was built, including the decisions taken during implementation (§2.1).
+- Amended 2026-10-23: `Cut` and `Too_long` are decoder events (`Decoder.Cut`, `Decoder.Too_long`),
+  not replies: they describe framing, so `Reply.t` holds only what a terminal sends, and
+  `Reply.encode` (RFC 0004's amendment) is total. The runtime drops them.
 - Baseline: main @ `739cf2a1`, where `Input.Parser` decoded input with its own CSI reader and a
   clock, and `Terminal.Caps` folded capabilities from replies and the environment.
 - Process: the "Becoming certain" campaign of raven's `doc/dev/design.md`, applied to matrix, for

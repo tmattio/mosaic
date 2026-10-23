@@ -14,6 +14,8 @@ type event =
   | Paste_end of [ `Complete | `Cut ]
   | Invalid of string
   | Reply of Reply.t
+  | Cut of [ `Sequence | `String | `Mouse ]
+  | Too_long of [ `Dcs | `Osc | `Apc ]
 
 let pp_event ppf = function
   | Key k -> Format.fprintf ppf "Key %a" K.pp k
@@ -28,6 +30,12 @@ let pp_event ppf = function
   | Paste_end `Cut -> Format.pp_print_string ppf "Paste_end cut"
   | Invalid s -> Format.fprintf ppf "Invalid %S" s
   | Reply r -> Format.fprintf ppf "Reply %a" Reply.pp r
+  | Cut `Sequence -> Format.pp_print_string ppf "Cut sequence"
+  | Cut `String -> Format.pp_print_string ppf "Cut string"
+  | Cut `Mouse -> Format.pp_print_string ppf "Cut mouse"
+  | Too_long `Dcs -> Format.pp_print_string ppf "Too_long DCS"
+  | Too_long `Osc -> Format.pp_print_string ppf "Too_long OSC"
+  | Too_long `Apc -> Format.pp_print_string ppf "Too_long APC"
 
 type pending = Nothing | Ambiguous | Sequence
 type owed = { cursor_reports : int; string_replies : int }
@@ -706,28 +714,28 @@ let string_end d intro ending emit =
   let dcs = d.dcs in
   d.dcs <- None;
   match ending with
-  | `Aborted -> emit (Reply (Cut `String))
+  | `Aborted -> emit (Cut `String)
   | (`St | `Bel) as ending -> (
       match intro with
       | ']' ->
           emit
-            (Reply
-               (if too_long then Too_long `Osc else Reply.of_osc ending content))
+            (if too_long then Too_long `Osc
+             else Reply (Reply.of_osc ending content))
       | '_' ->
           emit
-            (Reply
-               (if too_long then Too_long `Apc
-                else
-                  (* The decoder begins no APC string but G's. *)
-                  Reply.graphics
+            (if too_long then Too_long `Apc
+             else
+               (* The decoder begins no APC string but G's. *)
+               Reply
+                 (Reply.graphics
                     (String.sub content 1 (String.length content - 1))))
       | _ -> (
           (* A malformed DCS has no effect. *)
           match dcs with
           | Some h ->
               emit
-                (Reply
-                   (if too_long then Too_long `Dcs else Reply.of_dcs h content))
+                (if too_long then Too_long `Dcs
+                 else Reply (Reply.of_dcs h content))
           | None -> ()))
 
 (* After a byte forwarded inside a string: the string ended if the parser
@@ -851,7 +859,7 @@ let rec step d b emit =
         (* A control cannot be a report's byte: the report was cut. *)
         d.st <- Ground;
         if pre then emit escape;
-        emit (Reply (Cut `Mouse));
+        emit (Cut `Mouse);
         step d b emit)
       else (
         Bytes.unsafe_set d.x10 d.x10_len (Char.unsafe_chr b);
@@ -946,7 +954,7 @@ and header d is_ss3 pre b emit =
     P.reset d.p;
     d.st <- Ground;
     if pre then emit escape;
-    emit (Reply (Cut `Sequence));
+    emit (Cut `Sequence);
     step d b emit)
   else
     match if b = 0x24 && d.rx_digits then numbered d.rx else None with
@@ -1067,11 +1075,11 @@ let idle d emit =
       P.reset d.p;
       d.st <- Ground;
       if pre then emit escape;
-      emit (Reply (Cut `Sequence))
+      emit (Cut `Sequence)
   | X10 (_, pre) ->
       d.st <- Ground;
       if pre then emit escape;
-      emit (Reply (Cut `Mouse))
+      emit (Cut `Mouse)
   | String _ | String_esc _ | Paste _ -> ()
 
 let cut_paste d emit =
@@ -1085,7 +1093,7 @@ let cut_paste d emit =
 let finish d emit =
   idle d emit;
   (match d.st with
-  | String _ | String_esc _ -> emit (Reply (Cut `String))
+  | String _ | String_esc _ -> emit (Cut `String)
   | Paste _ -> cut_paste d emit
   | _ -> ());
   reset d

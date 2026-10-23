@@ -4,8 +4,9 @@
     the program's queries ("in response to commands from the host", VT510
     §4.4.2). A reply is never a keystroke: a program that mistook one for typing
     would act on keys nobody pressed. Every reply is a control sequence or a
-    control string, so it is told apart from keys by its form, and a sequence or
-    string that does not finish is dropped and reported as {!Cut}, never typed.
+    control string, so it is told apart from keys by its form; a sequence or
+    string that does not finish is no reply, and is never typed
+    ({!Decoder.Cut}).
 
     {1:typed Typed replies}
 
@@ -16,15 +17,7 @@
     An OSC reply ends with the terminator of the query it answers: xterm "uses
     the same terminator used in a query" (xterm's Control Sequences, "Operating
     System Commands"), BEL or ST. A program that sent BEL expects BEL back, so
-    each OSC reply keeps its terminator.
-
-    {1:budget The memory budget}
-
-    The content of a control string is kept until the string ends, so that it
-    can be decoded. Its size is bounded by 16 MiB, a memory budget: no reference
-    bounds a string, and a clipboard read can be megabytes. A string over it is
-    read to its end and reported as {!Too_long}, its content dropped. Control
-    sequences hold no content and need no budget. *)
+    each OSC reply keeps its terminator. *)
 
 (** The type for the settings a DEC mode report gives (DECRPM, xterm's Control
     Sequences, "Request DEC private mode"). *)
@@ -115,14 +108,6 @@ type t =
   | Ss3 of Ansi.Parser.sequence
       (** An SS3 sequence that names no key, written as the control sequence its
           bytes would be after [CSI]. *)
-  | Cut of [ `Sequence | `String | `Mouse ]
-      (** A control sequence, a control string or an X10 mouse report that did
-          not finish: cut by silence, by the end of the input, or by a byte that
-          cannot continue it. Its content is in error (ECMA-48 §8.3.6, CAN:
-          "this data shall be ignored"), so it is dropped. *)
-  | Too_long of [ `Dcs | `Osc | `Apc ]
-      (** A control string over the memory budget, read to its end and dropped
-          whole. *)
 
 val pp : Format.formatter -> t -> unit
 (** [pp] formats a reply for debugging. *)
@@ -172,9 +157,9 @@ val encode : t list -> string
     to 16 bits as xterm writes it; capability names and values in hex; a
     clipboard's data in base64 with padding (RFC 4648 §4).
 
-    Raises [Invalid_argument] if a reply is {!Cut} or {!Too_long}, which no
-    terminal sends, or holds a value its form cannot carry, which would read
-    back as another reply: a negative number, a position of [max_int], a page
-    below 1, a channel outside 0..255, a palette index or graphics id above
-    999,999,999, an empty capability name, a selection holding [;], or string
-    content that is not UTF-8 or holds a control other than BS to CR. *)
+    Raises [Invalid_argument] if a reply holds a value its form cannot carry,
+    which would read back as another reply: a negative number, a position of
+    [max_int], a page below 1, a channel outside 0..255, a palette index or
+    graphics id above 999,999,999, an empty capability name, a selection holding
+    [;], or string content that is not UTF-8 or holds a control other than BS to
+    CR. *)

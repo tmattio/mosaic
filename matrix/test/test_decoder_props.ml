@@ -349,8 +349,7 @@ let reference units =
           let what =
             if String.starts_with ~prefix:"\x1b[M" s then `Mouse else `Sequence
           in
-          show (D.Reply (Cut what))
-          :: tail (String.sub s k (String.length s - k)) 0 []
+          show (D.Cut what) :: tail (String.sub s k (String.length s - k)) 0 []
       | (Str _ | Paste _), _ ->
           (* Silence never ends a string or a paste. *)
           alone s)
@@ -422,7 +421,7 @@ let never_typed () =
           same msg (decode o [ Feed s; Idle ]) whole)
         else (
           (match held with
-          | [ e ] when String.starts_with ~prefix:"Reply Cut" e -> ()
+          | [ e ] when String.starts_with ~prefix:"Cut" e -> ()
           | _ -> failf "%s: %s" msg (String.concat " " held));
           if List.exists is_key held then failf "%s: typed" msg);
         (* What follows a cut decodes as if from the start. *)
@@ -666,7 +665,7 @@ let prop_round_trip r =
   | events ->
       failf "%S decodes to %s" bytes (String.concat "; " (List.map show events))
 
-(* What no terminal sends, or what would read back as another reply. *)
+(* What would read back as another reply. *)
 let unencodable () =
   List.iter
     (fun (msg, r) ->
@@ -674,8 +673,6 @@ let unencodable () =
           R.encode [ r ]))
     R.
       [
-        ("a cut sequence", Cut `Sequence);
-        ("a string over the budget", Too_long `Osc);
         ("a negative number", Primary_attributes [ -1 ]);
         ("a row of max_int", Cursor { row = max_int; col = 0; page = None });
         ("page 0", Cursor { row = 0; col = 0; page = Some 0 });

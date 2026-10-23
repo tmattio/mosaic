@@ -35,8 +35,6 @@ type t =
   | Dcs of { header : Ansi.Parser.sequence; data : string }
   | Csi of Ansi.Parser.sequence
   | Ss3 of Ansi.Parser.sequence
-  | Cut of [ `Sequence | `String | `Mouse ]
-  | Too_long of [ `Dcs | `Osc | `Apc ]
 
 let setting_name = function
   | Not_recognized -> "Not_recognized"
@@ -114,12 +112,6 @@ let pp ppf = function
       Format.fprintf ppf "Csi %a" Ansi.Parser.pp_token (Ansi.Parser.Csi s)
   | Ss3 s ->
       Format.fprintf ppf "Ss3 %a" Ansi.Parser.pp_token (Ansi.Parser.Csi s)
-  | Cut `Sequence -> Format.pp_print_string ppf "Cut sequence"
-  | Cut `String -> Format.pp_print_string ppf "Cut string"
-  | Cut `Mouse -> Format.pp_print_string ppf "Cut mouse"
-  | Too_long `Dcs -> Format.pp_print_string ppf "Too_long DCS"
-  | Too_long `Osc -> Format.pp_print_string ppf "Too_long OSC"
-  | Too_long `Apc -> Format.pp_print_string ppf "Too_long APC"
 
 (* Reading control strings *)
 
@@ -509,8 +501,6 @@ let add b = function
   | Ss3 s ->
       Buffer.add_string b "\027O";
       add_sequence b s
-  | Cut _ -> invalid "a cut sequence or string"
-  | Too_long _ -> invalid "a string over the memory budget"
 
 let encode = function
   | [] -> ""

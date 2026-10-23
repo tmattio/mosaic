@@ -44,18 +44,18 @@
     outside the form its reference fixes is a {!Reply.Csi}, never a key.
     Silence, the end of the input, or a byte that cannot continue a sequence (a
     C0 control, DEL, ESC or a non-ASCII byte) cuts it: it is dropped as a
-    {!Reply.Cut}, and the byte that cut it is decoded after it. ECMA-48 would
-    perform a C0 control inside a sequence and ignore DEL; input does not,
-    because a terminal writes a sequence whole, so a byte inside it that cannot
-    belong to it is the user's next key.
+    {!Cut}, and the byte that cut it is decoded after it. ECMA-48 would perform
+    a C0 control inside a sequence and ignore DEL; input does not, because a
+    terminal writes a sequence whole, so a byte inside it that cannot belong to
+    it is the user's next key.
 
     A control string begins only while a string reply is owed: every string a
     terminal sends answers a query, so an unsolicited [ESC \]] is Alt+\], and
     what the user types after it stays typing. Once begun, a string is never cut
     by silence. It ends at its terminator (ST, or BEL for an OSC), at CAN or
     SUB, at an ESC that does not begin ST, or at the end of the input. Its
-    content is then a reply or a {!Reply.Cut}, never keys, however long the
-    terminal stalls.
+    content is then a reply, a {!Cut} or {!Too_long}, never keys, however long
+    the terminal stalls.
 
     xterm sends a modified F3 as [CSI 1 ; m R], which is also a cursor position
     report: "it is possible for this sequence to be sent by a function key"
@@ -75,6 +75,14 @@
     and the rest is typed, and its [CSI 1 ; m R] is F3. Replies are never keys
     while they are owed; a caller keeps a batch owed until its answer, and gives
     up on one only after longer than a terminal takes to answer.
+
+    {1:budget The memory budget}
+
+    The content of a control string is kept until the string ends, so that it
+    can be decoded. Its size is bounded by 16 MiB, a memory budget: no reference
+    bounds a string, and a clipboard read can be megabytes. A string over it is
+    read to its end and reported as {!Too_long}, its content dropped. Control
+    sequences hold no content and need no budget.
 
     {1:paste Paste}
 
@@ -118,6 +126,15 @@ type event =
   | Invalid of string
       (** One ill-formed subsequence of UTF-8, its bytes as received. *)
   | Reply of Reply.t  (** A reply to a query, or a sequence that is no key. *)
+  | Cut of [ `Sequence | `String | `Mouse ]
+      (** A control sequence, a control string or an X10 mouse report that did
+          not finish: cut by silence, by the end of the input, or by a byte that
+          cannot continue it. Its content is in error (ECMA-48 §8.3.6, CAN:
+          "this data shall be ignored"), so it is dropped: it is neither keys
+          nor a reply. *)
+  | Too_long of [ `Dcs | `Osc | `Apc ]
+      (** A control string over the memory budget ({!section-budget}), read to
+          its end and dropped whole. *)
 
 val pp_event : Format.formatter -> event -> unit
 (** [pp_event] formats an event for debugging. *)
@@ -156,13 +173,13 @@ val idle : t -> (event -> unit) -> unit
 (** [idle d f] tells [d] that the terminal has written nothing for as long as
     the caller waits for what {!pending} reports, and calls [f] on what that
     decides: held ESCs become keys, a sequence or character in progress is
-    {!Reply.Cut} or {!Invalid}. Strings and pastes go on. Call it only after a
-    wait in which nothing arrived: bytes already read are never silence. *)
+    {!Cut} or {!Invalid}. Strings and pastes go on. Call it only after a wait in
+    which nothing arrived: bytes already read are never silence. *)
 
 val finish : t -> (event -> unit) -> unit
-(** [finish d f] ends the input: {!idle}, then an open string is {!Reply.Cut}
-    and an open paste ends with [Paste_end `Cut]. [d] is then at the start of a
-    stream, as after {!reset}. *)
+(** [finish d f] ends the input: {!idle}, then an open string is {!Cut} and an
+    open paste ends with [Paste_end `Cut]. [d] is then at the start of a stream,
+    as after {!reset}. *)
 
 val cut_paste : t -> (event -> unit) -> unit
 (** [cut_paste d f] ends the paste in progress, if any, with [Paste_end `Cut],

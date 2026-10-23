@@ -422,13 +422,13 @@ let mouse =
         ("\x1b[M@++", [ "Mouse Motion Left at 10,10" ]);
         ("\x1b[M \xff\xff", [ "Mouse Press Left at 222,222" ]);
         ("\x1b[M   ", [ "Mouse Press Left at 0,0" ]);
-        ("\x1b[M \x1b[A", [ "Reply Cut mouse"; "Key Up" ]);
+        ("\x1b[M \x1b[A", [ "Cut mouse"; "Key Up" ]);
         ("\x1b\x1b[M !!", [ "Key Escape"; "Mouse Press Left at 0,0" ]);
       ];
     test "X10 cut by silence" (fun () ->
         check_steps
           [ F "\x1b[M !"; Idle; F "!" ]
-          [ "Reply Cut mouse"; "Key '!' text \"!\"" ]);
+          [ "Cut mouse"; "Key '!' text \"!\"" ]);
   ]
 
 (* Focus and paste ------------------------------------------------------- *)
@@ -621,9 +621,9 @@ let string_replies =
       ];
     table ~owed:strings "what ends a string"
       [
-        ("\x1b]11;x\x18a", [ "Reply Cut string"; "Key 'a' text \"a\"" ]);
-        ("\x1b]11;x\x1aa", [ "Reply Cut string"; "Key 'a' text \"a\"" ]);
-        ("\x1b]11;x\x1b[A", [ "Reply Cut string"; "Key Up" ]);
+        ("\x1b]11;x\x18a", [ "Cut string"; "Key 'a' text \"a\"" ]);
+        ("\x1b]11;x\x1aa", [ "Cut string"; "Key 'a' text \"a\"" ]);
+        ("\x1b]11;x\x1b[A", [ "Cut string"; "Key Up" ]);
         ("\x1bP>|x\x07y\x1b\\", [ "Reply Version \"xy\"" ]);
         ("\x1b_Gi=1;O\x07K\x1b\\", [ "Reply Graphics i=1 \"OK\"" ]);
       ];
@@ -641,14 +641,12 @@ let string_replies =
           [ F "\x1b]11;rgb:1"; Idle; F "/2/3"; Idle; F "\x07" ]
           [ "Reply Color background #112233 BEL" ]);
     test "the end of input cuts a string" (fun () ->
-        check_steps ~owed:strings
-          [ F "\x1b]11;rgb:1"; Finish ]
-          [ "Reply Cut string" ]);
+        check_steps ~owed:strings [ F "\x1b]11;rgb:1"; Finish ] [ "Cut string" ]);
     test "a string over the budget is dropped whole" (fun () ->
         let big = String.make ((16 * 1024 * 1024) + 1) 'A' in
         check_steps ~owed:strings
           [ F "\x1b]52;c;"; F big; F "\x07a" ]
-          [ "Reply Too_long OSC"; "Key 'a' text \"a\"" ]);
+          [ "Too_long OSC"; "Key 'a' text \"a\"" ]);
     test "a string at the budget is kept" (fun () ->
         (* The content, "52;c;" and the data, is exactly the budget. *)
         let n = (16 * 1024 * 1024) - 5 in
@@ -717,9 +715,9 @@ let silence =
             (owed (), "\x1b\x1ba", [ "Key Alt+Escape"; "Key 'a' text \"a\"" ]);
             (strings, "\x1b]", [ "Key Alt+']'" ]);
             (strings, "\x1bP", [ "Key Alt+'P'" ]);
-            (owed (), "\x1b[1;5", [ "Reply Cut sequence" ]);
-            (owed (), "\x1b\x1b[1;5", [ "Key Escape"; "Reply Cut sequence" ]);
-            (owed (), "\x1b[[", [ "Reply Cut sequence" ]);
+            (owed (), "\x1b[1;5", [ "Cut sequence" ]);
+            (owed (), "\x1b\x1b[1;5", [ "Key Escape"; "Cut sequence" ]);
+            (owed (), "\x1b[[", [ "Cut sequence" ]);
             (owed (), "\xc3", [ "Invalid \"\\195\"" ]);
             (owed (), "\xf0\x9f\x98", [ "Invalid \"\\240\\159\\152\"" ]);
             (owed (), "\x1b\xc3", [ "Key Escape"; "Invalid \"\\195\"" ]);
@@ -733,7 +731,7 @@ let silence =
         check_steps [ F "\xc3"; Finish ] [ "Invalid \"\\195\"" ];
         check_steps
           [ F "\x1b[1"; Finish; F "a" ]
-          [ "Reply Cut sequence"; "Key 'a' text \"a\"" ]);
+          [ "Cut sequence"; "Key 'a' text \"a\"" ]);
     test "reset drops what is held, and keeps what is owed" (fun () ->
         let d = D.create () in
         D.expect d strings;
@@ -849,8 +847,8 @@ let regressions =
           [ 4096; 4097 ]);
     test "an endless sequence types nothing" (fun () ->
         let s = "\x1b[" ^ String.make 5000 '1' in
-        check_steps (split_at 4097 s @ [ Idle ]) [ "Reply Cut sequence" ];
-        check_steps (split_at 4097 s @ [ Finish ]) [ "Reply Cut sequence" ]);
+        check_steps (split_at 4097 s @ [ Idle ]) [ "Cut sequence" ];
+        check_steps (split_at 4097 s @ [ Finish ]) [ "Cut sequence" ]);
     table "no input raises"
       [
         ("\x1b[27;5;55296~", [ "Reply Csi CSI 27;5;55296 ~" ]);
@@ -925,10 +923,10 @@ let regressions =
     test "a reply prefix never waits for the next key" (fun () ->
         check_steps
           [ F "\x1b[?1"; Idle; F "a" ]
-          [ "Reply Cut sequence"; "Key 'a' text \"a\"" ];
+          [ "Cut sequence"; "Key 'a' text \"a\"" ];
         check_steps
           [ F "\x1b[1;"; Idle; F "a" ]
-          [ "Reply Cut sequence"; "Key 'a' text \"a\"" ]);
+          [ "Cut sequence"; "Key 'a' text \"a\"" ]);
     table "a private marker makes no key"
       [ ("\x1b[?1a", [ "Reply Csi CSI ?1 a" ]) ];
     test "SGR motion is read from the report" (fun () ->
@@ -1025,7 +1023,7 @@ let regressions =
         check_steps
           [ F "\x1b[?2026;"; Idle; F "2$y" ]
           [
-            "Reply Cut sequence";
+            "Cut sequence";
             "Key '2' text \"2\"";
             "Key '$' text \"$\"";
             "Key 'y' text \"y\"";
@@ -1035,21 +1033,19 @@ let regressions =
           [ "Invalid \"\\195\""; "Invalid \"\\169\"" ]);
     table "CAN, SUB and non-ASCII bytes cut a sequence"
       [
-        ( "\x1b[1\x18A",
-          [ "Reply Cut sequence"; "Key Ctrl+'x'"; "Key 'A' text \"A\"" ] );
-        ( "\x1b[1\x1aA",
-          [ "Reply Cut sequence"; "Key Ctrl+'z'"; "Key 'A' text \"A\"" ] );
+        ("\x1b[1\x18A", [ "Cut sequence"; "Key Ctrl+'x'"; "Key 'A' text \"A\"" ]);
+        ("\x1b[1\x1aA", [ "Cut sequence"; "Key Ctrl+'z'"; "Key 'A' text \"A\"" ]);
         ( "\x1b[1\xc3\xa9",
-          [ "Reply Cut sequence"; "Key '\xc3\xa9' text \"\\195\\169\"" ] );
+          [ "Cut sequence"; "Key '\xc3\xa9' text \"\\195\\169\"" ] );
         ( "\x1b[1\x7f;5A",
           [
-            "Reply Cut sequence";
+            "Cut sequence";
             "Key Backspace";
             "Key ';' text \";\"";
             "Key '5' text \"5\"";
             "Key 'A' text \"A\"";
           ] );
-        ("\x1b[1\x1b[A", [ "Reply Cut sequence"; "Key Up" ]);
+        ("\x1b[1\x1b[A", [ "Cut sequence"; "Key Up" ]);
       ];
   ]
 
@@ -1072,7 +1068,7 @@ let attacks =
       (fun () ->
         check_steps ~owed:strings
           [ F "\x1b]2"; Idle; F "hello\r"; Idle; F "\x1b[A" ]
-          [ "Reply Cut string"; "Key Up" ]);
+          [ "Cut string"; "Key Up" ]);
     test "Alt+Shift+P, then a parameter byte, then typing" (fun () ->
         check "\x1bP;abc\r" ("Key Alt+'P'" :: typed ";abc\r"));
     test "Alt+Shift+O then x is keypad 8: the bytes are the same" (fun () ->
@@ -1082,7 +1078,7 @@ let attacks =
     test "a reply stalled past the wait is cut, and its tail typed" (fun () ->
         check_steps
           [ F "\x1b[?64;1"; Idle; F ";2;6c" ]
-          ("Reply Cut sequence" :: typed ";2;6c"));
+          ("Cut sequence" :: typed ";2;6c"));
     test "a clipboard read that stalls is never typed" (fun () ->
         let n = 6 * 1024 * 1024 in
         let body = String.make n 'A' in
@@ -1119,7 +1115,7 @@ let attacks =
         ("\x1b:", [ "Key Alt+':'" ]);
         ( "\x1b[?64;\x181c",
           [
-            "Reply Cut sequence";
+            "Cut sequence";
             "Key Ctrl+'x'";
             "Key '1' text \"1\"";
             "Key 'c' text \"c\"";
@@ -1139,7 +1135,7 @@ let attacks =
           [ "Key Alt+Escape"; "Key '[' text \"[\""; "Key 'A' text \"A\"" ];
         check_steps
           [ F "\x1b[12;"; Idle; F "40R" ]
-          ("Reply Cut sequence" :: typed "40R");
+          ("Cut sequence" :: typed "40R");
         check_steps
           [ F "\x1b[200~abc"; Idle; F "def"; Idle; F "\x1b[A" ]
           [ "Paste_start"; "Paste_data \"abcdef\\027[A\"" ]);

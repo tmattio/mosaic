@@ -823,6 +823,8 @@ let decoded t : Input.Decoder.event -> unit = function
   | Paste_data s -> push t (Paste_data s)
   | Paste_end ending -> push t (Paste_end ending)
   | Invalid s -> push t (Invalid s)
+  (* What was cut or over the budget is in error, and dropped. *)
+  | Cut _ | Too_long _ -> ()
 
 let rec expire_batches t = function
   | [] -> ()
