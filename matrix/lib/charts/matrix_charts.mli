@@ -612,8 +612,9 @@ module Mark : sig
     style : Ansi.Style.t;
     label : string option;
   }
-  (** The type for stacked bar segments. A [value] below 0 is drawn as 0.
-      Neither the chart nor the legend draws [label]. *)
+  (** The type for stacked bar segments. A [value] below 0 is drawn as 0. A
+      [label] is drawn centered in the segment's whole cells, in [style] with
+      the colors swapped, when it fits in them. *)
 
   type stacked_bar = { category : string; segments : bar_segment list }
   (** The type for stacked bars, with segments stacked from 0 in list order. *)

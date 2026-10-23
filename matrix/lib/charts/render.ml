@@ -1658,6 +1658,37 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
         done
   in
 
+  (* A segment's label is drawn in its colors swapped, centered in the
+     segment's whole cells, when it fits there and in the plot. *)
+  let draw_segment_label (seg : Mark.bar_segment) ~x ~y ~room =
+    match seg.label with
+    | None -> ()
+    | Some label ->
+        let w = Layout.text_width label in
+        let x = x + ((room - w) / 2) in
+        if
+          w <= room && x >= r.x
+          && x + w <= r.x + r.width
+          && y >= r.y
+          && y < r.y + r.height
+        then
+          draw_text grid ~x ~y ~style:(Style.with_inverse true seg.style) label
+  in
+  (* Of a vertical bar [width] cells wide at column [x], whose segment fills
+     the rows [lo] to [hi - 1] counted up from the plot's bottom. *)
+  let label_v seg ~x ~width ~lo ~hi =
+    if hi > lo then
+      draw_segment_label seg ~x
+        ~y:(r.y + r.height - 1 - ((lo + hi - 1) / 2))
+        ~room:width
+  in
+  (* Of a horizontal bar [height] rows high at row [y], whose segment fills
+     the columns [lo] to [hi - 1] counted from the plot's left. *)
+  let label_h seg ~y ~height ~lo ~hi =
+    if hi > lo && height > 0 then
+      draw_segment_label seg ~x:(r.x + lo) ~y:(y + (height / 2)) ~room:(hi - lo)
+  in
+
   let draw_stacked_y ~gap ~bar_width ~mode data =
     match x_band with
     | None -> ()
@@ -1701,7 +1732,9 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                               if px >= r.x && px < r.x + r.width then
                                 draw_text grid ~x:px ~y:yy ~style:seg.style "█"
                             done
-                        done
+                        done;
+                        label_v seg ~x:x0 ~width:bw_cells ~lo:y0_cells
+                          ~hi:y1_cells
                     | `Half_block -> (
                         let y0_cells = int_of_float (Float.floor y0_f) in
                         let y1_cells = int_of_float (Float.floor y1_f) in
@@ -1716,6 +1749,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                                 draw_text grid ~x:px ~y:yy ~style:seg.style "█"
                             done
                         done;
+                        label_v seg ~x:x0 ~width:bw_cells ~lo:y0_cells
+                          ~hi:y1_cells;
                         match top_glyph with
                         | None -> ()
                         | Some glyph ->
@@ -1774,7 +1809,9 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                               if py >= r.y && py < r.y + r.height then
                                 draw_text grid ~x:xx ~y:py ~style:seg.style "█"
                             done
-                        done
+                        done;
+                        label_h seg ~y:y0 ~height:bh_cells ~lo:x0_cells
+                          ~hi:x1_cells
                     | `Half_block -> (
                         let x0_cells = int_of_float (Float.floor x0_f) in
                         let x1_cells = int_of_float (Float.floor x1_f) in
@@ -1789,6 +1826,8 @@ let draw_marks (layout : Layout.t) (grid : G.t) =
                                 draw_text grid ~x:xx ~y:py ~style:seg.style "█"
                             done
                         done;
+                        label_h seg ~y:y0 ~height:bh_cells ~lo:x0_cells
+                          ~hi:x1_cells;
                         match right_glyph with
                         | None -> ()
                         | Some glyph ->

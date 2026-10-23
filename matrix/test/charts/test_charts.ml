@@ -966,11 +966,55 @@ let%expect_test "a manual frame draws the theme's border" =
   let fg = Grid.get_fg grid (Grid.idx grid ~x:0 ~y:2) in
   Printf.printf "border in Theme.border: %b\n"
     (Ansi.Color.equal fg (Option.get theme.border.fg));
-  [%expect {|
+  [%expect
+    {|
     |+----------+|
     ||        . ||
     ||   .  .   ||
     || .        ||
     |+----------+|
     border in Theme.border: true
+    |}]
+
+(* A segment's label is drawn in the segment when it fits, and left out
+   when it does not. *)
+let%expect_test "stacked bar segments draw their labels" =
+  let st = Style.make () in
+  let data =
+    [|
+      Mark.
+        {
+          category = "A";
+          segments =
+            [
+              { value = 2.; style = st; label = Some "ab" };
+              { value = 2.; style = st; label = Some "toolong" };
+            ];
+        };
+    |]
+  in
+  let chart direction =
+    empty ()
+    |> with_axes ~x:Axis.hidden ~y:Axis.hidden
+    |> stacked_bar ~direction ~size:4 data
+  in
+  let grid = Grid.create ~width:8 ~height:8 () in
+  ignore (draw (chart `Vertical) grid ~width:8 ~height:8 : Layout.t);
+  print_cells grid;
+  let grid = Grid.create ~width:12 ~height:3 () in
+  ignore (draw (chart `Horizontal) grid ~width:12 ~height:3 : Layout.t);
+  print_cells grid;
+  [%expect
+    {|
+    |████    |
+    |████    |
+    |████    |
+    |████    |
+    |████    |
+    |████    |
+    |█ab█    |
+    |████    |
+    |██ab████████|
+    |            |
+    |            |
     |}]
