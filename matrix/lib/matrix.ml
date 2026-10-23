@@ -47,27 +47,31 @@ let pp_event ppf = function
 (* The clock and the signal handlers, in C (matrix_stubs.c). *)
 
 external now_ns : unit -> int = "matrix_now_ns" [@@noalloc]
-external set_wake_fd : Unix.file_descr -> unit = "matrix_set_wake_fd"
 
 (* [signal_take s always restart] takes [s] if its action is the default,
    or whatever it is when [always], and says whether it did. *)
 external signal_take : int -> bool -> bool -> bool = "matrix_signal_take"
 external signal_restore : int -> unit = "matrix_signal_restore"
 external signal_ignored : int -> bool = "matrix_signal_ignored"
-external signal_pending : int -> bool = "matrix_signal_pending" [@@noalloc]
-
-external signal_terminating : unit -> bool = "matrix_signal_terminating"
-[@@noalloc]
-
 external signal_raise : int -> unit = "matrix_signal_raise"
 external signal_stop_group : unit -> unit = "matrix_signal_stop_group"
-
-external abort_tty : Unix.file_descr -> Unix.file_descr -> unit
-  = "matrix_abort_tty"
-
-external abort_clear : unit -> unit = "matrix_abort_clear"
 external is_controlling : Unix.file_descr -> bool = "matrix_is_controlling"
-external abort_reset : string -> unit = "matrix_abort_reset"
+
+(* The runs the handlers know: [run_register controlling] is a run's id and
+   its wake pipe's read and write ends. *)
+external run_register : bool -> int * Unix.file_descr * Unix.file_descr
+  = "matrix_run_register"
+
+external run_unregister : int -> unit = "matrix_run_unregister"
+external run_pending : int -> int -> bool = "matrix_run_pending"
+external run_terminating : int -> bool = "matrix_run_terminating"
+
+external run_settings : int -> Unix.file_descr -> Unix.file_descr -> unit
+  = "matrix_run_settings"
+
+external run_forget_settings : int -> unit = "matrix_run_forget_settings"
+external run_reset_bytes : int -> string -> unit = "matrix_run_reset_bytes"
+external fatal_restore : unit -> unit = "matrix_fatal_restore"
 
 module Backend = struct
   type signal = Winch | Cont | Tstp | Terminate of int
@@ -85,28 +89,23 @@ module Backend = struct
     input_is_tty : bool;
     output_is_tty : bool;
     controlling : bool;
+    on_fatal : string -> unit;
     protect : (unit -> unit) -> unit;
     cleanup : unit -> unit;
     env : Terminal.Caps.env;
   }
 
-  (* One pipe for the process: the signal handlers write to it, and so does
-     [wake]. It is never closed, so a wake that races the end of a run never
-     reaches a descriptor reused since. *)
-  let wake_pipe =
-    lazy
-      (let r, w = Unix.pipe ~cloexec:true () in
-       Unix.set_nonblock r;
-       Unix.set_nonblock w;
-       set_wake_fd w;
-       (r, w))
+  (* The wake pipes of the backends [unix] made, by their [wake], which a
+     backend built from one keeps. *)
+  let pipes : ((unit -> unit) * Unix.file_descr) list ref = ref []
+  let pipes_lock = Mutex.create ()
 
-  let wake_fd () = fst (Lazy.force wake_pipe)
+  let wake_fd b =
+    match Mutex.protect pipes_lock (fun () -> List.assq_opt b.wake !pipes) with
+    | Some fd -> fd
+    | None -> invalid_arg "Matrix.Backend.wake_fd: not a backend unix made"
+
   let wake_byte = Bytes.of_string "w"
-
-  let wake () =
-    let _, w = Lazy.force wake_pipe in
-    try ignore (Unix.write w wake_byte 0 1 : int) with Unix.Unix_error _ -> ()
 
   let drain fd =
     let buf = Bytes.create 64 in
@@ -118,11 +117,11 @@ module Backend = struct
     in
     go ()
 
-  (* The signals the runtime's handlers recorded, in the order of this
-     list. *)
-  let signals_from_handlers () =
+  (* The signals the runtime's handlers recorded for run [id], in the order
+     of this list. *)
+  let signals_from_handlers id () =
     let take acc (s, signal) =
-      if signal_pending s then signal :: acc else acc
+      if run_pending id s then signal :: acc else acc
     in
     List.rev
       (List.fold_left take []
@@ -136,18 +135,18 @@ module Backend = struct
            (Sys.sigquit, Terminate Sys.sigquit);
          ])
 
-  let rec write_all fd buf off len =
+  let rec write_all id fd buf off len =
     if len > 0 then
       match Unix.write fd buf off len with
-      | n -> write_all fd buf (off + n) (len - n)
+      | n -> write_all id fd buf (off + n) (len - n)
       | exception Unix.Unix_error (Unix.EAGAIN, _, _) ->
           (try ignore (Unix.select [] [ fd ] [] (-1.))
            with Unix.Unix_error (Unix.EINTR, _, _) -> ());
-          write_all fd buf off len
+          write_all id fd buf off len
       | exception Unix.Unix_error (Unix.EINTR, _, _) ->
           (* A termination signal interrupts a write the terminal is not
              taking: the rest is dropped, and the loop acts on the signal. *)
-          if not (signal_terminating ()) then write_all fd buf off len
+          if not (run_terminating id) then write_all id fd buf off len
 
   let rec read_input fd buf off len =
     match Unix.read fd buf off len with
@@ -158,12 +157,18 @@ module Backend = struct
   let unix ?(input = Unix.stdin) ?(output = Unix.stdout) () =
     let input_is_tty = Terminal.is_tty input in
     let output_is_tty = Terminal.is_tty output in
-    let wake_r = wake_fd () in
+    let controlling = is_controlling input || is_controlling output in
+    let id, wake_r, wake_w = run_register controlling in
+    let wake () =
+      try ignore (Unix.write wake_w wake_byte 0 1 : int)
+      with Unix.Unix_error _ -> ()
+    in
+    Mutex.protect pipes_lock (fun () -> pipes := (wake, wake_r) :: !pipes);
     let saved = ref None in
     let set_raw_mode raw =
       match (raw, !saved) with
       | true, None when input_is_tty ->
-          abort_tty input output;
+          run_settings id input output;
           saved := Some (Terminal.set_raw input)
       | false, Some termios ->
           saved := None;
@@ -173,7 +178,7 @@ module Backend = struct
           Fun.protect
             ~finally:(fun () -> ignore (Thread.sigmask SIG_SETMASK mask))
             (fun () -> Terminal.restore input termios);
-          abort_clear ()
+          run_forget_settings id
       | _ -> ()
     in
     let wait ~until ~reading =
@@ -194,17 +199,25 @@ module Backend = struct
       now = now_ns;
       wait;
       wake;
-      take_signals = signals_from_handlers;
+      take_signals = signals_from_handlers id;
       read_input = read_input input;
-      write_output = write_all output;
+      write_output = write_all id output;
       terminal_size = (fun () -> Terminal.size output);
       set_raw_mode;
       flush_input = (fun () -> if input_is_tty then Terminal.flush_input input);
       input_is_tty;
       output_is_tty;
-      controlling = is_controlling input || is_controlling output;
+      controlling;
+      on_fatal = run_reset_bytes id;
       protect = (fun f -> f ());
-      cleanup = (fun () -> set_raw_mode false);
+      cleanup =
+        (fun () ->
+          Fun.protect
+            (fun () -> set_raw_mode false)
+            ~finally:(fun () ->
+              run_unregister id;
+              Mutex.protect pipes_lock (fun () ->
+                  pipes := List.filter (fun (w, _) -> w != wake) !pipes)));
       env = Terminal.Caps.env Sys.getenv_opt ~win32:Sys.win32;
     }
 end
@@ -391,6 +404,8 @@ type 'msg app = {
   mutable released : bool;
   (* Signals the run took, to restore when it ends. *)
   mutable taken : int list;
+  (* Signals received and not yet acted on, oldest first. *)
+  mutable kept : Backend.signal list;
   mutable tstp_ignored : bool;
   (* Undos of the steps that took the terminal, latest first. *)
   mutable undo : (exiting:bool -> unit) list;
@@ -1418,6 +1433,13 @@ let abort_bytes mode =
       (match mode with `Alt -> "\027[?1049l" | `Primary -> "\r\n");
     ]
 
+(* What restores the terminal if the process ends where no OCaml code runs:
+   the backend writes these bytes itself, and they go once the terminal is
+   given back. *)
+let take_fatal_reset t =
+  t.backend.on_fatal (abort_bytes t.config.mode);
+  push_undo t (fun ~exiting:_ -> t.backend.on_fatal "")
+
 (* Waits, when a reply is owed, for the terminal to answer what was sent:
    the replies that come after the terminal is given away would reach the
    shell, or the program run in the application's place, as typing. Every
@@ -1464,6 +1486,7 @@ let send_waiting t =
    [`Primary] mode frames wait for a cursor report that says where the
    program's output ended. *)
 let take_again t =
+  take_fatal_reset t;
   take_raw_mode t;
   t.backend.flush_input ();
   let cols, rows = t.backend.terminal_size () in
@@ -1495,7 +1518,13 @@ let release t f =
     List.iter
       (fun s -> take_signal t s ~always:false ~restart:(s = Sys.sigtstp))
       stopping;
-    List.iter (fun s -> ignore (signal_pending s : bool)) interrupting_signals;
+    t.kept <-
+      t.kept
+      @ List.filter
+          (function
+            | Backend.Terminate s -> not (List.mem s interrupting_signals)
+            | _ -> true)
+          (t.backend.take_signals ());
     t.released <- false;
     t.now <- t.backend.now ();
     take_again t
@@ -1563,14 +1592,33 @@ let wait_deadline t =
     in
     if deadline = max_int then None else Some deadline
 
+(* Whether a run is ending the process on a termination signal. *)
+let ending = Atomic.make false
+
+(* The signals received since the last call, kept ones first. *)
+let received t =
+  let s = t.kept @ t.backend.take_signals () in
+  t.kept <- [];
+  s
+
 let rec end_run t s =
-  t.now <- t.backend.now ();
-  (try give_back t ~exiting:true with _ -> ());
-  List.iter signal_restore t.taken;
-  t.taken <- [];
-  signal_raise s;
-  (* The default action ends the process; nothing returns here. *)
-  exit 2
+  if Atomic.compare_and_set ending false true then (
+    t.now <- t.backend.now ();
+    (try give_back t ~exiting:true with _ -> ());
+    List.iter signal_restore t.taken;
+    t.taken <- [];
+    (* The other runs' terminals, as an abort restores them. *)
+    fatal_restore ();
+    signal_raise s;
+    (* The default action ends the process; nothing returns here. *)
+    exit 2)
+  else
+    (* Another run ends the process. *)
+    let m = Mutex.create () and never = Condition.create () in
+    Mutex.lock m;
+    while true do
+      Condition.wait never m
+    done
 
 (* A SIGCONT the run did not cause: whoever continued the process has put
    back the shell's settings. *)
@@ -1598,7 +1646,7 @@ and on_signals t signals =
             on_signals t
               (List.filter
                  (function Backend.Cont -> false | _ -> true)
-                 (t.backend.take_signals ())))
+                 (received t)))
       | Terminate s -> end_run t s)
     signals
 
@@ -1609,7 +1657,7 @@ let take_posts t =
 
 let begin_turn t =
   let ready = wait t ~until:(wait_deadline t) in
-  (match t.backend.take_signals () with [] -> () | s -> on_signals t s);
+  (match received t with [] -> () | s -> on_signals t s);
   if Queue.is_empty t.events then read_input t ~ready else expire t;
   take_posts t;
   t.owe_event <- not (Queue.is_empty t.events);
@@ -1756,6 +1804,7 @@ let make backend config =
     waiting_backend = false;
     released = false;
     taken = [];
+    kept = [];
     tstp_ignored = false;
     undo = [];
     debug_overlay_enabled = config.debug_overlay;
@@ -1796,7 +1845,7 @@ let probe t =
    that is its terminal. *)
 let setup t =
   if t.backend.controlling then take_signals t;
-  abort_reset (abort_bytes t.config.mode);
+  take_fatal_reset t;
   take_raw_mode t;
   probe t;
   take_screen t;

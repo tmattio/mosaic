@@ -251,6 +251,72 @@ let test_background_continue_stops_again () =
   send s "q";
   await s "JOB-EXIT 0"
 
+(* Two runs in one process: the terminal's, and a session served on another
+   pseudo-terminal, which the test holds. A termination signal ends both:
+   whichever acts on it gives its terminal back, the other's terminal is
+   reset by the path an abort takes, and the process ends by the signal. An
+   abort resets both. *)
+
+let served_terminal f =
+  let master, slave = Pty.open_pty () in
+  Pty.set_nonblock master;
+  let path =
+    Unix.readlink
+      (Printf.sprintf "/proc/self/fd/%d"
+         (Obj.magic (Pty.file_descr slave) : int))
+  in
+  let session =
+    let pty =
+      Pty.spawn ~prog:child ~args:[ "served"; path ]
+        ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
+        ()
+    in
+    Pty.set_nonblock pty;
+    { pty; pid = Option.get (Pty.pid pty); output = Buffer.create 4096 }
+  in
+  let served =
+    { pty = master; pid = session.pid; output = Buffer.create 4096 }
+  in
+  Fun.protect
+    ~finally:(fun () ->
+      finish session.pty;
+      (try Pty.close master with _ -> ());
+      try Pty.close slave with _ -> ())
+    (fun () -> f session served slave)
+
+let served_cooked slave =
+  let t = Unix.tcgetattr (Pty.file_descr slave) in
+  t.c_icanon && t.c_echo
+
+let test_termination_ends_every_run () =
+  served_terminal @@ fun s served slave ->
+  await s "READY 1";
+  await served "SERVED";
+  is_false ~msg:"the served terminal is raw" (served_cooked slave);
+  let from = mark s and served_from = mark served in
+  Unix.kill s.pid Sys.sigterm;
+  (match wait_exit s with
+  | WSIGNALED n -> equal ~msg:"ends by SIGTERM" int Sys.sigterm n
+  | _ -> fail "expected the process to end by its signal");
+  await ~from s "\027[?1049l";
+  is_true ~msg:"the terminal cooked" (cooked s);
+  await ~from:served_from served "\027[?1049l";
+  is_true ~msg:"the served terminal cooked" (served_cooked slave)
+
+let test_abort_resets_every_run () =
+  served_terminal @@ fun s served slave ->
+  await s "READY 1";
+  await served "SERVED";
+  let from = mark s and served_from = mark served in
+  send s "a";
+  (match wait_exit s with
+  | WSIGNALED n -> equal ~msg:"ends by SIGABRT" int Sys.sigabrt n
+  | _ -> fail "expected the process to end by SIGABRT");
+  await ~from s "\027[?1049l";
+  is_true ~msg:"the terminal cooked" (cooked s);
+  await ~from:served_from served "\027[?1049l";
+  is_true ~msg:"the served terminal cooked" (served_cooked slave)
+
 let supported =
   Sys.os_type = "Unix" && Sys.file_exists child && Sys.file_exists job
 
@@ -272,6 +338,14 @@ let () =
                test_sigint_during_release;
              test "SIGABRT restores the terminal"
                test_sigabrt_restores_the_terminal;
+           ]);
+      group "Several runs"
+        (if not supported then []
+         else
+           [
+             test "a termination signal ends every run"
+               test_termination_ends_every_run;
+             test "an abort resets every run" test_abort_resets_every_run;
            ]);
       group "Handoff"
         (if not supported then []

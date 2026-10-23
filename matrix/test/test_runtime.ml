@@ -130,6 +130,7 @@ let backend f : Matrix.Backend.t =
     input_is_tty = f.tty;
     output_is_tty = f.tty;
     controlling = f.tty;
+    on_fatal = ignore;
     protect = (fun f -> f ());
     cleanup = (fun () -> f.cleanups <- f.cleanups + 1);
     env = no_env;
@@ -1927,6 +1928,7 @@ let clocked ?(limit = 10.) ?(rtt = 0.) ?(answer = fun _ -> []) typed =
       input_is_tty = true;
       output_is_tty = true;
       controlling = true;
+      on_fatal = ignore;
       protect = (fun f -> f ());
       cleanup = ignore;
       env = no_env;
@@ -2583,6 +2585,73 @@ let test_unix_controlling () =
       is_true ~msg:"a terminal" b.input_is_tty;
       is_false ~msg:"not the controlling one" b.controlling)
 
+(* Two runs on Backend.unix, each on its domain, each with its own wake: a
+   post to one is never lost to the other's loop draining a wake. One run
+   is posted to with short gaps, waiting often; each post to the other is
+   waited for. *)
+let test_unix_wakes_per_run () =
+  let session () =
+    let input, writer = Unix.pipe ~cloexec:true () in
+    let output = Unix.openfile "/dev/null" [ O_WRONLY; O_CLOEXEC ] 0 in
+    let app = ref None
+    and handled = Atomic.make 0
+    and ready = Atomic.make false in
+    let domain =
+      Domain.spawn (fun () ->
+          Matrix.run ~backend:(Matrix.Backend.unix ~input ~output ())
+            ~config:(quiet ()) (fun a ->
+              app := Some a;
+              Atomic.set ready true;
+              let rec loop () =
+                match Matrix.next a with
+                | Posted 0 -> ()
+                | Posted n ->
+                    Atomic.set handled n;
+                    loop ()
+                | Frame ->
+                    Matrix.draw a ignore;
+                    loop ()
+                | Stopped -> ()
+                | Event _ | Timer _ -> loop ()
+              in
+              loop ()))
+    in
+    while not (Atomic.get ready) do
+      Domain.cpu_relax ()
+    done;
+    (Option.get !app, handled, domain, [ input; writer; output ])
+  in
+  let a, handled, da, fds_a = session () in
+  let b, _, db, fds_b = session () in
+  let busy = Atomic.make true in
+  let hammer =
+    Domain.spawn (fun () ->
+        while Atomic.get busy do
+          Matrix.post b 1;
+          (* Short gaps, so that the other run waits often. *)
+          for _ = 1 to 2_000 do
+            Domain.cpu_relax ()
+          done
+        done)
+  in
+  let stalls = ref 0 in
+  for i = 1 to 200 do
+    Matrix.post a i;
+    let start = Unix.gettimeofday () in
+    while Atomic.get handled < i && Unix.gettimeofday () -. start < 2. do
+      Domain.cpu_relax ()
+    done;
+    if Unix.gettimeofday () -. start > 0.5 then incr stalls
+  done;
+  Atomic.set busy false;
+  Domain.join hammer;
+  Matrix.post a 0;
+  Matrix.post b 0;
+  Domain.join da;
+  Domain.join db;
+  List.iter Unix.close (fds_a @ fds_b);
+  equal ~msg:"posts that waited half a second" int 0 !stalls
+
 let test_unix_post_wakes_the_loop () =
   let input_r, input_w = Unix.pipe ~cloexec:true () in
   let devnull = Unix.openfile "/dev/null" [ Unix.O_WRONLY ] 0 in
@@ -2823,6 +2892,7 @@ let () =
       group "Unix backend"
         [
           test "a post wakes the loop" test_unix_post_wakes_the_loop;
+          test "each run has its own wake" test_unix_wakes_per_run;
           test "a pseudo-terminal is not the controlling terminal"
             test_unix_controlling;
         ];

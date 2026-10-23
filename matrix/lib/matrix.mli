@@ -180,6 +180,14 @@ module Backend : sig
             ({{!signals}Signals}), and one run at a time holds it ({!run}). A
             terminal the process serves, such as a pseudo-terminal it opened or
             a remote session, is not: it reports its size itself (mode 2048). *)
+    on_fatal : string -> unit;
+        (** [on_fatal reset] keeps [reset], the bytes that undo what the run
+            set, for the backend to write to its terminal itself, with the
+            terminal's saved settings restored, if the process ends where no
+            OCaml code runs: on [abort()], or on a termination signal another
+            run acted on ({{!signals}Signals}). An empty [reset] once the run
+            gave the terminal back. A backend that cannot write from a signal
+            handler ignores it. *)
     protect : (unit -> unit) -> unit;
         (** [protect f] runs [f ()] with cancellation deferred until it returns
             or raises. Used only for teardown; synchronous backends call [f]
@@ -196,16 +204,23 @@ module Backend : sig
   val unix : ?input:Unix.file_descr -> ?output:Unix.file_descr -> unit -> t
   (** [unix ()] is the backend of a terminal on [input] (default {!Unix.stdin})
       and [output] (default {!Unix.stdout}). Its [wait] blocks in [select(2)] on
-      the input and on {!wake_fd}, its clock is [CLOCK_MONOTONIC], and its
-      signals are those the runtime's handlers record (see {{!signals}Signals}).
-      On Linux the monotonic clock stops while the system sleeps: a deadline is
-      that much later on the wall clock. On macOS it does not stop. *)
+      the input and on its wake pipe ({!wake_fd}), its clock is
+      [CLOCK_MONOTONIC], and its signals are those the runtime's handlers record
+      for it (see {{!signals}Signals}). It holds its wake pipe from [unix ()] to
+      its [cleanup]. On Linux the monotonic clock stops while the system sleeps:
+      a deadline is that much later on the wall clock. On macOS it does not
+      stop. *)
 
-  val wake_fd : unit -> Unix.file_descr
-  (** [wake_fd ()] is the read end of the process's wake pipe. {!unix}'s [wake]
-      and the runtime's signal handlers write a byte to it; a backend whose
-      [wait] blocks in the operating system waits for it to be readable too, and
-      reads it empty before returning. The pipe lives as long as the process. *)
+  val wake_fd : t -> Unix.file_descr
+  (** [wake_fd b] is the read end of the wake pipe of [b], a backend {!unix}
+      made, or a record built from one that keeps its [wake]. Its [wake] and the
+      runtime's signal handlers write a byte to it; a backend whose [wait]
+      blocks in the operating system waits for it to be readable too, and reads
+      it empty before returning. Each backend has its own: a wake of one run
+      never ends another's wait.
+
+      Raises [Invalid_argument] if [b]'s [wake] is not one {!unix} made, or [b]
+      was cleaned up. *)
 end
 
 (** {1:running Running} *)
@@ -494,14 +509,19 @@ val stop_job : 'msg app -> unit
     SIGABRT if their action is the default when it begins, as X/Open Curses
     allows; an application that installed its own action keeps it. SIGWINCH and
     SIGCONT are taken always, and a handler installed before is still called.
-    The handlers record the signal and write a byte to {!Backend.wake_fd}; the
-    loop acts on it in its next turn, and the actions are restored when the run
-    ends.
+    The handlers record the signal for each run it concerns and wake it
+    ({!Backend.wake_fd}); the loop acts on it in its next turn, and the actions
+    are restored when the run ends. The window and job-control signals
+    (SIGWINCH, SIGCONT, SIGTSTP) concern the runs on the controlling terminal;
+    the others every run of the process, such as the sessions a server runs.
 
-    - SIGINT, SIGTERM, SIGHUP, SIGQUIT end the run: the terminal is given back,
-      then the signal is raised again with its default action, so the process
-      ends with that signal's status and {!run} does not return. An application
-      that wants {!run} to return installs its own handler first. A write the
+    - SIGINT, SIGTERM, SIGHUP, SIGQUIT end the process, and every run with it.
+      The run whose loop acts on the signal first gives its terminal back, as
+      when it ends; every other run's terminal is restored as an abort restores
+      it (below), its reset bytes written and its saved settings put back; then
+      the signal is raised again with its default action, so the process ends
+      with that signal's status and {!run} does not return. An application that
+      wants {!run} to return installs its own handler first. A write the
       terminal is not taking is interrupted by them, not resumed.
     - SIGTSTP releases the terminal and stops the process, as {!stop_job} does
       for the whole job; on continuing, the terminal is taken again.
@@ -510,8 +530,9 @@ val stop_job : 'msg app -> unit
       own settings. The size is read and the next frame drawn whole.
     - SIGWINCH has the size read when the next frame is drawn.
     - SIGABRT, from [abort()], returns to no point where OCaml can run, so its
-      handler restores the terminal itself, the saved settings and a reset of
-      the modes, and the process aborts. *)
+      handler restores every run's terminal itself ({!Backend.t}'s [on_fatal]):
+      it writes the bytes that reset the modes the run set to the run's terminal
+      and puts back its saved settings, and the process aborts. *)
 
 (** {1:queries Terminal queries} *)
 

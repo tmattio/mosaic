@@ -1,5 +1,12 @@
 (data_only_dirs data)
 
+; A test that never ends fails after two minutes instead of spinning.
+
+(env
+ (_
+  (env-vars
+   (WINDTRAP_TIMEOUT 120))))
+
 (test
  (name test_ansi)
  (package matrix)
@@ -86,7 +93,7 @@
 (executable
  (name runtime_child)
  (modules runtime_child)
- (libraries matrix unix))
+ (libraries matrix unix threads.posix))
 
 (executable
  (name runtime_job)

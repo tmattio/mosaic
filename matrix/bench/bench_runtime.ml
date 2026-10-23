@@ -20,6 +20,7 @@ let backend () : Matrix.Backend.t =
     input_is_tty = false;
     output_is_tty = false;
     controlling = false;
+    on_fatal = ignore;
     protect = (fun f -> f ());
     cleanup = (fun () -> ());
     env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false;

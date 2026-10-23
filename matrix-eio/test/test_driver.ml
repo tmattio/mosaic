@@ -478,11 +478,10 @@ let test_cancelled_setup_restores_terminal () =
         (List.mem sequence !output))
     [ "\027[?1049h"; "\027[?1049l"; "\027[?2004h"; "\027[?2004l" ]
 
-(* A run on the controlling terminal takes SIGWINCH, calling the handler
-   installed before, and wakes on it: the new size comes as a [Resize]. The
-   disposition is restored when the run ends. The test's pseudo-terminal is
-   not the process's controlling terminal; its backend says it is. *)
-let test_sigwinch_wakes_eio_runtime () =
+(* SIGWINCH is the controlling terminal's: a run on a terminal the process
+   serves, such as this pseudo-terminal, leaves it to the application, whose
+   handler keeps it and is called. *)
+let test_sigwinch_is_the_controlling_terminals () =
   let calls = ref 0 in
   let prior _ = incr calls in
   let previous = Sys.signal Sys.sigwinch (Sys.Signal_handle prior) in
@@ -500,37 +499,25 @@ let test_sigwinch_wakes_eio_runtime () =
       ~clock:(Eio.Stdenv.mono_clock env)
       ~stdin:tty ~stdout:tty ()
   in
-  let backend = { backend with controlling = true } in
-  let resized = ref None in
-  let result =
-    Eio.Time.with_timeout (Eio.Stdenv.clock env) 2. (fun () ->
-        Matrix.run ~backend
-          ~config:(Matrix.config ~kitty_keyboard:`Off ~mouse:`Off ())
-          (fun app ->
-            (match Matrix.next app with
-            | Frame -> Matrix.draw app ignore
-            | _ -> fail "expected the first frame");
-            Pty.set_winsize master
-              Pty.{ rows = 30; cols = 100; xpixel = 0; ypixel = 0 };
-            Unix.kill (Unix.getpid ()) Sys.sigwinch;
-            loop_until app (function
-              | Event (Resize (cols, rows)) ->
-                  resized := Some (cols, rows);
-                  true
-              | _ -> false));
-        Ok ())
-  in
-  (match result with
-  | Ok () ->
-      equal ~msg:"the new size"
-        (option (pair int int))
-        (Some (100, 30))
-        !resized
-  | Error `Timeout -> fail "SIGWINCH did not wake the Eio runtime");
-  is_true ~msg:"the prior handler was called" (!calls > 0);
-  match peek_signal Sys.sigwinch with
-  | Sys.Signal_handle h -> is_true ~msg:"restored" (h == prior)
-  | _ -> fail "SIGWINCH disposition not restored"
+  is_false ~msg:"not the controlling terminal" backend.controlling;
+  Matrix.run ~backend
+    ~config:(Matrix.config ~kitty_keyboard:`Off ~mouse:`Off ()) (fun app ->
+      (match Matrix.next app with
+      | Frame -> Matrix.draw app ignore
+      | _ -> fail "expected the first frame");
+      Pty.set_winsize master
+        Pty.{ rows = 30; cols = 100; xpixel = 0; ypixel = 0 };
+      Unix.kill (Unix.getpid ()) Sys.sigwinch;
+      let later = Matrix.at app (Matrix.now app + 300_000_000) in
+      let resized = ref false in
+      loop_until app (function
+        | Event (Resize _) ->
+            resized := true;
+            false
+        | Timer t -> t = later
+        | _ -> false);
+      is_false ~msg:"the run did not act on it" !resized);
+  is_true ~msg:"the application's handler was called" (!calls > 0)
 
 (* A post from another fiber that lands while the loop is out of its wait,
    with a subprocess storm perturbing the scheduler, still reaches the loop
@@ -636,6 +623,7 @@ let () =
             test_probe_failure_restores_pty_termios;
           test "cancelled setup restores terminal modes"
             test_cancelled_setup_restores_terminal;
-          test "SIGWINCH wakes Eio runtime" test_sigwinch_wakes_eio_runtime;
+          test "SIGWINCH is the controlling terminal's"
+            test_sigwinch_is_the_controlling_terminals;
         ];
     ]
