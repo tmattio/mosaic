@@ -663,9 +663,14 @@ let bindings_use_exact_key_events () =
       make_key ~super:true Down;
       make_key ~hyper:true Down;
       make_key ~meta:true Down;
-      (* Shift+j types the capital, which is no binding of its own. *)
-      make_key (Char (Uchar.of_char 'J'));
     ];
+  (* Caps Lock with j sends the capital, which no binding names. *)
+  emit_key sel (make_key (Char (Uchar.of_char 'J')));
+  equal ~msg:"a capital takes the lowercase binding" int 3
+    (Select.selected_index sel);
+  emit_key sel (make_key ~caps_lock:true (Char (Uchar.of_char 'K')));
+  equal ~msg:"Caps Lock is undone when reported" int 2
+    (Select.selected_index sel);
   emit_key sel
     (make_key ~caps_lock:true ~num_lock:true ~repeat:true ~keypad:true Down);
   equal ~msg:"repeat and keypad navigation ignore lock state" int 3

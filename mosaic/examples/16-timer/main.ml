@@ -231,7 +231,6 @@ let subscriptions model =
       Sub.on_keys ~phase:Capture
         [
           (Shortcut.char 'r', Reset);
-          (Shortcut.char ~shift:true 'r', Reset);
           (Shortcut.char 'q', Quit);
           (Shortcut.escape, Quit);
         ];

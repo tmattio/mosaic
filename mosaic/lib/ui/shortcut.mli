@@ -1,16 +1,29 @@
 (** Keyboard shortcuts for subscriptions and event handlers.
 
     A shortcut matches a key press or repeat ({!Matrix_input.Keystroke.t}) by
-    its key and its held modifiers, exactly. A key's value is the character
-    typed, with Shift consumed: Shift+r is [Char 'R'], so
-    {!char}[ ~shift:true 'r'] is the shortcut [Char 'R'], and [char 'r'] does
-    not match Shift+r. A lock never changes a chord's key, and Caps Lock and Num
-    Lock are ignored in matching; a letter typed with Caps Lock on is the
-    capital, as typed. The keypad is ignored: keypad Enter matches {!enter}, and
-    the keypad's 5 without Num Lock is [Begin]. When a terminal reports the
-    base-layout key, matching then tries that key with the same modifiers, so
-    that Ctrl+c keeps working on a layout whose key in that place types another
-    letter. Releases never match. *)
+    its key and its held modifiers. A key's value is the character typed, with
+    Shift consumed: Shift+r is [Char 'R'], so {!char}[ ~shift:true 'r'] is the
+    shortcut [Char 'R']. Caps Lock and Num Lock are ignored as modifiers, and a
+    lock never changes a chord's key: Ctrl+s is [Char 's'] whatever Caps Lock's
+    state.
+
+    A letter typed with Caps Lock on arrives as the capital, as typed. An ASCII
+    letter pressed with no Ctrl, Alt, Super, Hyper or Meta is therefore matched
+    in two tries. The first is the letter as it would be typed without the lock:
+    the other case when the keystroke says Caps Lock is on, the letter itself
+    otherwise. The second, when the first is a capital that matches none of the
+    shortcuts searched, is its lowercase letter, since a terminal that does not
+    report the lock sends Caps Lock with r as R. The shortcuts searched are the
+    one given to {!matches}, or the bindings of a list such as those of
+    [Sub.on_keys] or of a widget's keymap. [char 'r'] thus matches r typed with
+    Caps Lock on, and Shift+r unless a shortcut for [Char 'R'] is searched too,
+    which then matches Shift+r.
+
+    The keypad is ignored: keypad Enter matches {!enter}, and the keypad's 5
+    without Num Lock is [Begin]. When a terminal reports the base-layout key,
+    matching then tries that key with the same modifiers, so that Ctrl+c keeps
+    working on a layout whose key in that place types another letter. Releases
+    never match. *)
 
 type t
 (** The type for keyboard shortcuts. *)

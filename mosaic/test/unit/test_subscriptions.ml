@@ -190,8 +190,10 @@ let shortcut_matches_ctrl_base_key () =
 let shortcut_shift_letter_is_the_capital () =
   is_true ~msg:"Shift+a arrives as 'A' and matches char ~shift:true 'a'"
     (Shortcut.matches (Shortcut.char ~shift:true 'a') (char 'A'));
-  is_false ~msg:"char 'a' does not match Shift+a"
-    (Shortcut.matches (Shortcut.char 'a') (char 'A'))
+  is_true ~msg:"char 'a' matches Shift+a, as Caps Lock with a"
+    (Shortcut.matches (Shortcut.char 'a') (char 'A'));
+  is_false ~msg:"char ~shift:true 'a' does not match a"
+    (Shortcut.matches (Shortcut.char ~shift:true 'a') (char 'a'))
 
 let shortcut_alt_matches_alt () =
   is_true ~msg:"Alt matches Matrix's Alt"
@@ -222,14 +224,20 @@ let sub_on_keys_resolution () =
   check "exact uppercase resolves regardless of order" (Some 1)
     [ (Shortcut.char 'Q', 1); (Shortcut.char 'q', 2) ]
     (char 'Q');
-  check "a capital does not resolve the lowercase binding" None
+  check "a capital nothing binds resolves the lowercase binding" (Some 2)
     [ (Shortcut.char 'q', 2) ]
     (char 'Q');
+  check "a lowercase letter does not resolve the capital's binding" None
+    [ (Shortcut.char 'Q', 1) ]
+    (char 'q');
   check "direct character precedes base layout regardless of order" (Some 1)
     [ (Shortcut.char 'x', 1); (Shortcut.char 'q', 2) ]
     (char ~base:(Uchar.of_char 'q') 'x');
-  check "an unbound capital falls back to the base layout" (Some 2)
+  check "an unbound capital takes its lowercase before the base layout" (Some 1)
     [ (Shortcut.char 'x', 1); (Shortcut.char 'q', 2) ]
+    (char ~base:(Uchar.of_char 'q') 'X');
+  check "an unbound capital falls back to the base layout" (Some 2)
+    [ (Shortcut.char 'q', 2) ]
     (char ~base:(Uchar.of_char 'q') 'X');
   check "base-layout fallback remains available" (Some 2)
     [ (Shortcut.char 'q', 1); (Shortcut.char 'q', 2) ]

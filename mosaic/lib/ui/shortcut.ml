@@ -47,12 +47,31 @@ let left = key Left
 let right = key Right
 let space = char ' '
 let equal a b = a.modifiers = b.modifiers && a.key = b.key
+let is_upper c = c >= Char.code 'A' && c <= Char.code 'Z'
+let is_lower c = c >= Char.code 'a' && c <= Char.code 'z'
+
+(* Shift is bit 4 of [modifiers]; any other bit is a chord. *)
+let is_chord modifier = modifier land lnot 4 <> 0
+
+(* A letter typed with no chord modifier is looked up with Caps Lock undone
+   when the keystroke says the lock is on, then, as a capital that matches
+   nothing, as its lowercase letter: a terminal that does not report the
+   lock sends Caps Lock with r as R. A chord's key is never changed by a
+   lock, so a chord is looked up as it is. *)
+let find_typed find_char bindings modifier (mods : Keystroke.mods) c =
+  if is_chord modifier || not (is_upper c || is_lower c) then
+    find_char bindings modifier c
+  else
+    let c = if mods.caps_lock then c lxor 0x20 else c in
+    match find_char bindings modifier c with
+    | None when is_upper c -> find_char bindings modifier (c lor 0x20)
+    | found -> found
 
 let resolve ~find_char ~find_key bindings (k : Keystroke.t) =
   let modifier = modifiers k.mods in
   let direct =
     match k.key with
-    | Char c -> find_char bindings modifier (Uchar.to_int c)
+    | Char c -> find_typed find_char bindings modifier k.mods (Uchar.to_int c)
     | key -> find_key bindings modifier key
   in
   match (direct, k.base) with

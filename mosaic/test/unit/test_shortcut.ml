@@ -46,8 +46,6 @@ let shift_and_case () =
     (Shortcut.matches (Shortcut.ctrl 'c') (event ~mods:ctrl (char 'C')));
   is_false ~msg:"an uppercase shortcut does not match the lowercase letter"
     (Shortcut.matches (Shortcut.ctrl 'C') (event ~mods:ctrl (char 'c')));
-  is_false ~msg:"char 'r' does not match Shift+r"
-    (Shortcut.matches (Shortcut.char 'r') (event (char 'R')));
   is_true ~msg:"char ~shift:true 'r' matches Shift+r, the capital"
     (Shortcut.matches (Shortcut.char ~shift:true 'r') (event (char 'R')));
   is_true ~msg:"char ~shift:true 'r' is char 'R'"
@@ -66,6 +64,43 @@ let shift_and_case () =
   is_true ~msg:"Caps Lock leaves a chord's key, and is ignored"
     (Shortcut.matches (Shortcut.ctrl 's')
        (event ~mods:{ ctrl with caps_lock = true } (char 's')))
+
+(* A letter typed with no chord modifier is matched with Caps Lock undone
+   when the keystroke reports the lock, then, as a capital that matches
+   nothing, as its lowercase letter. *)
+let caps_lock () =
+  let caps = { Keystroke.no_mods with caps_lock = true } in
+  is_true ~msg:"char 'q' matches Caps Lock with q (reported)"
+    (Shortcut.matches (Shortcut.char 'q') (event ~mods:caps (char 'Q')));
+  is_true ~msg:"char 'q' matches Caps Lock with q (legacy bytes, Q)"
+    (Shortcut.matches (Shortcut.char 'q') (event (char 'Q')));
+  is_true ~msg:"char 'q' matches Shift+q when nothing binds Q"
+    (Shortcut.matches (Shortcut.char 'q') (event (char 'Q')));
+  is_false ~msg:"a capital's shortcut does not match the lowercase letter"
+    (Shortcut.matches (Shortcut.shift 'q') (event (char 'q')));
+  is_false ~msg:"a capital's shortcut does not match Caps Lock with q"
+    (Shortcut.matches (Shortcut.shift 'q') (event ~mods:caps (char 'Q')));
+  is_true ~msg:"a capital's shortcut matches Caps Lock with Shift+q"
+    (Shortcut.matches (Shortcut.shift 'q') (event ~mods:caps (char 'q')));
+  let bindings =
+    [ (Shortcut.char 'r', "plain"); (Shortcut.shift 'r', "shift") ]
+  in
+  let find ?mods c = Shortcut.Private.find bindings (event ?mods (char c)) in
+  let found = option string in
+  equal ~msg:"r" found (Some "plain") (find 'r');
+  equal ~msg:"Shift+r, both bound" found (Some "shift") (find 'R');
+  equal ~msg:"Caps Lock with r, both bound" found (Some "plain")
+    (find ~mods:caps 'R');
+  equal ~msg:"Caps Lock with Shift+r, both bound" found (Some "shift")
+    (find ~mods:caps 'r');
+  let ctrl = { Keystroke.no_mods with ctrl = true } in
+  is_false ~msg:"a chord's key is never changed"
+    (Shortcut.matches (Shortcut.ctrl 'c') (event ~mods:ctrl (char 'C')));
+  is_false ~msg:"a chord's key is never changed, even with the lock reported"
+    (Shortcut.matches (Shortcut.ctrl 's')
+       (event ~mods:{ ctrl with caps_lock = true } (char 'S')));
+  is_false ~msg:"only letters change case"
+    (Shortcut.matches (Shortcut.char '1') (event ~mods:caps (char '!')))
 
 let base_layout () =
   let mods = { Keystroke.no_mods with ctrl = true } in
@@ -131,6 +166,7 @@ let () =
     [
       test "exact non-lock modifiers and repeats" exact_modifiers;
       test "Shift is consumed into the key" shift_and_case;
+      test "Caps Lock" caps_lock;
       test "base-layout matching" base_layout;
       test "keypad keys and line feed" keypad_and_line_feed;
       test "matching allocation is independent of event count"
