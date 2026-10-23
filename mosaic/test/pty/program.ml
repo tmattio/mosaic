@@ -188,6 +188,23 @@ let perform_exn () =
   | _ -> result "outcome" "returned"
   | exception Failure m -> result "outcome" "raised %s" m
 
+(* [init] raises under the default backend, and the caller catches it: the
+   terminal was never taken. What it finds is printed. *)
+let init_exn () =
+  (match
+     M.run
+       {
+         M.init = (fun () -> failwith "init");
+         update = (fun () () -> ((), M.Cmd.none));
+         view = (fun () -> M.text "x");
+         subscriptions = (fun () -> M.Sub.none);
+       }
+   with
+  | () -> result "outcome" "returned"
+  | exception Failure m -> result "outcome" "raised %s" m);
+  let t = Unix.tcgetattr Unix.stdin in
+  result "cooked" "%b" (t.c_icanon && t.c_echo && t.c_isig)
+
 (* [e] runs a shell command with the terminal; [z] stops the job. *)
 let handoff () =
   ignore
@@ -229,5 +246,6 @@ let () =
   | "flood" -> flood ~domain:false ()
   | "flood-domain" -> flood ~domain:true ()
   | "perform-exn" -> perform_exn ()
+  | "init-exn" -> init_exn ()
   | "handoff" -> handoff ()
   | name -> failwith ("program: unknown " ^ name)

@@ -245,29 +245,37 @@ let key_to_paint ?(keys = 40) ?(gap = 0.05) name =
   latencies
 
 type flood = {
-  key_to_paint : float;
+  key_to_paint : float list;
   views : int;
   seconds : float;
   longest_gap : float;
   peak_kb : int;
 }
 
-(* A key typed one second into a 3 s flood. *)
+(* Keys typed during a 3 s flood, from 0.5 s on, each 0.1 s after the
+   previous one was painted, until 2.5 s. *)
 let flood name =
   with_session name @@ fun s ->
   ignore (await s "N=0" : int);
   let started = Unix.gettimeofday () in
-  pause s 1.;
-  let from = mark s in
-  let t0 = Unix.gettimeofday () in
-  send s "a";
-  let at = await ~timeout:30. ~from s (mark_of 1) in
-  let painted =
-    fst
-      (List.find
-         (fun (_, length) -> length > at)
-         (List.rev s.arrivals |> List.filter (fun (_, l) -> l > from)))
+  pause s 0.5;
+  let rec keys n acc =
+    if Unix.gettimeofday () > started +. 2.5 then List.rev acc
+    else
+      let from = mark s in
+      let t0 = Unix.gettimeofday () in
+      send s "a";
+      let at = await ~timeout:30. ~from s (mark_of n) in
+      let painted =
+        fst
+          (List.find
+             (fun (_, length) -> length > at)
+             (List.rev s.arrivals |> List.filter (fun (_, l) -> l > from)))
+      in
+      pause s 0.1;
+      keys (n + 1) ((painted -. t0) :: acc)
   in
+  let key_to_paint = keys 1 [] in
   pause s (max 0. (started +. 3.5 -. Unix.gettimeofday ()));
   send s "q";
   ignore (wait_exit ~timeout:30. s : Unix.process_status);
@@ -282,7 +290,7 @@ let flood name =
          (0., started) times)
   in
   {
-    key_to_paint = painted -. t0;
+    key_to_paint;
     views = int_of_string (result s "views");
     seconds = float_of_string (result s "seconds");
     longest_gap;
@@ -343,10 +351,12 @@ let test_storm () =
 
 let test_flood name () =
   let f = flood name in
+  let worst = List.fold_left max 0. f.key_to_paint in
   is_true
     ~msg:
-      (Printf.sprintf "the key painted after %.1f ms" (f.key_to_paint *. 1000.))
-    (f.key_to_paint < 1.);
+      (Printf.sprintf "every key painted, the last after %.1f ms"
+         (worst *. 1000.))
+    (worst < 1.);
   let rate = Float.of_int f.views /. f.seconds in
   is_true ~msg:(Printf.sprintf "%.0f views/s, at least 30" rate) (rate >= 30.)
 
@@ -363,6 +373,16 @@ let test_perform_exception () =
     && find ~from:painted (String.sub out 0 restored) "perform-thread" = None);
   equal ~msg:"the run raised it" string "raised perform-thread"
     (result s "outcome")
+
+(* An exception in [init] leaves the terminal as it was: [init] runs before
+   the run takes it. *)
+let test_init_exception () =
+  with_session "init-exn" @@ fun s ->
+  ignore (wait_exit ~timeout:5. s : Unix.process_status);
+  equal ~msg:"the run raised it" string "raised init" (result s "outcome");
+  equal ~msg:"cooked" string "true" (result s "cooked");
+  is_true ~msg:"the alternate screen never entered"
+    (find (Buffer.contents s.output) "\027[?1049h" = None)
 
 let cooked s =
   let t = Unix.tcgetattr (Pty.file_descr s.pty) in
@@ -436,10 +456,13 @@ let measure () =
     (fun name ->
       let f = flood name in
       Printf.printf
-        "%s: key painted after %.1f ms, %.0f views/s, longest output gap %.1f \
-         ms, peak RSS %d MB\n\
+        "%s: %d keys painted after p50 %.1f ms, p99 %.1f ms; %.0f views/s, \
+         longest output gap %.1f ms, peak RSS %d MB\n\
          %!"
-        name (ms f.key_to_paint)
+        name
+        (List.length f.key_to_paint)
+        (ms (percentile 0.5 f.key_to_paint))
+        (ms (percentile 0.99 f.key_to_paint))
         (Float.of_int f.views /. f.seconds)
         (ms f.longest_gap) (f.peak_kb / 1024))
     [ "flood"; "flood-domain" ]
@@ -475,6 +498,7 @@ let () =
                test "R-S: a storm of dispatches" test_storm;
                test "R-F: a flood from a domain" (test_flood "flood-domain");
                test "R-X: an exception in a perform" test_perform_exception;
+               test "R-X2: an exception in init" test_init_exception;
              ]);
         group "Handoff"
           (if not supported then []
