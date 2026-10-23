@@ -294,6 +294,43 @@ let test_reset_state_disables_partially_enabled_paste () =
   contains ~msg:"reset disables bracketed paste after partial enable"
     ~sub:"\027[?2004l" (Buffer.contents output)
 
+(* A mode whose control function reached [output] is put back, though
+   [output] raised: the terminal may have taken it. *)
+let test_reset_state_undoes_partial_modes () =
+  List.iter
+    (fun (name, set, on, off) ->
+      let output = Buffer.create 64 in
+      let failing = ref true in
+      let term =
+        T.make ~tty:true
+          ~output:(fun s ->
+            Buffer.add_string output s;
+            if !failing && has_substring s on then (
+              failing := false;
+              failwith "cut"))
+          plain
+      in
+      (match set term with
+      | () -> failf "%s: output did not raise" name
+      | exception Failure _ -> ());
+      Buffer.clear output;
+      T.reset_state term;
+      contains ~msg:name ~sub:off (Buffer.contents output))
+    [
+      ( "the alternate screen",
+        T.enter_alternate_screen,
+        "\027[?1049h",
+        "\027[?1049l" );
+      ( "grapheme cluster mode",
+        (fun t -> T.enable_grapheme_mode t true),
+        "\027[?2027h",
+        "\027[?2027l" );
+      ( "the scrolling region",
+        (fun t -> T.set_scroll_region t ~top:2 ~bottom:5),
+        "\027[2;5r",
+        "\027[r" );
+    ]
+
 (* Regression: reset_state must not clobber terminal state the app never
    touched — blanking the title or resetting cursor colour/style clobbers
    user- or shell-configured state on exit. *)
@@ -1167,6 +1204,8 @@ let () =
           test "reset state" test_reset_state;
           test "reset state disables partial paste"
             test_reset_state_disables_partially_enabled_paste;
+          test "reset state undoes partial modes"
+            test_reset_state_undoes_partial_modes;
           test "reset state skips untouched appearance"
             test_reset_state_skips_untouched_appearance;
           test "reset state restores touched appearance"

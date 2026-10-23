@@ -27,12 +27,10 @@
     its control function only when the mode changes, so a second call with the
     same value writes nothing. A handle made with [~tty:false] writes nothing
     and tracks the modes all the same. An exception that [output] raises passes
-    to the caller. For mouse tracking, bracketed paste, focus reporting, the
-    kitty keyboard flags, modifyOtherKeys, color scheme reports, resize reports
-    and metaSendsEscape, {!reset_state} then still puts back the mode whose
-    control function [output] was given. For the other modes, the handle records
-    a change only once [output] has returned. A handle must not be used by two
-    threads at once.
+    to the caller, and {!reset_state} then still puts back a mode whose control
+    function [output] was given, since the terminal may have taken it, though
+    the mode's accessor, such as {!val-alt_screen}, reports it unchanged. A
+    handle must not be used by two threads at once.
 
     This takes the alternate screen and bracketed paste, and puts both back:
     {[

@@ -53,6 +53,9 @@ type t = {
   mutable color_scheme_reports_armed : bool;
   mutable resize_reports_armed : bool;
   mutable meta_sends_escape_armed : bool;
+  mutable grapheme_mode_armed : bool;
+  mutable alt_screen_armed : bool;
+  mutable scroll_region_armed : bool;
   cursor : cursor_state;
   mutable alt_screen : bool;
   mutable scroll_region : (int * int) option;
@@ -121,13 +124,6 @@ let clamp_color_component x =
 let send t seq = if t.tty then t.output seq
 let tty t = t.tty
 
-(* Idempotent toggle: checks current state, emits sequence, updates state *)
-let toggle t ~current ~set ~enable ~on_seq ~off_seq =
-  if current () = enable then ()
-  else (
-    send t (if enable then on_seq else off_seq);
-    set enable)
-
 (* Constructor *)
 
 let make ~output ?(tty = true) caps =
@@ -153,6 +149,9 @@ let make ~output ?(tty = true) caps =
     color_scheme_reports_armed = false;
     resize_reports_armed = false;
     meta_sends_escape_armed = false;
+    grapheme_mode_armed = false;
+    alt_screen_armed = false;
+    scroll_region_armed = false;
     cursor =
       {
         x = 1;
@@ -302,49 +301,55 @@ let enable_meta_sends_escape t enable =
       t.meta_sends_escape_enabled <- false;
       t.meta_sends_escape_armed <- false)
 
-(* Unicode width *)
+(* Unicode width, the alternate screen and the scrolling region: armed
+   before the change is written, as above. *)
 
 let enable_grapheme_mode t enable =
-  toggle t
-    ~current:(fun () -> t.grapheme_mode_enabled)
-    ~set:(fun v -> t.grapheme_mode_enabled <- v)
-    ~enable ~on_seq:unicode_on ~off_seq:unicode_off
-
-(* Alternate screen *)
+  if t.grapheme_mode_enabled <> enable then
+    if enable then (
+      t.grapheme_mode_armed <- true;
+      send t unicode_on;
+      t.grapheme_mode_enabled <- true)
+    else (
+      send t unicode_off;
+      t.grapheme_mode_enabled <- false;
+      t.grapheme_mode_armed <- false)
 
 let enter_alternate_screen t =
   if not t.alt_screen then (
+    t.alt_screen_armed <- true;
     send t alternate_on;
     t.alt_screen <- true)
 
 let leave_alternate_screen t =
   if t.alt_screen then (
     send t alternate_off;
-    t.alt_screen <- false)
+    t.alt_screen <- false;
+    t.alt_screen_armed <- false)
 
 let alt_screen t = t.alt_screen
 
-(* Scroll region *)
-
 let set_scroll_region t ~top ~bottom =
   if t.scroll_region <> Some (top, bottom) then (
-    send t Ansi.(to_string (set_scrolling_region ~top ~bottom));
+    let seq = Ansi.(to_string (set_scrolling_region ~top ~bottom)) in
+    t.scroll_region_armed <- true;
+    send t seq;
     t.scroll_region <- Some (top, bottom))
 
 let clear_scroll_region t =
   if t.scroll_region <> None then (
     send t Ansi.(to_string reset_scrolling_region);
-    t.scroll_region <- None)
+    t.scroll_region <- None;
+    t.scroll_region_armed <- false)
 
 let scroll_region t = t.scroll_region
 
 (* Cursor *)
 
 let set_cursor_visible t visible =
-  toggle t
-    ~current:(fun () -> t.cursor.visible)
-    ~set:(fun v -> t.cursor.visible <- v)
-    ~enable:visible ~on_seq:cursor_show ~off_seq:cursor_hide
+  if t.cursor.visible <> visible then (
+    send t (if visible then cursor_show else cursor_hide);
+    t.cursor.visible <- visible)
 
 let cursor_visible t = t.cursor.visible
 
@@ -495,9 +500,15 @@ let reset_state t =
   if t.meta_sends_escape_armed then send t meta_sends_escape_off;
   t.meta_sends_escape_enabled <- false;
   t.meta_sends_escape_armed <- false;
-  if t.grapheme_mode_enabled then enable_grapheme_mode t false;
-  if t.scroll_region <> None then clear_scroll_region t;
-  if t.alt_screen then leave_alternate_screen t;
+  if t.grapheme_mode_armed then send t unicode_off;
+  t.grapheme_mode_enabled <- false;
+  t.grapheme_mode_armed <- false;
+  if t.scroll_region_armed then send t Ansi.(to_string reset_scrolling_region);
+  t.scroll_region <- None;
+  t.scroll_region_armed <- false;
+  if t.alt_screen_armed then send t alternate_off;
+  t.alt_screen <- false;
+  t.alt_screen_armed <- false;
   (* A terminal without the stack keeps the empty title. *)
   if t.title_sent then (
     send t Ansi.(to_string (set_title ~title:""));
