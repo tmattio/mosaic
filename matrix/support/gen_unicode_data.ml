@@ -22,7 +22,7 @@
 
    Adapted from notty's generator (Copyright (c) 2020 David Kaloper Meršinjak).
 
-   Usage: dune exec matrix/support/gen_unicode_data.exe *)
+   Usage: see matrix/support/dune, which pins uucp 18.0.0. *)
 
 let unicode_packed_size = 0x110000 - 0x800
 let block_size = 256

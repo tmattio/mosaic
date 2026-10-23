@@ -1,3 +1,24 @@
+; The generator of matrix/lib/text/unicode_data.ml and .mli. It needs uucp,
+; which matrix does not depend on, so it is not built with the tree.
+;
+; Pinned: uucp 18.0.0, for Unicode 18.0.0 (the generated files' header states
+; the Unicode version). Three files follow the same Unicode version and move
+; together: the generated table, the vendored segmenter
+; matrix/lib/text/uuseg_grapheme_cluster.ml (uuseg 18.0.0), and the
+; conformance data matrix/test/data/GraphemeBreakTest.txt
+; (GraphemeBreakTest-18.0.0.txt).
+;
+; To regenerate, from the repository root, with uucp 18.0.0 installed (opam
+; install uucp.18.0.0):
+;
+;   ocamlfind ocamlopt -package uucp -linkpkg \
+;     matrix/support/gen_unicode_data.ml -o _build/gen_unicode_data.exe
+;   _build/gen_unicode_data.exe
+;
+; or uncomment the stanza below and run
+; `dune exec matrix/support/gen_unicode_data.exe`. Then run `dune fmt` and
+; the matrix tests.
+
 ; (executable
 ;  (name gen_unicode_data)
 ;  (libraries uucp))
