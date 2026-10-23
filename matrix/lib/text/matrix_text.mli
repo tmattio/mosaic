@@ -323,12 +323,19 @@ module Layout : sig
       A {e layout} cuts each logical line of a source into {e rows} of a given
       width, by one of the {!type-wrap} modes. A row after the first of its line
       is a {e continuation}. A cluster wider than the width has a row of its
-      own. Without wrapping, a layout may {e truncate} a line wider than the
-      width, which then shows the prefix that fits in one cell less, and an
-      {e ellipsis}, a cell that stands for the clusters left out, its
-      {e omitted suffix}. The program draws the ellipsis. At a width of [0] or
-      less the ellipsis does not fit either, and a truncated line shows only the
-      clusters of width [0] that begin it.
+      own. The {e blanks} (spaces and TABs) at the end of a row that wraps
+      {e hang} there. They belong to the row and are shown in no cell, and they
+      take none of its width when the row is filled, so a blank never starts a
+      continuation and never makes a row wrap early. At the end of a line the
+      blanks hang only where they do not fit. CSS Text 3 hangs the white space
+      at the end of a [pre-wrap] line in the same way, "unless the sequence is
+      followed by a forced line break, in which case it must conditionally hang
+      the sequence instead" (§4.1.2). Without wrapping, a layout may
+      {e truncate} a line wider than the width, which then shows the prefix that
+      fits in one cell less, and an {e ellipsis}, a cell that stands for the
+      clusters left out, its {e omitted suffix}. The program draws the ellipsis.
+      At a width of [0] or less the ellipsis does not fit either, and a
+      truncated line shows only the clusters of width [0] that begin it.
 
       A {e caret} is a boundary with an {e affinity}. A boundary where a line
       wraps is both the end of a row and the start of the next, and one inside
@@ -466,7 +473,7 @@ module Layout : sig
 
   val row_end : t -> int -> int
   (** [row_end t row] is the boundary that ends [row], before its line
-      terminator and after its omitted suffix. *)
+      terminator and after its omitted suffix or the blanks it hangs. *)
 
   val row_width : t -> int -> int
   (** [row_width t row] is the width of [row], its ellipsis included. *)

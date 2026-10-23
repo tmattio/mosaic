@@ -1000,6 +1000,11 @@ module Layout = struct
       let m = metrics t ~width_method ~tab_width in
       m.columns.(clamp (length t) last) - m.columns.(clamp (length t) first)
 
+    (* A blank is a cluster of one space or one TAB. *)
+    let is_blank t g =
+      let off = t.offsets.(g) in
+      t.offsets.(g + 1) = off + 1 && (t.text.[off] = ' ' || t.text.[off] = '\t')
+
     let slice t ~first ~last =
       let first = byte_offset t first and last = byte_offset t last in
       if last <= first then "" else Stdlib.String.sub t.text first (last - first)
@@ -1051,23 +1056,41 @@ module Layout = struct
       end
       else begin
         let start = ref first and g = ref first and best = ref first in
-        let continuation = ref 0 in
+        let continuation = ref 0 and visible_end = ref last in
+        (* A row that wraps at [stop] hangs the blanks that end it, shown in
+           no cell. *)
+        let wrapped stop =
+          let shown = ref stop in
+          while !shown > !start && Source.is_blank source (!shown - 1) do
+            decr shown
+          done;
+          emit !start stop !shown (p.(!shown) - p.(!start)) line !continuation;
+          incr continuation;
+          start := stop;
+          g := stop;
+          best := stop
+        in
         while !g < last do
           if wrap = `Word && Bytes.get breaks !g <> '\000' && !g > !start then
             best := !g;
           let used = p.(!g) - p.(!start) in
           let next = p.(!g + 1) - p.(!start) in
-          if next > width && used > 0 && p.(!g + 1) > p.(!g) then begin
-            let stop = if wrap = `Word && !best > !start then !best else !g in
-            emit !start stop stop (p.(stop) - p.(!start)) line !continuation;
-            incr continuation;
-            start := stop;
-            g := stop;
-            best := stop
-          end
+          if next > width && used > 0 && p.(!g + 1) > p.(!g) then
+            if Source.is_blank source !g then begin
+              (* The blanks a full row meets hang at its end, and the row
+                 wraps after them; at the end of the line it ends with them. *)
+              let shown = !g in
+              while !g < last && Source.is_blank source !g do
+                incr g
+              done;
+              if !g = last then visible_end := shown else wrapped !g
+            end
+            else wrapped (if wrap = `Word && !best > !start then !best else !g)
           else incr g
         done;
-        emit !start last last (p.(last) - p.(!start)) line !continuation
+        emit !start last !visible_end
+          (p.(!visible_end) - p.(!start))
+          line !continuation
       end
     done
 
@@ -1153,7 +1176,13 @@ module Layout = struct
       let column = max 0 column in
       let g =
         if r.visible_last < r.last && column >= prefix t r then
-          if column < r.columns then snap r.visible_last else r.last
+          if column < r.columns then snap r.visible_last
+          else if r.columns = prefix t r && r.columns > 0 && affinity = Upstream
+          then
+            (* The row hangs blanks, which take no cell: the end of the shown
+               clusters is the earliest boundary at the row's end. *)
+            snap r.visible_last
+          else r.last
         else
           let target = p.(r.first) + column in
           let next = lower_bound p r.first (r.visible_last + 1) target in
@@ -1162,6 +1191,16 @@ module Layout = struct
              else if p.(next) = target || next = r.first then next
              else if target - p.(next - 1) < p.(next) - target then next - 1
              else next)
+      in
+      (* Downstream, the latest boundary at the end of the shown clusters of
+         a row that hangs blanks is the row's end. *)
+      let g =
+        if
+          affinity = Downstream && g = r.visible_last && g < r.last
+          && r.columns = prefix t r
+          && r.columns > 0
+        then r.last
+        else g
       in
       let affinity =
         if g = r.last && i + 1 < row_count t && t.rows.(i + 1).first = g then

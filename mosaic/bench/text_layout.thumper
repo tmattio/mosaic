@@ -20,10 +20,10 @@ paint-styled-100k-middle	alloc_words	exact	7457
 paint-tall-100k	alloc_words	exact	1857
 paint-tall-100k-middle	alloc_words	exact	1857
 paint-tall-1k	alloc_words	exact	1857
-reflow-alternating-widths-100k	alloc_words	exact	70938
+reflow-alternating-widths-100k	alloc_words	exact	70266
 reflow-label	alloc_words	exact	16
 reflow-styled-100k	alloc_words	exact	16
-reflow-styled-100k-cold	alloc_words	exact	27957
+reflow-styled-100k-cold	alloc_words	exact	27285
 styles-nested-revision-200	alloc_words	exact	295823
 styles-same-text-layout-100k	alloc_words	exact	24
 text-plain-props	alloc_words	exact	11

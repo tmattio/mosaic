@@ -84,15 +84,28 @@ let columns c l ~first ~last =
   Layout.Source.columns ~width_method:c.width_method ~tab_width:c.tab_width
     (Layout.source l) ~first ~last
 
+let is_blank l g =
+  let s = Layout.Source.slice (Layout.source l) ~first:g ~last:(g + 1) in
+  s = " " || s = "\t"
+
 (* The last boundary before a row's omitted suffix, or the row's end. A row
-   narrower than its clusters without an ellipsis was truncated at a width of
-   0 or less, and shows only the clusters of width 0 that begin it. *)
+   narrower than its clusters without an ellipsis either hangs the blanks it
+   wraps at, or was truncated at a width of 0 or less and shows only the
+   clusters of width 0 that begin it. *)
 let visible_last c l row =
   let first = Layout.row_start l row and last = ref (Layout.row_end l row) in
   Layout.iter_cells l ~row ~first_column:0 ~last_column:(Layout.row_width l row)
     (fun ~first ~last:_ ~column:_ ~width:_ ~ellipsis ->
       if ellipsis then last := first);
-  if Layout.row_width l row < columns c l ~first ~last:!last then begin
+  if c.width > 0 && Layout.row_width l row < columns c l ~first ~last:!last then
+    while
+      !last > first
+      && is_blank l (!last - 1)
+      && Layout.row_width l row < columns c l ~first ~last:!last
+    do
+      decr last
+    done
+  else if Layout.row_width l row < columns c l ~first ~last:!last then begin
     let end_ = !last in
     last := first;
     while !last < end_ && columns c l ~first ~last:(!last + 1) = 0 do
@@ -126,13 +139,18 @@ let position = pair int int
 
 (* Visible: not past the row's ellipsis. Unambiguous: neither neighbor on the
    row sits at the same column, and the row shows a cell, since a row that
-   shows none puts every boundary at column 0, with its end. *)
+   shows none puts every boundary at column 0, with its end. The end of the
+   shown clusters of a row that hangs blanks sits at the column of the row's
+   end. *)
 let round_trips c l (k : Layout.caret) =
   let row, _ = Layout.locate l k in
   let g = k.grapheme in
   let first = Layout.row_start l row and last = visible_last c l row in
   g <= last
   && (last = Layout.row_end l row || Layout.row_width l row > 0)
+  && (g < last
+     || last = Layout.row_end l row
+     || Layout.row_width l row > columns c l ~first ~last)
   && (g = first || columns c l ~first:(g - 1) ~last:g > 0)
   && (g = last || columns c l ~first:g ~last:(g + 1) > 0)
 
@@ -307,6 +325,88 @@ let coverage_maps_rows_outside () =
     (Layout.coverage l ~row:2 ~column:0);
   equal ~msg:"hit there" int 5 (Layout.hit l ~row:2 ~column:0).grapheme
 
+(* ───── Word wrap ───── *)
+
+let rows l =
+  let src = Layout.source l in
+  List.init (Layout.row_count l) (fun r ->
+      ( Layout.Source.slice src ~first:(Layout.row_start l r)
+          ~last:(Layout.row_end l r),
+        Layout.row_width l r ))
+
+(* A word that fills its row is followed by the blank it wraps at, which
+   hangs at the row's end: it gave a row of its own. *)
+let blanks_hang_where_a_word_fills_a_row () =
+  let wrapped ~width text =
+    rows (Layout.create (Layout.Source.of_string text) ~width ~wrap:`Word)
+  in
+  let rows_list = list (pair string int) in
+  equal ~msg:"a word fills the row" rows_list
+    [ ("Non-", 4); ("blocking ", 8); ("streamin", 8); ("g", 1) ]
+    (wrapped ~width:8 "Non-blocking streaming");
+  equal ~msg:"blanks at the end of the line" rows_list
+    [ ("aaaa  ", 4) ]
+    (wrapped ~width:4 "aaaa  ");
+  equal ~msg:"a run of blanks and a TAB" rows_list
+    [ ("ab \t ", 2); ("cd", 2) ]
+    (wrapped ~width:2 "ab \t cd");
+  equal ~msg:"a blank that fits hangs too" rows_list
+    [ ("aaa ", 3); ("bbb  ", 3); ("c", 1) ]
+    (wrapped ~width:4 "aaa bbb  c");
+  equal ~msg:"blanks that fit at the end of a line stay" rows_list
+    [ ("ab  ", 4) ]
+    (wrapped ~width:4 "ab  ");
+  equal ~msg:"character wrap hangs them as well" rows_list
+    [ ("ab ", 2); ("cd", 2) ]
+    (rows
+       (Layout.create (Layout.Source.of_string "ab cd") ~width:2 ~wrap:`Char));
+  let l =
+    Layout.create (Layout.Source.of_string "aaaa bb") ~width:4 ~wrap:`Word
+  in
+  equal ~msg:"the hanging blank is shown in no cell" (list int) [ 0; 1; 2; 3 ]
+    (let cs = ref [] in
+     Layout.iter_cells l ~row:0 ~first_column:0 ~last_column:10
+       (fun ~first ~last:_ ~column:_ ~width:_ ~ellipsis:_ -> cs := first :: !cs);
+     List.rev !cs);
+  equal ~msg:"a caret after it is at the row's end" position (0, 4)
+    (Layout.locate l Layout.{ grapheme = 5; affinity = Upstream })
+
+(* When rows wrap, no continuation starts with a blank, a row followed by a
+   continuation shows no blank at its end, and a row is no wider than the
+   width unless it holds a single cluster of positive width. *)
+let wrapped_rows_fit c =
+  if c.wrap <> `None && c.width > 0 then begin
+    let l = layout c in
+    let src = Layout.source l in
+    for row = 0 to Layout.row_count l - 1 do
+      let first = Layout.row_start l row in
+      let text = Layout.Source.slice src ~first ~last:(first + 1) in
+      if Layout.continuation l row > 0 then
+        is_true
+          ~msg:(Printf.sprintf "row %d starts with %S" row text)
+          (text <> " " && text <> "\t");
+      let last = visible_last c l row in
+      if
+        row + 1 < Layout.row_count l
+        && Layout.continuation l (row + 1) > 0
+        && last > first
+      then
+        is_true
+          ~msg:(Printf.sprintf "row %d shows a blank at its end" row)
+          (not (is_blank l (last - 1)));
+      let wide =
+        List.length
+          (List.filter
+             (fun g -> columns c l ~first:g ~last:(g + 1) > 0)
+             (List.init (last - first) (fun i -> first + i)))
+      in
+      if Layout.row_width l row > c.width then
+        is_true
+          ~msg:(Printf.sprintf "row %d is %d wide" row (Layout.row_width l row))
+          (wide = 1)
+    done
+  end
+
 let () =
   run "matrix.text_layout"
     [
@@ -323,6 +423,8 @@ let () =
           test "coverage maps rows outside as hit does"
             coverage_maps_rows_outside;
           test "truncation without cells" truncation_without_cells;
+          test "blanks hang where a word fills a row"
+            blanks_hang_where_a_word_fills_a_row;
         ];
       group "Hit and locate"
         [
@@ -330,6 +432,11 @@ let () =
             exact_round_trip;
           prop ~count:1000 "hit snaps canonically" gen_case canonical_snapping;
           prop ~count:1000 "locate is monotonic" gen_case locate_is_monotonic;
+        ];
+      group "Wrapping"
+        [
+          prop ~count:1000 "blanks hang where rows wrap" gen_case
+            wrapped_rows_fit;
         ];
       group "Cells"
         [

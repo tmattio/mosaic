@@ -131,8 +131,8 @@ bbb|}]
 let%expect_test "word wrap single char words" =
   render ~width:5 ~height:3 (Vnode.text ~wrap:`Word "a b c d e");
   [%expect_exact {|
-a b
-c d e
+a b c
+d e
 |}]
 
 let%expect_test "word wrap keeps executable suffix together" =
@@ -165,8 +165,8 @@ let%expect_test "word wrap keeps URL hosts and decimals together" =
 https://
 example.com/path
 
-value
-123.45 units|}]
+value 123.45
+units|}]
 
 let%expect_test "char wrap with CJK" =
   render ~width:6 ~height:2

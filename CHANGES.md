@@ -142,6 +142,7 @@
 
 #### Fixed
 
+- `Matrix_text.Layout` hangs the blanks at the end of a row that wraps, shown in no cell and taking none of its width, as CSS Text 3 hangs white space at the end of a pre-wrap line (at the end of a line only where they do not fit): a word that filled its row left the blank after it on a row of its own, a blank could start a continuation, and a row whose last word fitted exactly wrapped before that word (`a b c d e` at 5 cells was `a b` / `c d e`, now `a b c` / `d e`)
 - Inside tmux, before its answer to DECRQM (3.6), `Caps` gives bracketed paste from tmux 1.7 and focus reports from 1.8, the versions that brought them, where it gave both only from 3.6, when tmux began answering for them
 - A mouse report on the first row of the primary live region counts as its row 0; it mapped to -1, above the region
 - The VTE keeps the cursor style DECSCUSR sets, `Vte.cursor_style`, so a renderer can draw the bar or underline an editor asks for; it read the sequence and dropped it
