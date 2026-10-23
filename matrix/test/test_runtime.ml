@@ -1525,6 +1525,19 @@ let test_primary_resize_keeps_live_region_below_transcript () =
       present ~required:3 app ui;
       expect "shrunk")
 
+(* A terminal that resizes after the live region is placed and before the
+   first frame: no frame has left the cursor anywhere, so the cursor is
+   where the region was placed, and a cursor report places it again. *)
+let test_resize_before_the_first_frame () =
+  let term = vte_term ~shell:"$0\r\n" ~cols:4 ~rows:2 () in
+  run_term ~min_tui_height:2 term (fun app ->
+      resize term ~cols:4 ~rows:3;
+      present app [ "live" ];
+      equal ~msg:"the shell's row stays" (list string) [ "$0" ]
+        (transcript app term);
+      equal ~msg:"the live region is below it" (list string) [ "live"; "" ]
+        (live_rows app term))
+
 (* A resize that leaves the usable size as it was still moves the live
    region: the frame waits for the cursor report that says where. *)
 let test_frame_waits_for_the_live_region_after_resize () =
@@ -2448,6 +2461,8 @@ let () =
             test_primary_resize_keeps_live_region_below_transcript;
           test "the frame waits for the live region after a resize"
             test_frame_waits_for_the_live_region_after_resize;
+          test "resize before the first frame"
+            test_resize_before_the_first_frame;
         ];
       group "Input"
         [

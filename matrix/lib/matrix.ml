@@ -1199,7 +1199,10 @@ let set_cursor_color t ~r ~g ~b =
    reports costs one layout. A terminal moves its rows as it resizes, by
    rules of its own, and the cursor moves with its row, so in [`Primary]
    mode frames wait for a cursor report that says where the live region
-   went. *)
+   went: from the live row the last frame left the cursor on, or, before any
+   frame since the region was placed, from the cursor, which is still where
+   the region starts. The layout operations planned for the old size were
+   not sent, and the report voids them. *)
 let apply_size t =
   let cols, rows =
     match t.size_report with
@@ -1215,9 +1218,12 @@ let apply_size t =
     force_full_redraw t;
     refresh_render_region t;
     if t.config.mode = `Primary && can_query t then
-      Option.iter
-        (fun live_row -> t.anchor <- Some (ask_cursor t (Moved live_row)))
-        t.cursor_live_row)
+      let anchor =
+        match t.cursor_live_row with
+        | Some live_row -> Moved live_row
+        | None -> At_cursor
+      in
+      t.anchor <- Some (ask_cursor t anchor))
 
 (* Event delivery *)
 

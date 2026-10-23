@@ -931,13 +931,6 @@ let run_case case =
         | Stopped -> ()
         | Event _ | Timer _ | Posted _ -> loop ()
       in
-      (* The run's first frame is drawn before the case's. *)
-      let rec first () =
-        match Matrix.next app with
-        | Frame -> Matrix.draw app ignore
-        | _ -> first ()
-      in
-      first ();
       if next_frame () then loop ())
 
 let () =
