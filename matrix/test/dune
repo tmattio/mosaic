@@ -80,11 +80,19 @@
  (modules runtime_child)
  (libraries matrix unix))
 
+(executable
+ (name runtime_job)
+ (modules runtime_job)
+ (foreign_stubs
+  (language c)
+  (names runtime_job_stubs))
+ (libraries unix))
+
 (test
  (name test_runtime_pty)
  (package matrix)
  (modules test_runtime_pty)
- (deps runtime_child.exe)
+ (deps runtime_child.exe runtime_job.exe)
  (libraries windtrap matrix.pty unix))
 
 (test

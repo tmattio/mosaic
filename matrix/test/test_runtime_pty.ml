@@ -169,7 +169,90 @@ let test_sigabrt_restores_the_terminal () =
       is_true ~msg:"cooked" (cooked s)
   | _ -> fail "expected the process to end by SIGABRT"
 
-let supported = Sys.os_type = "Unix" && Sys.file_exists child
+(* Job control: the program runs as a job of its own process group under a
+   shell (runtime_job.ml) in the same session, so a stop signal stops it. *)
+
+let job =
+  Filename.concat (Filename.dirname Sys.executable_name) "runtime_job.exe"
+
+let spawn_job () =
+  let pty =
+    Pty.spawn ~prog:job ~args:[ child ]
+      ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
+      ()
+  in
+  Pty.set_nonblock pty;
+  { pty; pid = Option.get (Pty.pid pty); output = Buffer.create 4096 }
+
+(* The job's process, which the shell reports. *)
+let job_pid s =
+  await s "JOB ";
+  await s "READY 1";
+  let out = Buffer.contents s.output in
+  let i = Option.get (String.index_from_opt out 0 'J') in
+  Scanf.sscanf (String.sub out i (String.length out - i)) "JOB %d" Fun.id
+
+(* The state and the CPU ticks of a process, from /proc. *)
+let stat pid =
+  let line =
+    In_channel.with_open_text
+      (Printf.sprintf "/proc/%d/stat" pid)
+      In_channel.input_all
+  in
+  let after =
+    String.sub line
+      (String.rindex line ')' + 2)
+      (String.length line - String.rindex line ')' - 2)
+  in
+  let fields = String.split_on_char ' ' after in
+  ( List.nth fields 0,
+    int_of_string (List.nth fields 11) + int_of_string (List.nth fields 12) )
+
+(* A stop in a job: while stopped the terminal is cooked and on the primary
+   screen; continued in the foreground, the modes are set again and the
+   screen drawn whole. *)
+let test_sigtstp_stops_the_job () =
+  let s = spawn_job () in
+  Fun.protect ~finally:(fun () -> finish s.pty) @@ fun () ->
+  let pid = job_pid s in
+  let from = mark s in
+  Unix.kill pid Sys.sigtstp;
+  await ~from s "JOB-STOPPED";
+  equal ~msg:"stopped" string "T" (fst (stat pid));
+  await ~from s "\027[?1049l";
+  is_true ~msg:"cooked while stopped" (cooked s);
+  let from = mark s in
+  send s "f\n";
+  await ~from s "\027[?1049h";
+  await ~from s "\027[?1004h";
+  await ~from s "READY 2";
+  send s "q";
+  await s "JOB-EXIT 0"
+
+(* Continued in the background, the job stops again when it sets the
+   terminal (SIGTTOU), without spinning, until it is in the foreground. *)
+let test_background_continue_stops_again () =
+  let s = spawn_job () in
+  Fun.protect ~finally:(fun () -> finish s.pty) @@ fun () ->
+  let pid = job_pid s in
+  let from = mark s in
+  Unix.kill pid Sys.sigtstp;
+  await ~from s "JOB-STOPPED";
+  let from = mark s in
+  send s "b\n";
+  await ~from s "JOB-STOPPED";
+  let state, ticks = stat pid in
+  equal ~msg:"stopped again" string "T" state;
+  Unix.sleepf 0.3;
+  equal ~msg:"no CPU while stopped" int ticks (snd (stat pid));
+  let from = mark s in
+  send s "f\n";
+  await ~from s "READY 2";
+  send s "q";
+  await s "JOB-EXIT 0"
+
+let supported =
+  Sys.os_type = "Unix" && Sys.file_exists child && Sys.file_exists job
 
 let () =
   run "matrix.runtime.pty"
@@ -181,6 +264,9 @@ let () =
              test "SIGTERM ends with its status" test_sigterm;
              test "SIGTSTP in an orphaned group"
                test_sigtstp_in_an_orphaned_group;
+             test "SIGTSTP stops the job" test_sigtstp_stops_the_job;
+             test "continued in the background, it stops again"
+               test_background_continue_stops_again;
              test "unsolicited SIGCONT" test_unsolicited_sigcont;
              test "SIGINT during a release is discarded"
                test_sigint_during_release;
