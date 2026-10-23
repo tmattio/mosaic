@@ -11,10 +11,10 @@ module Engine = struct
 
   (* ───── Types ───── *)
 
-  (* An undo or redo entry is the inverse of one text change: replacing the
-     [inserted] bytes at byte [at] with [removed] restores the text, and the
-     caret and selection are restored as recorded. An entry costs the size of
-     its change, not of the document. *)
+  (* An undo or redo entry is the inverse of one step, a contiguous text
+     change: replacing the [inserted] bytes at byte [at] with [removed]
+     restores the text, and the caret and selection are restored as recorded.
+     An entry costs the size of its change, not of the document. *)
   type change = {
     at : int;
     removed : string;
@@ -23,6 +23,10 @@ module Engine = struct
     affinity : Layout.affinity;
     selection_anchor : int option;
   }
+
+  (* The edits that can extend the latest undo step: typing one grapheme
+     cluster, and deleting one backward or forward. *)
+  type step = Typing | Deleting_backward | Deleting_forward
 
   (* The display position at which a surface shows the value, and whether it
      follows the caret. Shared between versions until it changes. *)
@@ -36,6 +40,10 @@ module Engine = struct
     max_length : int;
     mutable undo_stack : change list;
     mutable redo_stack : change list;
+    mutable open_step : step option;
+        (* The kind of the latest undo step while it can still grow: set by
+           the edit that recorded it, cleared by any operation that records
+           nothing, and by undo and redo. *)
     mutable cache : Source.t option;
     mutable preferred_col : int option;
     mutable viewport : viewport;
@@ -69,6 +77,7 @@ module Engine = struct
       max_length;
       undo_stack = [];
       redo_stack = [];
+      open_step = None;
       cache = Some source;
       preferred_col = None;
       viewport = { x = 0; y = 0; follow = false };
@@ -140,21 +149,58 @@ module Engine = struct
 
   (* ───── Undo / Redo ───── *)
 
-  (* Records the inverse of replacing bytes [first, last) with [inserted]
-     bytes, before the replacement happens. Following prosemirror-history,
-     which stores inverted steps, the history grows with the edits made, not
-     with the document; no entry is ever dropped. *)
-  let record t ~first ~last ~inserted =
+  let breaks_line s = String.exists (fun c -> c = '\n' || c = '\r') s
+
+  (* Whether replacing bytes [first, last), which hold [removed], with [text]
+     continues the open step of kind [step] whose entry is [top]: a deletion
+     at the step's seam, or typing at the end of what it typed. Neither
+     crosses a line break, and typing crosses no word boundary: a space after
+     other text, or other text after two or more spaces. *)
+  let continues t step top ~first ~last ~removed text =
+    match step with
+    | Deleting_backward -> last = top.at && not (breaks_line removed)
+    | Deleting_forward -> first = top.at && not (breaks_line removed)
+    | Typing ->
+        let space i = i >= top.at && t.content.[i] = ' ' in
+        first = last
+        && first = top.at + top.inserted
+        && (not (breaks_line text))
+        &&
+        if String.equal text " " then space (first - 1)
+        else not (space (first - 1) && space (first - 2))
+
+  (* Records the inverse of replacing bytes [first, last) with [text], before
+     the replacement happens, as a new undo step or merged into the open one
+     when [step] continues it. Following prosemirror-history, which stores
+     inverted steps, the history grows with the edits made, not with the
+     document; no entry is ever dropped. *)
+  let record t ~step ~first ~last text =
+    let removed = String.sub t.content first (last - first) in
     t.undo_stack <-
-      {
-        at = first;
-        removed = String.sub t.content first (last - first);
-        inserted;
-        cursor_pos = t.cursor_pos;
-        affinity = t.affinity;
-        selection_anchor = t.selection_anchor;
-      }
-      :: t.undo_stack;
+      (match (step, t.open_step, t.undo_stack) with
+      | Some step, Some open_step, top :: rest
+        when step = open_step && continues t step top ~first ~last ~removed text
+        ->
+          let top =
+            match step with
+            | Typing ->
+                { top with inserted = top.inserted + String.length text }
+            | Deleting_backward ->
+                { top with at = first; removed = removed ^ top.removed }
+            | Deleting_forward -> { top with removed = top.removed ^ removed }
+          in
+          top :: rest
+      | _ ->
+          {
+            at = first;
+            removed;
+            inserted = String.length text;
+            cursor_pos = t.cursor_pos;
+            affinity = t.affinity;
+            selection_anchor = t.selection_anchor;
+          }
+          :: t.undo_stack);
+    t.open_step <- step;
     t.redo_stack <- []
 
   (* Applies [change] and returns its inverse, which reapplies the current
@@ -182,6 +228,7 @@ module Engine = struct
     t.cursor_pos <- change.cursor_pos;
     t.affinity <- change.affinity;
     t.selection_anchor <- change.selection_anchor;
+    t.open_step <- None;
     invalidate_cache t;
     inverse
 
@@ -205,11 +252,11 @@ module Engine = struct
 
   (* ───── Internal mutation ───── *)
 
-  let delete_grapheme_range t lo hi =
+  let delete_grapheme_range ?step t lo hi =
     let c = ensure_cache t in
     let byte_lo = byte_offset_of_grapheme_in_content c lo in
     let byte_hi = byte_offset_of_grapheme_in_content c hi in
-    record t ~first:byte_lo ~last:byte_hi ~inserted:0;
+    record t ~step ~first:byte_lo ~last:byte_hi "";
     let total_len = String.length t.content in
     t.content <-
       String.sub t.content 0 byte_lo
@@ -220,11 +267,11 @@ module Engine = struct
       Source.grapheme_of_byte (ensure_cache t) ~affinity:Downstream byte_lo;
     t.affinity <- Layout.Downstream
 
-  let delete_selection t =
+  let delete_selection ?step t =
     match selection t with
     | None -> false
     | Some (lo, hi) ->
-        delete_grapheme_range t lo hi;
+        delete_grapheme_range ?step t lo hi;
         true
 
   let clear t =
@@ -247,9 +294,8 @@ module Engine = struct
     let prefix = String.sub t.content 0 a in
     let suffix = String.sub t.content b (String.length t.content - b) in
     let candidate = Source.of_string (prefix ^ inserted ^ suffix) in
-    let candidate, inserted_bytes =
-      if Source.length candidate <= t.max_length then
-        (candidate, String.length inserted)
+    let candidate, admitted =
+      if Source.length candidate <= t.max_length then (candidate, inserted)
       else
         let available =
           max 0 (t.max_length - (Source.length old - (last - first)))
@@ -257,37 +303,43 @@ module Engine = struct
         let admitted =
           Source.slice (Source.of_string inserted) ~first:0 ~last:available
         in
-        (Source.of_string (prefix ^ admitted ^ suffix), String.length admitted)
+        (Source.of_string (prefix ^ admitted ^ suffix), admitted)
     in
     let content = Source.text candidate in
     if String.equal content t.content then false
     else begin
-      record t ~first:a ~last:b ~inserted:inserted_bytes;
+      (* One grapheme cluster is typing; several at once, a paste. *)
+      let step =
+        if Matrix.Text.grapheme_count admitted = 1 then Some Typing else None
+      in
+      record t ~step ~first:a ~last:b admitted;
       t.content <- content;
       t.cache <- Some candidate;
       t.cursor_pos <-
         Source.grapheme_of_byte candidate ~affinity:Downstream
-          (a + inserted_bytes);
+          (a + String.length admitted);
       t.affinity <- Layout.Downstream;
       t.selection_anchor <- None;
       true
     end
 
   let delete_backward t =
-    if has_selection t then delete_selection t
+    let step = Deleting_backward in
+    if has_selection t then delete_selection ~step t
     else if t.cursor_pos = 0 then false
     else begin
-      delete_grapheme_range t (t.cursor_pos - 1) t.cursor_pos;
+      delete_grapheme_range ~step t (t.cursor_pos - 1) t.cursor_pos;
       true
     end
 
   let delete_forward t =
-    if has_selection t then delete_selection t
+    let step = Deleting_forward in
+    if has_selection t then delete_selection ~step t
     else
       let c = ensure_cache t in
       if t.cursor_pos >= Source.length c then false
       else begin
-        delete_grapheme_range t t.cursor_pos (t.cursor_pos + 1);
+        delete_grapheme_range ~step t t.cursor_pos (t.cursor_pos + 1);
         true
       end
 
@@ -550,11 +602,15 @@ let selection = Engine.selection
 let selected_text = Engine.selected_text
 let source = Engine.source
 
+(* An operation that changes nothing returns its argument, so it leaves an open
+   undo step open; one that changes something but records no text change, such
+   as a caret move, ends it. *)
 let transform f t =
   let next = Engine.copy t in
   f next;
   if Engine.same t next && t.Engine.preferred_col = None then t
   else begin
+    if next.undo_stack == t.undo_stack then next.open_step <- None;
     ignore (Engine.source next : Matrix.Text.Layout.Source.t);
     next.preferred_col <- None;
     if not next.viewport.follow then

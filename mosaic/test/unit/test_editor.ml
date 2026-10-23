@@ -28,13 +28,13 @@ let persistent_edits () =
     (Editor.selection restored)
 
 let independent_history_branches () =
-  let base = Editor.of_string "a" |> Editor.insert "b" in
+  let base = Editor.of_string "a" |> Editor.insert "bc" in
   let left = Editor.insert "x" base and right = Editor.insert "y" base in
-  equal string "abx" (Editor.text left);
-  equal string "aby" (Editor.text right);
-  equal string "ab" (Editor.text (Editor.undo left));
+  equal string "abcx" (Editor.text left);
+  equal string "abcy" (Editor.text right);
+  equal string "abc" (Editor.text (Editor.undo left));
   equal string "a" (Editor.text (Editor.undo base));
-  equal string "aby" (Editor.text (Editor.redo (Editor.undo right)))
+  equal string "abcy" (Editor.text (Editor.redo (Editor.undo right)))
 
 let clear_restores_original_caret () =
   let original = Editor.of_string "abcd" |> Editor.set_cursor 1 in
@@ -482,7 +482,7 @@ let undo_history_keeps_every_edit () =
      memory. *)
   let e = ref (Editor.of_string "") in
   for _ = 1 to 250 do
-    e := Editor.insert "a" !e
+    e := !e |> Editor.move_home |> Editor.insert "a"
   done;
   let undos = ref 0 in
   let rec undo_all e =
@@ -537,13 +537,154 @@ let edit_after_undo_clears_redo () =
 
 let multiple_undo_steps () =
   let e =
-    Editor.empty |> Editor.insert "a" |> Editor.insert "b" |> Editor.insert "c"
+    Editor.empty |> Editor.insert "a" |> Editor.insert "bc" |> Editor.insert "d"
   in
   let one = Editor.undo e in
   let two = Editor.undo one in
-  equal ~msg:"undo 1" string "ab" (Editor.text one);
+  equal ~msg:"undo 1" string "abc" (Editor.text one);
   equal ~msg:"undo 2" string "a" (Editor.text two);
   equal ~msg:"undo 3" string "" (Editor.text (Editor.undo two))
+
+(* ── Undo steps ── *)
+
+let type_text s e =
+  let r = ref e in
+  Matrix.Text.iter_graphemes
+    (fun ~offset ~len -> r := Editor.insert (String.sub s offset len) !r)
+    s;
+  !r
+
+(* The texts that successive undos restore, newest first, ending with the
+   oldest state. *)
+let undo_texts e =
+  let rec loop e acc =
+    let previous = Editor.undo e in
+    if previous == e then List.rev acc
+    else loop previous (Editor.text previous :: acc)
+  in
+  loop e []
+
+let steps = list string
+
+let typing_is_one_step () =
+  let e = type_text "abc" Editor.empty in
+  equal steps [ "" ] (undo_texts e);
+  let redone = Editor.redo (Editor.undo e) in
+  equal ~msg:"redo reapplies the whole step" string "abc" (Editor.text redone);
+  equal ~msg:"with the caret after it" int 3 (Editor.cursor redone)
+
+let caret_move_ends_step () =
+  let e =
+    type_text "ab" Editor.empty
+    |> Editor.move_left |> Editor.move_right |> Editor.insert "c"
+  in
+  equal ~msg:"moving away and back still ends the step" steps [ "ab"; "" ]
+    (undo_texts e)
+
+let selection_change_ends_step () =
+  let e =
+    type_text "ab" Editor.empty
+    |> Editor.select_all |> Editor.clear_selection |> Editor.insert "c"
+  in
+  equal steps [ "ab"; "" ] (undo_texts e)
+
+let no_op_keeps_step () =
+  let e =
+    Editor.empty |> Editor.insert "a" |> Editor.delete_forward
+    |> Editor.move_end |> Editor.insert "b"
+  in
+  equal steps [ "" ] (undo_texts e)
+
+let kind_change_ends_step () =
+  let e = type_text "abc" Editor.empty |> Editor.delete_backward in
+  equal ~msg:"typing, then deleting" steps [ "abc"; "" ] (undo_texts e);
+  let e =
+    Editor.of_string "abcd" |> at 2 |> Editor.delete_backward
+    |> Editor.delete_forward
+  in
+  equal ~msg:"backward, then forward" steps [ "acd"; "abcd" ] (undo_texts e)
+
+let deletions_join () =
+  let e =
+    Editor.of_string "abcd" |> Editor.delete_backward |> Editor.delete_backward
+    |> Editor.delete_backward
+  in
+  equal steps [ "abcd" ] (undo_texts e);
+  equal ~msg:"caret restored" int 4 (Editor.cursor (Editor.undo e));
+  let e =
+    Editor.of_string "abcd" |> at 0 |> Editor.delete_forward
+    |> Editor.delete_forward |> Editor.delete_forward
+  in
+  equal string "d" (Editor.text e);
+  equal steps [ "abcd" ] (undo_texts e);
+  equal ~msg:"caret restored" int 0 (Editor.cursor (Editor.undo e))
+
+let paste_is_own_step () =
+  let e =
+    Editor.empty |> Editor.insert "a" |> Editor.insert "bc" |> Editor.insert "d"
+  in
+  equal steps [ "abc"; "a"; "" ] (undo_texts e)
+
+let replacement_starts_step () =
+  let e =
+    Editor.of_string "hello world"
+    |> Editor.select ~anchor:6 ~cursor:11
+    |> type_text "you"
+  in
+  equal string "hello you" (Editor.text e);
+  let undone = Editor.undo e in
+  equal ~msg:"one step" steps [ "hello world" ] (undo_texts e);
+  equal ~msg:"selection restored" sel (Some (6, 11)) (Editor.selection undone);
+  let e =
+    Editor.of_string "abc"
+    |> Editor.select ~anchor:0 ~cursor:3
+    |> Editor.delete_backward |> Editor.insert "x" |> Editor.delete_backward
+    |> Editor.delete_backward
+  in
+  equal ~msg:"typing after a deleted selection is a new step" steps
+    [ "x"; ""; "abc" ] (undo_texts e)
+
+let word_boundaries () =
+  equal ~msg:"a space after a word" steps [ "hello"; "" ]
+    (undo_texts (type_text "hello world" Editor.empty));
+  equal ~msg:"several spaces" steps [ "a  "; "a"; "" ]
+    (undo_texts (type_text "a  b" Editor.empty));
+  equal ~msg:"leading spaces" steps [ "  "; "" ]
+    (undo_texts (type_text "  ab" Editor.empty));
+  equal ~msg:"a single leading space joins the word" steps [ "" ]
+    (undo_texts (type_text " ab" Editor.empty))
+
+let line_breaks () =
+  equal ~msg:"typed" steps [ "ab"; "" ]
+    (undo_texts (type_text "ab\ncd" Editor.empty));
+  let e =
+    Editor.of_string "ab\ncd" |> Editor.delete_backward
+    |> Editor.delete_backward |> Editor.delete_backward
+    |> Editor.delete_backward
+  in
+  equal string "a" (Editor.text e);
+  equal ~msg:"deleted" steps [ "ab\n"; "ab\ncd" ] (undo_texts e)
+
+let snapped_caret_ends_step () =
+  (* Typing [e] before a combining mark makes one cluster, and the caret lands
+     after it, past the step's end. *)
+  let e = Editor.of_string "\204\129" |> at 0 |> type_text "ex" in
+  equal string "e\204\129x" (Editor.text e);
+  equal steps [ "e\204\129"; "\204\129" ] (undo_texts e)
+
+let undo_and_redo_end_step () =
+  let e =
+    type_text "ab" Editor.empty
+    |> Editor.undo |> Editor.redo |> Editor.insert "c"
+  in
+  equal steps [ "ab"; "" ] (undo_texts e)
+
+let word_deletion_is_own_step () =
+  let e =
+    Editor.of_string "foo bar baz"
+    |> Editor.delete_word_backward |> Editor.delete_word_backward
+  in
+  equal steps [ "foo bar "; "foo bar baz" ] (undo_texts e)
 
 let deletions_undo () =
   equal ~msg:"delete_backward" string "hello"
@@ -594,12 +735,16 @@ let invisible_clusters_count_towards_limit () =
 
 type snapshot = { s_text : string; s_cursor : int; s_anchor : int option }
 
+(* The edits that extend an open undo step. *)
+type kind = Typing | Deleting_backward | Deleting_forward
+
 type model = {
   text : string;
   cursor : int;
   anchor : int option; (* where a live selection is anchored *)
   undo : snapshot list; (* newest first *)
   redo : snapshot list;
+  open_kind : kind option; (* the kind of the latest step while it is open *)
 }
 
 (* [selection] is [Some (lo, hi)] only when [lo < hi], so an anchor sitting on
@@ -625,17 +770,35 @@ let snapshot_of m =
    longer exists. *)
 let push_undo m = { m with undo = snapshot_of m :: m.undo; redo = [] }
 
+(* An edit of [kind] joins the open step of the same kind, and otherwise saves
+   an undo point. In this model's text, ASCII letters without spaces or line
+   breaks, a step is open only right after its last edit, where the caret
+   continues it, and no word boundary or line break ever ends it. *)
+let save m kind =
+  let m =
+    match (kind, m.open_kind) with
+    | Some kind, Some open_kind when kind = open_kind -> m
+    | _ -> push_undo m
+  in
+  { m with open_kind = kind }
+
+(* An operation that records no text change ends the open step, unless it
+   changes nothing at all. *)
+let without_edit m m' =
+  if (m'.text, m'.cursor, m'.anchor) = (m.text, m.cursor, m.anchor) then m
+  else { m' with open_kind = None }
+
 let drop_range text lo hi =
   String.sub text 0 lo ^ String.sub text hi (String.length text - hi)
 
 (* Deleting the selection is the shared prefix of insert, delete_backward and
    delete_forward: save an undo point, drop the range, land the cursor on its
    low edge. *)
-let delete_selection m =
+let delete_selection m kind =
   match model_selection m with
   | None -> None
   | Some (lo, hi) ->
-      let m = push_undo m in
+      let m = save m (Some kind) in
       Some { m with text = drop_range m.text lo hi; cursor = lo; anchor = None }
 
 let model_length m = String.length m.text
@@ -677,7 +840,8 @@ let inserted_model m s =
   in
   if text = m.text then m
   else
-    { (push_undo m) with text; cursor = first + String.length s; anchor = None }
+    let kind = if String.length s = 1 then Some Typing else None in
+    { (save m kind) with text; cursor = first + String.length s; anchor = None }
 
 (* Applies [f] to the editor under test, returning the previous value. *)
 let step f editor =
@@ -698,12 +862,12 @@ let commands =
           (text_changed before !editor));
     call "delete_backward"
       ~next:(fun m ->
-        match delete_selection m with
+        match delete_selection m Deleting_backward with
         | Some m -> m
         | None ->
             if m.cursor = 0 then m
             else
-              let m = push_undo m in
+              let m = save m (Some Deleting_backward) in
               {
                 m with
                 text = drop_range m.text (m.cursor - 1) m.cursor;
@@ -717,12 +881,12 @@ let commands =
           (text_changed before !editor));
     call "delete_forward"
       ~next:(fun m ->
-        match delete_selection m with
+        match delete_selection m Deleting_forward with
         | Some m -> m
         | None ->
             if m.cursor >= model_length m then m
             else
-              let m = push_undo m in
+              let m = save m (Some Deleting_forward) in
               {
                 m with
                 text = drop_range m.text m.cursor (m.cursor + 1);
@@ -735,9 +899,11 @@ let commands =
           (text_changed before !editor));
     command "move_left" Gen.bool
       ~next:(fun m select ->
-        match model_selection m with
-        | Some (lo, _) when not select -> { m with cursor = lo; anchor = None }
-        | _ -> move_to m ~select (max 0 (m.cursor - 1)))
+        without_edit m
+          (match model_selection m with
+          | Some (lo, _) when not select ->
+              { m with cursor = lo; anchor = None }
+          | _ -> move_to m ~select (max 0 (m.cursor - 1))))
       (fun m select editor ->
         let before = step (Editor.move_left ~select) editor in
         equal ~msg:"move_left moves the cursor or selection" bool
@@ -745,9 +911,11 @@ let commands =
           (caret_moved before !editor));
     command "move_right" Gen.bool
       ~next:(fun m select ->
-        match model_selection m with
-        | Some (_, hi) when not select -> { m with cursor = hi; anchor = None }
-        | _ -> move_to m ~select (min (model_length m) (m.cursor + 1)))
+        without_edit m
+          (match model_selection m with
+          | Some (_, hi) when not select ->
+              { m with cursor = hi; anchor = None }
+          | _ -> move_to m ~select (min (model_length m) (m.cursor + 1))))
       (fun m select editor ->
         let before = step (Editor.move_right ~select) editor in
         equal ~msg:"move_right moves the cursor or selection" bool
@@ -756,16 +924,17 @@ let commands =
           (caret_moved before !editor));
     command "set_cursor"
       (Gen.pair gen_offset Gen.bool)
-      ~next:(fun m (pos, select) -> move_to m ~select (clamp m pos))
+      ~next:(fun m (pos, select) ->
+        without_edit m (move_to m ~select (clamp m pos)))
       (fun _ (pos, select) editor ->
         ignore (step (Editor.set_cursor ~select pos) editor : Editor.t));
     call "select_all"
       ~next:(fun m ->
         let cursor = model_length m in
-        { m with cursor; anchor = anchor_of ~cursor (Some 0) })
+        without_edit m { m with cursor; anchor = anchor_of ~cursor (Some 0) })
       (fun _ editor -> ignore (step Editor.select_all editor : Editor.t));
     call "clear_selection"
-      ~next:(fun m -> { m with anchor = None })
+      ~next:(fun m -> without_edit m { m with anchor = None })
       (fun _ editor -> ignore (step Editor.clear_selection editor : Editor.t));
     call "undo"
       ~next:(fun m ->
@@ -776,6 +945,7 @@ let commands =
               (restore m snap) with
               undo = rest;
               redo = snapshot_of m :: m.redo;
+              open_kind = None;
             })
       (fun m editor ->
         let before = step Editor.undo editor in
@@ -791,6 +961,7 @@ let commands =
               (restore m snap) with
               redo = rest;
               undo = snapshot_of m :: m.undo;
+              open_kind = None;
             })
       (fun m editor ->
         let before = step Editor.redo editor in
@@ -819,10 +990,12 @@ let model_invariant m editor =
 
 (* ── History equivalence ── *)
 
-(* The undo history is the sequence of states before each text change: undo
-   restores the latest one, including caret, affinity and selection, and redo
-   reapplies. The reference keeps those states whole, as snapshots; the editor
-   must agree with it after every step of any script. *)
+(* The undo history is the sequence of states before each step: undo restores
+   the latest one, including caret, affinity and selection, and redo
+   reapplies. The reference keeps those states whole, as snapshots, and groups
+   edits into steps by the rule of the interface, read from the caret and
+   selection before each edit; the editor must agree with it after every step
+   of any script. *)
 type op =
   | Insert of string
   | Delete_backward
@@ -934,7 +1107,79 @@ type reference = {
   state : Editor.t; (* used only for its text, caret and selection *)
   undo_states : Editor.t list;
   redo_states : Editor.t list;
+  open_step : (kind * int * string) option;
+      (* The open step's kind, its seam (the byte where typing continues, or
+         where a deletion must end or start) and the text it typed. *)
 }
+
+let breaks_line s = String.exists (fun c -> c = '\n' || c = '\r') s
+
+let ends_with_spaces n typed =
+  let len = String.length typed in
+  len >= n && String.for_all (( = ) ' ') (String.sub typed (len - n) n)
+
+(* The bytes an edit replaces, and its kind. *)
+let replaced op state ~before ~after =
+  let source = Editor.source state in
+  let byte = Matrix.Text.Layout.Source.byte_offset source in
+  let caret = byte (Editor.cursor state) in
+  let deleted = String.length before - String.length after in
+  let range =
+    match (Editor.selection state, op) with
+    | Some (lo, hi), _ -> (byte lo, byte hi)
+    | None, Delete_backward -> (caret - deleted, caret)
+    | None, Delete_forward -> (caret, caret + deleted)
+    | None, _ -> (caret, caret)
+  in
+  let kind =
+    match op with
+    | Insert s when Matrix.Text.grapheme_count s = 1 -> Some Typing
+    | Delete_backward -> Some Deleting_backward
+    | Delete_forward -> Some Deleting_forward
+    | _ -> None
+  in
+  (range, kind)
+
+let edit_step r op next =
+  let before = Editor.text r.state and after = Editor.text next in
+  let (first, last), kind = replaced op r.state ~before ~after in
+  let removed = String.sub before first (last - first) in
+  let typed = match op with Insert s -> s | _ -> "" in
+  let joins =
+    match (kind, r.open_step) with
+    | Some kind, Some (open_kind, seam, so_far)
+      when kind = open_kind && Editor.selection r.state = None -> (
+        match kind with
+        | Typing ->
+            first = seam
+            && (not (breaks_line typed))
+            &&
+            if typed = " " then ends_with_spaces 1 so_far
+            else not (ends_with_spaces 2 so_far)
+        | Deleting_backward -> last = seam && not (breaks_line removed)
+        | Deleting_forward -> first = seam && not (breaks_line removed))
+    | _ -> false
+  in
+  let open_step =
+    match kind with
+    | None -> None
+    | Some Typing ->
+        let so_far =
+          match r.open_step with
+          | Some (_, _, so_far) when joins -> so_far
+          | _ -> ""
+        in
+        Some (Typing, first + String.length typed, so_far ^ typed)
+    | Some kind -> Some (kind, first, "")
+  in
+  if joins then { r with state = next; open_step }
+  else
+    {
+      state = next;
+      undo_states = r.state :: r.undo_states;
+      redo_states = [];
+      open_step;
+    }
 
 let reference_step r = function
   | Undo -> (
@@ -945,6 +1190,7 @@ let reference_step r = function
             state = previous;
             undo_states = rest;
             redo_states = r.state :: r.redo_states;
+            open_step = None;
           })
   | Redo -> (
       match r.redo_states with
@@ -954,17 +1200,14 @@ let reference_step r = function
             state = next;
             redo_states = rest;
             undo_states = r.state :: r.undo_states;
+            open_step = None;
           })
   | op ->
       let next = edit op r.state in
-      if String.equal (Editor.text next) (Editor.text r.state) then
-        { r with state = next }
-      else
-        {
-          state = next;
-          undo_states = r.state :: r.undo_states;
-          redo_states = [];
-        }
+      if next == r.state then r
+      else if String.equal (Editor.text next) (Editor.text r.state) then
+        { r with state = next; open_step = None }
+      else edit_step r op next
 
 let same_state ~step expected actual =
   let msg what = Printf.sprintf "step %d: %s" step what in
@@ -980,7 +1223,10 @@ let same_state ~step expected actual =
 
 let history_matches_snapshots (initial, script) =
   let editor = ref (Editor.of_string initial) in
-  let reference = ref { state = !editor; undo_states = []; redo_states = [] } in
+  let reference =
+    ref
+      { state = !editor; undo_states = []; redo_states = []; open_step = None }
+  in
   List.iteri
     (fun step op ->
       editor := edit op !editor;
@@ -1092,6 +1338,23 @@ let () =
           test "multiple steps" multiple_undo_steps;
           test "deletions" deletions_undo;
         ];
+      group "Undo steps"
+        [
+          test "typing is one step" typing_is_one_step;
+          test "a caret move ends a step" caret_move_ends_step;
+          test "a selection change ends a step" selection_change_ends_step;
+          test "an operation that changes nothing keeps it open"
+            no_op_keeps_step;
+          test "a change of kind ends a step" kind_change_ends_step;
+          test "deletions in one direction join" deletions_join;
+          test "a paste is a step of its own" paste_is_own_step;
+          test "a replacement starts a step" replacement_starts_step;
+          test "word boundaries" word_boundaries;
+          test "line breaks" line_breaks;
+          test "a caret snapped past the step ends it" snapped_caret_ends_step;
+          test "undo and redo end a step" undo_and_redo_end_step;
+          test "word deletion is a step of its own" word_deletion_is_own_step;
+        ];
       group "History"
         [
           prop ~count:500 "matches snapshot history over edit scripts"
@@ -1107,7 +1370,15 @@ let () =
             invisible_clusters_count_towards_limit;
         ];
       stateful "text, cursor, selection and history stay consistent"
-        ~model:{ text = ""; cursor = 0; anchor = None; undo = []; redo = [] }
+        ~model:
+          {
+            text = "";
+            cursor = 0;
+            anchor = None;
+            undo = [];
+            redo = [];
+            open_kind = None;
+          }
         ~scope:(fun run -> run (ref Editor.empty))
         ~pp_model ~invariant:model_invariant commands;
     ]

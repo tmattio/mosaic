@@ -83,7 +83,7 @@ Tests are in `mosaic/test/` unless stated.
 | Configuration | Props compare by value. Only a highlighter compares by identity: it is a resource | RFC 0002 R6 | high | RFC 0002's tests |
 | Subscriptions | Every kind accumulates in declaration order. `Sub.every` and `on_tick` take an `~id`; a duplicate raises | timers were re-paired by interval and declaration order | high | "non-key subscriptions accumulate in declaration order", "timer ids must be unique across every and on_tick" (`test_loop.ml`) |
 | Presentation | Input, update and refresh may repeat before a frame; paint presents once. Work that would dirty a frame mid-frame resolves inside layout and paint | four non-atomicity fixes (§1) | high | "in-frame geometry changes settle without input" (`test_loop.ml`) |
-| Undo | An entry holds the inverse change: the bytes replaced, where, and the caret, affinity and selection to restore. No count bound; one step per edit | prosemirror-history (`src/history.ts`): items hold "the inverted step" | high | "matches snapshot history over edit scripts" (property, `test_editor.ml`) |
+| Undo | An entry holds the inverse change: the bytes replaced, where, and the caret, affinity and selection to restore. No count bound. Since 2026-10-23 typing is grouped with no clock: an edit joins the open step when it is of the same kind (typing, backward or forward deletion) and continues it at the caret with nothing in between; a word boundary, a line break, a paste and word or line deletions start their own | prosemirror-history (`src/history.ts`): items hold "the inverted step"; grouping as VS Code's `shouldPushStackElementBetween` (`cursorTypeEditOperations.ts`) | high | "matches snapshot history over edit scripts" (property, `test_editor.ml`), the "Undo steps" tests |
 | Stale proposals | None arise: the surface proposes from the value it was given and dispatch is synchronous. `Editor.t` is a plain value; `Editor.accept`, which discarded a proposal whose base was not the current value, was removed on 2026-10-23 (RFC 0003 D5) | RFC 0003 D5 | high | "normalization is authoritative before the next key in a burst" (`test_loop.ml`), "values carry no identity" (`test_editor.ml`), "a deferred proposal is a complete value" (`test_textarea.ml`) |
 | Surface | Labelled layout and paint arguments, layout defaults and MLX are kept | state ownership needs none of them changed (§4) | medium | `test_mlx.ml`, the examples |
 
@@ -132,7 +132,8 @@ On 2026-10-22 and 23, after the audit:
   program that owns focus imperatively installs a request that calls `Renderer.focus`.
 - **Migration leftovers removed**: `Vnode`'s `~id` and `~ref` (`eddc8ab8`); `Edit_buffer` and
   `Editor.Private` (`6158620e`), the engine now internal to `editor.ml`.
-- **Undo as inverse changes** (`7ed70ef9`), as in §2; typing is not grouped.
+- **Undo as inverse changes** (`7ed70ef9`), as in §2; typing was not grouped until 2026-10-23,
+  when steps came to join typing and same-direction deletion without a clock (§7).
 - **One layout per primary frame** (`d5fd4857`): `Renderer.layout_frame` and `paint_frame` split
   `render_frame`, so the rows a frame requires and the frame share one layout.
 - **Input hit-tests the command list** (`85611be2`) instead of a second hit grid, and the frame's
@@ -243,8 +244,11 @@ this repository, so its figures cannot be reproduced and are not kept.
 
 ## 7. Open
 
-- Should adjacent typing be grouped into one undo step, as prosemirror-history does within
-  `newGroupDelay`, when an `Editor.t` observes no clock?
+- ~~Should adjacent typing be grouped into one undo step, as prosemirror-history does within
+  `newGroupDelay`, when an `Editor.t` observes no clock?~~ Yes, on 2026-10-23, by VS Code's
+  clockless rule: same kind, continued at the caret with no caret move between, a new step at a
+  word boundary or a line break; a paste is a step of its own. ProseMirror's and CodeMirror's
+  500 ms window and Emacs's count of 20 amalgamated commands were not taken.
 - Should the runtime report an `on_size` response deferred on every frame, as Resize Observer's
   loop error does, rather than alternate silently?
 - ~~Should `Editor.t` become a plain value?~~ Yes, on 2026-10-23: its acceptance tokens and

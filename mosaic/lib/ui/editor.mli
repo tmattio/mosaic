@@ -1,8 +1,8 @@
 (** Persistent text editing state. *)
 
 type t
-(** Text, caret, selection, bounded undo history, and the viewport at which an
-    edit surface shows them. Operations leave their argument intact. Cursor-only
+(** Text, caret, selection, undo history, and the viewport at which an edit
+    surface shows them. Operations leave their argument intact. Cursor-only
     changes share the indexed source and history; text edits currently splice
     and index a flat string.
 
@@ -46,7 +46,7 @@ val source : t -> Matrix.Text.Layout.Source.t
 (** [source t] is the immutable indexed text shared with layout. *)
 
 val clear : t -> t
-(** [clear t] deletes all text, saving an undo point. *)
+(** [clear t] deletes all text, as an undo step of its own. *)
 
 val insert : string -> t -> t
 (** [insert text t] replaces the selection, or inserts at the caret. The result
@@ -72,7 +72,8 @@ val select_all : t -> t
 
 (** {1 Editing}
     Deletions replace an active selection first, except line deletion which
-    deletes the caret's logical line. Each text change saves an undo point. *)
+    deletes the caret's logical line. Each text change is part of an undo step,
+    as {!section-undo} describes. *)
 
 val delete_backward : t -> t
 (** [delete_backward t] deletes the preceding grapheme. *)
@@ -95,14 +96,47 @@ val delete_to_line_end : t -> t
 val delete_line : t -> t
 (** [delete_line t] deletes the current logical line including its newline. *)
 
+(** {1:undo Undo}
+
+    Undo works in steps, and a step is what a person means by one change: typing
+    a word, not each of its letters. An edit joins the latest step when all of
+    these hold:
+
+    - it is of the step's kind: typing after typing, where typing inserts one
+      grapheme cluster; {!delete_backward} after {!delete_backward}; or
+      {!delete_forward} after {!delete_forward};
+    - nothing else happened since the step's last edit: no caret movement, no
+      selection change, no undo or redo, no other edit. An operation that
+      changes nothing returns its argument and does not count;
+    - it continues the step's text at the caret: typing right after what the
+      step typed, a deletion right at the edge of what it deleted. A letter
+      typed before a combining mark joins the mark's cluster and the caret lands
+      after the mark, so the next letter starts a new step.
+
+    A line break, typed or deleted, starts a new step, and so does a word
+    boundary while typing: a space typed after other text, or other text typed
+    after two or more spaces. A word therefore undoes with the single space
+    before it, and a run of spaces, such as indentation, on its own. Any other
+    edit is a step of its own: an insertion of several grapheme clusters at
+    once, as a paste is, a word or line deletion, or {!clear}. The first edit of
+    a step may replace a selection; undoing the step restores the selection.
+
+    The rule observes no clock: whether an edit joins depends only on what came
+    before it, so the same edits make the same steps however fast they come. VS
+    Code groups typing the same way; ProseMirror and CodeMirror instead join
+    adjacent changes made within 500 milliseconds of each other.
+
+    A step costs the size of its text change, not of the document, and the
+    history keeps every step. *)
+
 val undo : t -> t
-(** [undo t] restores the text, caret and selection from before the latest text
-    change, or is [t] when there is none. *)
+(** [undo t] restores the text, caret and selection from before the latest step,
+    or is [t] when there is none. *)
 
 val redo : t -> t
-(** [redo t] reapplies the most recently undone change, with the caret and
+(** [redo t] reapplies the most recently undone step, with the caret and
     selection that followed it, or is [t] when there is none. A text change
-    after an undo discards the changes that could be redone. *)
+    after an undo discards the steps that could be redone. *)
 
 (** {1 Movement}
     Movement clears selection by default. [select:true] extends it. *)
