@@ -317,11 +317,46 @@ let set_background ~r ~g ~b w = csi_rgb "\027[48;2;" r g b w
 let reset_background : t = literal "\027[49m"
 let reset_foreground : t = literal "\027[39m"
 
+(* OSC text *)
+
+(* An OSC's text parameter is "composed of printable characters" (ctlseqs,
+   Definitions): a control, C0, DEL or C1 (U+0080..U+009F, whose U+009C is
+   ST), would end the sequence or start another, and so might a byte that is
+   not UTF-8 in a terminal that reads 8-bit controls. [write_osc_text] writes
+   the [len] bytes of [b] from [off] without them, and without the scalar
+   [sep] when a field must not hold its separator. Text that holds none is
+   written in one copy. *)
+let[@inline] printable cp = cp >= 0x20 && cp <> 0x7F && (cp < 0x80 || cp > 0x9F)
+
+let write_osc_text ?(sep = -1) w b off len =
+  let limit = off + len in
+  (* The length of the scalar at [i], negative when it is left out. *)
+  let[@inline] scalar i =
+    let d = Bytes.get_utf_8_uchar b i in
+    let n = Uchar.utf_decode_length d in
+    let cp = Uchar.to_int (Uchar.utf_decode_uchar d) in
+    if
+      Uchar.utf_decode_is_valid d && i + n <= limit && printable cp && cp <> sep
+    then n
+    else -n
+  in
+  let rec clean i = i >= limit || (scalar i > 0 && clean (i + scalar i)) in
+  let rec each i =
+    if i < limit then (
+      let n = scalar i in
+      if n > 0 then write_subbytes w b i n;
+      each (i + abs n))
+  in
+  if clean off then write_subbytes w b off len else each off
+
+let write_osc_string ?sep w s =
+  write_osc_text ?sep w (Bytes.unsafe_of_string s) 0 (String.length s)
+
 (* Terminal Properties *)
 
 let set_title ~title w =
   write_string w "\027]0;";
-  write_string w title;
+  write_osc_string w title;
   write_terminator w `St
 
 let[@inline] write_explicit_width_prefix w width =
@@ -331,28 +366,30 @@ let[@inline] write_explicit_width_prefix w width =
 
 let explicit_width ~width ~text w =
   write_explicit_width_prefix w width;
-  write_string w text;
+  write_osc_string w text;
   write_terminator w `St
 
 let explicit_width_bytes ~width ~bytes ~off ~len w =
+  if off < 0 || len < 0 || off > Bytes.length bytes - len then
+    invalid_arg "Ansi.explicit_width_bytes: invalid range";
   write_explicit_width_prefix w width;
-  write_subbytes w bytes off len;
+  write_osc_text w bytes off len;
   write_terminator w `St
 
 (* OSC helpers *)
 
 let osc ?(terminator = `St) ~payload w =
   write_string w "\027]";
-  write_string w payload;
+  write_osc_string w payload;
   write_terminator w terminator
 
 (* Hyperlinks (OSC 8) *)
 
 let hyperlink_start ?(params = "") ~url w =
   write_string w "\027]8;";
-  if params <> "" then write_string w params;
+  write_osc_string ~sep:(Char.code ';') w params;
   write_char w ';';
-  write_string w url;
+  write_osc_string w url;
   write_terminator w `St
 
 let hyperlink_end : t = osc ~terminator:`St ~payload:"8;;"
@@ -364,7 +401,7 @@ let hyperlink ?(params = "") ~url ~text w =
 
 let[@inline] hyperlink_open w url =
   write_string w "\027]8;;";
-  write_string w url;
+  write_osc_string w url;
   write_terminator w `St
 
 let[@inline] hyperlink_close w =
@@ -416,14 +453,14 @@ let set_clipboard ~text w =
 
 let notify ~title ~body w =
   write_string w "\027]9;";
-  write_string w title;
+  write_osc_string w title;
   write_string w ": ";
-  write_string w body;
+  write_osc_string w body;
   write_terminator w `Bel;
   write_string w "\027]777;notify;";
-  write_string w title;
+  write_osc_string ~sep:(Char.code ';') w title;
   write_char w ';';
-  write_string w body;
+  write_osc_string w body;
   write_terminator w `Bel
 
 (* Wrap a sequence for tmux DCS passthrough: every ESC byte in the payload is

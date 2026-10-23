@@ -1296,6 +1296,22 @@ let clipboard_base64_payload () =
   check_seq "two-byte payload" "\x1b]52;c;YWI=\x07"
     (Ansi.to_string (Ansi.set_clipboard ~text:"ab"))
 
+(* An OSC's text is "composed of printable characters" (ctlseqs): a control
+   or a byte that is not UTF-8 in a string would end the sequence early or
+   start another, so the writers leave them out, and OSC 777 leaves out a ;
+   from its title field. *)
+let osc_text_is_printable () =
+  let s f = Ansi.to_string f in
+  equal ~msg:"title" string "\x1b]0;a]0;b\xc3\xa9c\x1b\\"
+    (s (Ansi.set_title ~title:"a\x1b]0;\x07b\xc2\x9c\xffé\nc"));
+  equal ~msg:"notify" string "\x1b]9;a;b: c;d\x07\x1b]777;notify;ab;c;d\x07"
+    (s (Ansi.notify ~title:"a;b\x07" ~body:"c;\x1bd"));
+  equal ~msg:"hyperlink" string "\x1b]8;id=1;http://a/\\b\x1b\\"
+    (s (Ansi.hyperlink_start ~params:"id=1;" ~url:"http://a/\x1b\\b"));
+  equal ~msg:"osc" string "\x1b]2;tt\x1b\\" (s (Ansi.osc ~payload:"2;t\x9ct"));
+  equal ~msg:"explicit width" string "\x1b]66;w=2;ab\x1b\\"
+    (s (Ansi.explicit_width ~width:2 ~text:"a\x07b"))
+
 let notify_osc9_and_osc777 () =
   check_seq "OSC 9 then OSC 777"
     "\x1b]9;Title: Body\x07\x1b]777;notify;Title;Body\x07"
@@ -1790,6 +1806,7 @@ let tests =
         test "hyperlink params" writer_hyperlink_params;
         test "clipboard base64 payload" clipboard_base64_payload;
         test "notify emits OSC 9 then OSC 777" notify_osc9_and_osc777;
+        test "OSC text is printable" osc_text_is_printable;
         test "tmux passthrough doubles ESC" tmux_passthrough_doubles_esc;
         test "color scheme report query" color_scheme_report_query;
         test "invalid scalar replacement" writer_invalid_scalar_replacement;

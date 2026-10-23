@@ -273,12 +273,12 @@ val reset_background : t
 
 val set_title : title:string -> t
 (** [set_title ~title] is OSC 0, which sets the window title and icon name to
-    [title]. *)
+    [title], without the characters an OSC leaves out ({!section-osc}). *)
 
 val explicit_width : width:int -> text:string -> t
 (** [explicit_width ~width ~text] is OSC 66 with [w=width], which asks the
-    terminal to show [text] in [width] cells. [text] must not hold ESC or BEL,
-    which end the sequence early. *)
+    terminal to show [text] in [width] cells, without the characters an OSC
+    leaves out ({!section-osc}). *)
 
 val explicit_width_bytes : width:int -> bytes:bytes -> off:int -> len:int -> t
 (** [explicit_width_bytes ~width ~bytes ~off ~len] is {!explicit_width} of the
@@ -290,7 +290,14 @@ val explicit_width_bytes : width:int -> bytes:bytes -> off:int -> len:int -> t
 (** {1:osc Operating system commands}
 
     An OSC, OPERATING SYSTEM COMMAND, is [ESC \]], a payload, and a terminator.
-    ECMA-48's terminator is ST, [ESC \\ ], and xterm also accepts BEL. *)
+    ECMA-48's terminator is ST, [ESC \\ ], and xterm also accepts BEL. Its text
+    is "composed of printable characters" (xterm's Control Sequences,
+    "Definitions"), and a control in it would end the sequence early or start
+    another. So every OSC this module writes, {!val-osc} included, leaves out of
+    the strings it is given the controls (C0, DEL and the C1 controls
+    U+0080..U+009F, ST among them) and the bytes that are not UTF-8. A string
+    that fills a field followed by another also leaves out [;], the field
+    separator. *)
 
 type terminator = [ `Bel | `St ]
 (** The type for OSC terminators. *)
@@ -307,8 +314,8 @@ val osc : ?terminator:terminator -> payload:string -> t
 val hyperlink_start : ?params:string -> url:string -> t
 (** [hyperlink_start ~params ~url] is the OSC 8 that links the text after it to
     [url]. [params] holds [key=value] pairs separated by [:], and defaults to
-    [""]. The link must be closed with {!hyperlink_end}, or all the text after
-    it is linked. *)
+    [""]; a [;] in it is left out. The link must be closed with
+    {!hyperlink_end}, or all the text after it is linked. *)
 
 val hyperlink_end : t
 (** [hyperlink_end] is the OSC 8 that closes the open link. *)
@@ -326,10 +333,12 @@ val set_clipboard : text:string -> t
 (** {2:notifications Notifications} *)
 
 val notify : title:string -> body:string -> t
-(** [notify ~title ~body] posts a desktop notification. It is OSC 9, which
-    iTerm2 and kitty read, followed by OSC 777, which urxvt and others read. A
-    terminal ignores the one it does not know. Inside tmux, it must be wrapped
-    with {!tmux_passthrough} to reach the terminal. *)
+(** [notify ~title ~body] posts a desktop notification. It is OSC 9 with the
+    message [title: body], which iTerm2 and kitty read, followed by OSC 777
+    [notify;title;body], which urxvt and others read
+    ([ESC \] 777;notify;title;msg ESC \\ ] in foot-ctlseqs(7)), whose title
+    leaves out [;]. A terminal ignores the one it does not know. Inside tmux, it
+    must be wrapped with {!tmux_passthrough} to reach the terminal. *)
 
 (** {2:passthrough Multiplexer passthrough} *)
 
