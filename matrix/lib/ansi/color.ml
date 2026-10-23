@@ -133,6 +133,10 @@ let[@inline] cube_level = function
   | 4 -> 215
   | _ -> 255
 
+(* xterm's palette (256colres.pl). Its gray ramp is "intentionally leaving
+   out black and white", and xterm takes entries 0 to 15 from resources,
+   "usually more-or-less a reproduction of the standard ANSI colors, but
+   possibly more pleasing shades"; these are HTML 4.01's 16 colors. *)
 let make_indexed idx =
   if idx < 16 then
     match idx with
@@ -176,7 +180,10 @@ let[@inline] distance r g b c =
   (dr * dr) + (dg * dg) + (db * db)
 
 (* The palette entry of [first..last] nearest to [(r, g, b)], a tie going to
-   the higher index, as xterm's search from the top keeps the first best. *)
+   the higher index, as xterm's search from the top keeps the first best
+   (xtermClosestColor in xterm's misc.c). A perceptual distance, such as
+   CIELAB's, would match some colors differently; this one gives what xterm
+   shows. *)
 let nearest_entry ~first ~last r g b =
   let best = ref last and best_d = ref (distance r g b (make_indexed last)) in
   for i = last - 1 downto first do

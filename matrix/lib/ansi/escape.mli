@@ -1,7 +1,8 @@
-(** Escape sequence builders.
+(** Escape sequence builders, the values {!Ansi} includes.
 
-    Low-level primitives for constructing ANSI escape sequences. Re-exported by
-    {!Ansi}. *)
+    {!Ansi} documents each value it exports. This module also holds the parts of
+    an SGR sequence, the hyperlink writers and the writes that {!Style},
+    {!Sgr_state} and [Sgr_attrs] build on, which {!Ansi} leaves out. *)
 
 (** {1:writer Writer} *)
 
@@ -29,14 +30,27 @@ val sgr : int list -> t
 val sgr_direct : ((int -> unit) -> unit) -> writer -> unit
 val reset : t
 
-(** {2:sgr_low Low-level SGR building} *)
+(** {2:sgr_low Parts of an SGR sequence}
+
+    An SGR sequence is {!sgr_open}, the codes with {!sgr_sep} between them, then
+    {!sgr_close}. The caller places the separators. *)
 
 val sgr_open : writer -> unit
-val sgr_code : writer -> int -> unit
-val sgr_sep : writer -> unit
-val sgr_close : writer -> unit
+(** [sgr_open w] writes [ESC \[]. *)
 
-(** {1:writing Low-level writing} *)
+val sgr_code : writer -> int -> unit
+(** [sgr_code w n] writes [n] in decimal. *)
+
+val sgr_sep : writer -> unit
+(** [sgr_sep w] writes [;]. *)
+
+val sgr_close : writer -> unit
+(** [sgr_close w] writes [m]. *)
+
+(** {1:writing Writes}
+
+    These are {!Writer.write_char}, {!Writer.write_string} and
+    {!Writer.write_subbytes}. *)
 
 val write_char : writer -> char -> unit
 val write_string : writer -> string -> unit
@@ -115,8 +129,14 @@ val osc : ?terminator:terminator -> payload:string -> t
 val hyperlink_start : ?params:string -> url:string -> t
 val hyperlink_end : t
 val hyperlink : ?params:string -> url:string -> text:string -> t
+
 val hyperlink_open : writer -> string -> unit
+(** [hyperlink_open w url] writes the OSC 8 that opens a hyperlink to [url],
+    without parameters, ended by ST. *)
+
 val hyperlink_close : writer -> unit
+(** [hyperlink_close w] writes the OSC 8 that closes the open hyperlink, ended
+    by ST. *)
 
 (** {2:clipboard Clipboard} *)
 
