@@ -235,11 +235,16 @@ val create :
       ({!Key_release}), which also has every key reported as a sequence.
       Defaults to [false].
     - [exit_on_ctrl_c] whether pressing Ctrl+C exits. Defaults to [true].
-
-    Focus reports (mode 1004), color scheme reports (2031) and resize reports
-    (2048) are always set: a terminal ignores a mode it does not have.
     - [input_timeout] timeout in seconds for input polling when no cadence is
       active. Defaults to [None] (block indefinitely).
+
+    Focus reports (mode 1004), color scheme reports (2031) and resize reports
+    (2048) are always set, without asking whether the terminal has them: no
+    reference says what a terminal does with a mode it does not know, but xterm,
+    kitty, foot and tmux all ignore one (xterm's [dpmodes] in charproc.c,
+    kitty's [set_mode_from_const] in screen.c, foot's [decset_decrst] in csi.c
+    and tmux's [input_csi_dispatch_sm_private] in input.c only log it), and the
+    runtime resets them on exit.
 
     {b Unix:}
     - [output] output target. Defaults to [`Stdout].

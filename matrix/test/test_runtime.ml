@@ -2722,12 +2722,13 @@ let test_paste_streams_and_aborts () =
 
 (* The replies that are application facts reach it: the color scheme, in
    reply to a query or on a change, and the in-band resize when the size
-   changed. Other replies never do. *)
+   changed. Other replies never do: XTWINOPS's text-area size is the reply to
+   a query, not a resize. *)
 let test_application_replies () =
   let ((app, c) as t) =
     clocked_app ~limit:3.
       [
-        (1., "\027[?997;1n\027[48;24;80;480;800t\027[?2026;1$y");
+        (1., "\027[?997;1n\027[48;24;80;480;800t\027[?2026;1$y\027[8;30;90t");
         (2., "\027[48;30;100;600;1000t\027[?64;1c\027[1;5R");
       ]
   in

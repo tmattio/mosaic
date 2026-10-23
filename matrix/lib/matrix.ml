@@ -438,7 +438,12 @@ let ask_own t q =
    again whenever the capabilities change: setting a mode a terminal has is
    idempotent, so this is the difference between what the modes were and what
    they must be. Focus, color scheme and resize reports are set without asking:
-   a terminal ignores a mode it does not have. The kitty keyboard flags are
+   no reference says what a terminal does with a private mode it does not
+   know, but xterm (charproc.c, dpmodes: "unknown private code"), kitty
+   (screen.c, set_mode_from_const: "Unsupported screen mode"), foot (csi.c,
+   decset_decrst: UNHANDLED) and tmux (input.c,
+   input_csi_dispatch_sm_private: "unknown") log it and do nothing else. The
+   kitty keyboard flags are
    pushed once the terminal has answered its query, then asked for again, so
    that the capabilities say which flags hold. *)
 
