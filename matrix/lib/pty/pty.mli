@@ -163,7 +163,7 @@ val with_spawn :
     thus never finish exiting. FreeBSD and DragonFly may discard what the master
     has not read within about a second of the child's exit. A program must
     therefore read to the end of output, or {!close} the handle, before it waits
-    for the child with [Unix.waitpid] on {!pid}. *)
+    for the child ({!wait}). *)
 
 val read : t -> bytes -> int -> int -> int
 (** [read pty b off len] reads at most [len] bytes into [b] from [off] and
@@ -240,41 +240,61 @@ val out_fd : t -> Unix.file_descr
 (** {1:process The child}
 
     Closing the master hangs up the terminal, and the kernel sends [SIGHUP] to
-    the child's session. A handle keeps its child's process id until {!close},
-    even after the program has reaped the child with [Unix.waitpid]. {!close},
-    {!terminate} and {!kill} then signal that process id, which the system may
-    have given to another process. *)
+    the child's session. A process is {e reaped} once its parent has collected
+    its exit status. A handle holds its child until the handle reaps it, by
+    {!wait} or {!close}. Until then the child's process id names the child and
+    no other process.
+
+    Before {!terminate}, {!kill} and {!close} signal the child, they ask the
+    system without blocking whether it has exited. A child that has exited is
+    reaped then and is not signalled, and {!wait} returns its status. When the
+    program has reaped the child itself with [Unix.waitpid] on {!pid}, the
+    system may have given its process id to another process. The handle then
+    forgets the id and signals nothing. A program waits for the child with
+    {!wait}, after which {!pid} is [None]. *)
 
 val pid : t -> int option
-(** [pid pty] is [Some p] while [pty] is open and has a child, where [p] is the
-    child's process id, and [None] otherwise. *)
+(** [pid pty] is [Some p] while [pty] holds a child that it has not reaped,
+    where [p] is the child's process id, and [None] otherwise. *)
+
+val wait : t -> Unix.process_status
+(** [wait pty] is the exit status of [pty]'s child. It reaps the child, and
+    [pty] then has no child. [wait] works on an open or closed handle.
+
+    It blocks until the child has exited, and releases the runtime lock while it
+    blocks.
+
+    Raises [Invalid_argument] if [pty] has no child, as a handle from
+    {!open_pty}, a handle closed with [wait] or a handle already waited for has
+    none. Raises [Unix.Unix_error (ECHILD, _, _)] if the program has reaped the
+    child itself, and [pty] then has no child. *)
 
 val close : ?wait:bool -> t -> unit
 (** [close pty] closes [pty]'s descriptor and, for a handle from {!spawn}, the
     slave it holds, which hangs up the terminal. The output not yet read is
     lost, and a child whose exit waits for its output to be read can finish. For
-    a handle with a child, [close] then sends [SIGTERM] and, when [wait] is
-    [true] (the default), reaps the child. It sends [SIGKILL] to a child that
-    has not exited about 100 ms after the [SIGTERM]. A second [close] does
-    nothing.
+    a handle with a child, [close] then sends [SIGTERM] to a child still running
+    ({!section-process}) and, when [wait] is [true] (the default), reaps the
+    child. It sends [SIGKILL] to a child that has not exited about 100 ms after
+    the [SIGTERM]. A second [close] does nothing.
 
     With [wait], [close] blocks until the child is reaped. With [~wait:false],
-    the program must reap the child with [Unix.waitpid] on the process id it
-    took from {!pid} before the close.
+    [pty] keeps its child, which the program must reap with {!wait}.
 
     [close] never raises. *)
 
 val terminate : t -> unit
-(** [terminate pty] sends [SIGTERM] to the child, and leaves the terminal open.
-    It ignores the errors of [kill], such as [ESRCH].
+(** [terminate pty] sends [SIGTERM] to the child, unless it has exited or has
+    been reaped ({!section-process}), and leaves the terminal open. It ignores
+    the errors of [kill].
 
-    Raises [Invalid_argument] if [pty] has no child, as a handle from
-    {!open_pty} or a closed handle has none. *)
+    Raises [Invalid_argument] if [pty] has no child ({!wait}). *)
 
 val kill : t -> unit
-(** [kill pty] sends [SIGKILL] to the child, which cannot catch it, and leaves
-    the terminal open. It ignores the errors of [kill]. On some kernels a killed
-    child finishes exiting only once its output is read ({!section-io}).
-    {!close} hangs up the terminal first.
+(** [kill pty] sends [SIGKILL] to the child, which cannot catch it, unless it
+    has exited or has been reaped ({!section-process}), and leaves the terminal
+    open. It ignores the errors of [kill]. On some kernels a killed child
+    finishes exiting only once its output is read ({!section-io}). {!close}
+    hangs up the terminal first.
 
     Raises [Invalid_argument] if [pty] has no child. *)

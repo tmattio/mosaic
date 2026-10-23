@@ -1,6 +1,12 @@
+(* The child of a {!spawn} handle. [Running pid] is a child the handle has
+   not seen reaped: until it is reaped, its id names it and no other process.
+   [Exited status] is a child the handle reaped while checking on it, whose
+   status {!wait} returns. *)
+type child = No_child | Running of int | Exited of Unix.process_status
+
 type t = {
   fd : Unix.file_descr;
-  mutable pid : int option;
+  mutable child : child;
   (* The slave of a {!spawn} PTY, held until [close] where [hold_slave]. *)
   slave : Unix.file_descr option;
   (* [close] must be a true no-op the second time: the kernel can reallocate
@@ -35,7 +41,7 @@ let hold_slave = hold_slave ()
 let file_descr t = t.fd
 let in_fd t = t.fd
 let out_fd t = t.fd
-let pid t = t.pid
+let pid t = match t.child with Running pid -> Some pid | _ -> None
 
 (* Every fd-consuming operation goes through this guard so a closed handle
    raises EBADF instead of touching a possibly-reused fd number. *)
@@ -43,15 +49,52 @@ let live_fd t op =
   if t.closed then raise (Unix.Unix_error (Unix.EBADF, op, ""));
   t.fd
 
+(* Asks the system, without blocking, what became of a running child. One
+   that has exited is reaped here and its status kept. ECHILD means the
+   program reaped it with its own waitpid, and its id may now name another
+   process, so the handle forgets it. *)
+let rec check t =
+  match t.child with
+  | No_child | Exited _ -> ()
+  | Running pid -> (
+      match Unix.waitpid [ WNOHANG ] pid with
+      | 0, _ -> ()
+      | _, status -> t.child <- Exited status
+      | exception Unix.Unix_error (EINTR, _, _) -> check t
+      | exception Unix.Unix_error (ECHILD, _, _) -> t.child <- No_child)
+
+(* Sends [signal] to the child if it is still running. *)
+let signal t signal =
+  check t;
+  match t.child with
+  | Running pid -> ( try Unix.kill pid signal with Unix.Unix_error _ -> ())
+  | No_child | Exited _ -> ()
+
 let terminate t =
-  match t.pid with
-  | Some pid -> ( try Unix.kill pid Sys.sigterm with Unix.Unix_error _ -> ())
-  | None -> invalid_arg "Pty.terminate: no child process"
+  match t.child with
+  | No_child -> invalid_arg "Pty.terminate: no child process"
+  | Running _ | Exited _ -> signal t Sys.sigterm
 
 let kill t =
-  match t.pid with
-  | Some pid -> ( try Unix.kill pid Sys.sigkill with Unix.Unix_error _ -> ())
-  | None -> invalid_arg "Pty.kill: no child process"
+  match t.child with
+  | No_child -> invalid_arg "Pty.kill: no child process"
+  | Running _ | Exited _ -> signal t Sys.sigkill
+
+let rec wait t =
+  match t.child with
+  | No_child -> invalid_arg "Pty.wait: no child process"
+  | Exited status ->
+      t.child <- No_child;
+      status
+  | Running pid -> (
+      match Unix.waitpid [] pid with
+      | _, status ->
+          t.child <- No_child;
+          status
+      | exception Unix.Unix_error (EINTR, _, _) -> wait t
+      | exception (Unix.Unix_error (ECHILD, _, _) as e) ->
+          t.child <- No_child;
+          raise e)
 
 (* Reap after SIGTERM. An immediate waitpid catches the common case — the
    child exited long ago and close must not stall the caller — then a short
@@ -84,12 +127,10 @@ let close ?(wait = true) t =
        then exit, so the reap below does not wait on it. *)
     close_fd t.fd;
     Option.iter close_fd t.slave;
-    (match t.pid with
-    | Some pid ->
-        (try Unix.kill pid Sys.sigterm with Unix.Unix_error _ -> ());
-        if wait then reap pid
-    | None -> ());
-    t.pid <- None)
+    signal t Sys.sigterm;
+    if wait then (
+      (match t.child with Running pid -> reap pid | No_child | Exited _ -> ());
+      t.child <- No_child))
 
 let get_winsize t = get_winsize_raw (live_fd t "get_winsize")
 let set_winsize t ws = set_winsize_raw (live_fd t "set_winsize") ws
@@ -104,8 +145,12 @@ let inherit_size ~src ~dst =
 
 let open_pty ?winsize () =
   let master_fd, slave_fd = open_pty_raw () in
-  let master = { fd = master_fd; pid = None; slave = None; closed = false } in
-  let slave = { fd = slave_fd; pid = None; slave = None; closed = false } in
+  let master =
+    { fd = master_fd; child = No_child; slave = None; closed = false }
+  in
+  let slave =
+    { fd = slave_fd; child = No_child; slave = None; closed = false }
+  in
   (* Set initial window size if provided *)
   (match winsize with
   | Some ws -> (
@@ -140,7 +185,7 @@ let spawn ?env ?cwd ?winsize ~prog ~args () =
           close slave;
           None)
       in
-      { master with pid = Some pid; slave }
+      { master with child = Running pid; slave }
   | exception e ->
       close master;
       close slave;

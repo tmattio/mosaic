@@ -555,6 +555,48 @@ let test_close_with_unread_output () =
   in
   is_true ~msg:"close reaped the child" reaped
 
+(* Regression: a handle kept the process id of a child that the program had
+   reaped itself, and terminate, kill and close signalled it, though the
+   system may have given that id to another process. The handle now checks
+   first and forgets the id. *)
+let test_reaped_child_is_never_signalled () =
+  let pty = Pty.spawn ~prog:"sh" ~args:[ "-c"; "exit 0" ] () in
+  ignore (read_to_eof pty : string);
+  ignore
+    (Unix.waitpid [] (Option.get (Pty.pid pty)) : int * Unix.process_status);
+  Pty.terminate pty;
+  equal ~msg:"terminate forgets the id" (option int) None (Pty.pid pty);
+  raises_match ~msg:"the handle has no child"
+    (Exn.invalid_arg ~substring:"Pty.kill") (fun () -> Pty.kill pty);
+  Pty.close pty
+
+let test_wait_reaps_the_child () =
+  let pty = Pty.spawn ~prog:"sh" ~args:[ "-c"; "exit 3" ] () in
+  ignore (read_to_eof pty : string);
+  is_true ~msg:"the child's status" (Pty.wait pty = Unix.WEXITED 3);
+  equal ~msg:"wait forgets the id" (option int) None (Pty.pid pty);
+  raises_match ~msg:"a second wait" (Exn.invalid_arg ~substring:"Pty.wait")
+    (fun () -> ignore (Pty.wait pty : Unix.process_status));
+  Pty.close pty
+
+(* A child that ignores SIGTERM exits with its own status, whether the handle
+   reaps it in terminate or in wait. *)
+let test_wait_after_terminate () =
+  let pty = Pty.spawn ~prog:"sh" ~args:[ "-c"; "trap '' TERM; exit 4" ] () in
+  ignore (read_to_eof pty : string);
+  Pty.terminate pty;
+  is_true ~msg:"the child's status" (Pty.wait pty = Unix.WEXITED 4);
+  Pty.close pty
+
+let test_wait_after_close_without_wait () =
+  let pty = Pty.spawn ~prog:"cat" ~args:[] () in
+  Pty.close ~wait:false pty;
+  is_true ~msg:"the handle keeps its child" (Pty.pid pty <> None);
+  (match Pty.wait pty with
+  | Unix.WSIGNALED _ | Unix.WEXITED _ -> ()
+  | Unix.WSTOPPED _ -> fail "stopped");
+  equal ~msg:"the child is reaped" (option int) None (Pty.pid pty)
+
 (* Regression: a second close used to call Unix.close on the stored fd number
    again. The kernel reallocates freed numbers to the next opened descriptor,
    so the second close destroyed an unrelated fd. *)
@@ -641,6 +683,11 @@ let tests =
       test ~timeout:5. "close with unread output" test_close_with_unread_output;
       test "double close does not touch reused fd"
         test_double_close_does_not_touch_reused_fd;
+      test "a reaped child is never signalled"
+        test_reaped_child_is_never_signalled;
+      test "wait reaps the child" test_wait_reaps_the_child;
+      test "wait after terminate" test_wait_after_terminate;
+      test "wait after close without wait" test_wait_after_close_without_wait;
       test "eof on close" test_eof_on_close;
       test "pty close" test_pty_close;
     ]
