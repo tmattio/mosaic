@@ -1,0 +1,9 @@
+# A description for matrix's tests: what a terminal that declares direct
+# colour (Tc), synchronized output (Sync, mode 2026), bracketed paste (BE)
+# and focus reports (fe) has. Compiled with: tic -x -o . matrix-test.src
+matrix-test|a terminal for matrix's tests,
+	am, xenl, Tc,
+	colors#256, cols#80, lines#24,
+	BD=\E[?2004l, BE=\E[?2004h, PE=\E[201~, PS=\E[200~,
+	Sync=\E[?2026%?%p1%{1}%-%tl%eh%;,
+	cup=\E[%i%p1%d;%p2%dH, fd=\E[?1004l, fe=\E[?1004h,

@@ -1,7 +1,8 @@
 Compiled terminal descriptions from the ncurses terminal database
 (ncurses-base and ncurses-term 6.5+20250216, Debian 13), copied unchanged
 as test fixtures: x/xterm-256color, x/xterm-direct (number format 01036),
-x/xterm, d/dumb, l/linux, w/wy350 (legacy format 0432).
+x/xterm, d/dumb, l/linux, w/wy350 (legacy format 0432). m/matrix-test
+is matrix's own, compiled from matrix-test.src; this notice is not its.
 
 Copyright 1998-2017,2018 Free Software Foundation, Inc.
 Copyright 1996-2024,2025 Thomas E. Dickey

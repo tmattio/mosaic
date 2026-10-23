@@ -5,4 +5,4 @@
   (backend ppx_windtrap.mutate))
  (name matrix_terminal)
  (public_name matrix.terminal)
- (libraries matrix.ansi matrix.input matrix.text))
+ (libraries matrix.ansi matrix.input matrix.text matrix.terminfo))

@@ -569,6 +569,61 @@ let test_derivation (_, vars, replies, facts) =
 
 let mode mode setting = Reply.Mode { dec = true; mode; setting }
 
+(* The description of TERM, from the ncurses database (data/terminfo). *)
+let description name =
+  let bytes =
+    In_channel.with_open_bin ("data/terminfo/" ^ name) In_channel.input_all
+  in
+  Result.get_ok (Matrix_terminfo.of_string bytes)
+
+let described name vars replies =
+  let env =
+    Caps.env ~terminfo:(description name)
+      (fun v -> List.assoc_opt v vars)
+      ~win32:false
+  in
+  Caps.derive (List.fold_left Caps.add (Caps.evidence env) replies)
+
+(* A description says yes: matrix-test declares Tc, BE, fe and Sync. *)
+let test_description_adds () =
+  let c = described "m/matrix-test" [ ("TERM", "matrix-test") ] [] in
+  is_true ~msg:"direct colour from Tc" c.rgb;
+  is_true ~msg:"bracketed paste from BE" c.bracketed_paste;
+  is_true ~msg:"focus reports from fe" c.focus_tracking;
+  is_true ~msg:"synchronized output from Sync" c.sync;
+  let c = described "x/xterm-direct" [ ("TERM", "xterm-direct") ] [] in
+  is_true ~msg:"direct colour from RGB" c.rgb;
+  let c = derive [ ("TERM", "matrix-test") ] [] in
+  is_false ~msg:"no description, no direct colour" c.rgb;
+  is_false ~msg:"no description, no sync" c.sync
+
+(* Its silence takes nothing away: xterm-256color has no RGB. *)
+let test_description_silence () =
+  let c =
+    described "x/xterm-256color"
+      [ ("TERM", "xterm-256color"); ("COLORTERM", "truecolor") ]
+      []
+  in
+  is_true ~msg:"COLORTERM's direct colour" c.rgb
+
+(* A guess: the terminal's answer and its identity come first. *)
+let test_description_below () =
+  let c =
+    described "m/matrix-test"
+      [ ("TERM", "matrix-test") ]
+      [ mode 2004 Not_recognized; mode 2026 Permanently_reset ]
+  in
+  is_false ~msg:"no bracketed paste, answered" c.bracketed_paste;
+  is_false ~msg:"no sync, answered" c.sync;
+  is_true ~msg:"focus, unanswered" c.focus_tracking;
+  let c =
+    described "m/matrix-test"
+      [ ("TERM", "matrix-test") ]
+      [ Reply.Version "tmux 3.5a" ]
+  in
+  is_false ~msg:"tmux 3.5's identity: no bracketed paste" c.bracketed_paste;
+  is_false ~msg:"tmux 3.5's identity: no sync" c.sync
+
 let precedence_cases =
   [
     ("nothing known", [], [], [ Width `Wcwidth; Sync false; Keyboard None ]);
@@ -1010,6 +1065,9 @@ let () =
         ];
       group "capabilities"
         [
+          test "a description adds" test_description_adds;
+          test "a description's silence" test_description_silence;
+          test "a description is a guess" test_description_below;
           cases "precedence" precedence_cases
             ~name:(fun (name, _, _, _) -> name)
             test_derivation;

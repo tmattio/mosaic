@@ -2767,6 +2767,42 @@ let test_unix_reset_without_terminal_input () =
           equal ~msg:"the reset bytes reach the terminal" string "RESET"
             (Bytes.sub_string buf 0 n)))
 
+(* The unix backend's environment is the process's, with the description
+   of its TERM. *)
+let test_unix_description () =
+  let vars =
+    [
+      "TERMINFO";
+      "TERM";
+      "COLORTERM";
+      "TERM_PROGRAM";
+      "TERM_PROGRAM_VERSION";
+      "KITTY_WINDOW_ID";
+      "TERMUX_VERSION";
+    ]
+  in
+  let saved = List.map (fun v -> (v, Sys.getenv_opt v)) vars in
+  let set v x = Unix.putenv v x in
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter (fun (v, x) -> set v (Option.value x ~default:"")) saved)
+    (fun () ->
+      List.iter (fun v -> set v "") vars;
+      set "TERMINFO" (Filename.concat (Sys.getcwd ()) "data/terminfo");
+      let sync term =
+        set "TERM" term;
+        let devnull = Unix.openfile "/dev/null" [ O_RDWR; O_CLOEXEC ] 0 in
+        let b = Matrix.Backend.unix ~input:devnull ~output:devnull () in
+        let caps =
+          Matrix.Terminal.Caps.derive (Matrix.Terminal.Caps.evidence b.env)
+        in
+        b.cleanup ();
+        Unix.close devnull;
+        caps.sync
+      in
+      is_true ~msg:"a TERM whose description has Sync" (sync "matrix-test");
+      is_false ~msg:"a TERM with no description" (sync "matrix-none"))
+
 let () =
   Windtrap.run "matrix.runtime"
     [
@@ -2979,5 +3015,6 @@ let () =
           test "a write cut by a signal goes on" test_unix_write_cut_by_a_signal;
           test "reset with no terminal input"
             test_unix_reset_without_terminal_input;
+          test "the description of TERM" test_unix_description;
         ];
     ]

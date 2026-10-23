@@ -67,9 +67,44 @@ type env = {
   force_wcwidth : bool;
   force_unicode : bool;
   win32 : bool;
+  described : described;
 }
 
-let env getenv ~win32 =
+(* What the description of [TERM] says, where it says yes: a description
+   leaves out what many terminals do, so its silence says nothing. *)
+and described = {
+  direct_color : bool;  (** [RGB], [Tc], or [setrgbf] and [setrgbb]. *)
+  paste : bool;  (** [BE]. *)
+  focus : bool;  (** [fe]. *)
+  synchronized : bool;  (** [Sync], as mode 2026. *)
+}
+
+let describe = function
+  | None ->
+      {
+        direct_color = false;
+        paste = false;
+        focus = false;
+        synchronized = false;
+      }
+  | Some t ->
+      let module T = Matrix_terminfo in
+      let has name = T.string t name <> None in
+      {
+        direct_color =
+          T.flag t "RGB"
+          || T.number t "RGB" <> None
+          || has "RGB" || T.flag t "Tc"
+          || (has "setrgbf" && has "setrgbb");
+        paste = has "BE";
+        focus = has "fe";
+        synchronized =
+          (match T.string t "Sync" with
+          | Some s -> String.starts_with ~prefix:"\027[?2026" s
+          | None -> false);
+      }
+
+let env ?terminfo getenv ~win32 =
   let get name =
     match getenv name with Some "" | None -> None | Some v -> Some v
   in
@@ -101,6 +136,7 @@ let env getenv ~win32 =
     force_wcwidth = set "MATRIX_FORCE_WCWIDTH";
     force_unicode = set "MATRIX_FORCE_UNICODE";
     win32;
+    described = describe terminfo;
   }
 
 let no_env = env (fun _ -> None) ~win32:false
@@ -276,6 +312,7 @@ let modern_names = [ "ghostty"; "kitty"; "wezterm"; "alacritty"; "iterm" ]
    caller assumed: an assumed fact is already the answer for that fact. *)
 let derive ev =
   let env = ev.env and d = ev.assumed in
+  let described = env.described in
   let id = reported_identity ev in
   let name, version =
     match id with
@@ -292,7 +329,14 @@ let derive ev =
   let mux = reported_multiplexer ev in
   let mode m = Option.map supported (List.assoc_opt m ev.modes) in
   {
-    rgb = first [ when_ (is "kitty") true; when_ truecolor true ] d.rgb;
+    rgb =
+      first
+        [
+          when_ (is "kitty") true;
+          when_ truecolor true;
+          when_ described.direct_color true;
+        ]
+        d.rgb;
     kitty_keyboard =
       (if env.vhs then None
        else match ev.keyboard with Some _ as k -> k | None -> d.kitty_keyboard);
@@ -307,10 +351,17 @@ let derive ev =
           when_ (is "kitty") true;
           when_ tmux (at_least version (3, 6));
           when_ env.win32 true;
+          when_ described.paste true;
         ]
         d.bracketed_paste;
     focus_tracking =
-      first [ mode 1004; when_ tmux (at_least version (3, 6)) ] d.focus_tracking;
+      first
+        [
+          mode 1004;
+          when_ tmux (at_least version (3, 6));
+          when_ described.focus true;
+        ]
+        d.focus_tracking;
     unicode_width =
       first
         [
@@ -353,6 +404,7 @@ let derive ev =
           when_ tmux (at_least version (3, 7));
           when_ modern true;
           when_ term_modern true;
+          when_ described.synchronized true;
         ]
         d.sync;
     hyperlinks =

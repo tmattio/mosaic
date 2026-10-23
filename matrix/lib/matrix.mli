@@ -205,11 +205,13 @@ module Backend : sig
   (** [unix ()] is the backend of a terminal on [input] (default {!Unix.stdin})
       and [output] (default {!Unix.stdout}). Its [wait] blocks in [select(2)] on
       the input and on its wake pipe ({!wake_fd}), its clock is
-      [CLOCK_MONOTONIC], and its signals are those the runtime's handlers record
-      for it (see {{!signals}Signals}). It holds its wake pipe from [unix ()] to
-      its [cleanup]. On Linux the monotonic clock stops while the system sleeps:
-      a deadline is that much later on the wall clock. On macOS it does not
-      stop. *)
+      [CLOCK_MONOTONIC], its signals are those the runtime's handlers record for
+      it (see {{!signals}Signals}), and its environment is the process's, with
+      the description the terminfo database has for its [TERM]
+      ({!Matrix_tty.terminfo}). It holds its wake pipe from [unix ()] to its
+      [cleanup]. On Linux the monotonic clock stops while the system sleeps: a
+      deadline is that much later on the wall clock. On macOS it does not stop.
+  *)
 
   val wake_fd : t -> Unix.file_descr
   (** [wake_fd b] is the read end of the wake pipe of [b], a backend {!unix}

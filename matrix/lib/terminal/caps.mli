@@ -19,7 +19,14 @@
       1.3 widens graphemes past what mode 2027 describes;
     + {b the answer} of the terminal that does the work;
     + {b identity}: what a terminal of that name and version is known to do;
-    + {b guesses} from the environment: [TERM], [COLORTERM], the platform;
+    + {b guesses} from the environment: [TERM], [COLORTERM], the platform, and
+      the description the terminfo database has for [TERM] ({!env}), which only
+      ever adds a fact: direct colour ([RGB], [Tc], or [setrgbf] with
+      [setrgbb]), bracketed paste ([BE]), focus reports ([fe]) and synchronized
+      output ([Sync] as mode 2026). A description leaves out direct colour and
+      synchronized output for most terminals that have them, and a terminal that
+      is not the one [TERM] names (ssh, a multiplexer) may have no description
+      here at all, so its silence says nothing;
     + the default, which a caller may supply in place of the environment
       ({!assume}).
 
@@ -119,10 +126,12 @@ type t = {
 type env
 (** The type for the environment variables that bear on capabilities. *)
 
-val env : (string -> string option) -> win32:bool -> env
-(** [env getenv ~win32] reads the environment through [getenv], such as
-    [Sys.getenv_opt]; an empty value counts as unset. [win32] says the terminal
-    is a Windows console. *)
+val env :
+  ?terminfo:Matrix_terminfo.t -> (string -> string option) -> win32:bool -> env
+(** [env ~terminfo getenv ~win32] reads the environment through [getenv], such
+    as [Sys.getenv_opt]; an empty value counts as unset. [terminfo] is the
+    description of [TERM], if there is one ([Matrix_tty.terminfo] finds it).
+    [win32] says the terminal is a Windows console. *)
 
 (** {1:evidence Evidence} *)
 

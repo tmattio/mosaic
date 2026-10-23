@@ -184,7 +184,13 @@ module Backend = struct
               Signal.release holder;
               Mutex.protect pipes_lock (fun () ->
                   pipes := List.filter (fun (w, _) -> w != wake) !pipes)));
-      env = Terminal.Caps.env Sys.getenv_opt ~win32:Sys.win32;
+      env =
+        (let terminfo =
+           match Sys.getenv_opt "TERM" with
+           | Some term -> Result.to_option (Matrix_tty.terminfo term)
+           | None -> None
+         in
+         Terminal.Caps.env ?terminfo Sys.getenv_opt ~win32:Sys.win32);
     }
 end
 
