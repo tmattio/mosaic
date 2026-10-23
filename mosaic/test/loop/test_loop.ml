@@ -2064,3 +2064,20 @@ let%expect_test
     { base with Mosaic.subscriptions = (fun _ -> failwith "subscriptions") };
   equal ~msg:"the terminal was given back" int 1 !cleanups;
   [%expect {| |}]
+
+(* Ctrl+C quits unless a handler prevented it. *)
+let%expect_test "an unprevented Ctrl+C quits" =
+  let run ~prevent =
+    let observed, application =
+      recording (fun _ ->
+          Mosaic.Sub.on_key ~phase:Capture (fun key ->
+              if prevent then Mosaic.Event.Key.prevent_default key;
+              Some (Pressed (key_name key))))
+    in
+    drive ~width:70 ~height:1 application [ `Feed "a\003b" ];
+    !observed.keys
+  in
+  equal ~msg:"quits at Ctrl+C" (list string) [ "a"; "c" ] (run ~prevent:false);
+  equal ~msg:"prevented, the run goes on" (list string) [ "a"; "c"; "b" ]
+    (run ~prevent:true);
+  [%expect {| |}]

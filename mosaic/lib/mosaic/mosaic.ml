@@ -709,9 +709,16 @@ let handle_input runtime (input : Matrix.event) =
         runtime.color_scheme_sub
   | Key key ->
       let path = Renderer.focus_path runtime.renderer in
+      let event = Event.Key.of_input key in
       listen runtime ~stopped:Event.Key.propagation_stopped runtime.key_subs
         (Renderer.dispatch_key runtime.renderer path)
-        (Event.Key.of_input key)
+        event;
+      (* Ctrl+C quits, unless a handler prevented it: in raw mode it is a
+         key, and its default is the program's. *)
+      if
+        Matrix.Input.Keystroke.is_interrupt key
+        && not (Event.Key.default_prevented event)
+      then runtime.quit <- true
   | Key_release release ->
       List.iter
         (fun f -> Option.iter (deliver runtime) (f release))

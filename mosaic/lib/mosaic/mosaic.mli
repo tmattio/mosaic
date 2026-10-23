@@ -1109,10 +1109,13 @@ val run :
   ('model, 'msg) app ->
   unit
 (** [run ?backend ?config ?process_perform ?probe app] calls [app]'s [init],
-    then runs [app] in the terminal ({!Matrix.run}) until {!Cmd.val-quit}, the
-    end of the input, or a signal that ends the process. The terminal is given
-    back on every way out, an exception included. [init] runs before the
-    terminal is taken; its commands and the first subscriptions run after.
+    then runs [app] in the terminal ({!Matrix.run}) until {!Cmd.val-quit}, a
+    Ctrl+C press no handler prevented ({!Event.Key.prevent_default}), the end of
+    the input, or a signal that ends the process. In raw mode Ctrl+C is a key:
+    quitting is its default, which an element or a listener that uses the key
+    prevents. The terminal is given back on every way out, an exception
+    included. [init] runs before the terminal is taken; its commands and the
+    first subscriptions run after.
 
     - [backend] -- the terminal to run in. Defaults to {!Matrix.Backend.unix}.
     - [config] -- what the run sets up. Defaults to {!Matrix.config} with a
