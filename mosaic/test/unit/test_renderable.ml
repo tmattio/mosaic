@@ -248,7 +248,7 @@ let destroy_clears_handlers () =
   let paste_fired = ref false in
   Renderable.on_key child (fun _ -> key_fired := true);
   Renderable.on_mouse child (fun _ -> mouse_fired := true);
-  Renderable.set_paste_handler child (Some (fun _ -> paste_fired := true));
+  Renderable.on_paste child (fun _ -> paste_fired := true);
   Renderable.destroy child;
   Renderable.Private.emit_key child (Event.Key.of_input key_ev_a);
   Renderable.Private.emit_mouse child
@@ -512,7 +512,7 @@ let emit_key_prevent_default_preserves_handlers () =
   Renderable.Private.emit_key child (Event.Key.of_input key_ev_a);
   is_true ~msg:"prevent_default only suppresses widget defaults" !old_fired
 
-let emit_key_stops_on_stop_propagation () =
+let emit_key_runs_handlers_after_stop_propagation () =
   let t = make_ctx () in
   let root = make_root t in
   let child = Renderable.create ~parent:root () in
@@ -520,15 +520,16 @@ let emit_key_stops_on_stop_propagation () =
   Renderable.on_key child (fun _ -> old_fired := true);
   Renderable.on_key child Event.Key.stop_propagation;
   Renderable.Private.emit_key child (Event.Key.of_input key_ev_a);
-  is_false ~msg:"propagation stops remaining handlers" !old_fired
+  is_true ~msg:"stopping never hides an event from its node's handlers"
+    !old_fired
 
-let emit_default_key_runs () =
+let run_key_behavior_runs () =
   let t = make_ctx () in
   let root = make_root t in
   let child = Renderable.create ~parent:root () in
   let fired = ref false in
-  Renderable.set_default_key_handler child (Some (fun _ -> fired := true));
-  Renderable.Private.emit_default_key child (Event.Key.of_input key_ev_a);
+  Renderable.set_key_behavior child (Some (fun _ -> fired := true));
+  Renderable.Private.run_key_behavior child (Event.Key.of_input key_ev_a);
   is_true ~msg:"fired" !fired
 
 let emit_key_does_not_run_default () =
@@ -536,8 +537,7 @@ let emit_key_does_not_run_default () =
   let root = make_root t in
   let child = Renderable.create ~parent:root () in
   let default_fired = ref false in
-  Renderable.set_default_key_handler child
-    (Some (fun _ -> default_fired := true));
+  Renderable.set_key_behavior child (Some (fun _ -> default_fired := true));
   Renderable.Private.emit_key child (Event.Key.of_input key_ev_a);
   is_false ~msg:"default not fired" !default_fired
 
@@ -554,44 +554,18 @@ let on_mouse_accumulates () =
     (Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier Move);
   equal ~msg:"both fired" int 2 !count
 
-let emit_mouse_bubbles () =
+let emit_mouse_runs_only_the_node () =
   let t = make_ctx () in
   let root = make_root t in
   let parent = Renderable.create ~parent:root ~id:"parent" () in
   let child = Renderable.create ~parent ~id:"child" () in
-  let parent_fired = ref false in
+  let parent_fired = ref false and child_fired = ref false in
   Renderable.on_mouse parent (fun _ -> parent_fired := true);
+  Renderable.on_mouse child (fun _ -> child_fired := true);
   Renderable.Private.emit_mouse child
     (Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier Move);
-  is_true ~msg:"parent fired" !parent_fired
-
-let stop_propagation_prevents_bubble () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let parent = Renderable.create ~parent:root ~id:"parent" () in
-  let child = Renderable.create ~parent ~id:"child" () in
-  let parent_fired = ref false in
-  Renderable.on_mouse parent (fun _ -> parent_fired := true);
-  Renderable.on_mouse child (fun ev -> Event.Mouse.stop_propagation ev);
-  Renderable.Private.emit_mouse child
-    (Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier Move);
-  is_false ~msg:"parent not fired" !parent_fired
-
-let deep_bubbling_stop () =
-  let t = make_ctx () in
-  let root = make_root t in
-  let grandparent = Renderable.create ~parent:root ~id:"gp" () in
-  let parent = Renderable.create ~parent:grandparent ~id:"p" () in
-  let child = Renderable.create ~parent ~id:"c" () in
-  let gp_fired = ref false in
-  let p_fired = ref false in
-  Renderable.on_mouse grandparent (fun _ -> gp_fired := true);
-  Renderable.on_mouse parent (fun _ -> p_fired := true);
-  Renderable.on_mouse child (fun ev -> Event.Mouse.stop_propagation ev);
-  Renderable.Private.emit_mouse child
-    (Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier Move);
-  is_false ~msg:"parent not fired" !p_fired;
-  is_false ~msg:"grandparent not fired" !gp_fired
+  is_true ~msg:"child fired" !child_fired;
+  is_false ~msg:"the renderer, not the node, walks to the parent" !parent_fired
 
 (* ── Paste Events ── *)
 
@@ -601,9 +575,9 @@ let paste_replaces () =
   let child = Renderable.create ~parent:root () in
   let first_fired = ref false in
   let second_fired = ref false in
-  Renderable.set_paste_handler child (Some (fun _ -> first_fired := true));
-  Renderable.set_paste_handler child (Some (fun _ -> second_fired := true));
-  Renderable.Private.emit_paste child (Event.Paste.of_text "x");
+  Renderable.set_paste_behavior child (Some (fun _ -> first_fired := true));
+  Renderable.set_paste_behavior child (Some (fun _ -> second_fired := true));
+  Renderable.Private.run_paste_behavior child (Event.Paste.of_text "x");
   is_false ~msg:"first not fired" !first_fired;
   is_true ~msg:"second fired" !second_fired
 
@@ -612,9 +586,9 @@ let paste_none_clears () =
   let root = make_root t in
   let child = Renderable.create ~parent:root () in
   let fired = ref false in
-  Renderable.set_paste_handler child (Some (fun _ -> fired := true));
-  Renderable.set_paste_handler child None;
-  Renderable.Private.emit_paste child (Event.Paste.of_text "x");
+  Renderable.set_paste_behavior child (Some (fun _ -> fired := true));
+  Renderable.set_paste_behavior child None;
+  Renderable.Private.run_paste_behavior child (Event.Paste.of_text "x");
   is_false ~msg:"not fired" !fired
 
 (* ── Live Count ── *)
@@ -1064,16 +1038,14 @@ let mouse_unmount_stops_remaining_handlers () =
   let context = make_ctx () in
   let root = make_root context in
   let child = Renderable.create ~parent:root () in
-  let default_ran = ref false and parent_ran = ref false in
-  Renderable.on_mouse root (fun _ -> parent_ran := true);
+  let default_ran = ref false in
   Renderable.on_mouse child (fun _ -> default_ran := true);
   Renderable.on_mouse child (fun _ -> Renderable.destroy child);
   Renderable.Private.emit_mouse child
     (Event.Mouse.make ~x:0 ~y:0 ~modifiers:Event.Mouse.no_modifier
        (Down { button = Left }));
   is_false ~msg:"remaining handlers cannot mutate an unmounted widget"
-    !default_ran;
-  is_false ~msg:"destroyed target does not bubble" !parent_ran
+    !default_ran
 
 let () =
   run "mosaic.renderable"
@@ -1158,24 +1130,22 @@ let () =
           test "on_key accumulates newest first" on_key_order;
           test "prevent_default preserves regular key handlers"
             emit_key_prevent_default_preserves_handlers;
-          test "stop_propagation stops key handlers"
-            emit_key_stops_on_stop_propagation;
-          test "emit_default_key runs fallback" emit_default_key_runs;
-          test "emit_key does not run default handler"
+          test "stop_propagation keeps the node's other handlers"
+            emit_key_runs_handlers_after_stop_propagation;
+          test "run_key_behavior runs the behavior" run_key_behavior_runs;
+          test "emit_key does not run the behavior"
             emit_key_does_not_run_default;
         ];
       group "Mouse events"
         [
           test "on_mouse accumulates handlers" on_mouse_accumulates;
-          test "emit_mouse bubbles to parent" emit_mouse_bubbles;
-          test "stop_propagation prevents bubbling"
-            stop_propagation_prevents_bubble;
-          test "deep bubbling stop" deep_bubbling_stop;
+          test "emit_mouse runs only the node's handlers"
+            emit_mouse_runs_only_the_node;
         ];
       group "Paste events"
         [
-          test "set_paste_handler replaces" paste_replaces;
-          test "set_paste_handler None clears" paste_none_clears;
+          test "set_paste_behavior replaces" paste_replaces;
+          test "set_paste_behavior None clears" paste_none_clears;
         ];
       group "Live count"
         [

@@ -156,8 +156,8 @@ and node = {
   mutable click_handler : (Event.mouse -> unit) option;
   mutable key_handlers : (Event.key -> unit) list;
   mutable paste_handlers : (Event.paste -> unit) list;
-  mutable default_key_handler : (Event.key -> unit) option;
-  mutable paste_handler : (Event.paste -> unit) option;
+  mutable key_behavior : (Event.key -> unit) option;
+  mutable paste_behavior : (Event.paste -> unit) option;
   (* Selection *)
   mutable selection : selection_handler option;
   (* Child clipping *)
@@ -379,8 +379,8 @@ let make_node ctx ~toffee_node ~id ~num ?(style = Toffee.Style.default)
     click_handler = None;
     key_handlers = [];
     paste_handlers = [];
-    default_key_handler = None;
-    paste_handler = None;
+    key_behavior = None;
+    paste_behavior = None;
     selection = None;
     child_clip = None;
     text_rows_provider = None;
@@ -728,8 +728,8 @@ let destroy t =
     t.click_handler <- None;
     t.key_handlers <- [];
     t.paste_handlers <- [];
-    t.default_key_handler <- None;
-    t.paste_handler <- None;
+    t.key_behavior <- None;
+    t.paste_behavior <- None;
     t.focus_handler <- None;
     t.blur_handler <- None;
     t.selection <- None;
@@ -858,64 +858,31 @@ let set_live t v =
 
 (* ───── Events ───── *)
 
-(* Event dispatch model: - Mouse: handlers run in registration order (newest
-   first), then bubble to parent unless [stop_propagation] is called. Bubbling
-   matches DOM semantics and lets containers handle events their children
-   ignore. - Key: handlers run newest-first, stopping when one calls
-   [prevent_default]. No bubbling — keys target the focused node only. A
-   separate [default_key_handler] runs after all regular handlers as a fallback
-   (used by widgets to provide base key behavior that can be overridden by user
-   handlers). - Paste: handlers run newest-first, stopping when one calls
-   [prevent_default]. No bubbling. A separate [paste_handler] runs after regular
-   handlers as the default widget behavior. *)
+(* A node's handlers run newest first, and all of them run: stopping
+   propagation keeps an event from other nodes, never from the rest of the
+   node that stopped it. A handler that destroys its node ends the node's
+   run. The renderer walks an event's path and runs the behaviors. *)
 
 let on_mouse t handler = t.mouse_handlers <- handler :: t.mouse_handlers
 let on_key t handler = t.key_handlers <- handler :: t.key_handlers
 let on_paste t handler = t.paste_handlers <- handler :: t.paste_handlers
-let set_default_key_handler t handler = t.default_key_handler <- handler
-let set_paste_handler t handler = t.paste_handler <- handler
+let set_key_behavior t behavior = t.key_behavior <- behavior
+let set_paste_behavior t behavior = t.paste_behavior <- behavior
 
-let rec emit_mouse t event =
-  let rec run = function
-    | [] -> ()
-    | handler :: rest ->
-        if (not t.destroyed) && not (Event.Mouse.propagation_stopped event) then begin
-          handler event;
-          run rest
-        end
-  in
-  run t.mouse_handlers;
-  if (not t.destroyed) && not (Event.Mouse.propagation_stopped event) then
-    match t.parent with Some p -> emit_mouse p event | None -> ()
-
-let emit_key t event =
+let run_handlers t handlers event =
   let rec run = function
     | [] -> ()
     | handler :: rest ->
         handler event;
-        if (not t.destroyed) && not (Event.Key.propagation_stopped event) then
-          run rest
+        if not t.destroyed then run rest
   in
-  run t.key_handlers
+  run handlers
 
-let emit_default_key t event =
-  Option.iter (fun handler -> handler event) t.default_key_handler
-
-let emit_paste t event =
-  let was_focused = t.focused in
-  let rec run = function
-    | [] -> ()
-    | handler :: rest ->
-        handler event;
-        if (not t.destroyed) && not (Event.Paste.propagation_stopped event) then
-          run rest
-  in
-  run t.paste_handlers;
-  if
-    (not t.destroyed)
-    && ((not was_focused) || t.focused)
-    && not (Event.Paste.default_prevented event)
-  then Option.iter (fun handler -> handler event) t.paste_handler
+let emit_mouse t event = run_handlers t t.mouse_handlers event
+let emit_key t event = run_handlers t t.key_handlers event
+let emit_paste t event = run_handlers t t.paste_handlers event
+let run_key_behavior t event = Option.iter (fun f -> f event) t.key_behavior
+let run_paste_behavior t event = Option.iter (fun f -> f event) t.paste_behavior
 
 (* ───── Selection ───── *)
 
@@ -1297,8 +1264,9 @@ module Private = struct
 
   let emit_mouse = emit_mouse
   let emit_key = emit_key
-  let emit_default_key = emit_default_key
+  let run_key_behavior = run_key_behavior
   let emit_paste = emit_paste
+  let run_paste_behavior = run_paste_behavior
   let emit_selection_changed = emit_selection_changed
   let clear_selection = clear_selection
   let should_start_selection = should_start_selection

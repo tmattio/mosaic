@@ -1,12 +1,25 @@
 (** Keyboard, paste, and mouse UI events.
 
-    Each event type wraps terminal input from {!Input} with the dispatch control
-    the renderer consults. Key and paste events target the focused renderable
-    only: its handlers run newest-first until one calls [prevent_default], which
-    also suppresses the widget's default behaviour and marks the event as
-    consumed for the host runtime. Mouse events bubble from the hit-tested node
-    to its ancestors — {!Mouse.stop_propagation} stops the bubbling — and
-    additionally carry hit-testing metadata. *)
+    Each event wraps terminal input from {!Matrix_input} with two flags that
+    control its delivery. An event goes along a path, its target and the
+    target's ancestors (see {!Renderer} for how each kind finds its target), and
+    at each node the node's handlers see it. Then come the actions the event
+    causes: a widget's behavior, such as the character a key types into an
+    editor, and the renderer's defaults, such as the text selection a press
+    starts. The flags mean what they mean in the DOM (DOM Standard, §2.9
+    "Interface Event"):
+
+    - {e Stopping propagation} keeps the event from every node after the current
+      one. The current node's other handlers still see it: stopping never hides
+      an event from the node that stopped it.
+    - {e Preventing the default} cancels the actions the event causes. The
+      handlers after the current one still see the event, and read the flag to
+      know it was used.
+
+    The flags are independent: a stopped event still types its character unless
+    it is also prevented. A behavior that acts on an event both prevents and
+    stops it: a key typed into an input reaches neither the input's ancestors
+    nor the application's shortcuts. *)
 
 (** {1:keyboard Keyboard events} *)
 
@@ -14,36 +27,34 @@ module Key : sig
   type t
   (** The type for keyboard events.
 
-      Wraps a key press or repeat ({!Matrix_input.Keystroke.t}) with a
-      default-prevention flag consulted while dispatching to the focused
-      renderable. Releases are not key events: widgets never see them. *)
+      Wraps a key press or repeat ({!Matrix_input.Keystroke.t}) with the two
+      dispatch flags. Releases are not key events: widgets never see them. *)
 
   val of_input : Matrix_input.Keystroke.t -> t
-  (** [of_input ev] is a keyboard event wrapping [ev]. The default-prevention
-      flag starts as [false]. *)
+  (** [of_input ev] is a keyboard event wrapping [ev], neither stopped nor
+      prevented. *)
 
   val data : t -> Matrix_input.Keystroke.t
   (** [data t] is the underlying keystroke. *)
 
   val prevent_default : t -> unit
-  (** [prevent_default t] marks [t] as consumed: the default key action is
-      skipped. Use {!stop_propagation} to stop delivery to subsequent handlers.
-  *)
+  (** [prevent_default t] cancels the actions [t] causes, such as the character
+      it types. *)
 
   val default_prevented : t -> bool
   (** [default_prevented t] is [true] iff {!prevent_default} has been called on
       [t]. *)
 
   val stop_propagation : t -> unit
-  (** [stop_propagation t] stops delivery to subsequent handlers. It does not
-      itself prevent a default action at the current target. *)
+  (** [stop_propagation t] keeps [t] from the nodes after the current one. *)
 
   val propagation_stopped : t -> bool
-  (** [propagation_stopped t] is [true] after {!stop_propagation}. *)
+  (** [propagation_stopped t] is [true] iff {!stop_propagation} has been called
+      on [t]. *)
 
   val equal : t -> t -> bool
-  (** [equal a b] is [true] iff [a] and [b] wrap the same key event. Dispatch
-      control state is ignored. *)
+  (** [equal a b] is [true] iff [a] and [b] wrap the same key event. The flags
+      are ignored. *)
 
   val pp : Format.formatter -> t -> unit
   (** [pp] formats a keyboard event for debugging. *)
@@ -53,37 +64,34 @@ end
 
 module Paste : sig
   type t
-  (** The type for text paste events.
-
-      Wraps pasted text with a default-prevention flag. See {!Key.t} for a
-      description of the dispatch model. *)
+  (** The type for text paste events: pasted text with the two dispatch flags.
+  *)
 
   val of_text : string -> t
-  (** [of_text s] is a paste event containing [s]. The default-prevention flag
-      starts as [false]. *)
+  (** [of_text s] is a paste event containing [s], neither stopped nor
+      prevented. *)
 
   val text : t -> string
   (** [text t] is the pasted text carried by [t]. *)
 
   val prevent_default : t -> unit
-  (** [prevent_default t] marks [t] as consumed: the default paste action is
-      skipped. Use {!stop_propagation} to stop delivery to subsequent handlers.
-  *)
+  (** [prevent_default t] cancels the actions [t] causes, such as inserting its
+      text. *)
 
   val default_prevented : t -> bool
   (** [default_prevented t] is [true] iff {!prevent_default} has been called on
       [t]. *)
 
   val stop_propagation : t -> unit
-  (** [stop_propagation t] stops delivery to subsequent handlers. It does not
-      itself prevent a default action at the current target. *)
+  (** [stop_propagation t] keeps [t] from the nodes after the current one. *)
 
   val propagation_stopped : t -> bool
-  (** [propagation_stopped t] is [true] after {!stop_propagation}. *)
+  (** [propagation_stopped t] is [true] iff {!stop_propagation} has been called
+      on [t]. *)
 
   val equal : t -> t -> bool
-  (** [equal a b] is [true] iff [a] and [b] contain the same text. Dispatch
-      control state is ignored. *)
+  (** [equal a b] is [true] iff [a] and [b] contain the same text. The flags are
+      ignored. *)
 
   val pp : Format.formatter -> t -> unit
   (** [pp] formats a paste event for debugging. *)
@@ -221,17 +229,15 @@ module Mouse : sig
   (** {2:dispatch Dispatch control} *)
 
   val stop_propagation : t -> unit
-  (** [stop_propagation t] prevents [t] from bubbling to ancestor nodes. *)
+  (** [stop_propagation t] keeps [t] from the nodes after the current one. *)
 
   val propagation_stopped : t -> bool
   (** [propagation_stopped t] is [true] iff {!stop_propagation} has been called
       on [t]. *)
 
   val prevent_default : t -> unit
-  (** [prevent_default t] marks renderer-level default behaviour as prevented.
-      This only suppresses renderer-defined defaults (for example, starting a
-      text selection on mouse-down); it does not stop bubbling. Use
-      {!stop_propagation} to prevent bubbling to ancestors. *)
+  (** [prevent_default t] cancels the renderer's defaults for [t], such as the
+      text selection a press starts or the click a release completes. *)
 
   val default_prevented : t -> bool
   (** [default_prevented t] is [true] iff {!prevent_default} has been called on
@@ -239,7 +245,7 @@ module Mouse : sig
 
   val equal : t -> t -> bool
   (** [equal a b] is [true] iff [a] and [b] have the same kind, coordinates,
-      modifiers, and target. Dispatch control state is ignored. *)
+      modifiers, and target. The flags are ignored. *)
 
   val pp : Format.formatter -> t -> unit
   (** [pp] formats a mouse event for debugging. *)

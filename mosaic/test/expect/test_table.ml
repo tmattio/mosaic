@@ -18,8 +18,9 @@ let rows =
 let paging_rows count =
   List.init count (fun index -> [| Table.cell ("row " ^ string_of_int index) |])
 
-let dispatch_mouse app event =
-  ignore (Renderer.dispatch_mouse app.renderer event : Event.mouse)
+let dispatch_mouse app report =
+  let path, event = Renderer.mouse_path app.renderer report in
+  Renderer.dispatch_mouse app.renderer path event
 
 (* ── Basic Rendering ── *)
 

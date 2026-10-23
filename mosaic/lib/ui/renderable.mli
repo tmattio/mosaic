@@ -288,31 +288,42 @@ val set_on_blur : t -> (t -> unit) option -> unit
 (** [set_on_blur t callback] registers a blur lifecycle hook. The callback is
     called immediately after [t] loses focus. [None] clears the hook. *)
 
-(** {1:events Events} *)
+(** {1:events Events}
+
+    An event reaches a node through the renderer, which delivers it along a path
+    of nodes (see {!Renderer} for each kind of event and {!Event} for what
+    stopping and preventing mean). At each node the node's handlers run, newest
+    first, and all of them run: stopping propagation keeps the event from the
+    other nodes, never from the rest of this one. A handler that destroys its
+    node ends the node's run.
+
+    A {e behavior} is what an event does to a widget when nothing prevents it:
+    the character a key types into an editor, the selection a key moves, the
+    text a paste inserts. A node has at most one key behavior and one paste
+    behavior; the renderer runs it after the handlers, on the focused node,
+    unless the event's default is prevented. A behavior that acts on an event
+    prevents its default, and the renderer then stops its propagation: the event
+    is consumed. The keys a widget's behavior acts on are part of the widget's
+    interface, listed in its module. *)
 
 val on_mouse : t -> (Event.mouse -> unit) -> unit
-(** [on_mouse t handler] registers a mouse event handler on [t]. Handlers
-    accumulate and run newest-first. Mouse events bubble to ancestors unless
-    {!Event.Mouse.stop_propagation} is called. *)
+(** [on_mouse t handler] registers a mouse handler on [t]. *)
 
 val on_key : t -> (Event.key -> unit) -> unit
-(** [on_key t handler] registers a keyboard handler on [t]. Handlers accumulate
-    and run newest-first until one calls {!Event.Key.prevent_default}. *)
+(** [on_key t handler] registers a key handler on [t]. *)
 
 val on_paste : t -> (Event.paste -> unit) -> unit
-(** [on_paste t handler] registers a paste handler on [t]. Handlers accumulate
-    and run newest-first until one calls {!Event.Paste.prevent_default}. The
-    default paste handler runs afterwards if the event was not prevented. *)
+(** [on_paste t handler] registers a paste handler on [t]. *)
 
-val set_default_key_handler : t -> (Event.key -> unit) option -> unit
-(** [set_default_key_handler t handler] assigns a fallback key handler that runs
-    after {!on_key} handlers. Only one fallback handler per node. [None] clears
-    it. *)
+val set_key_behavior : t -> (Event.key -> unit) option -> unit
+(** [set_key_behavior t behavior] sets [t]'s key behavior, replacing any
+    previous one; [None] removes it. [behavior] calls
+    {!Event.Key.prevent_default} when it acts on a key. *)
 
-val set_paste_handler : t -> (Event.paste -> unit) option -> unit
-(** [set_paste_handler t handler] assigns the default paste handler on [t]. It
-    runs after {!on_paste} handlers when the paste event was not prevented. Only
-    one default handler per node. [None] clears it. *)
+val set_paste_behavior : t -> (Event.paste -> unit) option -> unit
+(** [set_paste_behavior t behavior] sets [t]'s paste behavior, replacing any
+    previous one; [None] removes it. [behavior] calls
+    {!Event.Paste.prevent_default} when it acts on a paste. *)
 
 (** {1:selection Selection} *)
 
@@ -617,19 +628,21 @@ module Private : sig
   (** [emit_click t event] calls [t]'s click handler without bubbling. *)
 
   val emit_mouse : t -> Event.mouse -> unit
-  (** [emit_mouse t event] dispatches [event] to [t]'s mouse handlers, bubbling
-      to ancestors unless propagation is stopped via
-      {!Event.Mouse.stop_propagation}. *)
+  (** [emit_mouse t event] runs [t]'s mouse handlers on [event]. *)
 
   val emit_key : t -> Event.key -> unit
-  (** [emit_key t event] dispatches [event] to [t]'s key handlers. *)
+  (** [emit_key t event] runs [t]'s key handlers on [event]. *)
 
-  val emit_default_key : t -> Event.key -> unit
-  (** [emit_default_key t event] dispatches [event] to [t]'s default key
-      handler, if any. *)
+  val run_key_behavior : t -> Event.key -> unit
+  (** [run_key_behavior t event] runs [t]'s key behavior on [event], if [t] has
+      one. *)
 
   val emit_paste : t -> Event.paste -> unit
-  (** [emit_paste t event] dispatches [event] to [t]'s paste handler, if any. *)
+  (** [emit_paste t event] runs [t]'s paste handlers on [event]. *)
+
+  val run_paste_behavior : t -> Event.paste -> unit
+  (** [run_paste_behavior t event] runs [t]'s paste behavior on [event], if [t]
+      has one. *)
 
   (** {2:selection Selection} *)
 

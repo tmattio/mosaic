@@ -439,7 +439,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?(position = 0)
            set_scroll_position_internal t (int_of_float (Float.round v));
            t.syncing_from_slider <- false)));
   (* Wire keyboard handler *)
-  Renderable.set_default_key_handler node
+  Renderable.set_key_behavior node
     (Some (fun ev -> if handle_key t ev then Event.Key.prevent_default ev));
   (* Arrow repeat via on_frame *)
   Renderable.set_on_frame node

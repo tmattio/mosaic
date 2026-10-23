@@ -95,29 +95,29 @@ let no_mod = Matrix_input.Keystroke.no_mods
 
 let send_key ?keypad input key =
   let ev = Event.Key.of_input (Test_harness.keystroke ?keypad key) in
-  Renderable.Private.emit_default_key (Text_input.node input) ev
+  Renderable.Private.run_key_behavior (Text_input.node input) ev
 
 let send_key_with_mod input ~modifier key =
   let ev = Event.Key.of_input (Test_harness.keystroke ~mods:modifier key) in
-  Renderable.Private.emit_default_key (Text_input.node input) ev
+  Renderable.Private.run_key_behavior (Text_input.node input) ev
 
 let send_input_event input data =
   let ev = Event.Key.of_input data in
-  Renderable.Private.emit_default_key (Text_input.node input) ev
+  Renderable.Private.run_key_behavior (Text_input.node input) ev
 
 let send_char input c =
   let text = String.make 1 c in
   let ev =
     Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char c)))
   in
-  Renderable.Private.emit_default_key (Text_input.node input) ev
+  Renderable.Private.run_key_behavior (Text_input.node input) ev
 
 let send_char_with_mod input ~modifier c =
   let ev =
     Event.Key.of_input
       (Test_harness.keystroke ~mods:modifier (Char (Uchar.of_char c)))
   in
-  Renderable.Private.emit_default_key (Text_input.node input) ev
+  Renderable.Private.run_key_behavior (Text_input.node input) ev
 
 let focus_input t input =
   let node = Text_input.node input in
@@ -901,7 +901,7 @@ let prevent_default_blocks_input () =
     Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char 'a')))
   in
   Event.Key.prevent_default ev;
-  Renderable.Private.emit_default_key (Text_input.node input) ev;
+  Renderable.Private.run_key_behavior (Text_input.node input) ev;
   equal ~msg:"value unchanged" string "" (Text_input.value input)
 
 (* ── Pretty-printing ── *)
@@ -1003,7 +1003,7 @@ let multiline_history_is_ignored_by_single_line_input () =
         Event.Key.of_input
           (Test_harness.keystroke ~mods:ctrl_mod (Char (Uchar.of_char action)))
       in
-      Renderable.Private.emit_default_key (Textarea.node textarea) event;
+      Renderable.Private.run_key_behavior (Textarea.node textarea) event;
       equal ~msg:"textarea can still restore the shared multiline history"
         string "a\nb" (Editor.text !restored);
       send_char input 'x';

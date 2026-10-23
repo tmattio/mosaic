@@ -781,8 +781,8 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ~state
   Renderable.set_on_resize node (Some (handle_resize t));
   Renderable.set_on_focus node (Some (fun _ -> handle_focus t));
   Renderable.set_on_blur node (Some (fun _ -> handle_blur t));
-  Renderable.set_default_key_handler node (Some (handle_key t));
-  Renderable.set_paste_handler node
+  Renderable.set_key_behavior node (Some (handle_key t));
+  Renderable.set_paste_behavior node
     (Some
        (fun ev ->
          if not (Event.Paste.default_prevented ev) then begin

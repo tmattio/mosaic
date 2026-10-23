@@ -4,7 +4,8 @@ open Test_harness
 
 (* ── Helpers ── *)
 
-let dispatch_mouse r ev = ignore (Renderer.dispatch_mouse r ev : Event.mouse)
+let dispatch_mouse r ev =
+  ignore (Test_harness.dispatch_mouse r ev : Event.mouse)
 
 let make_md ?content ?conceal ?streaming ?render_node ?render_code ?highlighter
     ?syntax_style () =

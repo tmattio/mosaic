@@ -187,55 +187,84 @@ val render_frame_until_settled :
     [`Pending pending]. [pending] may be empty when the remaining work is an
     undescribed render request rather than a pending-work provider. *)
 
-(** {1:events Event dispatch} *)
+(** {1:events Event dispatch}
 
-val dispatch_key :
-  ?capture:(Event.key -> unit) -> t -> Matrix_input.Keystroke.t -> Event.key
-(** [dispatch_key ?capture t key] calls [capture] before the focused handler,
-    then sends [key] to the focused renderable and returns the resulting event.
+    An event is delivered along a {e path}: its target node and the target's
+    ancestors. The path is fixed when it is taken, before anything sees the
+    event, as in the DOM (DOM Standard, §2.9 "Dispatching events"): a handler
+    that moves focus, or a host listener run between taking the path and
+    dispatching, changes where the next event goes, not where this one goes.
+    Nodes destroyed since the path was taken are skipped.
 
-    If the focused node does not prevent default, the default key handler runs.
-    The returned event carries the [default_prevented] flag set by the focused
-    node's handler; callers can inspect it to determine whether the key was
-    consumed. *)
+    Delivery runs each node's handlers, target first, until propagation is
+    stopped (see {!Event} for stopping and preventing). Keys and pastes also
+    have a {e behavior} (see {!Renderable.set_key_behavior}): the effect the
+    event has on the focused widget, such as the character a key types. It runs
+    after the target's handlers, unless the default is prevented, on the node
+    focused when it runs, which is the target unless focus moved: a listener
+    that focuses an input on a printable key gets that character inserted into
+    the input, as the input that follows a key press goes to the element focused
+    then (UI Events, §3.7.5). A behavior that acts consumes the event: its
+    propagation stops, so the target's ancestors and the host never see a key
+    typed into an input.
 
-val dispatch_mouse : t -> Matrix_input.Mouse_report.t -> Event.mouse
-(** [dispatch_mouse t mouse] runs the full mouse dispatch pipeline:
-    - Updates pointer state.
-    - Requests focus for a primary press (see below).
-    - Hit-tests the mouse position. Wheel events that hit nothing are retargeted
-      at the focused renderable, so a scroll over dead space still reaches the
-      nearest scrollable ancestor.
-    - Advances the selection state machine (start, update, or finish).
-    - Tracks hover state and fires [Over]/[Out] events on target change.
-    - Redirects events other than wheel events to the drag-captured node when
-      active.
-    - Dispatches with bubbling to the hit-tested node.
-    - Clears stale selection if not prevented.
+    A host that has listeners of its own takes the path, runs the listeners that
+    come first, dispatches, then runs the listeners that come last. *)
 
-    Returns the event the tree saw, mirroring {!dispatch_key}: the drag-capture
-    and selection paths may adjust the kind (e.g. [is_dragging] on a release),
-    and the [default_prevented] flag reflects whether a handler consumed the
-    event.
+type path
+(** The type for event paths. *)
 
-    A click never takes focus by itself; the focus owner grants it. A primary
-    press first invokes the focus request of the nearest focusable node, if that
-    node is unfocused and has one (see {!Renderable.Private.set_focus_request}).
-    It refreshes hit geometry after the request. The press proceeds only if the
-    node is then focused and still contains the hit target. Selection callbacks
-    are checked again before mouse dispatch: losing focus, hiding or destroying
-    the target, or replacing the hit target cancels the press and its following
-    drag and release. Shift-click does not request focus. Without a request
-    handler, the press and selection proceed without transferring focus; a
-    program that owns focus imperatively gives the node a request that calls
-    {!focus}. *)
+val focus_path : t -> path
+(** [focus_path t] is the path of keys and pastes: the focused node and its
+    ancestors, or no node if nothing is focused. *)
 
-val dispatch_paste :
-  ?capture:(Event.paste -> unit) -> t -> string -> Event.paste
-(** [dispatch_paste ?capture t text] calls [capture] before the focused handler,
-    then sends [text] as a paste event to the focused renderable and returns the
-    event. Its [default_prevented] flag reflects whether the focused node
-    (including a widget's default paste behavior) consumed the paste. *)
+val dispatch_key : t -> path -> Event.key -> unit
+(** [dispatch_key t path event] delivers [event] to [path]'s target, runs the
+    key behavior of the node focused then unless the default is prevented, and
+    delivers [event] to the target's ancestors. *)
+
+val dispatch_paste : t -> path -> Event.paste -> unit
+(** [dispatch_paste t path event] is {!dispatch_key} for a paste, whose behavior
+    inserts it. *)
+
+val mouse_path : t -> Matrix_input.Mouse_report.t -> path * Event.mouse
+(** [mouse_path t report] records the pointer and routes [report] to a target,
+    returning the target's path and the event to dispatch along it.
+
+    A primary press without Shift first invokes the focus request of the nearest
+    focusable node under the pointer, if that node is unfocused and has one (see
+    {!Renderable.Private.set_focus_request}): a click never takes focus by
+    itself; the focus owner grants it. Hit geometry is refreshed after the
+    request, and the press proceeds only if the node is then focused and still
+    contains the hit target. A rejected press is returned prevented, with no
+    target, and the drag and release that follow it are rejected too. Without a
+    request handler the press proceeds without focus moving; a program that owns
+    focus imperatively gives the node a request that calls {!focus}.
+
+    The target is the node under the pointer, from the latest layout. A wheel
+    event over dead space goes to the focused node, whose ancestors reach the
+    nearest scrollable one. A left drag captures the node it starts on: until
+    the release, every event other than the wheel goes to it, and to no node
+    once it is destroyed. The drag and release of a text selection go to the
+    node the selection started on. Moving the pointer to another node sends
+    [Out] to the node it leaves and [Over] to the node it enters. *)
+
+val dispatch_mouse : t -> path -> Event.mouse -> unit
+(** [dispatch_mouse t path event] delivers [event] to [path], then, unless the
+    default is prevented, runs the mouse defaults:
+    - a primary press without Ctrl on a selectable node starts a text selection
+      (an editor's caret is one), if the node is focused or has nothing
+      focusable above it; another primary press clears the selection;
+    - a primary drag extends the selection;
+    - a release that ends a capturing drag sends [Drop] to the node under the
+      pointer;
+    - a primary press and a release over the same node, without a drag between
+      them, is a click: the node's click handler runs (see
+      {!Renderable.Private.set_click_handler}), then those of its ancestors the
+      release is also over.
+
+    The release that ends a capturing drag first sends [Drag_end] to the
+    captured node; the release of a selection ends it, prevented or not. *)
 
 (** {1:focus Focus} *)
 

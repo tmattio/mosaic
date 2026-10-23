@@ -24,6 +24,7 @@
 
 #### Changed
 
+- **Events go along a path, as in the DOM** – a key or a paste, like a mouse event, goes along a path taken when it is dispatched: the target's handlers, then its behavior (the character a key types, the text a paste inserts), then each ancestor's handlers, where keys and pastes reached the focused node only. The behavior runs on the node focused when it runs. `stop_propagation` keeps an event from the nodes after the current one, never from the current node's other handlers, and cancels no behavior; `prevent_default` cancels the behavior and the renderer's defaults. A behavior that acts stops the event. A press reaches its handlers before its defaults (text selection, the caret, the click), which a handler can now prevent. `Renderer.dispatch_key`, `dispatch_paste` and `dispatch_mouse` lose `?capture` and take a path from `Renderer.focus_path` or `Renderer.mouse_path`; `Renderable.set_default_key_handler` and `set_paste_handler` are `set_key_behavior` and `set_paste_behavior`; `Renderable.Private.emit_mouse` runs one node's handlers
 - Frame deltas are milliseconds everywhere (runtime, widgets, Screen post-processors); widget animation constants were split between units before
 - Selection/value props are controlled when provided and uncontrolled otherwise, uniformly across `slider`, `select`, `tab_select`, `table`, and `tree`
 - Editable widgets take key bindings and aliases, and user paste handlers run before widget default paste behavior, matching OpenTUI's default-prevention semantics

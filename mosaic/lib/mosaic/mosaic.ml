@@ -717,10 +717,10 @@ let paste_heard runtime =
   if runtime.paste_stalled_subs <> [] then arm_every_wakeup runtime
 
 let dispatch_paste runtime text =
-  ignore
-    (Renderer.dispatch_paste ~capture:(handle_paste runtime) runtime.renderer
-       text
-      : Event.paste)
+  let event = Event.Paste.of_text text in
+  let path = Renderer.focus_path runtime.renderer in
+  handle_paste runtime event;
+  Renderer.dispatch_paste runtime.renderer path event
 
 (* A paste arrives in pieces and reaches widgets whole, once it completes; a
    cut paste is dropped. Text a terminal reports without a key, such as an
@@ -734,17 +734,18 @@ let handle_input runtime (input : Matrix.event) =
       List.iter
         (fun f -> Option.iter (deliver runtime) (f scheme))
         runtime.color_scheme_sub
-  | Key key_event ->
-      ignore
-        (Renderer.dispatch_key ~capture:(handle_key runtime) runtime.renderer
-           key_event
-          : Event.key)
+  | Key key ->
+      let event = Event.Key.of_input key in
+      let path = Renderer.focus_path runtime.renderer in
+      handle_key runtime event;
+      Renderer.dispatch_key runtime.renderer path event
   | Key_release release ->
       List.iter
         (fun f -> Option.iter (deliver runtime) (f release))
         runtime.key_release_subs
-  | Mouse mouse_event ->
-      let event = Renderer.dispatch_mouse runtime.renderer mouse_event in
+  | Mouse mouse ->
+      let path, event = Renderer.mouse_path runtime.renderer mouse in
+      Renderer.dispatch_mouse runtime.renderer path event;
       handle_mouse runtime event
   | Paste_start ->
       runtime.paste <- Some (Buffer.create 256);

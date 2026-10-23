@@ -74,7 +74,7 @@ let emit_key tree key =
   if
     (not (Event.Key.default_prevented ev))
     && not (Event.Key.propagation_stopped ev)
-  then Renderable.Private.emit_default_key (Tree.node tree) ev
+  then Renderable.Private.run_key_behavior (Tree.node tree) ev
 
 let emit_mouse tree ev = Renderable.Private.emit_mouse (Tree.node tree) ev
 

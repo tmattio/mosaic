@@ -1092,7 +1092,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?columns ?rows
   Renderable.set_measure node (Some (measure t));
   Renderable.set_buffered node true;
   Renderable.set_focusable node true;
-  Renderable.set_default_key_handler node (Some (handle_key t));
+  Renderable.set_key_behavior node (Some (handle_key t));
   Renderable.on_mouse node (handle_mouse t);
   Renderable.set_on_resize node (Some (on_resize t));
   request t;

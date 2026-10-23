@@ -193,18 +193,15 @@ let keystroke ?(mods = no_mod) key : Matrix_input.Keystroke.t =
   in
   { key; mods; text; base = None; keypad = false; repeat = false }
 
-let send_char app c =
-  ignore
-    (Renderer.dispatch_key app.renderer (keystroke (Char (Uchar.of_char c)))
-      : Event.key)
+let send key app =
+  let event = Event.Key.of_input key in
+  Renderer.dispatch_key app.renderer (Renderer.focus_path app.renderer) event
 
-let send_key app key =
-  ignore (Renderer.dispatch_key app.renderer (keystroke key) : Event.key)
+let send_char app c = send (keystroke (Char (Uchar.of_char c))) app
+let send_key app key = send (keystroke key) app
 
 let send_key_with_mod app ~modifier key =
-  ignore
-    (Renderer.dispatch_key app.renderer (keystroke ~mods:modifier key)
-      : Event.key)
+  send (keystroke ~mods:modifier key) app
 
 let mouse_report ~x ~y kind : Matrix_input.Mouse_report.t =
   { kind; x; y; shift = false; alt = false; ctrl = false }

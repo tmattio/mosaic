@@ -121,7 +121,10 @@ let print_hit = function
         (string_of_hit_region hit.region)
         hit.logical_row hit.visual_row
 
-let dispatch_mouse r ev = ignore (Renderer.dispatch_mouse r ev : Event.mouse)
+let dispatch_mouse r report =
+  let path, event = Renderer.mouse_path r report in
+  Renderer.dispatch_mouse r path event
+
 let mouse_down ~x ~y = mouse_report ~x ~y (Press Left)
 let mouse_up ~x ~y = mouse_report ~x ~y (Release (Some Left))
 let mouse_drag ~x ~y = mouse_report ~x ~y (Motion (Some Left))

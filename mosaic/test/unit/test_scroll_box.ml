@@ -187,8 +187,16 @@ let wheel ?(shift = false) direction =
   let modifiers = { Event.Mouse.no_modifier with shift } in
   Event.Mouse.make ~x:0 ~y:0 ~modifiers (Scroll { direction; delta = 1 })
 
+(* The wheel goes from the content up through its ancestors until one stops
+   it, as the renderer delivers it. *)
 let emit_wheel sb event =
-  Renderable.Private.emit_mouse (Scroll_box.content sb) event
+  let rec bubble node =
+    if not (Event.Mouse.propagation_stopped event) then begin
+      Renderable.Private.emit_mouse node event;
+      Option.iter bubble (Renderable.parent node)
+    end
+  in
+  bubble (Scroll_box.content sb)
 
 let parent_node sb =
   match Renderable.parent (Scroll_box.node sb) with

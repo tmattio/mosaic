@@ -87,7 +87,8 @@ let fixture build =
   in
   let key key =
     ignore
-      (Renderer.dispatch_key renderer (Test_harness.keystroke key) : Event.key)
+      (Test_harness.dispatch_key renderer (Test_harness.keystroke key)
+        : Event.key)
   in
   let take () =
     let result = List.rev !messages in
@@ -133,7 +134,7 @@ let viewport_fixture build =
   in
   let wheel direction =
     ignore
-      (Renderer.dispatch_mouse renderer
+      (Test_harness.dispatch_mouse renderer
          (Test_harness.mouse_report ~x:2 ~y:2 (Scroll direction))
         : Event.mouse);
     let proposed = !messages in
@@ -271,7 +272,7 @@ let table_press_reconciliation ~trigger ~replacement expected =
   Renderer.render_frame renderer ~width:24 ~height:6 ~delta:0.;
   ignore (Renderer.render ~full:true renderer : string);
   let mouse = Test_harness.mouse_report ~x:1 ~y:1 (Press Left) in
-  ignore (Renderer.dispatch_mouse renderer mouse : Event.mouse);
+  ignore (Test_harness.dispatch_mouse renderer mouse : Event.mouse);
   equal (list string) expected (List.rev !messages)
 
 let table_press_tests =

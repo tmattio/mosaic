@@ -712,7 +712,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity ?items ?state
   Renderable.set_render rnode (render t);
   Renderable.set_buffered rnode true;
   Renderable.set_focusable rnode true;
-  Renderable.set_default_key_handler rnode (Some (handle_key t));
+  Renderable.set_key_behavior rnode (Some (handle_key t));
   Renderable.on_mouse rnode (handle_mouse t);
   Renderable.set_on_resize rnode (Some (on_resize t));
   request t;

@@ -627,7 +627,7 @@ let create ~parent ?index ?id ?style ?visible ?z_index ?opacity
   (* Wire mouse handler *)
   Renderable.on_mouse node (on_mouse t);
   (* Wire keyboard handler *)
-  Renderable.set_default_key_handler node
+  Renderable.set_key_behavior node
     (Some (fun ev -> if handle_key t ev then Event.Key.prevent_default ev));
   Renderable.set_focusable node true;
   (* Wire update and render callbacks. The update hook lives on the content

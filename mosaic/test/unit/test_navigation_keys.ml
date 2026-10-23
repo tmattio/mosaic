@@ -104,10 +104,10 @@ let fixture build ~mlx =
     Renderer.render_frame renderer ~width:30 ~height:6 ~delta:0.
   in
   let send ?mods ?repeat ?base ?keypad key =
-    ignore
-      (Renderer.dispatch_key renderer
-         (keystroke ?mods ?repeat ?base ?keypad key)
-        : Event.key)
+    let event =
+      Event.Key.of_input (keystroke ?mods ?repeat ?base ?keypad key)
+    in
+    Renderer.dispatch_key renderer (Renderer.focus_path renderer) event
   in
   let take () =
     let result = List.rev !received in

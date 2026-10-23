@@ -153,6 +153,24 @@ let mouse_report ?(shift = false) ?(alt = false) ?(ctrl = false) ~x ~y kind :
     Matrix_input.Mouse_report.t =
   { kind; x; y; shift; alt; ctrl }
 
+(* Dispatch through the renderer as a host does with no listeners of its
+   own: the path is taken, then the event delivered along it. Each returns
+   the event, whose flags tell what the tree did with it. *)
+let dispatch_key renderer key =
+  let event = Event.Key.of_input key in
+  Renderer.dispatch_key renderer (Renderer.focus_path renderer) event;
+  event
+
+let dispatch_paste renderer text =
+  let event = Event.Paste.of_text text in
+  Renderer.dispatch_paste renderer (Renderer.focus_path renderer) event;
+  event
+
+let dispatch_mouse renderer report =
+  let path, event = Renderer.mouse_path renderer report in
+  Renderer.dispatch_mouse renderer path event;
+  event
+
 (* UI-layer mouse events (Event.Mouse). Widget tests that work at the input
    layer instead — Matrix_input.Mouse_report — build their own; the two
    layers are different types, not duplicates. *)

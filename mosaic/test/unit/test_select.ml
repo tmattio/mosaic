@@ -30,7 +30,7 @@ let emit_key sel key =
   let ev = Event.Key.of_input key in
   Renderable.Private.emit_key (Select.node sel) ev;
   if not (Event.Key.default_prevented ev) then
-    Renderable.Private.emit_default_key (Select.node sel) ev
+    Renderable.Private.run_key_behavior (Select.node sel) ev
 
 let emit_mouse sel ev = Renderable.Private.emit_mouse (Select.node sel) ev
 
@@ -652,7 +652,7 @@ let bindings_use_exact_key_events () =
   List.iter
     (fun key ->
       let event = Event.Key.of_input key in
-      Renderable.Private.emit_default_key (Select.node sel) event;
+      Renderable.Private.run_key_behavior (Select.node sel) event;
       is_false ~msg:"unbound modified key remains available"
         (Event.Key.default_prevented event);
       equal ~msg:"unbound event leaves selection unchanged" int 2

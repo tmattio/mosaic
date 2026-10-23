@@ -4,7 +4,8 @@ open Test_harness
 
 (* ── Helpers ── *)
 
-let dispatch_mouse t ev = ignore (Renderer.dispatch_mouse t ev : Event.mouse)
+let dispatch_mouse t ev =
+  ignore (Test_harness.dispatch_mouse t ev : Event.mouse)
 
 let editor ?(value = "") ?max_length ?cursor ?selection () =
   let state =
@@ -96,29 +97,29 @@ let no_mod = Matrix_input.Keystroke.no_mods
 
 let send_key ?keypad ta key =
   let ev = Event.Key.of_input (Test_harness.keystroke ?keypad key) in
-  Renderable.Private.emit_default_key (Textarea.node ta) ev
+  Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
 let send_key_with_mod ta ~modifier key =
   let ev = Event.Key.of_input (Test_harness.keystroke ~mods:modifier key) in
-  Renderable.Private.emit_default_key (Textarea.node ta) ev
+  Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
 let send_input_event ta data =
   let ev = Event.Key.of_input data in
-  Renderable.Private.emit_default_key (Textarea.node ta) ev
+  Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
 let send_char ta c =
   let text = String.make 1 c in
   let ev =
     Event.Key.of_input (Test_harness.keystroke ~text (Char (Uchar.of_char c)))
   in
-  Renderable.Private.emit_default_key (Textarea.node ta) ev
+  Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
 let send_char_with_mod ta ~modifier c =
   let ev =
     Event.Key.of_input
       (Test_harness.keystroke ~mods:modifier (Char (Uchar.of_char c)))
   in
-  Renderable.Private.emit_default_key (Textarea.node ta) ev
+  Renderable.Private.run_key_behavior (Textarea.node ta) ev
 
 let focus_textarea t ta =
   let node = Textarea.node ta in

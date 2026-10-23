@@ -55,11 +55,12 @@ let mouse_scroll ?modifiers ~x ~y direction =
   mouse ?modifiers ~x ~y (Scroll direction)
 
 (* Unit-returning dispatch wrappers: these tests assert via tree state, not
-   the event [Renderer.dispatch_mouse]/[dispatch_paste] return. *)
-let dispatch_mouse t ev = ignore (Renderer.dispatch_mouse t ev : Event.mouse)
+   the event [Test_harness.dispatch_mouse]/[dispatch_paste] return. *)
+let dispatch_mouse t ev =
+  ignore (Test_harness.dispatch_mouse t ev : Event.mouse)
 
 let dispatch_paste t text =
-  ignore (Renderer.dispatch_paste t text : Event.paste)
+  ignore (Test_harness.dispatch_paste t text : Event.paste)
 
 let record_mouse node =
   let log = ref [] in
@@ -1124,12 +1125,12 @@ let key_dispatches_to_focused () =
   in
   let log = record_keys child in
   ignore (Renderer.focus t child : bool);
-  ignore (Renderer.dispatch_key t key_a : Event.key);
+  ignore (Test_harness.dispatch_key t key_a : Event.key);
   equal ~msg:"received one key" int 1 (List.length !log)
 
 let key_does_nothing_when_no_focus () =
   let t = make_renderer () in
-  ignore (Renderer.dispatch_key t key_a : Event.key)
+  ignore (Test_harness.dispatch_key t key_a : Event.key)
 
 let key_multiple_handlers_run () =
   let t = make_renderer () in
@@ -1141,7 +1142,7 @@ let key_multiple_handlers_run () =
   Renderable.on_key child (fun _ev -> incr h1);
   Renderable.on_key child (fun _ev -> incr h2);
   ignore (Renderer.focus t child : bool);
-  ignore (Renderer.dispatch_key t key_a : Event.key);
+  ignore (Test_harness.dispatch_key t key_a : Event.key);
   equal ~msg:"handler 1 ran" int 1 !h1;
   equal ~msg:"handler 2 ran" int 1 !h2
 
@@ -1152,10 +1153,9 @@ let prevent_default_stops_default_handler () =
   in
   let default_ran = ref false in
   Renderable.on_key child (fun ev -> Event.Key.prevent_default ev);
-  Renderable.set_default_key_handler child
-    (Some (fun _ev -> default_ran := true));
+  Renderable.set_key_behavior child (Some (fun _ev -> default_ran := true));
   ignore (Renderer.focus t child : bool);
-  ignore (Renderer.dispatch_key t key_a : Event.key);
+  ignore (Test_harness.dispatch_key t key_a : Event.key);
   is_false ~msg:"default not called" !default_ran
 
 let paste_dispatches_to_focused () =
@@ -1164,7 +1164,7 @@ let paste_dispatches_to_focused () =
     make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:10 ~h:5 ~focusable:true ()
   in
   let received = ref None in
-  Renderable.set_paste_handler child
+  Renderable.set_paste_behavior child
     (Some (fun ev -> received := Some (Event.Paste.text ev)));
   ignore (Renderer.focus t child : bool);
   dispatch_paste t "hello";
@@ -1182,11 +1182,132 @@ let paste_contains_correct_text () =
     make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:10 ~h:5 ~focusable:true ()
   in
   let received = ref "" in
-  Renderable.set_paste_handler child
+  Renderable.set_paste_behavior child
     (Some (fun ev -> received := Event.Paste.text ev));
   ignore (Renderer.focus t child : bool);
   dispatch_paste t "world\n123";
   equal ~msg:"text" string "world\n123" !received
+
+(* A focused child under a parent under the root, each logging the keys its
+   handlers see, and the child's behavior, which acts on 'a' only. *)
+let key_tree () =
+  let t = make_renderer () in
+  let log = ref [] in
+  let parent = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:10 ~h:5 () in
+  let child = make_child ~parent ~x:0 ~y:0 ~w:5 ~h:1 ~focusable:true () in
+  let record name node =
+    Renderable.on_key node (fun _ -> log := name :: !log)
+  in
+  record "root" (Renderer.root t);
+  record "parent" parent;
+  record "child" child;
+  Renderable.set_key_behavior child
+    (Some
+       (fun ev ->
+         log := "behavior" :: !log;
+         if
+           Test_harness.(
+             Event.Key.data ev = keystroke (Char (Uchar.of_char 'a')))
+         then Event.Key.prevent_default ev));
+  ignore (Renderer.focus t child : bool);
+  (t, parent, child, log)
+
+let send t key =
+  let event = Event.Key.of_input key in
+  Renderer.dispatch_key t (Renderer.focus_path t) event;
+  event
+
+let unused_key_bubbles_to_ancestors () =
+  let t, _, _, log = key_tree () in
+  let event = send t (Test_harness.char_key 'b') in
+  equal ~msg:"target, behavior, then ancestors innermost first" (list string)
+    [ "child"; "behavior"; "parent"; "root" ]
+    (List.rev !log);
+  is_false ~msg:"nothing consumed it" (Event.Key.propagation_stopped event)
+
+let acting_behavior_consumes () =
+  let t, _, _, log = key_tree () in
+  let event = send t key_a in
+  equal ~msg:"ancestors never see a key the behavior acted on" (list string)
+    [ "child"; "behavior" ] (List.rev !log);
+  is_true ~msg:"prevented" (Event.Key.default_prevented event);
+  is_true ~msg:"stopped" (Event.Key.propagation_stopped event)
+
+let stop_keeps_behavior () =
+  let t, _, child, log = key_tree () in
+  Renderable.on_key child Event.Key.stop_propagation;
+  let _ = send t (Test_harness.char_key 'b') in
+  equal ~msg:"stopping hides the key from ancestors, not from the behavior"
+    (list string) [ "child"; "behavior" ] (List.rev !log)
+
+let path_is_fixed_behavior_follows_focus () =
+  let t, _, child, log = key_tree () in
+  let other =
+    make_child ~parent:(Renderer.root t) ~x:0 ~y:6 ~w:5 ~h:1 ~focusable:true ()
+  in
+  Renderable.set_key_behavior other
+    (Some (fun _ -> log := "other behavior" :: !log));
+  Renderable.on_key child (fun _ -> ignore (Renderer.focus t other : bool));
+  let path = Renderer.focus_path t in
+  Renderer.dispatch_key t path (Event.Key.of_input (Test_harness.char_key 'b'));
+  equal ~msg:"handlers keep the path taken; the behavior runs on the focus now"
+    (list string)
+    [ "child"; "other behavior"; "parent"; "root" ]
+    (List.rev !log);
+  log := [];
+  Renderable.destroy child;
+  Renderer.dispatch_key t path (Event.Key.of_input (Test_harness.char_key 'c'));
+  equal ~msg:"a node destroyed since the path was taken is skipped"
+    (list string)
+    [ "other behavior"; "parent"; "root" ]
+    (List.rev !log)
+
+let mouse_bubbles_until_stopped () =
+  let t = make_renderer () in
+  let log = ref [] in
+  let parent = make_child ~parent:(Renderer.root t) ~x:0 ~y:0 ~w:10 ~h:5 () in
+  let child = make_child ~parent ~x:0 ~y:0 ~w:5 ~h:2 () in
+  Renderable.on_mouse (Renderer.root t) (fun _ -> log := "root" :: !log);
+  Renderable.on_mouse parent (fun ev ->
+      log := "parent" :: !log;
+      Event.Mouse.stop_propagation ev);
+  Renderable.on_mouse parent (fun _ -> log := "parent, newer" :: !log);
+  Renderable.on_mouse child (fun _ -> log := "child" :: !log);
+  do_frame t;
+  dispatch_mouse t (mouse_scroll ~x:1 ~y:1 `Down);
+  equal ~msg:"stopping ends the walk after the stopping node's handlers"
+    (list string)
+    [ "child"; "parent, newer"; "parent" ]
+    (List.rev !log)
+
+let prevented_press_starts_no_selection () =
+  let t = make_renderer () in
+  let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
+  Renderable.set_selection child
+    ~should_start:(fun ~x:_ ~y:_ -> true)
+    ~on_change:(fun _ -> true)
+    ~clear:(fun () -> ())
+    ~get_text:(fun () -> "");
+  Renderable.on_mouse child Event.Mouse.prevent_default;
+  do_frame t;
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  is_none ~msg:"a selection is a default a handler can prevent"
+    (Renderer.selection t)
+
+let click_on_selectable_node () =
+  let t = make_renderer () in
+  let child = make_child ~parent:(Renderer.root t) ~x:5 ~y:5 ~w:10 ~h:5 () in
+  Renderable.set_selection child
+    ~should_start:(fun ~x:_ ~y:_ -> true)
+    ~on_change:(fun _ -> true)
+    ~clear:(fun () -> ())
+    ~get_text:(fun () -> "");
+  let clicks = ref 0 in
+  Renderable.Private.set_click_handler child (Some (fun _ -> incr clicks));
+  do_frame t;
+  dispatch_mouse t (mouse_press ~x:7 ~y:7 ());
+  dispatch_mouse t (mouse_release ~x:7 ~y:7 ());
+  equal ~msg:"a press that starts a selection still clicks" int 1 !clicks
 
 (* ── Mouse ── *)
 
@@ -1950,23 +2071,23 @@ let scrollbar_geometry_settles_before_next_input () =
   equal ~msg:"next mouse event reaches the newly allocated scrollbar" int 1
     !bar_moves
 
-let paste_focus_change_suppresses_old_default () =
+let paste_behavior_runs_on_the_focus_current_then () =
   let renderer = make_renderer () in
   let parent = Renderer.root renderer in
   let first = make_child ~parent ~x:0 ~y:0 ~w:5 ~h:1 ~focusable:true () in
   let second = make_child ~parent ~x:6 ~y:0 ~w:5 ~h:1 ~focusable:true () in
   let first_edits = ref 0 and second_edits = ref 0 in
-  Renderable.set_paste_handler first (Some (fun _ -> incr first_edits));
-  Renderable.set_paste_handler second (Some (fun _ -> incr second_edits));
+  Renderable.set_paste_behavior first (Some (fun _ -> incr first_edits));
+  Renderable.set_paste_behavior second (Some (fun _ -> incr second_edits));
   Renderable.on_paste first (fun _ ->
       ignore (Renderer.focus renderer second : bool));
   ignore (Renderer.focus renderer first : bool);
   dispatch_paste renderer "first";
-  equal ~msg:"old focused editor must not consume paste after interception" int
-    0 !first_edits;
-  equal ~msg:"an in-flight event is not retargeted" int 0 !second_edits;
+  equal ~msg:"the editor focus left does not insert" int 0 !first_edits;
+  equal ~msg:"the editor focused when the insertion runs inserts" int 1
+    !second_edits;
   dispatch_paste renderer "second";
-  equal ~msg:"next event uses accepted focus" int 1 !second_edits
+  equal ~msg:"next event uses accepted focus" int 2 !second_edits
 
 let accepted_focus_does_not_retarget_press () =
   let renderer = make_renderer () in
@@ -1992,7 +2113,7 @@ let accepted_focus_does_not_retarget_press () =
   do_frame ~width:20 ~height:4 renderer;
   List.iter
     (fun mouse ->
-      let event = Renderer.dispatch_mouse renderer mouse in
+      let event = Test_harness.dispatch_mouse renderer mouse in
       is_true ~msg:"retargeted gesture suppressed"
         (Event.Mouse.default_prevented event))
     [
@@ -2042,13 +2163,15 @@ let selection_cleanup_revalidates_focus_target () =
       armed := true;
       let received = record_mouse target in
       let event =
-        Renderer.dispatch_mouse renderer (mouse_press ~x:11 ~y:1 ())
+        Test_harness.dispatch_mouse renderer (mouse_press ~x:11 ~y:1 ())
       in
       is_true ~msg:"cleanup invalidates the press"
         (Event.Mouse.default_prevented event);
       is_none ~msg:"no selection starts on the invalidated target"
         (Renderer.selection renderer);
-      equal ~msg:"invalidated target receives no mouse press" int 0
+      (* The handlers see the press before its default starts the selection,
+         which the cleanup then invalidates. *)
+      equal ~msg:"invalidated target's handlers saw only the press" int 1
         (List.length !received))
     [ `Hide; `Destroy; `Refocus; `Refocus_existing ]
 
@@ -2071,7 +2194,7 @@ let selection_notification_revalidates_focus_target () =
   do_frame ~width:20 ~height:4 renderer;
   List.iter
     (fun mouse ->
-      let event = Renderer.dispatch_mouse renderer mouse in
+      let event = Test_harness.dispatch_mouse renderer mouse in
       is_true ~msg:"selection callback invalidates the gesture"
         (Event.Mouse.default_prevented event))
     [
@@ -2080,7 +2203,9 @@ let selection_notification_revalidates_focus_target () =
       mouse_release ~x:2 ~y:1 ();
     ];
   is_none ~msg:"invalidated selection is cleared" (Renderer.selection renderer);
-  equal ~msg:"target receives no mouse gesture" int 0 (List.length !received)
+  (* The handlers see the press before its default starts the selection; the
+     invalidated press takes its drag and release with it. *)
+  equal ~msg:"target receives only the press" int 1 (List.length !received)
 
 let () =
   run "mosaic.renderer"
@@ -2102,8 +2227,8 @@ let () =
         layout_preparation_does_not_advance_live_widgets;
       test "scrollbar geometry settles before next input"
         scrollbar_geometry_settles_before_next_input;
-      test "paste focus change suppresses old default"
-        paste_focus_change_suppresses_old_default;
+      test "paste behavior runs on the focus current then"
+        paste_behavior_runs_on_the_focus_current_then;
       group "Lifecycle"
         [
           test "creates with default style" creates_with_default_style;
@@ -2226,6 +2351,16 @@ let () =
           test "paste does nothing when no focus"
             paste_does_nothing_when_no_focus;
           test "paste contains correct text" paste_contains_correct_text;
+          test "an unused key bubbles to the ancestors"
+            unused_key_bubbles_to_ancestors;
+          test "a behavior that acts consumes the key" acting_behavior_consumes;
+          test "stopping a key keeps its behavior" stop_keeps_behavior;
+          test "the path is fixed and the behavior follows focus"
+            path_is_fixed_behavior_follows_focus;
+          test "mouse handlers bubble until stopped" mouse_bubbles_until_stopped;
+          test "a prevented press starts no selection"
+            prevented_press_starts_no_selection;
+          test "a click on a selectable node" click_on_selectable_node;
         ];
       group "Mouse"
         [
