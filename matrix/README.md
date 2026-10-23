@@ -67,8 +67,8 @@ event, a timer that came due (`Matrix.at`), a function another thread posted
 `Matrix.next` waits for the terminal with `select(2)`. A program with an event
 loop of its own takes the run's steps with `Matrix.step app ~now`, which never
 waits, and waits with that loop until one of `Matrix.fds app` is readable or
-`Matrix.deadline app` comes. Mosaic's `24-eio`, `26-lwt` and `27-threads`
-examples show it for Eio, Lwt and threads.
+`Matrix.deadline app` comes. Mosaic's `mosaic.eio` library does it for Eio,
+and its `27-threads` example with threads.
 
 ### Display Modes
 

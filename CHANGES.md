@@ -6,7 +6,7 @@
 
 #### Added
 
-- **Examples for other event loops, run in a pseudo-terminal by the tests** – `24-eio` runs the program on a domain the program's `Domain_manager` gives it and waits for it with Eio, its jobs fibers of the main domain; `26-lwt` runs it as a promise whose cancellation requests its stop and resolves at once, the terminal given back on the program's domain and awaited with `Lwt_unix.wait_read` where it must be; `27-threads` feeds it from a thread with `Mosaic.dispatch` and stops it from a watchdog. The Eio and Lwt examples are built when their library is installed, and `eio_main` and `lwt` are test dependencies of the `mosaic` package
+- **Running under Eio and Lwt** – the libraries `mosaic.eio` and `mosaic.lwt`, built when `eio` or `lwt` is installed (optional dependencies of the `mosaic` package). `Mosaic_eio.run domain_mgr app` runs a program from an Eio fiber: the program takes its steps on a domain `domain_mgr` creates and waits there with Eio, the work of `Cmd.perform` and `Sub.worker` runs as fibers of the calling domain, where it may call Eio, and cancelling the calling fiber ends the program, the terminal given back before `run` raises. `Mosaic_lwt.run app` is a promise that runs a program on a domain of its own, its work on Lwt's thread; cancelling the promise requests the program's stop, even before the program has begun, and rejects it at once while the program gives the terminal back on its domain, and code that must wait for the terminal requests the stop it passed as `~stop` and waits for the promise. The examples `24-eio` and `26-lwt` run on them, `27-threads` feeds a program from a thread with `Mosaic.dispatch` and stops it from a watchdog, and the tests run the three in a pseudo-terminal
 - **Driving a program by its steps** – `Mosaic.start app f` runs `app` with the waiting left to `f`: `Mosaic.step r ~now` has the program take and act on its run's next step (`` `Stepped ``, `` `Idle `` until one of `Mosaic.fds r` is readable or `Mosaic.deadline r` comes, `` `Stopped `` once it is over), so a program waits with its own event loop. `Mosaic.dispatch r msg` gives the program a message from any thread, domain or fiber. The run itself stays Mosaic's: the caller never holds its `Matrix.app`
 - **Highlighted editing** – `textarea ~syntax` takes the syntax settings of a code view: a highlighter receives each accepted text with the edit from its latest result, and while a result is pending the text keeps the styling of the bytes it shares with the last one. `~annotations` stays for styles the application resolves itself, such as search matches, and goes over the syntax colors (`Text_buffer.Annotations.merge`)
 - **Running a program in the terminal** – `Cmd.exec f` gives the terminal to `f` (an editor, a pager) and dispatches its result once the terminal is taken again; `Cmd.suspend` stops the job as Ctrl+Z does in a shell
@@ -195,7 +195,7 @@
 - The `matrix.input` `Keymap` API, superseded by `Mosaic.Shortcut`
 - `Ansi.Color.downgrade`, the legacy CSI-u toggles, and the obsolete color-scheme DSR query
 - `Input.equal_full`; `Input.equal` is now structural
-- The `matrix-eio` package: an Eio program waits for the run's descriptors with Eio itself, on a domain the program's `Domain_manager` gives the loop (mosaic's `24-eio` example)
+- The `matrix-eio` package: an Eio program waits for the run's descriptors with Eio itself, on a domain the program's `Domain_manager` gives the loop, as `Mosaic_eio.run` does
 
 ### Toffee
 

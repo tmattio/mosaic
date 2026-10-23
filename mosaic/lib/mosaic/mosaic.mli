@@ -1263,11 +1263,11 @@ end
 (** {1:running Running}
 
     {!val-run} runs a program until it ends, waiting for the terminal with
-    [select(2)]. A program that waits with an event loop of its own, such as
-    Eio's, runs with {!val-start} instead and does the waiting itself: it takes
-    the program's steps with {!step}, and between them waits until one of {!fds}
-    is readable or the time {!deadline} comes, as {!Matrix.next} does for a run.
-*)
+    [select(2)], and runs the work of {!Cmd.val-perform} and {!Sub.val-worker}
+    on threads. A program with threads of its own needs nothing more. A thread
+    ends the run with a stop request ([stop]), and gives the program messages
+    through the mailbox of that work, or with {!val-dispatch} from a thread the
+    program did not start ({{!event_loops}Event loops}). *)
 
 val run :
   ?input:Unix.file_descr ->
@@ -1311,6 +1311,19 @@ val run :
       Test harnesses use it to settle deterministically (see the [matrix.test]
       library). When a probe is requested, every perform completion also posts
       to the loop, so a blocked loop re-evaluates its quiescence. *)
+
+(** {2:event_loops Event loops}
+
+    A program run from an event loop runs with that loop's library, which is
+    built when the loop is installed. [Mosaic_eio.run] (library [mosaic.eio])
+    runs it from a fiber of an Eio program, and [Mosaic_lwt.run] (library
+    [mosaic.lwt]) runs it as an Lwt promise. Under another event loop, the
+    program runs with {!val-start} and the loop does the waiting. It takes the
+    program's steps with {!step}, and between them waits until one of {!fds} is
+    readable or the time {!deadline} comes, as {!Matrix.next} does for a run.
+    [process_perform] hands the program's work to the loop. The source of
+    [Mosaic_eio] is a worked example of this, and the source of [Mosaic_lwt] one
+    of a program run beside a loop on a domain of its own. *)
 
 type 'msg running
 (** The type for programs running in a terminal ({!val-start}), whose work done

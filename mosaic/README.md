@@ -231,6 +231,8 @@ callback dependencies. The cache lives only while that position is mounted.
 | `mosaic`     | TEA runtime, widget DSL, layout helpers   |
 | `mosaic.ui`  | Lower-level UI: renderer, events, vnodes  |
 | `mosaic.mlx` | JSX/MLX syntax adapter                   |
+| `mosaic.eio` | Running from Eio (built with `eio`)      |
+| `mosaic.lwt` | Running as an Lwt promise (built with `lwt`) |
 
 ## Examples
 
@@ -265,7 +267,7 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `21-line-number`   | Code gutter with signs and colors                 |
 | `22-layout`        | CSS Grid with responsive switching                |
 | `23-resize`        | Terminal resize and focus events                  |
-| `24-eio`           | A program waited for with Eio                     |
+| `24-eio`           | A program run from Eio                            |
 | `26-lwt`           | A program as an Lwt promise                       |
 | `27-threads`       | A program fed by a thread and stopped by another  |
 | `x-agent`          | Agent-style primary-screen CLI                    |
