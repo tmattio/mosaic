@@ -111,7 +111,13 @@ type t = {
 let[@inline] width_step w = if w <= 0 then 1 else w
 let[@inline] clamp_height grid height = max 0 (min (Grid.height grid) height)
 
-(* --- Core Rendering Logic --- *)
+(* --- Core Rendering Logic ---
+
+   The diff reads cells with [Grid.Unsafe], which skips the index check. Every
+   index it reads is [y * width + x] for a grid of that width with [x] below
+   the width and [y] below the grid's height: [emit_frame] sets [c.width] and
+   [c.prev_width] to the grids' widths and clamps [c.height] and
+   [c.prev_height] to their heights, and the loops stop at those bounds. *)
 
 let[@inline] cell_changed (c : diff_ctx) y x idx curr_width =
   if curr_width <= 0 then false
@@ -120,10 +126,12 @@ let[@inline] cell_changed (c : diff_ctx) y x idx curr_width =
     | `Full -> true
     | `Diff ->
         if y >= c.prev_height || x >= c.prev_width then true
-        else not (Grid.cells_equal c.prev ((y * c.prev_width) + x) c.curr idx)
+        else
+          not
+            (Grid.Unsafe.cells_equal c.prev ((y * c.prev_width) + x) c.curr idx)
 
 let[@inline] cell_link (c : diff_ctx) idx =
-  if c.hyperlinks then Grid.get_link c.curr idx else ""
+  if c.hyperlinks then Grid.Unsafe.get_link c.curr idx else ""
 
 let[@inline] ascii cp = cp land lnot 0x7f = 0
 
@@ -191,8 +199,8 @@ let joins (c : diff_ctx) ~prev ~prev_cp ~last first =
   let n =
     if prev_cp >= 0 then 0
     else (
-      c.joint <- room c.joint (Grid.cell_text_length c.curr prev);
-      Grid.blit_cell_text c.curr prev c.joint ~pos:0)
+      c.joint <- room c.joint (Grid.Unsafe.cell_text_length c.curr prev);
+      Grid.Unsafe.blit_cell_text c.curr prev c.joint ~pos:0)
   in
   Matrix_text.Segmenter.reset c.units;
   if n > 0 then add_scalars c.units c.joint 0 n
@@ -207,19 +215,19 @@ let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width ~last =
   if x >= c.width then x
   else
     let idx = (y * c.width) + x in
-    let cell_width = Grid.cell_width c.curr idx in
+    let cell_width = Grid.Unsafe.cell_width c.curr idx in
     let step = width_step cell_width in
     if cell_width <= 0 then x
     else if not (cell_changed c y x idx cell_width) then x
     else begin
-      let cp = Grid.get_codepoint c.curr idx in
+      let cp = Grid.Unsafe.get_codepoint c.curr idx in
       (* The cell's scalars: [n] bytes in [c.scratch], or [cp] when it is
          ASCII; a space when there are none. *)
       let n =
         if ascii cp then 0
         else (
-          c.scratch <- room c.scratch (Grid.cell_text_length c.curr idx);
-          Grid.blit_cell_text c.curr idx c.scratch ~pos:0)
+          c.scratch <- room c.scratch (Grid.Unsafe.cell_text_length c.curr idx);
+          Grid.Unsafe.blit_cell_text c.curr idx c.scratch ~pos:0)
       in
       let simple = cp >= 0 || n <= 0 in
       let first =
@@ -240,9 +248,10 @@ let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width ~last =
         && joins c ~prev ~prev_cp ~last first
       then Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
       (* Emit style/color through zero-alloc accessors. *)
-      Ansi.Sgr_state.update c.sgr c.out ~fg:(Grid.get_fg c.curr idx)
-        ~bg:(Grid.get_bg c.curr idx)
-        ~attrs:(Grid.get_attrs c.curr idx)
+      Ansi.Sgr_state.update c.sgr c.out
+        ~fg:(Grid.Unsafe.get_fg c.curr idx)
+        ~bg:(Grid.Unsafe.get_bg c.curr idx)
+        ~attrs:(Grid.Unsafe.get_attrs c.curr idx)
         ~link:(cell_link c idx);
       write_cell c ~y ~x ~cell_width ~cp ~n;
       write_run c y (x + step) ~prev:idx ~prev_cp:cp ~prev_width:cell_width
@@ -256,11 +265,12 @@ let rec write_run (c : diff_ctx) y x ~prev ~prev_cp ~prev_width ~last =
 let clear_stale_zero_width (c : diff_ctx) y x idx =
   if c.mode = `Diff && y < c.prev_height && x < c.prev_width then
     let prev_idx = (y * c.prev_width) + x in
-    if not (Grid.cells_equal c.prev prev_idx c.curr idx) then begin
+    if not (Grid.Unsafe.cells_equal c.prev prev_idx c.curr idx) then begin
       Ansi.cursor_position ~row:(c.row_offset + y + 1) ~col:(x + 1) c.out;
-      Ansi.Sgr_state.update c.sgr c.out ~fg:(Grid.get_fg c.curr idx)
-        ~bg:(Grid.get_bg c.curr idx)
-        ~attrs:(Grid.get_attrs c.curr idx)
+      Ansi.Sgr_state.update c.sgr c.out
+        ~fg:(Grid.Unsafe.get_fg c.curr idx)
+        ~bg:(Grid.Unsafe.get_bg c.curr idx)
+        ~attrs:(Grid.Unsafe.get_attrs c.curr idx)
         ~link:(cell_link c idx);
       Ansi.Writer.write_char c.out ' ';
       Ansi.Sgr_state.close_link c.sgr c.out
@@ -271,7 +281,7 @@ let rec process_cols (c : diff_ctx) y x row_cells =
   if x >= c.width then row_cells
   else
     let idx = (y * c.width) + x in
-    let cell_width = Grid.cell_width c.curr idx in
+    let cell_width = Grid.Unsafe.cell_width c.curr idx in
     if cell_width <= 0 then begin
       clear_stale_zero_width c y x idx;
       process_cols c y (x + 1) row_cells

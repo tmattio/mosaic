@@ -541,3 +541,25 @@ val to_ansi : ?complete_rows:bool -> ?rows:int -> t -> string
 
     Raises [Invalid_argument] if [rows] is negative or greater than [height g].
 *)
+
+(**/**)
+
+(* For matrix's own libraries, such as the screen's diff, which reads every cell
+   of a frame: the cell accessors above without their index check. Each reads
+   memory outside the grid when [idx] is not in [0] to [width g * height g - 1],
+   so a caller must use them only where its loop bounds prove the index in
+   range. *)
+
+module Unsafe : sig
+  val get_codepoint : t -> int -> int
+  val get_attrs : t -> int -> int
+  val get_link : t -> int -> string
+  val get_fg : t -> int -> Ansi.Color.t
+  val get_bg : t -> int -> Ansi.Color.t
+  val cell_text_length : t -> int -> int
+  val blit_cell_text : t -> int -> bytes -> pos:int -> int
+  val cell_width : t -> int -> int
+  val cells_equal : t -> int -> t -> int -> bool
+end
+
+(**/**)

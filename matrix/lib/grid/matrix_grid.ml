@@ -1638,7 +1638,20 @@ let to_ansi ?(complete_rows = false) ?rows t =
 (* {1 Checked accessors}
 
    The accessors a program calls check the index; the code above uses the
-   unchecked ones, which these shadow from here on. *)
+   unchecked ones, which these shadow from here on, and [Unsafe] hands them to
+   matrix's own libraries. *)
+
+module Unsafe = struct
+  let get_codepoint = get_codepoint
+  let get_attrs = get_attrs
+  let get_link = get_link
+  let get_fg = get_fg
+  let get_bg = get_bg
+  let cell_text_length = cell_text_length
+  let blit_cell_text = blit_cell_text
+  let cell_width = cell_width
+  let cells_equal = cells_equal
+end
 
 let[@inline never] outside name =
   invalid_arg ("Matrix_grid." ^ name ^ ": index outside the grid")
