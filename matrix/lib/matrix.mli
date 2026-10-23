@@ -805,7 +805,9 @@ val run_on :
    it calls [idle ~until ~stepped], [until] the run's deadline and [stepped]
    whether [next] returned a step since its last call, which returns once
    input is queued or the clock has moved, and says whether input is
-   queued. *)
+   queued. As the run begins, [presented] is given a function that is the
+   frame the run last presented ({!current_grid}) and the terminal row its
+   first row is shown on. *)
 
 type device = {
   read_clock : unit -> int;
@@ -820,6 +822,7 @@ type device = {
   env : Terminal.Caps.env;
   frame : unit -> unit;
   idle : until:int option -> stepped:bool -> bool;
+  presented : (unit -> Grid.t * int) -> unit;
 }
 
 val on_device : device -> config -> config

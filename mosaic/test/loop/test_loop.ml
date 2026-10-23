@@ -153,18 +153,23 @@ let drive ?mode ?(width = 48) ?(height = 2) ?process_perform ?quiesce
     application steps =
   let t = terminal ~width ~height () in
   run ?mode ?process_perform ?quiesce t application (fun _ ->
+      ( function
+      | `Feed bytes -> feed t bytes
+      | `Resize (width, height) ->
+          Matrix_test.resize t.s ~cols:width ~rows:height
+      | `Advance dt -> Matrix_test.advance t.s (ns dt)
+      | `Step_to target ->
+          Matrix_test.advance t.s (max 0 (ns target - elapsed t))
+      | `Snap -> snap t
+      | `Run f ->
+          f t;
+          if not (Matrix_test.ended t.s) then Matrix_test.settle t.s )
+      |> fun step ->
       List.iter
-        (function
-          | `Feed bytes -> feed t bytes
-          | `Resize (width, height) ->
-              Matrix_test.resize t.s ~cols:width ~rows:height
-          | `Advance dt -> Matrix_test.advance t.s (ns dt)
-          | `Step_to target ->
-              Matrix_test.advance t.s (max 0 (ns target - elapsed t))
-          | `Snap -> snap t
-          | `Run f ->
-              f t;
-              if not (Matrix_test.ended t.s) then Matrix_test.settle t.s)
+        (fun s ->
+          step s;
+          (* The oracle: the terminal shows the frame the run presented. *)
+          Matrix_test.check_presented t.s)
         steps)
 
 let on_keys _ = Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))

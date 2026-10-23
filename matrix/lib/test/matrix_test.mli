@@ -382,6 +382,16 @@ val set_time : t -> int -> unit
 
     Raises [Invalid_argument] if [time] is earlier than the clock. *)
 
+val check_presented : t -> unit
+(** [check_presented s] checks that the terminal shows, on the rows of the run's
+    live region, the text of the frame the run believes it presented
+    ([Matrix.current_grid]), which the run's own diff of frames wrote. It does
+    not settle. A test calls it after its steps to catch output that puts on the
+    terminal another frame than the run drew.
+
+    Raises [Failure], with each row that differs, if they differ, and
+    [Invalid_argument] if no run has begun on [s]. *)
+
 val now : t -> int
 (** [now s] is the time of [s]'s clock, in nanoseconds. It does not settle. *)
 

@@ -402,6 +402,7 @@ type t = {
   mutable frames : int;
   mutable steps : int;
   mutable device : Matrix.device option;
+  mutable presented : unit -> Matrix.Grid.t * int;
 }
 
 type _ Effect.t += Wait : t -> bool Effect.t
@@ -476,6 +477,7 @@ let make_device s : Matrix.device =
         ~win32:false;
     frame = (fun () -> s.frames <- s.frames + 1);
     idle = (fun ~until ~stepped -> idle s ~until ~stepped);
+    presented = (fun f -> s.presented <- f);
   }
 
 let run_jobs s =
@@ -502,6 +504,8 @@ let create ?(config = Matrix.config ()) ?(now = 0) term =
       frames = 0;
       steps = 0;
       device = None;
+      presented =
+        (fun () -> invalid_arg "Matrix_test.check_presented: no run has begun");
     }
   in
   s.quiesce <- (fun () -> run_jobs s);
@@ -604,6 +608,27 @@ let advance s ns =
           go_on s ~ready:false
   in
   go ()
+
+(* The oracle: the rows of the frame the run believes it presented, against
+   what the terminal shows on them, by their text. *)
+let check_presented s =
+  let grid, top = s.presented () in
+  let frame = { Screen.grid; cursor = None } in
+  let shown = Terminal.screen s.term in
+  let differs = Buffer.create 64 in
+  for y = 0 to Screen.rows frame - 1 do
+    let row = top + y in
+    if row < Screen.rows shown then
+      let presented = Screen.row frame y and on_screen = Screen.row shown row in
+      if presented <> on_screen then
+        Buffer.add_string differs
+          (Printf.sprintf "row %d: presented %S, shown %S\n" (row + 1) presented
+             on_screen)
+  done;
+  if Buffer.length differs > 0 then
+    failwith
+      ("Matrix_test.check_presented: the terminal does not show the frame the \
+        run presented\n" ^ Buffer.contents differs)
 
 let set_time s time =
   if time < s.clock then

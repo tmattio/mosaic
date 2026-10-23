@@ -362,6 +362,49 @@ let test_diff () =
   equal ~msg:"marks" (option string) (Some "01 |abXd\n   |bbXb\n")
     (T.Screen.diff before (T.Terminal.screen term))
 
+(* The oracle ---------------------------------------------------------------- *)
+
+(* The terminal shows the frame the run presented, through input, a resize
+   and in the primary screen; and a program that writes behind its frames,
+   as a broken renderer does, is caught. *)
+let test_presented () =
+  let typed = Buffer.create 8 in
+  let on app = function
+    | Matrix.Event (Key { key = Char c; _ }) ->
+        Buffer.add_utf_8_uchar typed c;
+        Matrix.request_redraw app;
+        true
+    | _ -> true
+  in
+  let view = draw (fun () -> "typed " ^ Buffer.contents typed) in
+  List.iter
+    (fun mode ->
+      Buffer.clear typed;
+      ignore
+      @@ session ~config:(Matrix.config ~mode ()) ~rows:4 ~on ~view
+      @@ fun s term _ ->
+      T.check_presented s;
+      T.input s (T.Terminal.text term "abc");
+      T.check_presented s;
+      T.resize s ~cols:12 ~rows:3;
+      T.check_presented s)
+    [ `Alt; `Primary ];
+  let broken app grid =
+    view app grid;
+    (* Behind the frame's back: the diff does not know of it. *)
+    Matrix.Terminal.send (Matrix.terminal app) "\027[1;1HXX"
+  in
+  ignore @@ session ~on ~view:broken
+  @@ fun s term _ ->
+  T.input s (T.Terminal.text term "z");
+  raises_match ~msg:"caught"
+    (function
+      | Failure m ->
+          String.length m > 0
+          && T.Screen.find (T.Terminal.screen term) "XXped" <> []
+      | _ -> false)
+    (fun () -> T.check_presented s)
+
 (* A child on a pseudo-terminal ------------------------------------------ *)
 
 let child =
@@ -422,6 +465,8 @@ let () =
         [ test "requests, and the end" test_requests_and_end ];
       group "Goldens"
         [ test "text, styles, find" test_goldens; test "diff" test_diff ];
+      group "Oracle"
+        [ test "the terminal shows the presented frame" test_presented ];
       group "Child"
         [
           test "a child, resized, and its goodbye" test_child;

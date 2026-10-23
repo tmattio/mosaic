@@ -220,6 +220,7 @@ type device = {
   env : Terminal.Caps.env;
   frame : unit -> unit;
   idle : until:int option -> stepped:bool -> bool;
+  presented : (unit -> Grid.t * int) -> unit;
 }
 
 let backend_of_device d : Backend.t =
@@ -2058,6 +2059,16 @@ let run_on backend ?stop ?(config = config ()) f =
     (try backend.cleanup () with _ -> ());
     invalid_arg "Matrix.run: another run holds the terminal");
   Option.iter (fun s -> Stop.attach s t.serial t.backend.wake) stop;
+  (* A device reads the frame the run presented, and the terminal row its
+     first row is on. *)
+  Option.iter
+    (fun d ->
+      d.presented (fun () ->
+          ( current_grid t,
+            match t.config.mode with
+            | `Alt -> 0
+            | `Primary -> Primary.render_offset t.primary )))
+    config.device;
   let finish () =
     Atomic.set t.accepting false;
     Option.iter (fun s -> Stop.detach s t.serial) stop;
