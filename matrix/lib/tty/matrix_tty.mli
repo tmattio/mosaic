@@ -65,8 +65,12 @@ val flush_input : Unix.file_descr -> unit
 
 val enable_vt : Unix.file_descr -> unit
 (** [enable_vt fd] has a Windows console interpret the control functions written
-    to it as a VT100 does, and take its output as UTF-8. Nothing happens on
-    other systems, or if [fd] is not a console. *)
+    to it as a VT100 does, and take its output as UTF-8. That includes the
+    deferred wrap ([DISABLE_NEWLINE_AUTO_RETURN]): a character written in the
+    last column leaves the cursor there, and the line moves down only when the
+    next printable character comes, so a line that fills the width and ends with
+    a line feed takes one row, not two. Nothing happens on other systems, or if
+    [fd] is not a console. *)
 
 (** {1:signals Signals} *)
 

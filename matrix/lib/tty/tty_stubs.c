@@ -13,6 +13,9 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#ifndef DISABLE_NEWLINE_AUTO_RETURN
+#define DISABLE_NEWLINE_AUTO_RETURN 0x0008
+#endif
 #else
 #include <errno.h>
 #include <fcntl.h>
@@ -61,7 +64,13 @@ CAMLprim value matrix_tty_enable_vt(value fd) {
   if (h == INVALID_HANDLE_VALUE) caml_failwith("Invalid handle");
   DWORD mode;
   if (!GetConsoleMode(h, &mode)) caml_failwith("GetConsoleMode failed");
-  if (!SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+  /* DISABLE_NEWLINE_AUTO_RETURN defers the wrap after the last column until
+     the next printable character, as a VT100 does (terminfo's xenl): without
+     it, a line that fills the width moves the cursor down at once, and the
+     line feed that ends it leaves a blank row. */
+  if (!SetConsoleMode(h, mode | ENABLE_PROCESSED_OUTPUT |
+                             ENABLE_VIRTUAL_TERMINAL_PROCESSING |
+                             DISABLE_NEWLINE_AUTO_RETURN))
     caml_failwith("SetConsoleMode failed");
   /* UTF-8 output. This affects the whole process, not only this handle. */
   SetConsoleOutputCP(CP_UTF8);
