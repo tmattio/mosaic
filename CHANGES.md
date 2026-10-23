@@ -80,6 +80,7 @@
 - `Screen.Hit_grid.draw ~src ~dst ~x ~y` paints one hit grid's regions onto another at an offset, its empty cells leaving the destination unchanged, to embed a surface's hits in a larger one
 - `Matrix_text.grapheme_cluster_break` is the Grapheme_Cluster_Break property of a character (UAX #29), as a variant with the short value aliases uucp uses
 - `Grid.span g idx` is the start index and width of the grapheme that covers a cell, read from that cell alone, so a wide grapheme can be acted on whole from any of its cells
+- `Ansi.Writer.of_bytes` writes into caller-owned bytes that it never replaces, raising `Ansi.Writer.Buffer_full` on a write that does not fit; `Screen.render_into` with such a writer renders a frame in memory the caller bounds, and a frame that does not fit commits nothing
 
 #### Changed
 

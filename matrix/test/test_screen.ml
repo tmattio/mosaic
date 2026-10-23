@@ -677,6 +677,32 @@ let test_extremely_wide_char () =
     (fun s -> String.length s > 0)
     output
 
+(* A full writer fails the frame, which commits nothing: the same frame
+   renders again, whole, into a writer it fits. *)
+let test_render_into_full_writer () =
+  let build screen =
+    Screen.build screen ~width:20 ~height:2 (fun grid hits ->
+        Grid.draw_text grid ~x:0 ~y:0 ~text:"bounded 世界"
+          ~style:(Ansi.Style.make ~fg:Ansi.Color.red ~bold:true ());
+        Grid.draw_text grid ~x:0 ~y:1 ~text:"output";
+        Screen.Hit_grid.add hits ~x:0 ~y:0 ~width:2 ~height:1 ~id:9)
+  in
+  let reference = Screen.create () in
+  build reference;
+  let expected = Screen.render reference in
+  let screen = Screen.create () in
+  build screen;
+  let small = Ansi.Writer.of_bytes (Bytes.create 16) in
+  raises Ansi.Writer.Buffer_full (fun () -> Screen.render_into screen small);
+  equal ~msg:"nothing committed" int 0 (Screen.stats screen).frame_count;
+  equal ~msg:"no hit published" int 0 (Screen.query_hit screen ~x:0 ~y:0);
+  let bytes = Bytes.create (String.length expected) in
+  let fits = Ansi.Writer.of_bytes bytes in
+  Screen.render_into screen fits;
+  equal ~msg:"the same frame, whole" string expected (Ansi.Writer.contents fits);
+  equal ~msg:"committed once" int 1 (Screen.stats screen).frame_count;
+  equal ~msg:"hit published" int 9 (Screen.query_hit screen ~x:0 ~y:0)
+
 let test_buffer_overflow_prevention () =
   (* Test with large frame (200x60) and complex content to ensure 2MB buffer
      doesn't overflow *)
@@ -1186,6 +1212,8 @@ let () =
         [
           test "Extremely wide characters" test_extremely_wide_char;
           test "Buffer overflow prevention" test_buffer_overflow_prevention;
+          test "Render into a full writer commits nothing"
+            test_render_into_full_writer;
           test "Render into caller writer appends and commits once"
             test_render_into_appends_and_commits_once;
           test "Large hyperlinked Screen.render succeeds"

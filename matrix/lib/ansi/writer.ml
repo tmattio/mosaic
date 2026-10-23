@@ -1,12 +1,17 @@
-type t = { mutable bytes : bytes; mutable pos : int }
+(* [fixed] writers write into the caller's bytes and never replace them. *)
+type t = { mutable bytes : bytes; mutable pos : int; fixed : bool }
 
-let create capacity = { bytes = Bytes.create capacity; pos = 0 }
+exception Buffer_full
+
+let create capacity = { bytes = Bytes.create capacity; pos = 0; fixed = false }
+let of_bytes bytes = { bytes; pos = 0; fixed = true }
 let[@inline] len w = w.pos
 let[@inline] reset_pos w = w.pos <- 0
 let[@inline] buffer w = w.bytes
 let contents w = Bytes.sub_string w.bytes 0 w.pos
 
 let grow w additional =
+  if w.fixed then raise Buffer_full;
   if additional > Sys.max_string_length - w.pos then
     invalid_arg "Ansi.Writer: output too large";
   let capacity = Bytes.length w.bytes in

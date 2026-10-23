@@ -1199,6 +1199,33 @@ let writer_growth_preserves_output () =
   equal ~msg:"append accepts its own buffer without growth" string "abcdbcda"
     (Writer.contents w)
 
+let writer_of_bytes () =
+  let b = Bytes.make 6 '.' in
+  let w = Writer.of_bytes b in
+  equal ~msg:"starts empty" int 0 (Writer.len w);
+  Writer.write_string w "abc";
+  Writer.write_char w 'd';
+  equal ~msg:"writes into the caller's bytes" string "abcd.."
+    (Bytes.to_string b);
+  is_true ~msg:"buffer is the caller's bytes" (Writer.buffer w == b);
+  raises Writer.Buffer_full (fun () -> Writer.write_string w "xyz");
+  equal ~msg:"a write that does not fit writes nothing" string "abcd.."
+    (Bytes.to_string b);
+  equal ~msg:"and leaves the length" int 4 (Writer.len w);
+  raises Writer.Buffer_full (fun () ->
+      Writer.write_subbytes w (Bytes.of_string "xyz") 0 3);
+  Writer.write_string w "ef";
+  equal ~msg:"a write that fits exactly" string "abcdef" (Writer.contents w);
+  raises Writer.Buffer_full (fun () -> Writer.write_char w 'g');
+  raises Writer.Buffer_full (fun () -> Ansi.cursor_up ~n:1 w);
+  is_true ~msg:"never grows" (Writer.buffer w == b);
+  Writer.reset_pos w;
+  Ansi.cursor_up ~n:12 w;
+  equal ~msg:"reusable after reset" string "\027[12A" (Writer.contents w);
+  let w = Writer.of_bytes Bytes.empty in
+  Writer.write_string w "";
+  raises Writer.Buffer_full (fun () -> Writer.write_char w 'a')
+
 let writer_checked_bounds () =
   let w = Writer.create 4 in
   Writer.write_string w "ok";
@@ -1625,6 +1652,7 @@ let tests =
         test "invalid scalar replacement" writer_invalid_scalar_replacement;
         test "growth preserves output" writer_growth_preserves_output;
         test "checked bounds" writer_checked_bounds;
+        test "of_bytes" writer_of_bytes;
         test "to_string calls emitter once" to_string_calls_emitter_once;
       ];
     group "High Level API"

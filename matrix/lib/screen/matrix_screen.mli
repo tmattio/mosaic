@@ -151,7 +151,12 @@ val render_into :
     appends output directly to [writer]. The caller owns and resets the writer;
     its existing contents are preserved. Frame byte metrics count only the
     appended output. Reuse the writer to retain output capacity across frames.
-*)
+
+    If a write raises, as one to a writer of {!Ansi.Writer.of_bytes} raises
+    {!Ansi.Writer.Buffer_full} when its bytes are full, the exception passes
+    through and the frame is not committed: the screen is as before the call,
+    and the next render emits the same frame. The bytes appended before the
+    exception are an unfinished frame, never to be sent. *)
 
 (** {1:screen_state Screen state} *)
 
