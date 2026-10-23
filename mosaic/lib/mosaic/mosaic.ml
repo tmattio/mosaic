@@ -199,6 +199,7 @@ module Cmd = struct
     | Clear_selection
     | Static_commit of 'msg Vnode.t
     | Static_clear
+    | Abort_paste
 
   let none = None
   let batch cmds = Batch cmds
@@ -213,6 +214,7 @@ module Cmd = struct
   let clear_selection = Clear_selection
   let static_commit view = Static_commit view
   let static_clear = Static_clear
+  let abort_paste = Abort_paste
 
   let rec map (f : 'a -> 'b) (cmd : 'a t) : 'b t =
     match cmd with
@@ -229,6 +231,7 @@ module Cmd = struct
     | Clear_selection -> Clear_selection
     | Static_commit view -> Static_commit (Vnode.map f view)
     | Static_clear -> Static_clear
+    | Abort_paste -> Abort_paste
 end
 
 module Sub = struct
@@ -244,6 +247,7 @@ module Sub = struct
     | On_mouse_all of (Event.mouse -> 'msg option)
     | On_paste of (Event.paste -> 'msg option)
     | On_paste_all of (Event.paste -> 'msg option)
+    | On_paste_stalled of float * 'msg
     | On_resize of (width:int -> height:int -> 'msg)
     | On_focus of 'msg
     | On_blur of 'msg
@@ -277,6 +281,12 @@ module Sub = struct
   let on_mouse_all f = On_mouse_all f
   let on_paste f = On_paste f
   let on_paste_all f = On_paste_all f
+
+  let on_paste_stalled seconds msg =
+    if (not (Float.is_finite seconds)) || seconds <= 0. then
+      invalid_arg "Mosaic.Sub.on_paste_stalled: positive finite time required";
+    On_paste_stalled (seconds, msg)
+
   let on_resize f = On_resize f
   let on_focus msg = On_focus msg
   let on_blur msg = On_blur msg
@@ -295,6 +305,7 @@ module Sub = struct
     | On_mouse_all g -> On_mouse_all (fun ev -> Option.map f (g ev))
     | On_paste g -> On_paste (fun ev -> Option.map f (g ev))
     | On_paste_all g -> On_paste_all (fun ev -> Option.map f (g ev))
+    | On_paste_stalled (seconds, msg) -> On_paste_stalled (seconds, f msg)
     | On_resize g -> On_resize (fun ~width ~height -> f (g ~width ~height))
     | On_focus msg -> On_focus (f msg)
     | On_blur msg -> On_blur (f msg)
@@ -371,6 +382,11 @@ type ('model, 'msg) runtime = {
   mutable sub_live_active : bool;
   (* The bracketed paste being received, assembled for the widgets. *)
   mutable paste : Buffer.t option;
+  mutable paste_stalled_subs : (float * 'msg) list;
+  (* When the paste being received last received data, and when its
+     silence was last checked against [paste_stalled_subs]. *)
+  mutable paste_heard : float;
+  mutable paste_checked : float;
 }
 
 (* Push [msg] and wake the loop. Safe from any thread: the CAS retries until
@@ -450,6 +466,7 @@ let rec process_cmd runtime (cmd : _ Cmd.t) =
       let grid, rows = render_static_view runtime view in
       Matrix.static_write ~rows runtime.matrix_app grid
   | Cmd.Static_clear -> Matrix.static_clear runtime.matrix_app
+  | Cmd.Abort_paste -> Matrix.abort_paste runtime.matrix_app
 
 let rec collect_subs runtime (sub : _ Sub.t) =
   match sub with
@@ -470,22 +487,42 @@ let rec collect_subs runtime (sub : _ Sub.t) =
   | Sub.On_mouse_all f -> runtime.mouse_subs <- (true, f) :: runtime.mouse_subs
   | Sub.On_paste f -> runtime.paste_subs <- (false, f) :: runtime.paste_subs
   | Sub.On_paste_all f -> runtime.paste_subs <- (true, f) :: runtime.paste_subs
+  | Sub.On_paste_stalled (seconds, msg) ->
+      runtime.paste_stalled_subs <- (seconds, msg) :: runtime.paste_stalled_subs
   | Sub.On_resize f -> runtime.resize_sub <- f :: runtime.resize_sub
   | Sub.On_focus msg -> runtime.focus_sub <- msg :: runtime.focus_sub
   | Sub.On_blur msg -> runtime.blur_sub <- msg :: runtime.blur_sub
   | Sub.On_color_scheme f ->
       runtime.color_scheme_sub <- f :: runtime.color_scheme_sub
 
-(* Arm the loop's one-shot wakeup at the earliest every-sub deadline, or clear
-   it when no timer is pending. Runs after every subscription recollection and
-   after every frame callback — both can move the earliest deadline. *)
+(* The instants at which a paste in progress has been silent as long as a
+   stall subscription waits, that the loop has not yet checked. *)
+let paste_stalls runtime =
+  if Option.is_none runtime.paste then []
+  else
+    List.filter_map
+      (fun (seconds, msg) ->
+        let due = runtime.paste_heard +. seconds -. every_slack in
+        if due > runtime.paste_checked then Some (due, msg) else None)
+      runtime.paste_stalled_subs
+
+(* Arm the loop's one-shot wakeup at the earliest every-sub or paste-stall
+   deadline, or clear it when none is pending. Runs after every subscription
+   recollection, after every frame callback and as a paste receives data —
+   each can move the earliest deadline. *)
 let arm_every_wakeup runtime =
+  let earliest acc due =
+    match acc with None -> Some due | Some acc -> Some (Float.min acc due)
+  in
   let deadline =
     List.fold_left
-      (fun acc timer ->
-        let due = every_deadline timer in
-        match acc with None -> Some due | Some acc -> Some (Float.min acc due))
+      (fun acc timer -> earliest acc (every_deadline timer))
       None runtime.every_subs
+  in
+  let deadline =
+    List.fold_left
+      (fun acc (due, _) -> earliest acc due)
+      deadline (paste_stalls runtime)
   in
   Matrix.schedule_wakeup runtime.matrix_app deadline
 
@@ -495,6 +532,7 @@ let update_subscriptions runtime =
   runtime.key_release_subs <- [];
   runtime.mouse_subs <- [];
   runtime.paste_subs <- [];
+  runtime.paste_stalled_subs <- [];
   runtime.resize_sub <- [];
   runtime.tick_sub <- [];
   runtime.every_subs <- [];
@@ -650,6 +688,15 @@ let handle_resize runtime ~width ~height =
 let handle_tick runtime ~dt =
   List.iter (fun pair -> push_msg runtime ((snd pair) ~dt)) runtime.tick_sub
 
+(* A paste in progress that has been silent as long as a stall subscription
+   waits dispatches its message, once per silence. *)
+let handle_paste_stalls runtime =
+  let now = Matrix.now runtime.matrix_app in
+  List.iter
+    (fun (due, msg) -> if now >= due then push_msg runtime msg)
+    (paste_stalls runtime);
+  runtime.paste_checked <- now
+
 let handle_every_subs runtime =
   let now = Matrix.now runtime.matrix_app in
   runtime.every_subs <-
@@ -661,6 +708,13 @@ let handle_every_subs runtime =
         end
         else timer)
       runtime.every_subs
+
+(* The paste in progress received data: its silence starts again. *)
+let paste_heard runtime =
+  let now = Matrix.now runtime.matrix_app in
+  runtime.paste_heard <- now;
+  runtime.paste_checked <- now;
+  if runtime.paste_stalled_subs <> [] then arm_every_wakeup runtime
 
 let dispatch_paste runtime text =
   ignore
@@ -692,9 +746,12 @@ let handle_input runtime (input : Matrix.event) =
   | Mouse mouse_event ->
       let event = Renderer.dispatch_mouse runtime.renderer mouse_event in
       handle_mouse runtime event
-  | Paste_start -> runtime.paste <- Some (Buffer.create 256)
+  | Paste_start ->
+      runtime.paste <- Some (Buffer.create 256);
+      paste_heard runtime
   | Paste_data data ->
-      Option.iter (fun b -> Buffer.add_string b data) runtime.paste
+      Option.iter (fun b -> Buffer.add_string b data) runtime.paste;
+      paste_heard runtime
   | Paste_end `Complete ->
       Option.iter
         (fun b -> dispatch_paste runtime (Buffer.contents b))
@@ -783,6 +840,9 @@ let run ?matrix
       paste_subs = [];
       key_release_subs = [];
       paste = None;
+      paste_stalled_subs = [];
+      paste_heard = 0.;
+      paste_checked = 0.;
       resize_sub = [];
       tick_sub = [];
       every_subs = [];
@@ -891,6 +951,7 @@ let run ?matrix
         ~on_frame:(fun _app ~dt ->
           handle_tick runtime ~dt;
           handle_every_subs runtime;
+          handle_paste_stalls runtime;
           synchronize runtime;
           (* A fired timer moved its deadline even when no message re-collected
          subscriptions, so the wakeup re-arms here. *)

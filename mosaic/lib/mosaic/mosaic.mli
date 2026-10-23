@@ -800,6 +800,9 @@ module Cmd : sig
             styling preserved. The row count is computed automatically from the
             rendered grid. *)
     | Static_clear  (** Clear all previously written static content. *)
+    | Abort_paste
+        (** End the bracketed paste in progress, if any, and drop it; the bytes
+            after it are input again. See {!val-abort_paste}. *)
 
   val none : 'msg t
   (** [none] is the empty command. Produces no side-effects. *)
@@ -854,6 +857,14 @@ module Cmd : sig
   val static_clear : 'msg t
   (** [static_clear] removes all previously emitted static content. *)
 
+  val abort_paste : 'msg t
+  (** [abort_paste] ends the bracketed paste in progress, if any, and drops what
+      it received ({!Matrix.abort_paste}): the bytes after it are input again. A
+      paste ends only at its end marker, so one whose terminal stops before the
+      marker takes every later byte as content, keys typed included, until the
+      application gives up on it; {!Sub.on_paste_stalled} says when it has gone
+      silent. *)
+
   val map : ('a -> 'b) -> 'a t -> 'b t
   (** [map f cmd] is [cmd] with every dispatched message transformed by [f]. Use
       this to embed child-component commands in a parent command. *)
@@ -893,6 +904,9 @@ module Sub : sig
         (** [On_paste f] captures paste before focused widget processing. *)
     | On_paste_all of (Event.paste -> 'msg option)
         (** [On_paste_all f] delivers all paste events, consumed or not. *)
+    | On_paste_stalled of float * 'msg
+        (** [On_paste_stalled (seconds, msg)] dispatches [msg] when a paste in
+            progress has received nothing for [seconds]. *)
     | On_resize of (width:int -> height:int -> 'msg)
         (** [On_resize f] fires [f ~width ~height] whenever the terminal is
             resized. *)
@@ -963,12 +977,26 @@ module Sub : sig
   (** [on_paste f] runs before the focused editor's paste handler. Call
       {!Event.Paste.prevent_default} to suppress insertion. A bracketed paste is
       delivered whole once its end marker arrives, and dropped when cut short
-      ({!Matrix.abort_paste}, or the end of the input). Text a terminal reports
-      without a key, such as an input method's, is delivered as a paste too. *)
+      ({!Cmd.abort_paste}, or the end of the input); see {!val-on_paste_stalled}
+      for a paste whose end marker never comes. Text a terminal reports without
+      a key, such as an input method's, is delivered as a paste too. *)
 
   val on_paste_all : (Event.paste -> 'msg option) -> 'msg t
   (** [on_paste_all f] is like {!val-on_paste} but delivers all paste events,
       consumed or not. *)
+
+  val on_paste_stalled : float -> 'msg -> 'msg t
+  (** [on_paste_stalled seconds msg] dispatches [msg] once each time a bracketed
+      paste in progress has received nothing for [seconds].
+
+      A paste ends only at its end marker, however long the terminal takes to
+      send it: time never ends a paste. A paste whose marker never comes, from a
+      terminal or link that failed mid-paste, takes every later byte as its
+      content, Ctrl+C included, and nothing the user types can end it. The
+      application decides when to give up, with {!Cmd.abort_paste}, from how
+      long the paste has been silent: any byte counts, keys typed into the paste
+      too, since they are its content. Raises [Invalid_argument] if [seconds] is
+      not positive and finite. *)
 
   val on_resize : (width:int -> height:int -> 'msg) -> 'msg t
   (** [on_resize f] fires [f ~width ~height] whenever the terminal is resized,

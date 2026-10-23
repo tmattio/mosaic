@@ -10,6 +10,7 @@
 - **Runtime probe** – `Mosaic.run ~probe` hands test harnesses a quiescence probe (`Probe.is_settled`) for deterministic settling in headless tests
 - **Idle-cheap timers** – a pending `Sub.every` arms a one-shot wakeup instead of holding the render cadence live; only `Sub.on_tick` keeps the cadence running
 - **Syntax API** – `Code.syntax` replaces the widget's public `spans` argument; `Code.Highlighter` runs highlighting synchronously or asynchronously with cancellation, stale-result protection, and a plain-text fallback
+- **A stalled paste can be ended** – `Sub.on_paste_stalled seconds msg` reports a paste in progress that has received nothing for `seconds`, and `Cmd.abort_paste` ends and drops it. A paste still ends only at its end marker: one whose marker never comes takes every later key as content, Ctrl+C included, and the application decides when to give up
 - **Terminal commands** – `Cmd.set_clipboard`, `Cmd.copy_selection`, `Cmd.clear_selection`, `Cmd.bell`, `Cmd.notify`, and `Cmd.query_color_scheme` paired with `Sub.on_color_scheme`
 - `scroll_bar` and `diff` widgets; `diff` renders unified and split patches with per-line signs, highlighted source lines, sub-line highlight spans, line click hits, and source-row reveal
 - `Mosaic.viewport_switch` picks a subtree by terminal width before layout, keeping compatible keyed children across the switch

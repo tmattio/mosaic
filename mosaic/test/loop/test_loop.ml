@@ -1580,6 +1580,48 @@ let%expect_test "a paste is delivered whole and a cut paste is dropped" =
     ];
   [%expect {| |}]
 
+let%expect_test "a stalled paste is reported, and the application aborts it" =
+  let observed, application =
+    recording (fun _ ->
+        Mosaic.Sub.batch
+          [
+            Mosaic.Sub.on_paste_stalled 2. (Pressed "<stalled>");
+            Mosaic.Sub.on_paste_all (fun ev ->
+                Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev)));
+            Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)));
+          ])
+  in
+  let application =
+    {
+      application with
+      Mosaic.update =
+        (fun msg model ->
+          let model, cmd = application.Mosaic.update msg model in
+          match msg with
+          | Pressed "<stalled>" -> (model, Mosaic.Cmd.abort_paste)
+          | _ -> (model, cmd));
+    }
+  in
+  drive ~width:70 ~height:1 application
+    [
+      `Feed "\027[200~ab";
+      `Step_to 1.;
+      `Feed "c\003";
+      `Step_to 2.5;
+      `Run
+        (fun _ ->
+          equal ~msg:"data, Ctrl+C too, keeps the paste going" (list string) []
+            !observed.keys);
+      `Step_to 3.5;
+      `Feed "x";
+      `Step_to 8.;
+      `Run
+        (fun _ ->
+          equal ~msg:"reported once, aborted and dropped, then typing"
+            (list string) [ "<stalled>"; "x" ] !observed.keys);
+    ];
+  [%expect {| |}]
+
 let%expect_test "key releases reach on_key_release, not key handlers" =
   let observed, application =
     recording (fun _ ->

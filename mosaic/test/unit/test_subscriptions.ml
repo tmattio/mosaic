@@ -263,7 +263,8 @@ let cmd_copy_to_clipboard_maps_without_changing_payload () =
       failf "unexpected clipboard payload: %S" other
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
   | Cmd.Clear_selection | Cmd.Static_commit _ | Cmd.Static_clear
-  | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _ ->
+  | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _
+  | Cmd.Abort_paste ->
       fail "expected Copy_to_clipboard"
 
 let cmd_clear_selection_maps_to_itself () =
@@ -271,7 +272,8 @@ let cmd_clear_selection_maps_to_itself () =
   | Cmd.Clear_selection -> ()
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
   | Cmd.Copy_to_clipboard _ | Cmd.Static_commit _ | Cmd.Static_clear
-  | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _ ->
+  | Cmd.Copy_selection | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _
+  | Cmd.Abort_paste ->
       fail "expected Clear_selection"
 
 let cmd_copy_selection_maps_to_itself () =
@@ -279,7 +281,8 @@ let cmd_copy_selection_maps_to_itself () =
   | Cmd.Copy_selection -> ()
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
   | Cmd.Copy_to_clipboard _ | Cmd.Clear_selection | Cmd.Static_commit _
-  | Cmd.Static_clear | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _ ->
+  | Cmd.Static_clear | Cmd.Query_color_scheme | Cmd.Bell | Cmd.Notify _
+  | Cmd.Abort_paste ->
       fail "expected Copy_selection"
 
 let cmd_query_color_scheme_maps_to_itself () =
@@ -287,7 +290,8 @@ let cmd_query_color_scheme_maps_to_itself () =
   | Cmd.Query_color_scheme -> ()
   | Cmd.None | Cmd.Batch _ | Cmd.Perform _ | Cmd.Quit | Cmd.Set_title _
   | Cmd.Copy_to_clipboard _ | Cmd.Clear_selection | Cmd.Static_commit _
-  | Cmd.Static_clear | Cmd.Copy_selection | Cmd.Bell | Cmd.Notify _ ->
+  | Cmd.Static_clear | Cmd.Copy_selection | Cmd.Bell | Cmd.Notify _
+  | Cmd.Abort_paste ->
       fail "expected Query_color_scheme"
 
 let sub_on_color_scheme_delivers_reports () =
