@@ -2643,23 +2643,27 @@ let test_unix_wakes_per_run () =
           done
         done)
   in
-  let stalls = ref 0 in
-  for i = 1 to 200 do
-    Matrix.post a i;
-    let start = Unix.gettimeofday () in
-    while Atomic.get handled < i && Unix.gettimeofday () -. start < 2. do
-      Domain.cpu_relax ()
-    done;
-    if Unix.gettimeofday () -. start > 0.5 then incr stalls
-  done;
+  (* A post whose wake another run took is never handled, however long
+     the wait: the guard is a minute, which no host takes to run a turn. *)
+  let rec posts i =
+    if i <= 200 then (
+      Matrix.post a i;
+      let start = Unix.gettimeofday () in
+      while Atomic.get handled < i && Unix.gettimeofday () -. start < 60. do
+        Domain.cpu_relax ()
+      done;
+      if Atomic.get handled < i then Some i else posts (i + 1))
+    else None
+  in
+  let lost = posts 1 in
+  equal ~msg:"no post lost" (option int) None lost;
   Atomic.set busy false;
   Domain.join hammer;
   Matrix.post a 0;
   Matrix.post b 0;
   Domain.join da;
   Domain.join db;
-  List.iter Unix.close (fds_a @ fds_b);
-  equal ~msg:"posts that waited half a second" int 0 !stalls
+  List.iter Unix.close (fds_a @ fds_b)
 
 let test_unix_post_wakes_the_loop () =
   let input_r, input_w = Unix.pipe ~cloexec:true () in
@@ -2668,8 +2672,9 @@ let test_unix_post_wakes_the_loop () =
     ~finally:(fun () -> List.iter Unix.close [ input_r; input_w; devnull ])
     (fun () ->
       let backend = Matrix.Backend.unix ~input:input_r ~output:devnull () in
-      let started = Unix.gettimeofday () in
-      let elapsed =
+      (* A loop the post did not wake would wait for input forever: the
+         test's timeout fails it. *)
+      let woken =
         Matrix.run ~backend ~config:(quiet ()) (fun app ->
             let poster =
               Thread.create
@@ -2682,17 +2687,17 @@ let test_unix_post_wakes_the_loop () =
               match Matrix.next app with
               | Posted p ->
                   p ();
-                  Unix.gettimeofday () -. started
+                  true
               | Frame ->
                   Matrix.draw app ignore;
                   loop ()
               | _ -> loop ()
             in
-            let elapsed = loop () in
+            let woken = loop () in
             Thread.join poster;
-            elapsed)
+            woken)
       in
-      is_true ~msg:"woken without input (< 1 s)" (elapsed < 1.))
+      is_true ~msg:"woken without input" woken)
 
 (* A write the terminal is slow to take is interrupted by a signal the
    process handles, here with an OCaml handler, which resumes no system

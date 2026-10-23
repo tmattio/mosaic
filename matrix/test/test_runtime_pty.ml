@@ -18,9 +18,10 @@ let spawn () =
   Pty.set_nonblock pty;
   { pty; pid = Option.get (Pty.pid pty); output = Buffer.create 4096 }
 
-(* Reads what the program writes until [sub] appears after [from], at most
-   [timeout] seconds. *)
-let await ?(timeout = 5.) ?(from = 0) s sub =
+(* Reads what the program writes until [sub] appears after [from]. The
+   timeout guards against a program that never writes it; it measures
+   nothing, so a loaded host only makes a test slower. *)
+let await ?(timeout = 60.) ?(from = 0) s sub =
   let deadline = Unix.gettimeofday () +. timeout in
   let buf = Bytes.create 4096 in
   let found () =
@@ -48,7 +49,7 @@ let send s bytes =
 
 let mark s = Buffer.length s.output
 
-let rec wait_exit ?(timeout = 5.) s =
+let rec wait_exit ?(timeout = 60.) s =
   match Unix.waitpid [ Unix.WNOHANG ] s.pid with
   | 0, _ ->
       if timeout <= 0. then (

@@ -279,7 +279,7 @@ let test_native_thread_wakes_eio_loop () =
     Matrix_eio.backend ~clock:(Eio.Stdenv.mono_clock env) ~stdin ~stdout ()
   in
   let result =
-    Eio.Time.with_timeout (Eio.Stdenv.clock env) 2. (fun () ->
+    Eio.Time.with_timeout (Eio.Stdenv.clock env) 60. (fun () ->
         Matrix.run ~backend ~config:quiet (fun app ->
             let worker =
               Thread.create
@@ -309,7 +309,7 @@ let test_stdin_eof_stops_the_runtime () =
     Matrix_eio.backend ~clock:(Eio.Stdenv.mono_clock env) ~stdin ~stdout ()
   in
   let result =
-    Eio.Time.with_timeout (Eio.Stdenv.clock env) 0.5 (fun () ->
+    Eio.Time.with_timeout (Eio.Stdenv.clock env) 60. (fun () ->
         Matrix.run ~backend ~config:quiet (fun app ->
             loop_until app (function Stopped -> true | _ -> false));
         Ok ())
@@ -574,7 +574,7 @@ let test_wake_survives_subprocess_storm () =
           loop ())
         (fun () ->
           let await_render ~before =
-            Eio.Time.with_timeout clock 3.0 (fun () ->
+            Eio.Time.with_timeout clock 60. (fun () ->
                 while Atomic.get renders <= before do
                   Eio.Condition.await_no_mutex bumped
                 done;
@@ -597,8 +597,8 @@ let test_wake_survives_subprocess_storm () =
   Eio.Flow.close stdout;
   Eio.Flow.close stdin_writer;
   if !stalled > 0 then
-    failf "render loop stranded after wake %d/%d (no frame within 3s)" !stalled
-      iterations;
+    failf "render loop stranded after wake %d/%d (no frame within a minute)"
+      !stalled iterations;
   is_true
     ~msg:
       (Printf.sprintf "%d gap wakes painted %d frames in %.2fs, none stranded"

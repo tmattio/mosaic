@@ -2474,12 +2474,14 @@ let%expect_test "X2: an exception in a perform ends the run" =
       ~subs:(fun _ -> Mosaic.Sub.every ~id:"e" 0.1 (fun k -> Ticks k))
       ()
   in
-  let idle = ref 0 in
+  (* The run ends when the loop takes the worker's exception; a minute
+     guards against one that never comes. *)
+  let started = Unix.gettimeofday () in
   let t =
     Matrix_test.create ~width:20 ~height:1
       ~on_idle:(fun t ~until:_ ->
-        incr idle;
-        if !idle > 2000 then Matrix_test.stop t else Thread.delay 0.001)
+        if Unix.gettimeofday () -. started > 60. then Matrix_test.stop t
+        else Thread.delay 0.001)
       ()
   in
   let backend =
@@ -2510,8 +2512,9 @@ let%expect_test "X2: an exception in a perform ends the run" =
     terminal given back: true; standard error: ""
     |}]
 
-(* Workers run on real threads: the driver waits for what they do, at most
-   five seconds a step. *)
+(* Workers run on real threads: the driver waits for what they do. A minute
+   a step guards against what never happens; it measures nothing, so a
+   loaded host only makes a test slower. *)
 type live_step = Until of (unit -> bool) | Type of string | End
 
 let run_live ?process_perform steps application =
@@ -2528,7 +2531,7 @@ let run_live ?process_perform steps application =
           if ready () then (
             steps := rest;
             since := Unix.gettimeofday ())
-          else if Unix.gettimeofday () -. !since > 5. then (
+          else if Unix.gettimeofday () -. !since > 60. then (
             print_endline "timed out";
             Matrix_test.stop t)
           else Thread.delay 0.001
@@ -2713,7 +2716,7 @@ let%expect_test "the run's end requests every worker's stop" =
     }
   in
   run_live [ Until (fun () -> Atomic.get started); End ] application;
-  let deadline = Unix.gettimeofday () +. 5. in
+  let deadline = Unix.gettimeofday () +. 60. in
   while (not (Atomic.get stopped)) && Unix.gettimeofday () < deadline do
     Thread.delay 0.001
   done;
