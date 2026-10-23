@@ -5,7 +5,7 @@
 
 (** Grapheme cluster segmenter.
 
-    Vendored from uuseg v17.0.0, stripped to its boundary-check core:
+    Vendored from uuseg v18.0.0, stripped to its boundary-check core:
     the streaming [add] API is removed, and {!reset},
     {!check_boundary}, {!check_boundary_with_width} and {!is_boundary} are
     added for zero-allocation segmentation. *)

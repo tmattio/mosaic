@@ -987,6 +987,27 @@ let hangul_conjoining_widths () =
       check_width (name ^ " syllable L V") 2 (measure "\u{1100}\u{1161}"))
     [ `Unicode; `Wcwidth ]
 
+(* Unicode 18.0 assigns wide characters and nonspacing marks of its own, and
+   changes GB9c to bind a consonant to any linker before it, with no
+   consonant before the linker (UAX #29 rev. 49). *)
+let unicode_18 () =
+  List.iter
+    (fun (label, cp, w) ->
+      check_width ("uchar_width " ^ label) w
+        (uchar_width ~tab_width:2 (Uchar.of_int cp)))
+    [
+      ("Hebrew mark U+05C8", 0x05C8, 0);
+      ("Arabic mark U+10ECF", 0x10ECF, 0);
+      ("musical mark U+1D25C", 0x1D25C, 0);
+      ("Tangut component U+18CD6", 0x18CD6, 2);
+      ("Tangut component U+18FE8", 0x18FE8, 2);
+      ("thumb sign U+1FAFA", 0x1FAFA, 2);
+    ];
+  equal ~msg:"a linker binds a consonant with no consonant before it" int 1
+    (grapheme_count "a\u{094D}\u{0937}");
+  equal ~msg:"Extend after the linker keeps the binding" int 1
+    (grapheme_count "\u{094D}\u{0951}\u{0937}")
+
 (* The units of [chunks], fed one scalar at a time with [Segmenter.add], or
    with [Segmenter.ascii_run] wherever it applies when [runs]. Each unit is
    its bytes and its width when it closed. *)
@@ -1359,6 +1380,7 @@ let () =
             measure_sub_matches_slice;
           test "malformed wcwidth positions" malformed_wcwidth_positions;
           test "wcwidth decoder matches Stdlib" wcwidth_decoder_matches_stdlib;
+          test "Unicode 18" unicode_18;
         ];
       group "Segmenter"
         [

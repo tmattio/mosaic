@@ -1,6 +1,6 @@
 (* WARNING: Do not edit. This file was automatically generated.
 
-   Unicode version 17.0.0.
+   Unicode version 18.0.0.
    Generated using matrix/support/gen_unicode_data.ml
 *)
 

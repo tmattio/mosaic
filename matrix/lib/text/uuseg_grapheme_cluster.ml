@@ -3,7 +3,7 @@
    SPDX-License-Identifier: ISC
   ---------------------------------------------------------------------------*)
 
-(* Vendored from uuseg v17.0.0 with the following modifications:
+(* Vendored from uuseg v18.0.0 with the following modifications:
    - Added [reset] function for segmenter reuse (zero allocation)
    - Added [check_boundary] for zero-allocation direct boundary checks
    - Changed [break] and [update_left] to take pre-computed [is_extpic] flag
@@ -28,10 +28,7 @@
    GB9.                   × (EX|ZWJ)
    GB9a.                  × SM
    GB9b.               PP ×
-   GB9c. \p{InCB=Consonant} [\p{InCB=Extend}\p{InCB=Linker}]*
-         \p{InCB=Linker} [\p{InCB=Extend}\p{InCB=Linker}]*
-         ×
-         \p{InCB=Consonant}
+   GB9c. \p{InCB=Linker} \p{InCB=Extend}* × \p{InCB=Consonant}
    GB11. \p{Extended_Pictographic} EX* ZWJ x \p{Extended_Pictographic}
    GB12.  sot (RI RI)* RI × RI
    GB13.   [^RI] (RI RI)* × RI
@@ -64,8 +61,9 @@ let byte_to_gcb =
 
 let byte_to_incb = [| Consonant; Extend; Linker; None' |]
 
-type left_gb9c_state = (* Ad-hoc state for matching GB9c *)
-| Reset | Has_consonant | Has_linker
+type left_gb9c_state =
+(* Ad-hoc state for matching GB9c, was much simplified in 18.0.0 *)
+| Reset | Has_linker
 
 type t =
   { mutable left_gb9c : left_gb9c_state;         (* state for matching gb9c. *)
@@ -126,10 +124,9 @@ let update_left s right right_incb ~is_extpic =
       s.left_emoji_seq <- false
   end;
   s.left_gb9c <- begin match right_incb with
-  | None' -> Reset
-  | Consonant -> Has_consonant
-  | Linker when s.left_gb9c = Has_consonant -> Has_linker
-  | Extend | Linker -> s.left_gb9c
+  | None' | Consonant -> Reset
+  | Linker -> Has_linker
+  | Extend -> s.left_gb9c
   end
 
 (* Direct boundary check - zero allocation.
