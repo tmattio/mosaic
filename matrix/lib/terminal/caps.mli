@@ -15,7 +15,8 @@
     + {!val-env} reads the environment once, and {!val-evidence} makes the
       evidence before any answer.
     + {!ask} gives the bytes of the first {e batch} of queries, {!Probe}, which
-      the program writes to the terminal.
+      the program writes to the terminal, and of {!Widths}, which it writes on
+      rows it owns.
     + The program adds each reply to the evidence with {!add}, {!val-cursor} and
       {!answered}, and {!derive} gives the capabilities so far.
     + {!next} gives the batch to send after an answered one, until it is [None].
@@ -72,7 +73,8 @@
     {1:batches Batches}
 
     Queries go in batches, each ending with a primary device attributes query
-    (DA1), which every terminal answers. A terminal answers in order, so the DA1
+    (DA1), which every terminal answers, but for {!Widths}, which its last
+    cursor position report answers. A terminal answers in order, so the DA1
     reply says that the batch has been answered. The kitty keyboard protocol
     states it as "If an answer for the device attributes is received without
     getting back an answer for the progressive enhancement the terminal does not
@@ -128,13 +130,13 @@ type t = {
   color_scheme_updates : bool;
       (** Color scheme change reports (mode 2031), from the mode's report. *)
   explicit_width : bool;
-      (** The terminal sizes text as OSC 66 says, as {!Probe} measures ([w=1]
+      (** The terminal sizes text as OSC 66 says, as {!Widths} measures ([w=1]
           moves the cursor one cell). *)
   explicit_cursor_positioning : bool;
       (** The terminal may measure a grapheme otherwise than the program, so a
           renderer places the cursor after each wide grapheme. It comes from the
           identity of tmux or alacritty, or from any multiplexer. *)
-  scaled_text : bool;  (** OSC 66 scaled text ([s=2]), as {!Probe} measures. *)
+  scaled_text : bool;  (** OSC 66 scaled text ([s=2]), as {!Widths} measures. *)
   sixel : bool;
       (** SIXEL graphics, attribute 4 in the DA1 reply to {!Probe}. *)
   sync : bool;
@@ -209,13 +211,20 @@ val derive : evidence -> t
 type batch =
   | Probe
       (** The startup batch, to the terminal that does the work. It starts with
-          S7C1T, so that no reply comes with 8-bit controls, and saves the
-          cursor. It asks for the reports of modes 1016, 2027, 2031, 1004, 2004,
-          2026 and 1036. It writes two spaces with OSC 66 at the start of the
-          screen's second row, one of width 1 and one of scale 2, each followed
-          by a cursor position report. It then asks for XTVERSION, the kitty
-          keyboard flags, and, unless a multiplexer is in the way, kitty
-          graphics. It restores the cursor and ends with DA1. *)
+          S7C1T, so that no reply comes with 8-bit controls. It asks for the
+          reports of modes 1016, 2027, 2031, 1004, 2004, 2026 and 1036,
+          XTVERSION, the kitty keyboard flags, and, unless a multiplexer is in
+          the way, kitty graphics, and ends with DA1. It writes nothing on the
+          screen. *)
+  | Widths
+      (** The measure of text sizing (OSC 66), to the terminal that does the
+          work. It writes two spaces with OSC 66 from the first column of the
+          cursor's row, one of width 1 and one of scale 2, each after a carriage
+          return and followed by a cursor position report. It then returns to
+          the first column and erases from there to the end of the screen. A
+          program must write it with the cursor on a row that it owns with every
+          row below it, at least two, since a space of scale 2 is two rows high.
+      *)
   | Passthrough
       (** DA1 alone, wrapped for tmux, which is answered only when tmux passes
           it on. *)
@@ -234,7 +243,9 @@ val cursor : evidence -> batch -> index:int -> row:int -> col:int -> evidence
 val answered : evidence -> batch -> attributes:int list -> evidence
 (** [answered ev b ~attributes] is [ev] once the DA1 that ends [b] is answered
     with [attributes]. What [b] asked and was not answered is then known not to
-    be there, where its protocol says that silence means so. *)
+    be there, where its protocol says that silence means so. For {!Widths},
+    which its last cursor position report answers,
+    [answered ev Widths ~attributes] is [ev]. *)
 
 val next : evidence -> batch -> batch option
 (** [next ev b] is the batch to send once [b] is answered, if any. Inside tmux,

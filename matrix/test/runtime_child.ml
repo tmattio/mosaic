@@ -53,6 +53,8 @@ let served path =
 let () =
   match Sys.argv with
   | [| _; "only-served"; path |] -> Domain.join (served path)
+  | [| _; "primary" |] ->
+      Matrix.run ~config:(Matrix.config ~mode:`Primary ()) ready
   | [| _; "served"; path |] ->
       let session = served path in
       Matrix.run ready;

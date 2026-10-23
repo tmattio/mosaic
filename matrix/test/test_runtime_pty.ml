@@ -333,6 +333,124 @@ let test_abort_resets_every_run () =
   await ~from:served_from served "\027[?1049l";
   is_true ~msg:"the served terminal cooked" (served_cooked slave)
 
+(* The probe measures text sizing (OSC 66) by writing spaces and asking
+   where the cursor went, and must write only on cells the program owns.
+   The test is the terminal: a model of it shows the shell's text, draws
+   what the program writes, with each OSC 66 space as the cells it fills on
+   its first row, as kitty draws it, and answers the program's queries. *)
+
+let replace_all ~sub ~by s =
+  let n = String.length sub in
+  let b = Buffer.create (String.length s) in
+  let rec go i =
+    if i > String.length s - n then
+      Buffer.add_substring b s i (String.length s - i)
+    else if String.sub s i n = sub then (
+      Buffer.add_string b by;
+      go (i + n))
+    else (
+      Buffer.add_char b s.[i];
+      go (i + 1))
+  in
+  go 0;
+  Buffer.contents b
+
+let rec find_from s i sub =
+  let n = String.length sub in
+  if i > String.length s - n then None
+  else if String.sub s i n = sub then Some i
+  else find_from s (i + 1) sub
+
+(* Bytes up to the last OSC still open are drawn; the rest waits for more. *)
+let drawable s =
+  let rec last_osc i found =
+    match find_from s i "\027]" with
+    | Some j -> last_osc (j + 1) (Some j)
+    | None -> found
+  in
+  let held =
+    match last_osc 0 None with
+    | Some i when find_from s i "\027\\" = None && find_from s i "\007" = None
+      ->
+        i
+    | _ ->
+        let n = String.length s in
+        if n > 0 && s.[n - 1] = '\027' then n - 1 else n
+  in
+  (String.sub s 0 held, String.sub s held (String.length s - held))
+
+let kitty_sizing s =
+  s
+  |> replace_all ~sub:"\027]66;w=1; \027\\" ~by:" "
+  |> replace_all ~sub:"\027]66;s=2; \027\\" ~by:"  "
+
+let shell_text = [ "$ one"; "$ two"; "$ three" ]
+
+let test_probe_leaves_the_shell_text mode () =
+  let pty =
+    Pty.spawn ~prog:child ~args:mode
+      ~env:[| "TERM=xterm-256color" |]
+      ~winsize:Pty.{ rows = 24; cols = 80; xpixel = 0; ypixel = 0 }
+      ()
+  in
+  Pty.set_nonblock pty;
+  let s =
+    { pty; pid = Option.get (Pty.pid pty); output = Buffer.create 4096 }
+  in
+  Fun.protect ~finally:(fun () -> finish s.pty) @@ fun () ->
+  let vte = Vte.create ~rows:24 ~cols:80 () in
+  ignore
+    (Vte.feed_string vte (String.concat "\r\n" shell_text ^ "\r\n")
+      : Matrix_input.Reply.t list);
+  let pending = ref "" in
+  let buf = Bytes.create 4096 in
+  let pump () =
+    match Unix.select [ Pty.in_fd s.pty ] [] [] 0.05 with
+    | [], _, _ -> ()
+    | _ -> (
+        match Pty.read s.pty buf 0 4096 with
+        | n when n > 0 ->
+            let chunk = Bytes.sub_string buf 0 n in
+            Buffer.add_string s.output chunk;
+            let now, rest = drawable (!pending ^ chunk) in
+            pending := rest;
+            let replies = Vte.feed_string vte (kitty_sizing now) in
+            if replies <> [] then send s (Matrix_input.Reply.encode replies)
+        | _ -> ()
+        | exception Unix.Unix_error _ -> ())
+  in
+  let until ?(timeout = 60.) what f =
+    let deadline = Unix.gettimeofday () +. timeout in
+    while (not (f ())) && Unix.gettimeofday () < deadline do
+      pump ()
+    done;
+    if not (f ()) then failf "timed out waiting for %s" what
+  in
+  let shows sub () = find_from (Buffer.contents s.output) 0 sub <> None in
+  until "the first frame" (shows "READY 1");
+  List.iteri
+    (fun row text ->
+      equal ~msg:"the shell's text while the program runs" string text
+        (String.trim (Vte.text vte row)))
+    (if mode = [] then [] else shell_text);
+  send s "q";
+  let status = ref None in
+  until "the end" (fun () ->
+      (if !status = None then
+         match Unix.waitpid [ Unix.WNOHANG ] s.pid with
+         | 0, _ -> ()
+         | _, st -> status := Some st);
+      !status <> None);
+  (* What the program wrote last. *)
+  for _ = 1 to 5 do
+    pump ()
+  done;
+  List.iteri
+    (fun row text ->
+      equal ~msg:"the shell's text after the program" string text
+        (String.trim (Vte.text vte row)))
+    shell_text
+
 let supported =
   Sys.os_type = "Unix" && Sys.file_exists child && Sys.file_exists job
 
@@ -368,4 +486,13 @@ let () =
       group "Handoff"
         (if not supported then []
          else [ test "a child's terminal" test_handoff ]);
+      group "Probe"
+        (if not supported then []
+         else
+           [
+             test "the alternate screen leaves the shell's text"
+               (test_probe_leaves_the_shell_text []);
+             test "the primary screen leaves the shell's text"
+               (test_probe_leaves_the_shell_text [ "primary" ]);
+           ]);
     ]

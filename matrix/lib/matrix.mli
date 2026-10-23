@@ -327,14 +327,17 @@ val run : ?backend:Backend.t -> ?config:config -> ('msg app -> 'a) -> 'a
     answers are waited for at most max(500 ms, four round trips); input that
     comes meanwhile is kept and returned first by {!next}), the screen (the
     alternate screen, or in [`Primary] mode the live region found from a cursor
-    report), and the modes. If a step raises, the undos made so far run in
-    reverse and the exception propagates with its backtrace. Giving the terminal
-    back runs every undo, each even if another raises: when a reply is owed it
-    first waits at most max(500 ms, four round trips) for the terminal to
-    answer, so that no reply reaches the shell as typing; then the modes are
-    reset, the cursor shown, the screen left (the live region erased below the
-    transcript in [`Primary] mode), cooked mode restored, and input not read
-    discarded.
+    report), the measure of text sizing, and the modes. A terminal that answered
+    the probe measures text sizing on cells the run owns, the alternate screen's
+    second row or the live region's first, which is then erased. In [`Primary]
+    mode the live region takes at least two rows for it, since a space of scale
+    2 is two rows high. If a step raises, the undos made so far run in reverse
+    and the exception propagates with its backtrace. Giving the terminal back
+    runs every undo, each even if another raises: when a reply is owed it first
+    waits at most max(500 ms, four round trips) for the terminal to answer, so
+    that no reply reaches the shell as typing; then the modes are reset, the
+    cursor shown, the screen left (the live region erased below the transcript
+    in [`Primary] mode), cooked mode restored, and input not read discarded.
 
     Raises [Invalid_argument] if [backend]'s terminal is the controlling
     terminal ({!Backend.t}'s [controlling]) and another run holds it, unless

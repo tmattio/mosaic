@@ -137,7 +137,7 @@
  (package matrix)
  (modules test_runtime_pty)
  (deps runtime_child.exe runtime_job.exe)
- (libraries windtrap matrix.pty unix))
+ (libraries windtrap matrix.pty matrix.vte matrix.input unix))
 
 (test
  (name test_image)

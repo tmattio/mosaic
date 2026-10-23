@@ -989,16 +989,24 @@ let test_probe_payload () =
       "\027[?2026$p";
       "\027[?2031$p";
       "\027[?1036$p";
-      "\027[2;1H";
       "\027[>0q";
       "\027[?u";
       "\027_Gi=31337";
     ];
-  not_contains ~msg:"no cursor report can be a modified F3" ~sub:"\027[H" bytes;
+  not_contains ~msg:"no cursor report" ~sub:"\027[6n" bytes;
+  not_contains ~msg:"nothing written on the screen" ~sub:"\027]66" bytes;
   not_contains ~msg:"one DA1" ~sub:"\027[c"
     (String.sub bytes 0 (String.length bytes - 3));
   not_contains ~msg:"nothing wrapped" ~sub:"\027Ptmux;" bytes;
-  equal ~msg:"owed" owed { cursor_reports = 2; string_replies = 2 } o
+  equal ~msg:"owed" owed { cursor_reports = 0; string_replies = 2 } o
+
+(* The measure of text sizing starts, measures and ends in the first column
+   of the cursor's row, and erases from there what it wrote. *)
+let test_widths_payload () =
+  let bytes, o = Caps.ask (Caps.evidence (env [])) Widths in
+  equal ~msg:"bytes" string
+    "\r\027]66;w=1; \027\\\027[6n\r\027]66;s=2; \027\\\027[6n\r\027[J" bytes;
+  equal ~msg:"owed" owed { cursor_reports = 2; string_replies = 0 } o
 
 (* Questions about drawing and keys go to the multiplexer itself, unwrapped,
    whatever the environment says; the kitty graphics query waits for
@@ -1010,7 +1018,7 @@ let test_probe_payload_multiplexed () =
       not_contains ~msg:"nothing wrapped" ~sub:"\027Ptmux;" bytes;
       not_contains ~msg:"no graphics query" ~sub:"\027_G" bytes;
       contains ~msg:"rendering asked" ~sub:"\027[?2026$p" bytes;
-      equal ~msg:"owed" owed { cursor_reports = 2; string_replies = 1 } o)
+      equal ~msg:"owed" owed { cursor_reports = 0; string_replies = 1 } o)
     [
       [ ("TMUX", "s") ];
       [ ("TERM", "tmux-256color") ];
@@ -1021,6 +1029,7 @@ let test_probe_payload_multiplexed () =
 let batch =
   Testable.make ~equal:( = ) ~pp:(fun ppf -> function
     | Caps.Probe -> Format.fprintf ppf "Probe"
+    | Widths -> Format.fprintf ppf "Widths"
     | Passthrough -> Format.fprintf ppf "Passthrough"
     | Outer -> Format.fprintf ppf "Outer")
 
@@ -1121,7 +1130,7 @@ let test_probe_cursor (_, reports, (explicit, scaled)) =
   let ev =
     List.fold_left
       (fun (i, ev) (row, col) ->
-        (i + 1, Caps.cursor ev Probe ~index:i ~row ~col))
+        (i + 1, Caps.cursor ev Widths ~index:i ~row ~col))
       (0, Caps.evidence (env []))
       reports
     |> snd
@@ -1173,6 +1182,7 @@ let () =
       group "batches"
         [
           test "probe" test_probe_payload;
+          test "widths" test_widths_payload;
           test "probe inside a multiplexer" test_probe_payload_multiplexed;
           cases "follow-up" next_cases
             ~name:(fun (name, _, _, _) -> name)

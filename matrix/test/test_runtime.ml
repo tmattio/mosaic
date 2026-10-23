@@ -944,8 +944,8 @@ let test_startup_and_late_cpr_do_not_enable_width () =
   let f = fake ~tty:true () in
   f.answer <-
     (fun s ->
-      if String.starts_with ~prefix:"\027 F" s then
-        "\027[1;1R\027[1;1R\027[?62;4c"
+      if String.starts_with ~prefix:"\027 F" s then "\027[?62;4c"
+      else if String.starts_with ~prefix:"\r\027]66" s then "\027[2;1R\027[2;1R"
       else if s = "\027[6n" then "\027[1;3R"
       else "");
   run ~config:(quiet ~mode:`Primary ()) f (fun app ->
@@ -964,8 +964,7 @@ let test_ghostty_profile_reaches_runtime () =
   let f = fake ~tty:true () in
   f.answer <-
     (fun s ->
-      if String.starts_with ~prefix:"\027 F" s then
-        "\027[?2027;2$y\027[1;1R\027[1;1R\027[?62;4c"
+      if String.starts_with ~prefix:"\027 F" s then "\027[?2027;2$y\027[?62;4c"
       else "");
   let backend =
     {
@@ -997,7 +996,7 @@ let test_grapheme_mode_as_found () =
     f.answer <-
       (fun s ->
         if String.starts_with ~prefix:"\027 F" s then
-          "\027[?2027;" ^ setting ^ "$y\027[1;1R\027[1;1R\027[?62;4c"
+          "\027[?2027;" ^ setting ^ "$y\027[?62;4c"
         else "");
     let backend =
       { (backend f) with env = env [ ("TERM", "xterm-256color") ] }
@@ -1401,7 +1400,7 @@ let test_static_write_and_live_repaint_share_sync_frame () =
 
 let test_pinned_static_write_keeps_live_size () =
   let f = primary_at 24 in
-  run ~config:(quiet ~mode:`Primary ()) f (fun app ->
+  run ~config:(quiet ~mode:`Primary ~min_tui_height:2 ()) f (fun app ->
       present app [];
       let before = Matrix.size app in
       Matrix.static_write app (static_grid "a\nb\nc\n");
@@ -1960,12 +1959,14 @@ let run_clocked ?(mode = `Alt) ?(env = no_env) ?(start = fun _ -> ())
 let events c = List.rev_map snd c.seen
 
 (* An xterm-like terminal: it answers the startup probe, which ends with DA1,
-   with its two cursor reports and DA1. *)
+   with DA1, and the measure of text sizing with its two cursor reports. *)
 let answers_probe bytes =
   if
     String.ends_with ~suffix:"\027[c" bytes
     && String.starts_with ~prefix:"\027 F" bytes
-  then [ "\027[1;1R\027[1;1R\027[?64;1c" ]
+  then [ "\027[?64;1c" ]
+  else if String.starts_with ~prefix:"\r\027]66" bytes then
+    [ "\027[2;1R\027[2;1R" ]
   else []
 
 (* An ESC waits max(50 ms, 2 RTT) for what follows, and a sequence begun max
@@ -1993,7 +1994,8 @@ let test_waits_follow_round_trip () =
    up after 5 s, and what comes after decodes as input. *)
 let test_unanswered_batch_is_given_up () =
   let c, backend =
-    clocked ~limit:7. [ (1., "\027[1;2R"); (6., "\027[1;2R\027]1x") ]
+    clocked ~limit:7.
+      [ (1., "\027P>|XTerm(1)\027\\"); (6., "\027[1;2R\027]1x") ]
   in
   ignore
     (run_clocked
@@ -2166,7 +2168,7 @@ let test_meta_sends_escape_kept () =
     clocked ~limit:1.
       ~answer:(fun bytes ->
         if String.starts_with ~prefix:"\027 F" bytes then
-          [ "\027[?1036;1$y\027[1;1R\027[1;1R\027[?64;1c" ]
+          [ "\027[?1036;1$y\027[?64;1c" ]
         else [])
       []
   in
@@ -2260,7 +2262,7 @@ let test_tmux_groups () =
   let wrapped_da1 = "\027Ptmux;\027\027[c\027\\" in
   let tmux ~passthrough bytes =
     if String.starts_with ~prefix:"\027 F" bytes then
-      [ "\027P>|tmux 3.5a\027\\\027[1;1R\027[1;1R\027[?1;2;4c" ]
+      [ "\027P>|tmux 3.5a\027\\\027[?1;2;4c" ]
     else if bytes = wrapped_da1 && passthrough then [ "\027[?64;1c" ]
     else if
       String.starts_with ~prefix:"\027Ptmux;\027\027_G" bytes && passthrough

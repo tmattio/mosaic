@@ -565,8 +565,8 @@ let send_batch t question (bytes, owed) =
   b
 
 let ends_with_da1 = function
+  | Capabilities Widths | Cursor _ -> false
   | Capabilities _ | Own | Application -> true
-  | Cursor _ -> false
 
 (* A batch that ends with DA1 is sent once no other is in flight. Every DA1
    reply is alike, so a reply is told to answer a batch by the order of the
@@ -735,7 +735,13 @@ let cursor_report t ~row ~col ~page =
         b.reports <- index + 1;
         match b.question with
         | Capabilities q ->
-            t.evidence <- Terminal.Caps.cursor t.evidence q ~index ~row ~col
+            t.evidence <- Terminal.Caps.cursor t.evidence q ~index ~row ~col;
+            if
+              b.reports = b.owed.cursor_reports
+              && not (ends_with_da1 b.question)
+            then (
+              b.answered <- true;
+              close t b)
         | Cursor anchor -> (
             b.answered <- true;
             close t b;
@@ -1781,9 +1787,11 @@ let make backend config =
   }
 
 (* A terminal answers queries only on a raw input: the probe waits for its
-   answers, and input that comes meanwhile is kept for the run. *)
+   answers, and input that comes meanwhile is kept for the run. Whether the
+   terminal answered it is returned. *)
 let probe t =
-  if can_query t then (
+  if not (can_query t) then false
+  else
     let b =
       send_batch t (Capabilities Probe) (Terminal.Caps.ask t.evidence Probe)
     in
@@ -1798,14 +1806,42 @@ let probe t =
       let b = ask_cursor t At_cursor in
       t.anchor <- Some b;
       await t ~from:b.sent [ b ];
-      t.anchor <- None))
+      t.anchor <- None);
+    b.answered
+
+(* The measure of text sizing writes on the screen, from the row the cursor
+   is on to the end, so it is written once the screen is taken, on rows the
+   run owns, and only to a terminal that answered the probe. In [`Alt] mode
+   that is the alternate screen's second row, so that a late report,
+   [CSI 2 ; col R], is never the modified F3 [CSI 1 ; m R]. In [`Primary]
+   mode it is the live region's first row, the region given the two rows a
+   scaled space takes. *)
+let measure_widths t =
+  if can_query t then (
+    let row =
+      match t.config.mode with
+      | `Alt -> 2
+      | `Primary ->
+          relayout t (Primary.require_rows t.primary ~rows:2);
+          Primary.render_offset t.primary + 1
+    in
+    let w = Ansi.Writer.create 64 in
+    List.iter (apply_primary_op w) t.layout_ops;
+    t.layout_ops <- [];
+    buf_cursor_position w ~row ~col:1;
+    Terminal.send t.terminal (Ansi.Writer.contents w);
+    let b =
+      send_batch t (Capabilities Widths) (Terminal.Caps.ask t.evidence Widths)
+    in
+    await t ~from:b.sent [ b ])
 
 let setup t =
   take_signals t;
   take_fatal_reset t;
   take_raw_mode t;
-  probe t;
+  let answered = probe t in
   take_screen t;
+  if answered then measure_widths t;
   take_modes t;
   ask_own t Pixel_size;
   t.usable <- size t

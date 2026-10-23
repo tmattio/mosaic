@@ -436,12 +436,13 @@ let derive ev =
 
 (* Questions *)
 
-type batch = Probe | Passthrough | Outer
+type batch = Probe | Widths | Passthrough | Outer
 
 let s7c1t = "\027 F"
 let da1 = Ansi.(to_string (query Device_attributes))
 let cursor_report = Ansi.(to_string (query Cursor_position))
-let second_row = Ansi.(to_string (cursor_position ~row:2 ~col:1))
+let first_column = "\r"
+let erase_below = "\027[J"
 let graphics_query = Ansi.(to_string (query Kitty_graphics))
 let wrap s = Ansi.(to_string (tmux_passthrough (literal s)))
 
@@ -449,7 +450,6 @@ let probe ~graphics =
   String.concat ""
     [
       s7c1t;
-      Ansi.(to_string cursor_save);
       Ansi.(to_string (query Sgr_pixels_mode));
       Ansi.(to_string (query Unicode_mode));
       Ansi.(to_string (query Color_scheme_mode));
@@ -457,17 +457,23 @@ let probe ~graphics =
       Ansi.(to_string (query Bracketed_paste_mode));
       Ansi.(to_string (query Sync_mode));
       "\027[?1036$p";
-      second_row;
-      Ansi.(to_string (query Explicit_width_support));
-      cursor_report;
-      second_row;
-      Ansi.(to_string (query Scaled_text_support));
-      cursor_report;
       Ansi.(to_string (query Terminal_identity));
       Ansi.(to_string (query Csi_u_support));
       (if graphics then graphics_query else "");
-      Ansi.(to_string cursor_restore);
       da1;
+    ]
+
+let widths =
+  String.concat ""
+    [
+      first_column;
+      Ansi.(to_string (query Explicit_width_support));
+      cursor_report;
+      first_column;
+      Ansi.(to_string (query Scaled_text_support));
+      cursor_report;
+      first_column;
+      erase_below;
     ]
 
 (* The probe asks for kitty graphics directly only with no multiplexer in the
@@ -484,24 +490,27 @@ let ask ev = function
       let graphics = probe_graphics ev in
       ( probe ~graphics,
         {
-          Decoder.cursor_reports = 2;
+          Decoder.cursor_reports = 0;
           string_replies = (if graphics then 2 else 1);
         } )
+  | Widths -> (widths, { cursor_reports = 2; string_replies = 0 })
   | Passthrough -> (wrap da1, { cursor_reports = 0; string_replies = 0 })
   | Outer ->
       ( wrap graphics_query ^ wrap da1,
         { cursor_reports = 0; string_replies = 1 } )
 
-(* The probe writes a space of width 1, then one of scale 2, at the start of
-   a row, and asks where the cursor went: a terminal without OSC 66 skips the
-   string and leaves the cursor in place. The column says it; the row is the
-   second, so that a report, [CSI 2 ; col R], is never the modified F3
-   [CSI 1 ; m R] if it comes after the probe was given up, but a terminal of
-   one row has only the first. *)
+(* [Widths] writes a space of width 1, then one of scale 2, from the first
+   column of the row the cursor is on, and asks where the cursor went: a
+   terminal without OSC 66 skips the string and leaves the cursor in place.
+   The column says it, whatever the row. This is the detection kitty's text
+   sizing protocol gives ("Detecting if the terminal supports this
+   protocol"), with a carriage return before each space. A scaled space is
+   two rows high, and kitty scrolls the screen when the row below is
+   missing, so the program needs that row too. *)
 let cursor ev batch ~index ~row:_ ~col =
   match (batch, index) with
-  | Probe, 0 -> { ev with explicit = Some (col = 1) }
-  | Probe, 1 ->
+  | Widths, 0 -> { ev with explicit = Some (col = 1) }
+  | Widths, 1 ->
       let scaled = col = 2 in
       {
         ev with
@@ -520,6 +529,7 @@ let answered ev batch ~attributes =
         graphics =
           (if probe_graphics ev then silent ev.graphics else ev.graphics);
       }
+  | Widths -> ev
   | Passthrough -> { ev with passthrough = true }
   | Outer -> { ev with graphics = silent ev.graphics }
 
@@ -527,4 +537,4 @@ let next ev = function
   | Probe ->
       if (derive ev).multiplexer = Some `Tmux then Some Passthrough else None
   | Passthrough -> if ev.passthrough then Some Outer else None
-  | Outer -> None
+  | Widths | Outer -> None
