@@ -22,15 +22,16 @@ let drive ?(focused = true) ?(disabled = false) ?(accept_focus = true)
     ?(mapped = false) ?(capture = false) build steps =
   let trace = { messages = []; focused; mapped = 0 } in
   let steps = ref steps in
-  let on_idle terminal ~timeout:_ =
-    match !steps with
-    | [] -> Matrix_test.stop terminal
-    | step :: rest -> (
-        steps := rest;
-        match step with
-        | Bytes bytes -> Matrix_test.feed terminal bytes
-        | Key event -> Matrix_test.feed_event terminal event
-        | Check check -> check trace terminal)
+  let on_idle terminal ~until =
+    if not (Matrix_test.settle terminal ~until) then
+      match !steps with
+      | [] -> Matrix_test.stop terminal
+      | step :: rest -> (
+          steps := rest;
+          match step with
+          | Bytes bytes -> Matrix_test.feed terminal bytes
+          | Key event -> Matrix_test.feed_event terminal event
+          | Check check -> check trace terminal)
   in
   let map_message message =
     trace.mapped <- trace.mapped + 1;
@@ -61,7 +62,10 @@ let drive ?(focused = true) ?(disabled = false) ?(accept_focus = true)
     }
   in
   let terminal = Matrix_test.create ~width:20 ~height:2 ~on_idle () in
-  Mosaic.run ~matrix:(Matrix_test.app terminal) application;
+  Mosaic.run
+    ~backend:(Matrix_test.backend terminal)
+    ~config:(Matrix_test.config terminal)
+    application;
   trace
 
 let activation_count trace =
@@ -216,7 +220,7 @@ let visible_states_preserve_label_style () =
            [
              Check
                (fun _ terminal ->
-                 let grid = Matrix.current_grid (Matrix_test.app terminal) in
+                 let grid = Matrix_test.grid terminal in
                  let style = Matrix.Grid.get_style grid 0 in
                  equal ~msg:"focus indication" bool inverse
                    (Attr.mem Inverse style.attrs);

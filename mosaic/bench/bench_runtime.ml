@@ -131,11 +131,11 @@ let setup ~mode ~blocks workload () =
   in
   let terminal =
     Matrix_test.create ~mode ~width:initial_width ~height:initial_height
-      ~on_idle:(fun terminal ~timeout ->
-        match timeout with
-        | Some delay ->
-            Matrix_test.set_now terminal
-              (Matrix_test.now terminal +. max 0.000001 delay)
+      ~on_idle:(fun terminal ~until ->
+        match until with
+        | Some until ->
+            Matrix_test.advance terminal
+              (max 1 (until - Matrix_test.now terminal))
         | None -> Effect.perform Presented)
       ()
   in
@@ -161,7 +161,11 @@ let setup ~mode ~blocks workload () =
     }
   in
   Effect.Deep.match_with
-    (fun () -> Mosaic.run ~matrix:(Matrix_test.app terminal) application)
+    (fun () ->
+      Mosaic.run
+        ~backend:(Matrix_test.backend terminal)
+        ~config:(Matrix_test.config terminal)
+        application)
     ()
     {
       retc = (fun () -> ());
@@ -176,8 +180,7 @@ let setup ~mode ~blocks workload () =
           | _ -> None);
     };
   (* The live region ends at the terminal's last row. *)
-  let app = Matrix_test.app terminal in
-  let top = snd (Matrix.full_size app) - snd (Matrix.size app) in
+  let top = initial_height - snd (Matrix_test.size terminal) in
   require
     (top > 0 = (mode = `Primary))
     "only a primary-mode live region is shorter than the terminal";
@@ -223,7 +226,7 @@ let setup ~mode ~blocks workload () =
           (y = if driver.alternate then 7508 else 7500)
           (Printf.sprintf "wheel burst resolved to %d" y)
     | Resize ->
-        let grid = Matrix.current_grid (Matrix_test.app terminal) in
+        let grid = Matrix_test.grid terminal in
         require
           (Matrix.Grid.width grid = if driver.alternate then 249 else 250)
           "resize width was not presented";

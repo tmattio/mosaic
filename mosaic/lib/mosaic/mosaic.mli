@@ -988,8 +988,8 @@ module Sub : sig
   val on_key_release : (Matrix.Input.Keystroke.release -> 'msg option) -> 'msg t
   (** [on_key_release f] delivers key releases to [f], which no widget sees. A
       terminal reports releases only under the kitty keyboard protocol, when the
-      runtime asks for them ({!Matrix.create}'s [key_releases], given through
-      {!run}'s [matrix]). *)
+      runtime asks for them ({!Matrix.config}'s [key_releases], given through
+      {!run}'s [config]). *)
 
   val on_mouse : ?phase:phase -> (Event.mouse -> 'msg option) -> 'msg t
   (** [on_mouse f] calls [f] on each mouse event that reaches [phase] (defaults
@@ -1095,41 +1095,47 @@ module Probe : sig
       effects.
 
       Adding a check does not arrange a runtime wake. When external work
-      completes, its owner must dispatch a message or call
-      {!Matrix.val-request_redraw} so a driver blocked on backend idleness can
-      re-evaluate the probe. *)
+      completes, its owner must dispatch a message or {!Matrix.post} to the loop
+      so a driver blocked on backend idleness can re-evaluate the probe. *)
 end
 
 (** {1:running Running} *)
 
 val run :
-  ?matrix:Matrix.app ->
+  ?backend:Matrix.Backend.t ->
+  ?config:Matrix.config ->
   ?process_perform:((unit -> unit) -> unit) ->
   ?probe:(Probe.t -> unit) ->
   ('model, 'msg) app ->
   unit
-(** [run ?matrix ?process_perform ?probe app] starts [app] and blocks until the
-    application exits (via {!Cmd.val-quit} or an OS signal).
+(** [run ?backend ?config ?process_perform ?probe app] calls [app]'s [init],
+    then runs [app] in the terminal ({!Matrix.run}) until {!Cmd.val-quit}, the
+    end of the input, or a signal that ends the process. The terminal is given
+    back on every way out, an exception included. [init] runs before the
+    terminal is taken; its commands and the first subscriptions run after.
 
-    - [matrix] -- the low-level terminal backend. Defaults to a backend with
-      [target_fps = Some 60.] and a hidden cursor.
+    - [backend] -- the terminal to run in. Defaults to {!Matrix.Backend.unix}.
+    - [config] -- what the run sets up. Defaults to {!Matrix.config} with a
+      hidden cursor.
     - [process_perform] -- controls how {!Cmd.Perform} callbacks are executed.
       Receives a thunk that wraps the user callback with the dispatch function
       already wired in. The default spawns a native [Thread] per callback so
       that long-running operations (e.g. HTTP requests) never block the UI loop.
+      The dispatch function may be called from any thread or fiber: it posts the
+      message to the loop ({!Matrix.post}), which applies it in a later turn.
     - [probe] -- receives a {!Probe.t} for this runtime before the loop starts.
       Test harnesses use it to settle deterministically (see the [matrix.test]
-      library). When a probe is requested, every perform completion additionally
-      requests a redraw so a blocked loop re-evaluates its quiescence.
+      library). When a probe is requested, every perform completion also posts
+      to the loop, so a blocked loop re-evaluates its quiescence.
 
-    {b Eio integration.} Pass a [matrix] and [process_perform] built with the
-    [matrix_eio] library:
+    {b Eio integration.} Pass a [backend] built with the [matrix_eio] library
+    and a [process_perform] that forks fibers:
 
     {[
     Eio_main.run @@ fun env ->
     Eio.Switch.run @@ fun sw ->
-    let matrix =
-      Matrix_eio.create ~sw
+    let backend =
+      Matrix_eio.backend
         ~clock:(Eio.Stdenv.mono_clock env)
         ~stdin:env#stdin ~stdout:env#stdout ()
     in
@@ -1138,7 +1144,7 @@ val run :
           thunk ();
           `Stop_daemon)
     in
-    Mosaic.run ~matrix ~process_perform { init; update; view; subscriptions }
+    Mosaic.run ~backend ~process_perform { init; update; view; subscriptions }
     ]}
 
     Daemon fibers are cancelled when the switch completes, so long-running

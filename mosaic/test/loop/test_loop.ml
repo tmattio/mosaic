@@ -88,45 +88,53 @@ let replay_matches t ~width ~height =
     (rstrip_rows (Matrix_test.screen t))
     (rstrip_rows (Vte.to_string vte))
 
+let ns seconds = Float.to_int (Float.round (seconds *. 1e9))
+
 let drive ?mode ?(width = 48) ?(height = 2) ?probe ?process_perform application
     steps =
   let steps = ref steps in
   (* Tracked so the replay VTE is always the size the backend currently is. *)
   let dims = ref (width, height) in
-  let on_idle t ~timeout =
-    match !steps with
-    | [] -> Matrix_test.stop t
-    | `Step_to target :: rest ->
-        (* A driver that honours the loop's requested wait: the clock moves to
+  let on_idle t ~until =
+    (* Every step observes a presented frame: the clock moves to the frame's
+       deadline first. *)
+    if not (Matrix_test.settle t ~until) then
+      match !steps with
+      | [] -> Matrix_test.stop t
+      | `Step_to target :: rest ->
+          (* A driver that honours the loop's requested wait: the clock moves to
            the armed deadline, or to [target] when that comes first, one idle
            generation at a time. Every timer deadline before [target] is
            observed as its own quiescent frame, and the step ends with the
            clock at exactly [target]. *)
-        let now = Matrix_test.now t in
-        if now >= target then steps := rest
-        else
-          let step =
-            match timeout with
-            | Some wait when wait > 0. -> Float.min wait (target -. now)
-            | Some _ | None -> target -. now
-          in
-          Matrix_test.set_now t (now +. step)
-    | ((`Feed _ | `Resize _ | `Advance _ | `Snap | `Run _) as step) :: rest -> (
-        steps := rest;
-        match step with
-        | `Feed bytes -> Matrix_test.feed t bytes
-        | `Resize (width, height) ->
-            dims := (width, height);
-            Matrix_test.resize t ~width ~height
-        | `Advance dt -> Matrix_test.set_now t (Matrix_test.now t +. dt)
-        | `Snap ->
-            let width, height = !dims in
-            replay_matches t ~width ~height;
-            snap t
-        | `Run f -> f t)
+          let target = ns target in
+          let now = Matrix_test.now t in
+          if now >= target then steps := rest
+          else
+            let step =
+              match until with
+              | Some until when until > now -> min (until - now) (target - now)
+              | Some _ | None -> target - now
+            in
+            Matrix_test.advance t step
+      | ((`Feed _ | `Resize _ | `Advance _ | `Snap | `Run _) as step) :: rest
+        -> (
+          steps := rest;
+          match step with
+          | `Feed bytes -> Matrix_test.feed t bytes
+          | `Resize (width, height) ->
+              dims := (width, height);
+              Matrix_test.resize t ~width ~height
+          | `Advance dt -> Matrix_test.advance t (ns dt)
+          | `Snap ->
+              let width, height = !dims in
+              replay_matches t ~width ~height;
+              snap t
+          | `Run f -> f t)
   in
   let t = Matrix_test.create ?mode ~on_idle ~width ~height () in
-  Mosaic.run ~matrix:(Matrix_test.app t) ?process_perform ?probe application
+  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+    ?process_perform ?probe application
 
 let on_keys _ = Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)))
 
@@ -538,13 +546,14 @@ let%expect_test "perform dispatches from concurrent threads are all delivered" =
                done)))
   in
   let probe = ref None in
-  let on_idle t ~timeout:_ =
-    match !probe with
-    | Some p when Mosaic.Probe.is_settled p -> Matrix_test.stop t
-    | _ -> Thread.yield ()
+  let on_idle t ~until =
+    if not (Matrix_test.settle t ~until) then
+      match !probe with
+      | Some p when Mosaic.Probe.is_settled p -> Matrix_test.stop t
+      | _ -> Thread.yield ()
   in
   let t = Matrix_test.create ~on_idle ~width:48 ~height:2 () in
-  Mosaic.run ~matrix:(Matrix_test.app t)
+  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
     ~probe:(fun p -> probe := Some p)
     (app ~init_cmd:hammer ());
   snap t;
@@ -816,7 +825,7 @@ let%expect_test "a late width method re-measures existing text" =
   (* Each cell a grapheme starts, and [-] for the cells it spans after its
      first. *)
   let cells t =
-    let grid = Matrix.current_grid (Matrix_test.app t) in
+    let grid = Matrix_test.grid t in
     let width = Matrix.Grid.width grid in
     for y = 0 to Matrix.Grid.height grid - 1 do
       let row = Buffer.create width in
@@ -921,6 +930,7 @@ let join_worker worker =
 
 let%expect_test "threaded highlighting wakes an idle application" =
   let released = Atomic.make false in
+  let woke = Atomic.make false in
   let worker = Atomic.make None in
   let highlighter =
     Mosaic.Code.Highlighter.threaded (fun ~language:_ ~content ->
@@ -943,8 +953,9 @@ let%expect_test "threaded highlighting wakes an idle application" =
     { base with Mosaic.view = (fun _ -> Mosaic.code ~syntax "let x") }
   in
   let phase = ref 0 in
-  let on_idle t ~timeout:_ =
-    if !phase = 0 then begin
+  let on_idle t ~until =
+    if Matrix_test.settle t ~until then ()
+    else if !phase = 0 then begin
       phase := 1;
       equal ~msg:"plain initial frame" string "let x"
         (String.trim (Matrix_test.screen t));
@@ -960,8 +971,7 @@ let%expect_test "threaded highlighting wakes an idle application" =
         | None -> fail "worker did not start"
       in
       join_worker thread;
-      is_true ~msg:"completion requests a host frame"
-        (Matrix.redraw_requested (Matrix_test.app t))
+      is_true ~msg:"completion wakes the loop" (Atomic.get woke)
     end
     else begin
       equal ~msg:"highlight applied without user input" string "done x"
@@ -969,10 +979,16 @@ let%expect_test "threaded highlighting wakes an idle application" =
       Matrix_test.stop t
     end
   in
-  let t = Matrix_test.create ~on_idle ~width:20 ~height:1 () in
+  let t =
+    Matrix_test.create
+      ~on_wake:(fun () -> Atomic.set woke true)
+      ~on_idle ~width:20 ~height:1 ()
+  in
   Fun.protect
     ~finally:(fun () -> Atomic.set released true)
-    (fun () -> Mosaic.run ~matrix:(Matrix_test.app t) application);
+    (fun () ->
+      Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
+        application);
   [%expect {| |}]
 
 let%expect_test "application exit cancels queued highlighting" =
@@ -1003,7 +1019,7 @@ let%expect_test "application exit cancels queued highlighting" =
                 [ Mosaic.code ~syntax "first"; Mosaic.code ~syntax "queued" ]);
         }
       in
-      let on_idle t ~timeout:_ =
+      let on_idle t ~until:_ =
         let tries = ref 0 in
         while Atomic.get worker = None && !tries < 5000 do
           incr tries;
@@ -1021,8 +1037,12 @@ let%expect_test "application exit cancels queued highlighting" =
             raises_match ~msg:"application failure preserved"
               (function
                 | Failure message -> message = "application failed" | _ -> false)
-              (fun () -> Mosaic.run ~matrix:(Matrix_test.app t) application)
-          else Mosaic.run ~matrix:(Matrix_test.app t) application);
+              (fun () ->
+                Mosaic.run ~backend:(Matrix_test.backend t)
+                  ~config:(Matrix_test.config t) application)
+          else
+            Mosaic.run ~backend:(Matrix_test.backend t)
+              ~config:(Matrix_test.config t) application);
       join_worker (Option.get (Atomic.get worker));
       equal ~msg:"closed application leaves no queued work" (list string)
         [ "first" ] (Atomic.get calls))
@@ -1448,10 +1468,11 @@ let%expect_test "an on_size response that resizes its own node presents frames"
   let screens = ref [] in
   let t =
     Matrix_test.create ~width:60 ~height:2
-      ~on_idle:(fun t ~timeout:_ -> Matrix_test.stop t)
+      ~on_idle:(fun t ~until ->
+        if not (Matrix_test.settle t ~until) then Matrix_test.stop t)
       ()
   in
-  Mosaic.run ~matrix:(Matrix_test.app t)
+  Mosaic.run ~backend:(Matrix_test.backend t) ~config:(Matrix_test.config t)
     {
       application with
       update =
@@ -2014,4 +2035,32 @@ let%expect_test "a bubble listener sees a prevented key; a shortcut does not" =
   drive ~width:20 ~height:1 application [ `Feed "z" ];
   equal ~msg:"only the plain listener, told the key was used" (list string)
     [ "prevented" ] (List.rev !seen);
+  [%expect {| |}]
+
+(* An exception in [init], which runs before the terminal is taken, or in
+   the first subscriptions, which run after, leaves Mosaic.run with the
+   terminal given back. *)
+let%expect_test
+    "exceptions in init and the first subscriptions give the terminal back" =
+  let cleanups = ref 0 in
+  let raises ~msg application =
+    let t =
+      Matrix_test.create
+        ~on_idle:(fun t ~until:_ -> Matrix_test.stop t)
+        ~width:20 ~height:1 ()
+    in
+    let backend =
+      { (Matrix_test.backend t) with cleanup = (fun () -> incr cleanups) }
+    in
+    (match Mosaic.run ~backend ~config:(Matrix_test.config t) application with
+    | () -> fail (msg ^ ": no exception")
+    | exception Failure m -> equal ~msg string msg m);
+    is_true ~msg:"no run holds the terminal" (Matrix.holder () = None)
+  in
+  let base = app () in
+  raises ~msg:"init" { base with Mosaic.init = (fun () -> failwith "init") };
+  equal ~msg:"the terminal was never taken" int 0 !cleanups;
+  raises ~msg:"subscriptions"
+    { base with Mosaic.subscriptions = (fun _ -> failwith "subscriptions") };
+  equal ~msg:"the terminal was given back" int 1 !cleanups;
   [%expect {| |}]

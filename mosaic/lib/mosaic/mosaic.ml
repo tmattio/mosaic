@@ -317,50 +317,39 @@ type ('model, 'msg) app = {
 }
 
 (* Every-timer state. A timer's deadlines are the fixed-rate schedule
-   [origin +. n *. interval] for [n = 1, 2, ...], computed from the origin and
-   the fire count each time rather than carried forward by addition. The
-   computed deadline rounds once; [due +. interval] rounds at every re-arm, and
-   on a wall-clock origin near 1.7e9 — where a double's spacing is 2.4e-7 —
-   adding 0.1 lands on 0.0999999046 every time, a fast drift of a microsecond
-   per second. *)
+   [origin + n * interval] for [n = 1, 2, ...], in the runtime's integer
+   nanoseconds, computed from the origin and the fire count each time: an
+   exact grid, which a clock read and compared with it reaches exactly. *)
 type 'msg every_timer = {
   id : string;
-  interval : float;
-  origin : float;
+  interval : int;
+  origin : int;
   fired : int;
   callback : unit -> 'msg;
 }
 
-(* The schedule is computed, but the clock measured against it need not be: a
-   virtual clock stepped by 0.1 eight times and the nominal [8 *. 0.1] differ
-   by an ULP, in either direction. Exact comparison turns that noise into a
-   stalled step (the clock lands short, so neither the wakeup nor the fire
-   test sees the deadline until the next step) or a lost final fire (the
-   clock stops at the nominal instant, the deadline sits beyond it). The
-   slack is far above that noise and far below any sane interval. *)
-let every_slack = 1e-6
+let every_deadline timer = timer.origin + ((timer.fired + 1) * timer.interval)
+let nanoseconds seconds = Float.to_int (Float.round (seconds *. 1e9))
 
-(* The instant a timer's wakeup is armed for and its fire test compares
-   against — the same float on both sides, so a frame the wakeup releases
-   always fires the timer. *)
-let every_deadline timer =
-  timer.origin
-  +. (float_of_int (timer.fired + 1) *. timer.interval)
-  -. every_slack
+(* What work done off the loop sends it: a message for [update], a widget's
+   request for a frame, or a wake for a driver that waits on quiescence. *)
+type 'msg post = Message of 'msg | Redraw | Wake
 
 type ('model, 'msg) runtime = {
   mutable model : 'model;
-  (* [Cmd.perform] may dispatch from any thread (see mosaic.mli), so the
-     pending-message queue is a lock-free stack: pushes are CAS loops and the
-     loop thread drains with a single [Atomic.exchange]. A plain mutable list
-     would lose messages pushed between the drain's read and its clear. *)
+  (* Messages to apply on the loop's thread, newest first. Widgets deliver
+     theirs here synchronously; work done on other threads posts its
+     messages through the loop. *)
   pending_msgs : 'msg list Atomic.t;
+  (* Messages posted from other threads and not yet taken by the loop. *)
+  posted_msgs : int Atomic.t;
   mutable view_dirty : bool;
   mutable synchronizing : bool;
   mutable delivering : bool;
+  mutable quit : bool;
   mutable map_message : 'msg -> unit;
   app : ('model, 'msg) app;
-  matrix_app : Matrix.app;
+  matrix_app : 'msg post Matrix.app;
   process_perform : (unit -> unit) -> unit;
   renderer : Renderer.t;
   reconciler : Reconciler.t;
@@ -375,19 +364,19 @@ type ('model, 'msg) runtime = {
   mutable focus_sub : 'msg list;
   mutable blur_sub : 'msg list;
   mutable color_scheme_sub : ([ `Dark | `Light ] -> 'msg option) list;
-  mutable sub_live_active : bool;
+  (* The timer armed at the earliest deadline of the every-timers and the
+     paste stalls, and that deadline. *)
+  mutable wakeup : (Matrix.timer * int) option;
   (* The bracketed paste being received, assembled for the widgets. *)
   mutable paste : Buffer.t option;
   mutable paste_stalled_subs : (float * 'msg) list;
   (* When the paste being received last received data, and when its
      silence was last checked against [paste_stalled_subs]. *)
-  mutable paste_heard : float;
-  mutable paste_checked : float;
+  mutable paste_heard : int;
+  mutable paste_checked : int;
 }
 
-(* Push [msg] and wake the loop. Safe from any thread: the CAS retries until
-   the stack is extended atomically, and [Matrix.request_redraw] is a benign
-   flag write plus a backend wake. *)
+(* Push [msg] for the loop's thread to apply, and ask for a frame. *)
 let push_msg runtime msg =
   let rec push () =
     let cur = Atomic.get runtime.pending_msgs in
@@ -432,12 +421,18 @@ let render_static_view runtime (view : _ t) =
   let used_rows = Matrix.Grid.active_height grid in
   (grid, used_rows)
 
+(* Work done off the loop dispatches through it: the message is applied on
+   the loop's thread, in a later turn. *)
+let post_msg runtime msg =
+  Atomic.incr runtime.posted_msgs;
+  Matrix.post runtime.matrix_app (Message msg)
+
 let rec process_cmd runtime (cmd : _ Cmd.t) =
   match cmd with
   | Cmd.None -> ()
   | Cmd.Batch cmds -> List.iter (process_cmd runtime) cmds
-  | Cmd.Perform f -> runtime.process_perform (fun () -> f (push_msg runtime))
-  | Cmd.Quit -> Matrix.stop runtime.matrix_app
+  | Cmd.Perform f -> runtime.process_perform (fun () -> f (post_msg runtime))
+  | Cmd.Quit -> runtime.quit <- true
   | Cmd.Set_title title ->
       let term = Matrix.terminal runtime.matrix_app in
       Matrix.Terminal.set_title term title
@@ -472,7 +467,7 @@ let rec collect_subs runtime (sub : _ Sub.t) =
       (* The schedule is assigned in [update_subscriptions], where the current
          time and the previous timer generation are both at hand. *)
       runtime.every_subs <-
-        { id; interval; origin = Float.nan; fired = 0; callback }
+        { id; interval = nanoseconds interval; origin = 0; fired = 0; callback }
         :: runtime.every_subs
   | Sub.On_tick (id, f) -> runtime.tick_sub <- (id, f) :: runtime.tick_sub
   | Sub.On_key (phase, f) -> runtime.key_subs <- (phase, f) :: runtime.key_subs
@@ -497,29 +492,40 @@ let paste_stalls runtime =
   else
     List.filter_map
       (fun (seconds, msg) ->
-        let due = runtime.paste_heard +. seconds -. every_slack in
+        let due = runtime.paste_heard + nanoseconds seconds in
         if due > runtime.paste_checked then Some (due, msg) else None)
       runtime.paste_stalled_subs
 
-(* Arm the loop's one-shot wakeup at the earliest every-sub or paste-stall
-   deadline, or clear it when none is pending. Runs after every subscription
-   recollection, after every frame callback and as a paste receives data —
-   each can move the earliest deadline. *)
+(* Arm one timer at the earliest every-sub or paste-stall deadline, or none
+   when nothing is pending. Runs after every subscription recollection, after
+   every fire and as a paste receives data: each can move the earliest
+   deadline. *)
 let arm_every_wakeup runtime =
-  let earliest acc due =
-    match acc with None -> Some due | Some acc -> Some (Float.min acc due)
+  let deadline =
+    List.fold_left
+      (fun acc timer -> min acc (every_deadline timer))
+      max_int runtime.every_subs
   in
   let deadline =
     List.fold_left
-      (fun acc timer -> earliest acc (every_deadline timer))
-      None runtime.every_subs
-  in
-  let deadline =
-    List.fold_left
-      (fun acc (due, _) -> earliest acc due)
+      (fun acc (due, _) -> min acc due)
       deadline (paste_stalls runtime)
   in
-  Matrix.schedule_wakeup runtime.matrix_app deadline
+  match runtime.wakeup with
+  | Some (_, armed) when armed = deadline -> ()
+  | wakeup ->
+      Option.iter
+        (fun (timer, _) -> Matrix.cancel runtime.matrix_app timer)
+        wakeup;
+      runtime.wakeup <-
+        (if deadline = max_int then None
+         else Some (Matrix.at runtime.matrix_app deadline, deadline))
+
+(* Animation frames: a tick subscription or a live element asks for the next
+   frame from each frame it draws. *)
+let animating runtime =
+  runtime.tick_sub <> []
+  || Renderable.Private.live_count (Renderer.root runtime.renderer) > 0
 
 let update_subscriptions runtime =
   let prev_every = runtime.every_subs in
@@ -560,31 +566,19 @@ let update_subscriptions runtime =
     List.rev_map
       (fun timer ->
         check_id timer.id;
-        if (not (Float.is_finite timer.interval)) || timer.interval <= 0. then
+        if timer.interval <= 0 then
           invalid_arg "Mosaic.Sub.every: positive finite interval required";
         match
           List.find_opt
             (fun prev ->
               String.equal prev.id timer.id
-              && Float.equal prev.interval timer.interval)
+              && Int.equal prev.interval timer.interval)
             prev_every
         with
         | Some prev -> { timer with origin = prev.origin; fired = prev.fired }
         | None -> { timer with origin = now })
       runtime.every_subs;
-  (* Track subscription-driven liveness: only tick subscriptions require the
-     render cadence — a tick's [dt] is frame time by definition. Every-subs
-     are timers, not animations: they wake the loop at their deadline
-     ([arm_every_wakeup]) and the messages they dispatch request their own
-     redraws, so a pending timer costs one wakeup, not a full render pipeline
-     per frame over the whole mounted tree. *)
-  let has_live_subs = runtime.tick_sub <> [] in
-  if has_live_subs && not runtime.sub_live_active then (
-    runtime.sub_live_active <- true;
-    Matrix.request_live runtime.matrix_app)
-  else if (not has_live_subs) && runtime.sub_live_active then (
-    runtime.sub_live_active <- false;
-    Matrix.drop_live runtime.matrix_app);
+  if animating runtime then Matrix.request_redraw runtime.matrix_app;
   arm_every_wakeup runtime
 
 let dispatch runtime msg =
@@ -740,8 +734,10 @@ let handle_input runtime (input : Matrix.event) =
       runtime.paste <- None
   | Paste_end `Cut -> runtime.paste <- None
   | Text text -> dispatch_paste runtime text
-  | Resize _ | Invalid _ | Reply _ -> ());
-  synchronize runtime
+  | Resize (width, height) -> handle_resize runtime ~width ~height
+  | Invalid _ | Reply _ -> ());
+  synchronize runtime;
+  Matrix.request_redraw runtime.matrix_app
 
 let render runtime = synchronize runtime
 
@@ -760,17 +756,8 @@ module Probe = struct
   let is_settled t = not (List.exists (fun check -> check.is_pending ()) t)
 end
 
-let run ?matrix
-    ?(process_perform = fun thunk -> ignore (Thread.create thunk () : Thread.t))
-    ?probe app =
-  let matrix_app =
-    match matrix with
-    | Some matrix -> matrix
-    | None ->
-        Matrix.create ~target_fps:(Some 60.) ~cursor_visible:false
-          ~start_idle:true ()
-  in
-  (* When a probe is requested, count in-flight performs and nudge the loop on
+let program matrix_app ~process_perform ?probe app (model, init_cmd) =
+  (* When a probe is requested, count in-flight performs and wake the loop on
      completion so a driver blocked on quiescence re-evaluates. *)
   let in_flight_performs = Atomic.make 0 in
   let process_perform =
@@ -782,9 +769,8 @@ let run ?matrix
           process_perform (fun () ->
               Fun.protect thunk ~finally:(fun () ->
                   Atomic.decr in_flight_performs;
-                  Matrix.request_redraw matrix_app))
+                  Matrix.post matrix_app Wake))
   in
-  let model, init_cmd = app.init () in
   let renderer_style =
     match Matrix.mode matrix_app with
     | `Primary ->
@@ -795,10 +781,16 @@ let run ?matrix
     | `Alt -> None
   in
   let rendering = Atomic.make false in
+  (* A widget may ask for a frame from another thread, as a highlighter's
+     worker does when it finishes: that request goes through the loop. *)
+  let loop_thread = Thread.id (Thread.self ()) in
+  let redraw () = Matrix.request_redraw matrix_app in
   let renderer =
     Renderer.create ?style:renderer_style ~screen:(Matrix.screen matrix_app)
       ~request_render:(fun () ->
-        if not (Atomic.get rendering) then Matrix.request_redraw matrix_app)
+        if not (Atomic.get rendering) then
+          if Thread.id (Thread.self ()) = loop_thread then redraw ()
+          else Matrix.post matrix_app Redraw)
       ()
   in
   let container = Renderer.root renderer in
@@ -807,9 +799,11 @@ let run ?matrix
     {
       model;
       pending_msgs = Atomic.make [];
+      posted_msgs = Atomic.make 0;
       view_dirty = true;
       synchronizing = false;
       delivering = false;
+      quit = false;
       map_message = Fun.const ();
       app;
       matrix_app;
@@ -822,15 +816,15 @@ let run ?matrix
       key_release_subs = [];
       paste = None;
       paste_stalled_subs = [];
-      paste_heard = 0.;
-      paste_checked = 0.;
+      paste_heard = 0;
+      paste_checked = 0;
       resize_sub = [];
       tick_sub = [];
       every_subs = [];
       focus_sub = [];
       blur_sub = [];
       color_scheme_sub = [];
-      sub_live_active = false;
+      wakeup = None;
     }
   in
   runtime.map_message <- deliver runtime;
@@ -840,7 +834,8 @@ let run ?matrix
       receive
         (Probe.empty
         |> Probe.with_pending ~name:"messages" (fun () ->
-            Atomic.get runtime.pending_msgs <> [])
+            Atomic.get runtime.pending_msgs <> []
+            || Atomic.get runtime.posted_msgs > 0)
         |> Probe.with_pending ~name:"performs" (fun () ->
             Atomic.get in_flight_performs > 0)
         |> Probe.with_pending ~name:"render" (fun () ->
@@ -848,44 +843,32 @@ let run ?matrix
   process_cmd runtime init_cmd;
   update_subscriptions runtime;
 
-  (* Drive Matrix loop activity from Renderable.live_count: start the
-     render cadence when any node needs continuous rendering, stop when
-     none do. *)
+  (* A live element asks for frames while it is mounted. *)
   let root = Renderer.root renderer in
-  let live_was_positive = ref false in
   Renderable.Private.set_on_live_count_change root
     (Some
-       (fun _node ->
-         let count = Renderable.Private.live_count root in
-         let is_positive = count > 0 in
-         if is_positive && not !live_was_positive then (
-           live_was_positive := true;
-           Matrix.request_live matrix_app)
-         else if (not is_positive) && !live_was_positive then (
-           live_was_positive := false;
-           Matrix.drop_live matrix_app)));
+       (fun _node -> if Renderable.Private.live_count root > 0 then redraw ()));
 
+  (* Seconds since the previous frame, which [on_tick] and the widgets'
+     frame callbacks receive. *)
+  let last_frame = ref (Matrix.now matrix_app) in
   let frame_delta = ref 0. in
   (* In [`Primary] mode the live region takes the rows of the frame before it
      is drawn, so the frame is laid out first, against the terminal's height,
      the most rows the region can have, and drawn once the region has its
      rows. Messages the layout delivers wait for the next frame, as those of a
      paint do. *)
-  let primary_required_rows app =
-    match Matrix.mode app with
-    | `Primary ->
-        render runtime;
-        let width, height = layout_size runtime in
-        runtime.delivering <- true;
-        Fun.protect
-          ~finally:(fun () -> runtime.delivering <- false)
-          (fun () ->
-            Renderer.layout_frame runtime.renderer ~width ~height
-              ~delta:!frame_delta);
-        Some (max 1 (Renderable.height (Renderer.root runtime.renderer)))
-    | `Alt -> None
+  let primary_required_rows () =
+    render runtime;
+    let width, height = layout_size runtime in
+    runtime.delivering <- true;
+    Fun.protect
+      ~finally:(fun () -> runtime.delivering <- false)
+      (fun () ->
+        Renderer.layout_frame runtime.renderer ~width ~height
+          ~delta:!frame_delta);
+    max 1 (Renderable.height (Renderer.root runtime.renderer))
   in
-
   let finish_render () =
     (* Reconciliation invalidations are consumed by this frame. A worker or
        widget may still request a follow-up while it renders, and a message
@@ -895,27 +878,42 @@ let run ?matrix
     if
       Renderer.needs_render runtime.renderer
       || Atomic.get runtime.pending_msgs <> []
-    then Matrix.request_redraw runtime.matrix_app
+      || animating runtime
+    then redraw ()
+  in
+  (* The renderer builds directly into the runtime's screen, which
+     Matrix.draw presents with a single diff. The frame's hardware scroll hint
+     goes with it, so a scrolled viewport diffs only its revealed rows. *)
+  let scroll_hint () =
+    match Renderer.take_scroll_hint runtime.renderer with
+    | Some hint -> Matrix.set_scroll_hint runtime.matrix_app hint
+    | None -> ()
   in
   let render_frame () =
-    (match Matrix.mode runtime.matrix_app with
+    match Matrix.mode runtime.matrix_app with
     | `Alt ->
         render runtime;
-        let width, height = Matrix.size runtime.matrix_app in
-        Renderer.render_frame runtime.renderer ~width ~height
-          ~delta:!frame_delta
+        Matrix.draw runtime.matrix_app (fun _grid ->
+            let width, height = Matrix.size runtime.matrix_app in
+            Renderer.render_frame runtime.renderer ~width ~height
+              ~delta:!frame_delta;
+            scroll_hint ())
     | `Primary ->
-        Renderer.paint_frame runtime.renderer
-          ~height:(snd (Matrix.size runtime.matrix_app)));
-    (* The renderer built directly into the runtime's screen; Matrix.submit
-       presents it with a single diff. Forward the frame's hardware scroll
-       hint so a scrolled viewport diffs only its revealed rows. *)
-    (match Renderer.take_scroll_hint runtime.renderer with
-    | Some hint -> Matrix.set_scroll_hint runtime.matrix_app hint
-    | None -> ());
-    ()
+        let rows = primary_required_rows () in
+        Matrix.draw runtime.matrix_app ~primary_required_rows:rows (fun _grid ->
+            Renderer.paint_frame runtime.renderer
+              ~height:(snd (Matrix.size runtime.matrix_app));
+            scroll_hint ())
   in
-  let on_render _app =
+  let frame () =
+    let now = Matrix.now matrix_app in
+    let dt = Float.of_int (now - !last_frame) *. 1e-9 in
+    last_frame := now;
+    handle_tick runtime ~dt;
+    synchronize runtime;
+    (* Matrix reports time in nanoseconds; the render pipeline runs on
+       milliseconds. Convert once at the boundary. *)
+    frame_delta := dt *. 1000.;
     Atomic.set rendering true;
     runtime.delivering <- true;
     Fun.protect
@@ -924,26 +922,58 @@ let run ?matrix
         finish_render ())
       render_frame
   in
-
+  let timer fired =
+    match runtime.wakeup with
+    | Some (armed, _) when armed = fired ->
+        runtime.wakeup <- None;
+        handle_every_subs runtime;
+        handle_paste_stalls runtime;
+        synchronize runtime;
+        (* A fired timer moved its deadline even when no message re-collected
+           subscriptions, so the wakeup re-arms here. *)
+        arm_every_wakeup runtime
+    | _ -> ()
+  in
+  let rec loop () =
+    if not runtime.quit then
+      match Matrix.next matrix_app with
+      | Stopped -> ()
+      | Event input ->
+          handle_input runtime input;
+          loop ()
+      | Timer fired ->
+          timer fired;
+          loop ()
+      | Posted (Message msg) ->
+          Atomic.decr runtime.posted_msgs;
+          push_msg runtime msg;
+          loop ()
+      | Posted Redraw ->
+          redraw ();
+          loop ()
+      | Posted Wake -> loop ()
+      | Frame ->
+          frame ();
+          loop ()
+  in
   Fun.protect
     ~finally:(fun () -> Reconciler.unmount runtime.reconciler)
     (fun () ->
-      Matrix.run runtime.matrix_app ~primary_required_rows
-        ~on_frame:(fun _app ~dt ->
-          handle_tick runtime ~dt;
-          handle_every_subs runtime;
-          handle_paste_stalls runtime;
-          synchronize runtime;
-          (* A fired timer moved its deadline even when no message re-collected
-         subscriptions, so the wakeup re-arms here. *)
-          arm_every_wakeup runtime;
-          (* Matrix reports [dt] in seconds; the render pipeline runs on
-         milliseconds. Convert once at the boundary. *)
-          frame_delta := dt *. 1000.)
-        ~on_input:(fun _app input -> handle_input runtime input)
-        ~on_resize:(fun _app ~cols ~rows ->
-          handle_resize runtime ~width:cols ~height:rows)
-        ~on_render)
+      let width, height = Matrix.size matrix_app in
+      handle_resize runtime ~width ~height;
+      loop ())
+
+let run ?backend ?config
+    ?(process_perform = fun thunk -> ignore (Thread.create thunk () : Thread.t))
+    ?probe app =
+  let config =
+    match config with
+    | Some config -> config
+    | None -> Matrix.config ~cursor_visible:false ()
+  in
+  let init = app.init () in
+  Matrix.run ?backend ~config (fun matrix_app ->
+      program matrix_app ~process_perform ?probe app init)
 
 let empty = Vnode.empty
 let fragment = Vnode.fragment

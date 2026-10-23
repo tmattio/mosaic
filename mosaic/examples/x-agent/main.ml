@@ -454,11 +454,7 @@ let subscriptions model =
 (* ── Entry point ── *)
 
 let () =
-  let matrix =
-    Matrix.create ~mode:`Primary ~target_fps:(Some 30.) ~cursor_visible:false
-      ~mouse_enabled:false ()
+  let config =
+    Matrix.config ~mode:`Primary ~fps:30. ~cursor_visible:false ~mouse:`Off ()
   in
-  (match Matrix.mode matrix with
-  | `Primary -> ()
-  | `Alt -> failwith "x-agent must run in primary mode");
-  run ~matrix { init; update; view; subscriptions }
+  run ~config { init; update; view; subscriptions }

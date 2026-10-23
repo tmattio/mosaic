@@ -37,6 +37,10 @@
 - **Text follows the screen's width method** – a text buffer holds no width method: `Text_buffer.create` loses `?width_method`, `width_method` and `set_width_method` go, and `line_width` and `max_line_width` take the method to count by. Text, Code, editors, spinners, canvases and static output measure and paint by the screen's method at the time, and the renderer measures every node again when it changes, so a terminal that reports its method after the first frame no longer leaves existing widgets laid out by the old one
 - **Primary frames are laid out once** – `Renderer.render_frame` is `Renderer.layout_frame` followed by `Renderer.paint_frame`, and loses `?layout_height`. In primary mode the runtime lays the frame out when it reports the rows it requires and paints that layout into the live region, where it laid the tree out once to learn the rows and again to draw; input geometry is laid out against the terminal's height too, so the tree is no longer laid out at two heights in turn
 
+#### Changed (runtime)
+
+- **`Mosaic.run ?backend ?config`** replaces `?matrix`; `init` runs before the terminal is taken, its commands and the first subscriptions inside the run, so an exception in either gives the terminal back. Work done off the loop dispatches through `Matrix.post`; `every` deadlines are exact integer nanoseconds; `on_tick` runs only in frames
+
 #### Fixed
 
 - `Cmd.perform` messages can no longer be lost to a cross-thread race
