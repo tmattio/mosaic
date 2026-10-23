@@ -86,11 +86,12 @@ val build :
   t -> width:int -> height:int -> (Matrix_grid.t -> Hit_grid.t -> unit) -> unit
 (** [build t ~width ~height f] builds a frame.
 
-    Resizes buffers to [width] x [height] when both are positive, guarantees the
-    next grid and hit grid are cleared — each build owns the complete frame, so
-    a second build before a present replaces the superseded pass — then calls
-    [f] with them for in-place mutation. Already-clear buffers are not cleared
-    again.
+    Resizes buffers to [width] x [height] when both are positive, clears what a
+    previous build drew since the last {!render} — each build owns the complete
+    frame, so a second build before a present replaces the superseded pass —
+    then calls [f] with them for in-place mutation. Buffers that no build has
+    drawn into since they were cleared are not cleared again, even if
+    {!next_grid} handed them out: cells drawn through it stay under the build's.
 
     When [width <= 0] or [height <= 0], [f] is not called; the buffers are only
     cleared.
@@ -252,7 +253,9 @@ val last_metrics : t -> frame_metrics
 val next_grid : t -> Matrix_grid.t
 (** [next_grid t] is [t]'s next buffer grid. On the first access after a
     {!render}, any content left from the presented frame is cleared before the
-    grid is returned.
+    grid is returned. Handing it out does not clear it again: what is drawn
+    through it is the frame, and a {!build} that follows draws over it, as it
+    does over a cleared grid. A second {!build} replaces the first.
 
     {b Warning.} Do not mutate the returned grid after the next {!render} -- it
     becomes the diff baseline. *)
@@ -264,7 +267,7 @@ val current_grid : t -> Matrix_grid.t
     {b Warning.} Do not mutate the returned grid -- it is the diff baseline. *)
 
 val next_hit_grid : t -> Hit_grid.t
-(** [next_hit_grid t] is [t]'s next hit grid.
+(** [next_hit_grid t] is [t]'s next hit grid, cleared as {!next_grid}'s is.
 
     {b Warning.} Do not mutate the returned hit grid after the next {!render} --
     it becomes the active hit grid for {!query_hit}. *)

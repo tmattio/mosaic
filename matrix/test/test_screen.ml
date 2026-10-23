@@ -33,6 +33,27 @@ let add_unique_by_phys acc v =
 
 let viewport height = { Screen.y = 0; height }
 
+(* A grid handed out after a render is cleared then, once: a build that
+   follows draws over it without clearing it again, and a second build
+   replaces the first. *)
+let test_handed_out_grid_is_cleared_once () =
+  let r = create_renderer ~width:4 ~height:1 () in
+  Screen.build r ~width:4 ~height:1 (fun grid _ ->
+      Grid.draw_text grid ~x:0 ~y:0 ~text:"old");
+  ignore (Screen.render r : string);
+  let grid = Screen.next_grid r in
+  equal ~msg:"the presented frame is cleared from the handed-out grid" string ""
+    (String.trim (Grid.to_text grid));
+  Grid.draw_text grid ~x:3 ~y:0 ~text:"h";
+  Screen.build r ~width:4 ~height:1 (fun grid _ ->
+      Grid.draw_text grid ~x:0 ~y:0 ~text:"b");
+  equal ~msg:"the build draws over the handed-out grid" string "b  h"
+    (Grid.to_text (Screen.next_grid r));
+  Screen.build r ~width:4 ~height:1 (fun grid _ ->
+      Grid.draw_text grid ~x:1 ~y:0 ~text:"c");
+  equal ~msg:"a second build replaces the first" string " c"
+    (Grid.to_text (Screen.next_grid r))
+
 (* 1. Core Rendering Tests *)
 
 let test_create_renderer () =
@@ -1080,6 +1101,8 @@ let () =
         ];
       group "Frame Building"
         [
+          test "handed-out grid is cleared once"
+            test_handed_out_grid_is_cleared_once;
           test "Build visual (no hits)" test_build_visual;
           test "Resize repaints every cell" test_resize_repaints_every_cell;
           test "Resize smaller" test_resize_smaller;

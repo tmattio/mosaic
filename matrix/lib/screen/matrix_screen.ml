@@ -53,10 +53,11 @@ type cursor = {
 
 (* Lifecycle of the next buffer between presents. [Stale] holds previously
    presented cells after a swap and must be cleared before the buffer is
-   observed or mutated; [Pristine] is cleared and untouched; [Touched] has
-   been handed out or drawn into. The swap defers its clear to the next
-   observation so a frame pays for exactly one clear no matter how many
-   layers (runtime prepare, renderer build, swap) take part in it. *)
+   observed or mutated; [Pristine] is cleared, and drawn into only through
+   {!next_grid}; [Touched] has been built into or had a hit region added. The
+   swap defers its clear to the next observation so a frame pays for exactly
+   one clear no matter how many layers (the runtime handing the grid out, a
+   renderer building into it, the swap) take part in it. *)
 type next_state = Stale | Pristine | Touched
 type render_mode = [ `Diff | `Full ]
 
@@ -648,14 +649,12 @@ let build t ~width ~height f =
    after a render — holds without an eager clear in the swap. *)
 let next_grid frame =
   ensure_next_fresh frame;
-  frame.next_state <- Touched;
   frame.next
 
 let current_grid frame = frame.current
 
 let next_hit_grid frame =
   ensure_next_fresh frame;
-  frame.next_state <- Touched;
   frame.hit_next
 
 let query_hit frame ~x ~y = Hit_grid.get frame.hit_current ~x ~y
