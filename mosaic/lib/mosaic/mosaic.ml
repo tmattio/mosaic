@@ -649,16 +649,27 @@ let rec collect_subs runtime (sub : _ Sub.t) =
       runtime.color_scheme_sub <- f :: runtime.color_scheme_sub
   | Sub.Worker (id, f) -> runtime.worker_subs <- (id, f) :: runtime.worker_subs
 
+(* How long a paste may be silent before the program ends it, when the
+   application declares no stall of its own. *)
+let default_paste_stall = nanoseconds 5.
+
 (* The instants at which a paste in progress has been silent as long as a
-   stall subscription waits, that the loop has not yet checked. *)
+   stall subscription waits, that the loop has not yet checked, each with
+   its message. Without a subscription, the program ends the paste ([None])
+   after [default_paste_stall]. *)
 let paste_stalls runtime =
   if Option.is_none runtime.paste then []
   else
-    List.filter_map
-      (fun (seconds, msg) ->
-        let due = runtime.paste_heard + nanoseconds seconds in
-        if due > runtime.paste_checked then Some (due, msg) else None)
-      runtime.paste_stalled_subs
+    let pending wait msg =
+      let due = runtime.paste_heard + wait in
+      if due > runtime.paste_checked then Some (due, msg) else None
+    in
+    match runtime.paste_stalled_subs with
+    | [] -> Option.to_list (pending default_paste_stall None)
+    | subs ->
+        List.filter_map
+          (fun (seconds, msg) -> pending (nanoseconds seconds) (Some msg))
+          subs
 
 (* Arm one timer at the earliest timer or paste-stall deadline, or none
    when nothing is pending. Runs after every subscription recollection, after
@@ -873,32 +884,41 @@ let handle_timers runtime =
           Some
             ( deadline,
               fun () ->
-                match timer.fire with
-                | Every f ->
-                    let ended = (now - timer.origin) / timer.interval in
-                    let periods = ended - timer.fired in
-                    timer.fired <- ended;
-                    f periods
-                | After msg ->
-                    timer.fired <- 1;
-                    msg ))
+                push_msg runtime
+                  (match timer.fire with
+                  | Every f ->
+                      let ended = (now - timer.origin) / timer.interval in
+                      let periods = ended - timer.fired in
+                      timer.fired <- ended;
+                      f periods
+                  | After msg ->
+                      timer.fired <- 1;
+                      msg) ))
       runtime.timers
   in
   let stalls =
     List.filter_map
-      (fun (due, msg) -> if due <= now then Some (due, fun () -> msg) else None)
+      (fun (due, msg) ->
+        if due > now then None
+        else
+          Some
+            ( due,
+              fun () ->
+                match msg with
+                | Some msg -> push_msg runtime msg
+                | None -> Matrix.abort_paste runtime.matrix_app ))
       (paste_stalls runtime)
   in
   runtime.paste_checked <- now;
   List.stable_sort (fun (a, _) (b, _) -> Int.compare a b) (timers @ stalls)
-  |> List.iter (fun (_, fire) -> push_msg runtime (fire ()))
+  |> List.iter (fun (_, fire) -> fire ())
 
 (* The paste in progress received data: its silence starts again. *)
 let paste_heard runtime =
   let now = Matrix.now runtime.matrix_app in
   runtime.paste_heard <- now;
   runtime.paste_checked <- now;
-  if runtime.paste_stalled_subs <> [] then arm_wakeup runtime
+  arm_wakeup runtime
 
 let dispatch_paste runtime text =
   let path = Renderer.focus_path runtime.renderer in
@@ -949,8 +969,11 @@ let handle_input runtime (input : Matrix.event) =
       Option.iter
         (fun b -> dispatch_paste runtime (Buffer.contents b))
         runtime.paste;
-      runtime.paste <- None
-  | Paste_end `Cut -> runtime.paste <- None
+      runtime.paste <- None;
+      arm_wakeup runtime
+  | Paste_end `Cut ->
+      runtime.paste <- None;
+      arm_wakeup runtime
   | Text text -> dispatch_paste runtime text
   | Resize (width, height) -> handle_resize runtime ~width ~height
   | Invalid _ | Reply _ -> ());

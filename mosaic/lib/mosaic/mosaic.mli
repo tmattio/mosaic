@@ -959,10 +959,10 @@ module Cmd : sig
   val abort_paste : 'msg t
   (** [abort_paste] ends the bracketed paste in progress, if any, and drops what
       it received ({!Matrix.abort_paste}): the bytes after it are input again. A
-      paste ends only at its end marker, so one whose terminal stops before the
+      paste ends at its end marker, so one whose terminal stops before the
       marker takes every later byte as content, keys typed included, until the
-      application gives up on it; {!Sub.on_paste_stalled} says when it has gone
-      silent. *)
+      program gives up on it, after 5 s of silence unless the application
+      decides when ({!Sub.on_paste_stalled}). *)
 
   val map : ('a -> 'b) -> 'a t -> 'b t
   (** [map f cmd] is [cmd] with every dispatched message transformed by [f]. Use
@@ -1177,14 +1177,17 @@ module Sub : sig
   (** [on_paste_stalled seconds msg] dispatches [msg] once each time a bracketed
       paste in progress has received nothing for [seconds].
 
-      A paste ends only at its end marker, however long the terminal takes to
-      send it: time never ends a paste. A paste whose marker never comes, from a
-      terminal or link that failed mid-paste, takes every later byte as its
-      content, Ctrl+C included, and nothing the user types can end it. The
-      application decides when to give up, with {!Cmd.abort_paste}, from how
-      long the paste has been silent: any byte counts, keys typed into the paste
-      too, since they are its content. Raises [Invalid_argument] if [seconds] is
-      not positive and finite. *)
+      A paste ends at its end marker, however long the terminal takes to send
+      it. A paste whose marker never comes, from a terminal or link that failed
+      mid-paste, takes every later byte as its content, Ctrl+C included, and
+      nothing the user types can end it. So while the subscriptions declare no
+      [on_paste_stalled], the program ends a paste that has received nothing for
+      5 s, as {!Cmd.abort_paste} does, and the keys typed after it reach the
+      program again. An application that declares [on_paste_stalled] decides
+      instead when to give up, with {!Cmd.abort_paste}, from how long the paste
+      has been silent: any byte counts, keys typed into the paste too, since
+      they are its content. Raises [Invalid_argument] if [seconds] is not
+      positive and finite. *)
 
   val on_resize : (width:int -> height:int -> 'msg) -> 'msg t
   (** [on_resize f] fires [f ~width ~height] whenever the terminal is resized,

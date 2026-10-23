@@ -1760,6 +1760,65 @@ let%expect_test "a stalled paste is reported, and the application aborts it" =
     ];
   [%expect {| |}]
 
+(* With no stall declared, the program ends a paste silent for 5 s, and
+   the keys typed after it reach the program again. *)
+let%expect_test "a stalled paste ends after 5 s by default" =
+  let observed, application =
+    recording (fun _ ->
+        Mosaic.Sub.batch
+          [
+            Mosaic.Sub.on_paste (fun ev ->
+                Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev)));
+            Mosaic.Sub.on_key (fun key -> Some (Pressed (key_name key)));
+          ])
+  in
+  drive ~width:70 ~height:1 application
+    [
+      `Feed "\027[200~ab";
+      `Step_to 1.;
+      `Feed "c";
+      `Step_to 5.9;
+      `Feed "q";
+      `Step_to 10.8;
+      `Run
+        (fun _ ->
+          equal ~msg:"data keeps the paste going" (list string) []
+            !observed.keys);
+      `Step_to 11.;
+      `Feed "x";
+      `Step_to 12.;
+      `Run
+        (fun _ ->
+          equal ~msg:"ended and dropped, then typing" (list string) [ "x" ]
+            !observed.keys);
+    ];
+  [%expect {| |}]
+
+(* A stall the application declares replaces the default: the paste goes on
+   past 5 s until its end marker. *)
+let%expect_test "a declared stall replaces the default" =
+  let observed, application =
+    recording (fun _ ->
+        Mosaic.Sub.batch
+          [
+            Mosaic.Sub.on_paste_stalled 1. (Pressed "<stalled>");
+            Mosaic.Sub.on_paste (fun ev ->
+                Some (Pressed ("p:" ^ Mosaic.Event.Paste.text ev)));
+          ])
+  in
+  drive ~width:70 ~height:1 application
+    [
+      `Feed "\027[200~ab";
+      `Step_to 8.;
+      `Feed "c\027[201~";
+      `Step_to 9.;
+      `Run
+        (fun _ ->
+          equal ~msg:"reported, then whole" (list string)
+            [ "<stalled>"; "p:abc" ] !observed.keys);
+    ];
+  [%expect {| |}]
+
 let%expect_test "key releases reach on_key_release, not key handlers" =
   let observed, application =
     recording (fun _ ->
@@ -2735,8 +2794,7 @@ let%expect_test "a perform's dispatch serves a thread after it returned" =
   run_live [ Until (fun () -> List.length (read log) = 2); End ] application;
   Option.iter Thread.join (Atomic.get thread);
   List.iter print_endline (read log);
-  [%expect
-    {|
+  [%expect {|
     applied 1
     applied 2
     |}]
