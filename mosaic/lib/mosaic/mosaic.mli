@@ -1245,46 +1245,6 @@ type ('model, 'msg) app = {
 (** The type for a Mosaic application. Provide a value of this type to
     {!val-run}. *)
 
-(** {1:probe Runtime probe} *)
-
-module Probe : sig
-  (** Runtime quiescence introspection for test harnesses.
-
-      A probe collects named checks for outstanding work. {!val-run} supplies
-      checks for undispatched messages, in-flight {!Cmd.val-perform} callbacks
-      (not {!Sub.val-worker}s, which may run as long as the program), and
-      asynchronous rendering, named [messages], [performs], and [render]
-      respectively. Applications may add checks for work they own outside Mosaic
-      with {!with_pending}.
-
-      A settled application's frame is stable until new input arrives, the
-      backend clock advances, or an external producer adds work. Live timers
-      ({!Sub.val-every}, {!Sub.val-on_tick}) do not prevent settlement; they
-      only fire as time moves. Obtain a probe through {!val-run}'s [probe]
-      argument. *)
-
-  type t
-  (** The type for runtime probes. *)
-
-  val is_settled : t -> bool
-  (** [is_settled t] is [true] iff every pending-work check in [t] returns
-      [false]. *)
-
-  val pending : t -> string list
-  (** [pending t] is the names of the checks in [t] that currently return
-      [true], in the order they were added. This allocates a list and is
-      intended for diagnostics. *)
-
-  val with_pending : name:string -> (unit -> bool) -> t -> t
-  (** [with_pending ~name is_pending t] is [t] extended with the named
-      [is_pending] check. The check must be fast, non-blocking, and free of side
-      effects.
-
-      Adding a check does not arrange a runtime wake. When external work
-      completes, its owner must dispatch a message or {!Matrix.post} to the loop
-      so a driver blocked on backend idleness can re-evaluate the probe. *)
-end
-
 (** {1:running Running}
 
     {!val-run} runs a program until it ends, waiting for the terminal with
@@ -1302,7 +1262,6 @@ val run :
   ?stop:Matrix.Stop.t ->
   ?config:Matrix.config ->
   ?process_perform:((unit -> unit) -> unit) ->
-  ?probe:(Probe.t -> unit) ->
   ('model, 'msg) app ->
   unit
 (** [run app] calls [app]'s [init], then runs [app] in the terminal
@@ -1334,10 +1293,14 @@ val run :
       work where it likes, such as on fibers of the application's own scheduler;
       the messages go through the loop ({!Matrix.post}) whatever thread or fiber
       dispatches them.
-    - [probe] -- receives a {!Probe.t} for this runtime before the loop starts.
-      Test harnesses use it to settle deterministically (see the [matrix.test]
-      library). When a probe is requested, every perform completion also posts
-      to the loop, so a blocked loop re-evaluates its quiescence. *)
+
+    A test settles the program by running its work off the loop where it can
+    tell that the work is done, on a [Matrix_test] session's queue, or on the
+    program's own scheduler, for which the session is given a [quiesce]. Work
+    that runs as long as the program does, such as a worker reading a stream,
+    cannot run on such a queue, whose work must return. The test then gives the
+    worker what it reads and lets it return, or runs it on the program's own
+    executor and settles as its messages come. *)
 
 (** {2:event_loops Event loops}
 
@@ -1365,7 +1328,6 @@ val start :
   ?stop:Matrix.Stop.t ->
   ?config:Matrix.config ->
   ?process_perform:((unit -> unit) -> unit) ->
-  ?probe:(Probe.t -> unit) ->
   ('model, 'msg) app ->
   ('msg running -> 'a) ->
   'a

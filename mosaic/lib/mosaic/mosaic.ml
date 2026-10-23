@@ -408,13 +408,12 @@ let continues prev timer =
 let nanoseconds seconds = Float.to_int (Float.round (seconds *. 1e9))
 
 (* What work done off the loop sends it: a message for [update], a widget's
-   request for a frame, a wake for a driver that waits on quiescence, or the
-   exception that work raised, which ends the run. *)
+   request for a frame, or the exception that work raised, which ends the
+   run. *)
 type 'msg post =
   | Message of Sub.Stop.t option * 'msg
   | Sent of Sub.Stop.t option * 'msg * latch
   | Redraw
-  | Wake
   | Failed of exn * Printexc.raw_backtrace
 
 (* Whether the loop has taken a message sent with [send], guarded by the
@@ -439,9 +438,6 @@ type ('model, 'msg) runtime = {
   app : ('model, 'msg) app;
   matrix_app : 'msg post Matrix.app;
   process_perform : (unit -> unit) -> unit;
-  (* The executor as given, which runs workers: the probe counts performs
-     only, since a worker may run as long as the program. *)
-  executor : (unit -> unit) -> unit;
   loop_thread : int;
   (* The workers running, by id, and those the subscriptions declare. *)
   mutable workers : (string * Sub.Stop.t) list;
@@ -565,7 +561,7 @@ let mailbox ?stop runtime =
 (* An exception a worker raises after its stop is requested is dropped. *)
 let start_worker runtime id f =
   let stop = Sub.Stop.create () in
-  off_loop runtime runtime.executor (fun () ->
+  off_loop runtime runtime.process_perform (fun () ->
       try f stop (mailbox ~stop runtime)
       with exn when Sub.Stop.requested stop -> ignore exn);
   (id, stop)
@@ -982,21 +978,6 @@ let handle_input runtime (input : Matrix.event) =
 
 let render runtime = synchronize runtime
 
-module Probe = struct
-  type check = { name : string; is_pending : unit -> bool }
-  type t = check list
-
-  let empty = []
-  let with_pending ~name is_pending t = t @ [ { name; is_pending } ]
-
-  let pending t =
-    List.filter_map
-      (fun check -> if check.is_pending () then Some check.name else None)
-      t
-
-  let is_settled t = not (List.exists (fun check -> check.is_pending ()) t)
-end
-
 (* A running program, its model hidden: the run that is Mosaic's, how the
    program acts on a step of it, whether it is over, and how messages reach
    it from elsewhere. *)
@@ -1007,22 +988,7 @@ type 'msg running = {
   dispatch_msg : 'msg -> unit;
 }
 
-let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
-    =
-  (* When a probe is requested, count in-flight performs and wake the loop on
-     completion so a driver blocked on quiescence re-evaluates. *)
-  let in_flight_performs = Atomic.make 0 in
-  let process_perform =
-    match probe with
-    | None -> executor
-    | Some _ ->
-        fun thunk ->
-          Atomic.incr in_flight_performs;
-          executor (fun () ->
-              Fun.protect thunk ~finally:(fun () ->
-                  Atomic.decr in_flight_performs;
-                  Matrix.post matrix_app Wake))
-  in
+let program matrix_app ~process_perform app (model, init_cmd) f =
   let renderer_style =
     match Matrix.mode matrix_app with
     | `Primary ->
@@ -1064,7 +1030,6 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
       app;
       matrix_app;
       process_perform;
-      executor;
       loop_thread;
       workers = [];
       worker_subs = [];
@@ -1092,18 +1057,6 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
     }
   in
   runtime.map_message <- deliver runtime;
-  (match probe with
-  | None -> ()
-  | Some receive ->
-      receive
-        (Probe.empty
-        |> Probe.with_pending ~name:"messages" (fun () ->
-            Atomic.get runtime.pending_msgs <> []
-            || Atomic.get runtime.posted_msgs > 0)
-        |> Probe.with_pending ~name:"performs" (fun () ->
-            Atomic.get in_flight_performs > 0)
-        |> Probe.with_pending ~name:"render" (fun () ->
-            not (Renderer.is_settled renderer))));
   process_cmd runtime init_cmd;
   update_subscriptions runtime;
 
@@ -1215,7 +1168,6 @@ let program matrix_app ~process_perform:executor ?probe app (model, init_cmd) f
             if not (stopped stop) then (
               push_msg runtime msg;
               process_pending_msgs runtime))
-    | Posted Wake -> ()
     | Posted (Failed (exn, bt)) -> Printexc.raise_with_backtrace exn bt
     | Frame -> frame ()
   in
@@ -1324,14 +1276,14 @@ module Helper = struct
     Option.iter Domain.join ended
 end
 
-let start ?input ?output ?env ?stop ?config ?process_perform ?probe app f =
+let start ?input ?output ?env ?stop ?config ?process_perform app f =
   let config =
     match config with Some config -> config | None -> Matrix.config ()
   in
   let init = app.init () in
   let within process_perform =
     Matrix.run ?input ?output ?env ?stop ~config (fun matrix_app ->
-        program matrix_app ~process_perform ?probe app init f)
+        program matrix_app ~process_perform app init f)
   in
   match process_perform with
   | Some process_perform -> within process_perform
@@ -1356,8 +1308,8 @@ let dispatch r msg = r.dispatch_msg msg
 
 (* [step] waiting with [Matrix.next], which allocates nothing while the run
    is idle. *)
-let run ?input ?output ?env ?stop ?config ?process_perform ?probe app =
-  start ?input ?output ?env ?stop ?config ?process_perform ?probe app (fun r ->
+let run ?input ?output ?env ?stop ?config ?process_perform app =
+  start ?input ?output ?env ?stop ?config ?process_perform app (fun r ->
       while not (r.over ()) do
         r.handle (Matrix.next r.matrix_app)
       done)

@@ -138,21 +138,20 @@ let occurrences ?(from = 0) s sub =
 (* Runs [application] with [Mosaic.run] on [t]'s terminal, then [f], and
    ends the input. Work off the loop runs on the session's queue unless
    [process_perform] says otherwise, with [quiesce] for it. *)
-let run ?mode ?process_perform ?quiesce ?probe t application f =
+let run ?mode ?process_perform ?quiesce t application f =
   Matrix_test.run ~config:(base ?mode ()) ?quiesce t.term
     (fun s ->
       t.s <- s;
       let process_perform =
         Option.value process_perform ~default:(Matrix_test.perform s)
       in
-      Mosaic.run ~config:(Matrix_test.config s) ~process_perform ?probe
-        application)
+      Mosaic.run ~config:(Matrix_test.config s) ~process_perform application)
     f
 
-let drive ?mode ?(width = 48) ?(height = 2) ?process_perform ?quiesce ?probe
+let drive ?mode ?(width = 48) ?(height = 2) ?process_perform ?quiesce
     application steps =
   let t = terminal ~width ~height () in
-  run ?mode ?process_perform ?quiesce ?probe t application (fun _ ->
+  run ?mode ?process_perform ?quiesce t application (fun _ ->
       List.iter
         (function
           | `Feed bytes -> feed t bytes
@@ -451,13 +450,14 @@ let%expect_test "a hover message with rebuilt rows settles" =
     |1
     |}]
 
-let%expect_test "probe reports perform and message quiescence" =
+(* What [Mosaic.Probe] told: whether a perform is in flight, or a message
+   not yet applied. The program's executor tells the first, and the run's
+   steps the second. *)
+let%expect_test "a queued perform and its message settle with the session" =
   let pending : (unit -> unit) Queue.t = Queue.create () in
-  let probe = ref None in
-  let probed () = Option.get !probe in
   drive
     ~process_perform:(fun thunk -> Queue.push thunk pending)
-    ~probe:(fun p -> probe := Some p)
+    ~quiesce:ignore
     (app
        ~init_cmd:(Mosaic.Cmd.perform (fun dispatch -> dispatch (Note "loaded")))
        ())
@@ -465,17 +465,10 @@ let%expect_test "probe reports perform and message quiescence" =
       `Snap;
       `Run
         (fun _ ->
-          equal ~msg:"pending while a perform is queued" (list string)
-            [ "performs" ]
-            (Mosaic.Probe.pending (probed ()));
-          is_false ~msg:"not settled while a perform is queued"
-            (Mosaic.Probe.is_settled (probed ())));
+          equal ~msg:"held while the perform is queued" int 1
+            (Queue.length pending));
       `Run (fun _ -> Queue.pop pending ());
       `Snap;
-      `Run
-        (fun _ ->
-          is_true ~msg:"settled after the perform ran"
-            (Mosaic.Probe.is_settled (probed ())));
     ];
   [%expect
     {|
@@ -484,34 +477,6 @@ let%expect_test "probe reports perform and message quiescence" =
     |keys:[] ticks:0 size:- note:loaded
     |
     |}]
-
-let%expect_test "probe composes application-owned pending work" =
-  let external_pending = ref true in
-  let probe = ref None in
-  let probed () = Option.get !probe in
-  drive
-    ~probe:(fun runtime_probe ->
-      probe :=
-        Some
-          (Mosaic.Probe.with_pending ~name:"external"
-             (fun () -> !external_pending)
-             runtime_probe))
-    (app ())
-    [
-      `Run
-        (fun _ ->
-          equal ~msg:"application-owned work shows in pending" (list string)
-            [ "external" ]
-            (Mosaic.Probe.pending (probed ()));
-          is_false ~msg:"not settled while external work is pending"
-            (Mosaic.Probe.is_settled (probed ())));
-      `Run
-        (fun _ ->
-          external_pending := false;
-          is_true ~msg:"settled after external completion"
-            (Mosaic.Probe.is_settled (probed ())));
-    ];
-  [%expect {| |}]
 
 let%expect_test "replaying the output stream through a VTE matches the grid" =
   let result = ref None in
