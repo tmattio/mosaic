@@ -603,7 +603,15 @@ let string_replies =
         ("\x1b]11;#f80\x1b\\", [ "Reply Color background #f08000" ]);
         ("\x1b]11;#fff800000\x1b\\", [ "Reply Color background #ff8000" ]);
         ("\x1b]11;#ffff\x1b\\", [ "Reply Osc \"11;#ffff\"" ]);
-        ("\x1b]11;white\x1b\\", [ "Reply Osc \"11;white\"" ]);
+        (* X11 names: case-insensitive, spaces not counted (rgb 1.1.0). *)
+        ("\x1b]11;white\x1b\\", [ "Reply Color background #ffffff" ]);
+        ("\x1b]11;GhostWhite\x1b\\", [ "Reply Color background #f8f8ff" ]);
+        ("\x1b]11;ghost white\x1b\\", [ "Reply Color background #f8f8ff" ]);
+        ("\x1b]11;GHOST  WHITE\x1b\\", [ "Reply Color background #f8f8ff" ]);
+        ("\x1b]11;Web Gray\x1b\\", [ "Reply Color background #808080" ]);
+        ("\x1b]11;gray\x1b\\", [ "Reply Color background #bebebe" ]);
+        ("\x1b]11;whitish\x1b\\", [ "Reply Osc \"11;whitish\"" ]);
+        ("\x1b]11;\x1b\\", [ "Reply Osc \"11;\"" ]);
         ("\x1b]52;c;aGVsbG8=\x07", [ "Reply Clipboard \"c\" \"hello\" BEL" ]);
         ("\x1b]52;c;aGVsbG8\x1b\\", [ "Reply Clipboard \"c\" \"hello\"" ]);
         ("\x1b]52;c;\x1b\\", [ "Reply Clipboard \"c\" \"\"" ]);

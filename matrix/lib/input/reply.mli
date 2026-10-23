@@ -131,17 +131,21 @@ val graphics : string -> t
     are [s], the content of an APC after its [G]: {!Graphics}. *)
 
 val rgb_of_spec : string -> (int * int * int) option
-(** [rgb_of_spec s] is the color the X11 color string [s] names, in its numeric
-    forms (Xlib, ch. 6, "Color Strings"), each channel from 0 to 255:
+(** [rgb_of_spec s] is the color the X11 color string [s] names (Xlib, ch. 6,
+    "Color Strings"), each channel from 0 to 255:
     - [rgb:r/g/b], each channel of 1 to 4 hex digits, "scaled" to its range, so
       [rgb:f/8/0] is [(255, 136, 0)];
     - [#rgb], [#rrggbb], [#rrrgggbbb] or [#rrrrggggbbbb], the older form, whose
       digits "represent the most significant bits of the value", so [#f80] is
-      [(240, 128, 0)].
+      [(240, 128, 0)];
+    - a color name of X.Org's rgb.txt (rgb 1.1.0), such as [red] or
+      [ghost white]. "Color strings are case-insensitive", and spaces do not
+      count, as Xcms removes them before it looks a name up (libX11), so
+      [GhostWhite] and [ghost white] are one color.
 
-    It is [None] for any other form: a color name, which needs X's database, or
-    a device-independent form such as [CIEXYZ:]. The OSCs that set a color (4,
-    10, 11 and 12) and their replies take these forms. *)
+    It is [None] for any other string, such as a device-independent form like
+    [CIEXYZ:]. The OSCs that set a color (4, 10, 11 and 12) and their replies
+    take these forms. *)
 
 (** {1:encoding Encoding}
 

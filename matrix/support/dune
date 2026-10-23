@@ -21,4 +21,9 @@
 
 ; (executable
 ;  (name gen_unicode_data)
+;  (modules gen_unicode_data)
 ;  (libraries uucp))
+
+(executable
+ (name gen_x11_colors)
+ (modules gen_x11_colors))

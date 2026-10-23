@@ -1176,11 +1176,14 @@ let palette_set_query_reset () =
   equal ~msg:"a set then a query in one OSC, in order" string
     "\x1b]4;3;rgb:0101/0202/0303\x07"
     (answers vte "\x1b]4;3;#010203;3;?\x07");
-  feed vte "\x1b]4;5;red;256;#ffffff;6;#060606\x07";
+  feed vte "\x1b]4;5;no such colour;256;#ffffff;6;#060606\x07";
   equal ~msg:"a name or index that is no colour is skipped"
     (pair (triple int int int) (triple int int int))
     ((5, 5, 5), (6, 6, 6))
     ((Vte.palette vte).colors.(5), (Vte.palette vte).colors.(6));
+  equal ~msg:"X11 colour names" string
+    "\x1b]4;7;rgb:f8f8/f8f8/ffff\x07\x1b]11;rgb:bebe/bebe/bebe\x07"
+    (answers vte "\x1b]4;7;Ghost White;7;?\x07\x1b]11;x11gray\x07\x1b]11;?\x07");
   feed vte "\x1b]104;1;x;2\x07";
   equal ~msg:"OSC 104 resets the colours listed"
     (list (triple int int int))

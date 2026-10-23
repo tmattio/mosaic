@@ -211,10 +211,10 @@
       and OSC 110, 111 and 112 reset the foreground, the background and the
       cursor's colour, each to the palette {!create} was given.
 
-    A spec is read by {!Matrix_input.Reply.rgb_of_spec}, the forms [rgb:r/g/b]
-    and [#rrggbb]; a pair or spec that names no colour, such as an X11 colour
-    name or an index above 255, is skipped. A change marks every row and the
-    cursor changed ({!section-dirty}).
+    A spec is read by {!Matrix_input.Reply.rgb_of_spec}: [rgb:r/g/b], [#rrggbb]
+    or an X11 colour name such as [ghost white]; a pair or spec that names no
+    colour, such as an unknown name or an index above 255, is skipped. A change
+    marks every row and the cursor changed ({!section-dirty}).
 
     Cells keep colours as the pen gave them: the defaults (SGR 39 and 49, or no
     colour) as {!Ansi.Color.default_fg} and {!Ansi.Color.default_bg}, indexed
