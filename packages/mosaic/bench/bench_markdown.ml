@@ -39,39 +39,36 @@ type state = {
   md : Markdown.t;
   base : string;
   appended : string;
-  mutable flip : bool;
 }
 
-let make_stream () =
+let make_stream sections () =
   let renderer = Renderer.create () in
-  let base = transcript (Thumper.black_box 16) in
+  let base = transcript (Thumper.black_box sections) in
   let md =
     Markdown.create ~parent:(Renderer.root renderer) ~content:base
       ~streaming:true ~highlighter ()
   in
   render_frame renderer;
-  {
-    renderer;
-    md;
-    base;
-    appended = base ^ "\n\nstreamed tail paragraph";
-    flip = false;
-  }
+  { renderer; md; base; appended = base ^ "\n\nstreamed tail paragraph" }
 
-(* Alternate between the transcript and the transcript plus one appended
-   paragraph: both directions exercise the content-only reconcile path over a
-   prefix full of quote, list, and highlighted code blocks — the streaming
-   chat-transcript shape this widget is built for. *)
-let streaming_append st =
-  st.flip <- not st.flip;
+(* Append a paragraph to the transcript, then take it back: both directions
+   exercise the content-only reconcile path over a prefix full of quote,
+   list, and highlighted code blocks — the streaming chat-transcript shape
+   this widget is built for. A sample does both, so that every sample starts
+   from the same document and allocates the same. *)
+let set_content st content =
   Markdown.apply_props st.md
-    (Markdown.Props.make
-       ~content:(if st.flip then st.appended else st.base)
-       ~streaming:true ~highlighter ());
+    (Markdown.Props.make ~content ~streaming:true ~highlighter ());
   render_frame st.renderer
 
-let steady_stream =
-  Thumper.bench_with_setup ~setup:make_stream "update/streaming-append-16blocks"
+let streaming_append st =
+  set_content st st.appended;
+  set_content st st.base
+
+(* The pair shows whether an append costs the tail or the whole document. *)
+let steady_stream sections =
+  Thumper.bench_with_setup ~setup:(make_stream sections)
+    (Printf.sprintf "update/streaming-append-and-back-%dblocks" sections)
     streaming_append
 
 (* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
@@ -104,4 +101,4 @@ let () =
            Thumper.Budget.relative ~metric:Thumper.Metric.minor_collections
              ~max_regression:0.5 ();
          ]))
-    [ Thumper.group "transcript" [ steady_stream ] ]
+    [ Thumper.group "transcript" [ steady_stream 16; steady_stream 256 ] ]
