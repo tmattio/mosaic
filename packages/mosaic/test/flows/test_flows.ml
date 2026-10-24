@@ -89,6 +89,8 @@ let%expect_test "a streamed turn, its clock, its title and its notification" =
 let chat = Filename.concat (Sys.getcwd ()) "chat_main.exe"
 
 let%expect_test "the goodbye follows the alternate screen's end" =
+  if Sys.win32 then
+    Windtrap.skip ~reason:"a pseudo-terminal, which Windows lacks" ();
   let term = T.Terminal.create ~cols:44 ~rows:6 () in
   let shows text term = T.Screen.find (T.Terminal.screen term) text <> [] in
   let status =

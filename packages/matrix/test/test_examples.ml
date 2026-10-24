@@ -19,6 +19,8 @@ let rec next app =
 (* The documented loop draws the first frame, then waits for the input,
    whose end it returns as [Stopped]. *)
 let test_next () =
+  if Sys.win32 then
+    skip ~reason:"Backend.unix, which needs a wake pipe Windows lacks" ();
   let input, writer = Unix.pipe ~cloexec:true () in
   let output = Unix.openfile "/dev/null" [ O_WRONLY; O_CLOEXEC ] 0 in
   Fun.protect

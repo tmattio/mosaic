@@ -423,6 +423,7 @@ let child =
   Filename.concat (Filename.dirname Sys.executable_name) "runtime_child.exe"
 
 let test_child () =
+  if Sys.win32 then skip ~reason:"a pseudo-terminal, which Windows lacks" ();
   let term = T.Terminal.create ~cols:30 ~rows:3 () in
   let shows text term = T.Screen.find (T.Terminal.screen term) text <> [] in
   let status =
@@ -441,6 +442,7 @@ let test_child () =
     "01 |GOODBYE\n02 |\n03 |\ncursor 2,1 block blinking\n" (text term)
 
 let test_child_timeout () =
+  if Sys.win32 then skip ~reason:"a pseudo-terminal, which Windows lacks" ();
   let term = T.Terminal.create ~cols:30 ~rows:3 () in
   T.Child.with_spawn term ~prog:child ~args:[ "goodbye" ] @@ fun c ->
   raises_match ~msg:"never ready"

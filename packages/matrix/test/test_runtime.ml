@@ -3216,6 +3216,17 @@ let test_unix_description () =
       is_true ~msg:"a TERM whose description has Sync" (sync "matrix-test");
       is_false ~msg:"a TERM with no description" (sync "matrix-none"))
 
+(* What Windows lacks: the process signals are POSIX's, and Backend.unix
+   waits on Tty.Signal's wake pipe, which Windows has not (matrix.ml). *)
+let posix_signals f () =
+  if Sys.win32 then skip ~reason:"POSIX signals, which Windows lacks" ()
+  else f ()
+
+let unix_backend f () =
+  if Sys.win32 then
+    skip ~reason:"Backend.unix, which needs a wake pipe Windows lacks" ()
+  else f ()
+
 let () =
   Windtrap.run "matrix.runtime"
     [
@@ -3433,26 +3444,33 @@ let () =
         ];
       group "Signals"
         [
-          test "dispositions while released" test_release_signal_dispositions;
-          test "signals of a served terminal" test_signals_of_a_served_terminal;
+          test "dispositions while released"
+            (posix_signals test_release_signal_dispositions);
+          test "signals of a served terminal"
+            (posix_signals test_signals_of_a_served_terminal);
           test "signals left to the application"
-            test_signals_left_to_the_application;
+            (posix_signals test_signals_left_to_the_application);
           test "stop_job when SIGTSTP is ignored"
-            test_stop_job_when_tstp_is_ignored;
+            (posix_signals test_stop_job_when_tstp_is_ignored);
         ];
       group "Unix backend"
         [
-          test "a post wakes the loop" test_unix_post_wakes_the_loop;
-          test "the session's environment" test_unix_session_environment;
-          test "a stop wakes the loop" test_unix_stop_wakes_the_loop;
+          test "a post wakes the loop"
+            (unix_backend test_unix_post_wakes_the_loop);
+          test "the session's environment"
+            (unix_backend test_unix_session_environment);
+          test "a stop wakes the loop"
+            (unix_backend test_unix_stop_wakes_the_loop);
           test "a reported size survives a release"
-            test_unix_reported_size_survives_a_release;
-          test "each run has its own wake" test_unix_wakes_per_run;
+            (unix_backend test_unix_reported_size_survives_a_release);
+          test "each run has its own wake"
+            (unix_backend test_unix_wakes_per_run);
           test "a pseudo-terminal is not the controlling terminal"
-            test_unix_controlling;
-          test "a write cut by a signal goes on" test_unix_write_cut_by_a_signal;
+            (unix_backend test_unix_controlling);
+          test "a write cut by a signal goes on"
+            (unix_backend test_unix_write_cut_by_a_signal);
           test "reset with no terminal input"
-            test_unix_reset_without_terminal_input;
-          test "the description of TERM" test_unix_description;
+            (unix_backend test_unix_reset_without_terminal_input);
+          test "the description of TERM" (unix_backend test_unix_description);
         ];
     ]
