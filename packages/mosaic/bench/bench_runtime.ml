@@ -37,6 +37,12 @@ module Term = struct
     resize t ~width ~height;
     t
 
+  (* Closes the descriptors once the run has ended. *)
+  let release t =
+    List.iter
+      (fun fd -> try Unix.close fd with Unix.Unix_error _ -> ())
+      [ t.input_r; t.output ]
+
   let feed t s = write_all t.input_w s 0
   let advance t ns = t.now <- t.now + ns
 
@@ -370,33 +376,15 @@ let loop_close loop =
       Effect.Deep.continue k ()
   | None -> ()
 
-(* A program that counts keys, over a 40x2 terminal; its messages from
-   elsewhere change nothing. [pause] runs at each idle turn with no deadline
-   left. *)
-let loop_setup ~pause () =
+(* Runs [application] over [t] until it goes idle with no deadline left and
+   [pause] says so, and returns where it waits: resuming it runs it to the
+   next such turn. *)
+let start_suspended ?(pause = fun () -> true) (t : Term.t) application =
   let suspended : (unit, unit) Effect.Deep.continuation option ref = ref None in
-  let dispatch = ref ignore in
-  let views = ref 0 in
-  let t = Term.create ~width:40 ~height:2 in
   let on_idle (t : Term.t) ~until =
     match until with
     | Some until -> Term.advance t (max 1 (until - t.now))
     | None -> if pause () then Effect.perform Presented
-  in
-  let application =
-    {
-      Mosaic.init =
-        (fun () ->
-          (0, Mosaic.Cmd.perform (fun d -> dispatch := fun () -> d `Nothing)));
-      update =
-        (fun msg n ->
-          match msg with `Key -> (n + 1, none) | `Nothing -> (n, none));
-      view =
-        (fun n ->
-          incr views;
-          Mosaic.text (string_of_int n));
-      subscriptions = (fun _ -> Mosaic.Sub.on_key (fun _ -> Some `Key));
-    }
   in
   Effect.Deep.match_with
     (fun () ->
@@ -414,6 +402,31 @@ let loop_setup ~pause () =
                   suspended := Some k)
           | _ -> None);
     };
+  suspended
+
+(* A program that counts keys, over a 40x2 terminal; its messages from
+   elsewhere change nothing. [pause] runs at each idle turn with no deadline
+   left. *)
+let loop_setup ~pause () =
+  let dispatch = ref ignore in
+  let views = ref 0 in
+  let t = Term.create ~width:40 ~height:2 in
+  let application =
+    {
+      Mosaic.init =
+        (fun () ->
+          (0, Mosaic.Cmd.perform (fun d -> dispatch := fun () -> d `Nothing)));
+      update =
+        (fun msg n ->
+          match msg with `Key -> (n + 1, none) | `Nothing -> (n, none));
+      view =
+        (fun n ->
+          incr views;
+          Mosaic.text (string_of_int n));
+      subscriptions = (fun _ -> Mosaic.Sub.on_key (fun _ -> Some `Key));
+    }
+  in
+  let suspended = start_suspended ~pause t application in
   { t; suspended; dispatch; views }
 
 (* The frames written in [output] from [from]: each begins by hiding the
@@ -477,6 +490,122 @@ let loop_benches =
         ~teardown:loop_close "posts-1000" posts;
     ]
 
+(* A key in a long list: a focused select or table of [n] items over an
+   80x46 terminal, each declared by every view, as an application declares
+   them today. A sample presses Down then Up, so the selection and the
+   window return to where they were. *)
+
+type list_kind = Select | Table
+
+let list_label i = Printf.sprintf "item %06d" i
+
+let list_application kind n =
+  let size = Mosaic.size ~width:60 ~height:40 in
+  let view =
+    match kind with
+    | Select ->
+        let items =
+          List.init n (fun i -> Mosaic.Select.item i (list_label i))
+        in
+        fun selected ->
+          Mosaic.select ~size ~focused:true ~show_description:false
+            ~equal:Int.equal ~selected:(Some selected) ~on_change:Fun.id items
+    | Table ->
+        let columns =
+          [
+            Mosaic.Table.column "Name";
+            Mosaic.Table.column ~width:(`Fixed 8) "N";
+          ]
+        in
+        let rows =
+          List.init n (fun i ->
+              Mosaic.Table.row i
+                [|
+                  Mosaic.Table.cell (list_label i);
+                  Mosaic.Table.cell (string_of_int (i * 7));
+                |])
+        in
+        fun selected ->
+          Mosaic.table ~size ~focused:true ~columns ~rows ~equal:Int.equal
+            ~selected:(Some selected) ~on_change:Fun.id ()
+  in
+  {
+    Mosaic.init = (fun () -> (n / 2, none));
+    update = (fun selected _ -> (selected, none));
+    view;
+    subscriptions = (fun _ -> Mosaic.Sub.none);
+  }
+
+let down = "\027[B"
+let up = "\027[A"
+
+let list_setup kind n () =
+  let t = Term.create ~width:80 ~height:46 in
+  let suspended = start_suspended t (list_application kind n) in
+  let loop = { t; suspended; dispatch = ref ignore; views = ref 0 } in
+  (* Validate both keys before measuring. *)
+  let screen () = Term.screen t ~width:80 ~height:46 in
+  let before = screen () in
+  Term.feed t down;
+  loop_resume loop;
+  let moved = screen () in
+  Term.feed t up;
+  loop_resume loop;
+  require (not (String.equal before moved)) "Down did not move the selection";
+  require (String.equal before (screen ())) "Up did not move it back";
+  loop
+
+let down_up loop =
+  Term.feed loop.t down;
+  loop_resume loop;
+  Term.feed loop.t up;
+  loop_resume loop
+
+let list_benches =
+  List.map
+    (fun (kind, n) ->
+      Thumper.group
+        (Printf.sprintf "%s-%d"
+           (match kind with Select -> "select" | Table -> "table")
+           n)
+        [
+          Thumper.bench_with_setup ~setup:(list_setup kind n)
+            ~teardown:loop_close "down-up" down_up;
+        ])
+    [ (Select, 10_000); (Select, 100_000); (Table, 100_000) ]
+
+(* Startup: a run of the 5,000-message transcript from its start to its
+   first presented frame, then its end. *)
+let startup () =
+  let t = Term.create ~width:initial_width ~height:initial_height in
+  let application =
+    {
+      Mosaic.init =
+        (fun () ->
+          ( {
+              editor = Mosaic.Editor.of_string "a";
+              scroll = Mosaic.Scroll.at 7500;
+            },
+            none ));
+      update =
+        (fun message model ->
+          match message with
+          | Edit editor -> ({ model with editor }, none)
+          | Scroll scroll -> ({ model with scroll }, none));
+      view = view ~mode:`Alt 5000;
+      subscriptions = (fun _ -> Mosaic.Sub.none);
+    }
+  in
+  let suspended = start_suspended t application in
+  if !suspended = None then
+    failwith "runtime benchmark: the run did not present a frame";
+  loop_close { t; suspended; dispatch = ref ignore; views = ref 0 };
+  Term.release t
+
+let startup_benches =
+  Thumper.group "startup"
+    [ Thumper.bench "transcript-5000-first-frame" startup ]
+
 (* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
    whose counts are the same on any x86_64 Linux under the locked compiler in
    release, while time compares only on one machine. *)
@@ -486,7 +615,7 @@ let () =
   Thumper.run "runtime"
     ~config:
       Thumper.Config.(
-        default |> deadline 60.
+        default |> deadline 300.
         |> metrics
              (if exact then [ Thumper.Metric.alloc_words ]
               else Thumper.Metric.[ wall_time; alloc_words; promoted_words ]))
@@ -503,37 +632,37 @@ let () =
     (* Per-input cost must not grow with mounted content: the 20,000-block
        transcript repeats the input workloads. The primary-mode group runs them
        in an inline region shorter than the terminal. *)
-    (loop_benches
-    :: List.map
-         (fun (mode, blocks, workloads) ->
-           Thumper.group
-             (match mode with
-             | `Alt -> Printf.sprintf "transcript-%d" blocks
-             | `Primary -> Printf.sprintf "primary-transcript-%d" blocks)
-             (List.map
-                (fun (name, workload) ->
-                  Thumper.bench_with_setup
-                    ~setup:(setup ~mode ~blocks workload)
-                    ~teardown:close name (measure workload))
-                workloads))
-         [
-           ( `Alt,
-             5000,
-             [
-               ("type-and-erase", Keystroke);
-               ("wheel-roundtrip-2x8", Wheel_burst);
-               ("resize-roundtrip-249x69", Resize);
-             ] );
-           ( `Alt,
-             20000,
-             [
-               ("type-and-erase", Keystroke);
-               ("wheel-roundtrip-2x8", Wheel_burst);
-             ] );
-           ( `Primary,
-             5000,
-             [
-               ("type-and-erase", Keystroke);
-               ("wheel-roundtrip-2x8", Wheel_burst);
-             ] );
-         ])
+    ((loop_benches :: startup_benches :: list_benches)
+    @ List.map
+        (fun (mode, blocks, workloads) ->
+          Thumper.group
+            (match mode with
+            | `Alt -> Printf.sprintf "transcript-%d" blocks
+            | `Primary -> Printf.sprintf "primary-transcript-%d" blocks)
+            (List.map
+               (fun (name, workload) ->
+                 Thumper.bench_with_setup
+                   ~setup:(setup ~mode ~blocks workload)
+                   ~teardown:close name (measure workload))
+               workloads))
+        [
+          ( `Alt,
+            5000,
+            [
+              ("type-and-erase", Keystroke);
+              ("wheel-roundtrip-2x8", Wheel_burst);
+              ("resize-roundtrip-249x69", Resize);
+            ] );
+          ( `Alt,
+            20000,
+            [
+              ("type-and-erase", Keystroke);
+              ("wheel-roundtrip-2x8", Wheel_burst);
+              ("resize-roundtrip-249x69", Resize);
+            ] );
+          ( `Primary,
+            5000,
+            [
+              ("type-and-erase", Keystroke); ("wheel-roundtrip-2x8", Wheel_burst);
+            ] );
+        ])
