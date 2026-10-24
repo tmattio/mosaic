@@ -14,12 +14,25 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
-          # Fails building tsdl
-          # - windows-latest
+          - windows-latest
 
     runs-on: ${{ matrix.os }}
 
+    # Windows is being brought up: its failures are reported but do not fail
+    # the run until it is green.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+
+    defaults:
+      run:
+        shell: bash
+
     steps:
+      # Test data and goldens are compared byte for byte.
+      - name: Check out line endings as committed
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - name: Checkout tree
         uses: actions/checkout@v4
 
@@ -30,6 +43,7 @@ jobs:
           dune-cache: true
 
       - name: Install OCaml dependencies
+        id: deps
         run: |
           # opam does not read the pins in dune-project; pin the same commits.
           awk -F'"' '/"git\+/ { url = $2 } url && /\(name / { sub(/.*\(name /, ""); sub(/\).*/, ""); print $0, url; url = "" }' dune-project |
@@ -39,17 +53,21 @@ jobs:
       - name: Build install targets
         run: opam exec -- dune build @install
 
+      # Each package's tests run even when another's fail.
       - name: Build and test matrix
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: |
           opam exec -- dune build matrix
           opam exec -- dune build @matrix/runtest
 
       - name: Build and test toffee
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: |
           opam exec -- dune build toffee
           opam exec -- dune build @toffee/runtest
 
       - name: Build and test mosaic
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: |
           opam exec -- dune build mosaic
           opam exec -- dune build @mosaic/runtest
