@@ -18,10 +18,6 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
-    # Windows is being brought up: its failures are reported but do not fail
-    # the run until it is green.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
-
     defaults:
       run:
         shell: bash
