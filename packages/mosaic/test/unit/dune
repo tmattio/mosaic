@@ -1,346 +1,57 @@
-(test
- (name test_event)
- (modules test_event)
- (package mosaic)
- (libraries windtrap mosaic.ui matrix.input))
-
-(test
- (name test_selection)
- (modules test_selection)
- (package mosaic)
- (libraries windtrap mosaic.ui))
-
-(test
- (name test_renderable)
- (modules test_renderable)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.input matrix.ansi test_harness))
-
-(test
- (name test_box)
- (modules test_box)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi test_harness))
-
-(test
- (name test_text_buffer)
- (modules test_text_buffer)
- (package mosaic)
- (libraries windtrap mosaic.ui matrix.ansi matrix.text))
-
-(test
- (name test_text_surface)
- (modules test_text_surface)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.ansi
-  matrix.text
-  matrix.grid
-  test_harness))
-
-(test
- (name test_syntax_highlight)
- (modules test_syntax_highlight)
- (package mosaic)
- (libraries windtrap mosaic.ui matrix.ansi))
-
-(test
- (name test_text)
- (modules test_text)
+(tests
+ (names
+  test_event
+  test_selection
+  test_renderable
+  test_box
+  test_text_buffer
+  test_text_surface
+  test_syntax_highlight
+  test_text
+  test_code
+  test_canvas
+  test_slider
+  test_text_input
+  test_select
+  test_table
+  test_tab_select
+  test_textarea
+  test_renderer
+  test_reconciler
+  test_vnode
+  test_markdown
+  test_spinner
+  test_progress_bar
+  test_scroll_bar
+  test_scroll_box
+  test_tree
+  test_subscriptions
+  test_line_number
+  test_diff
+  test_editor
+  test_mlx
+  test_focus
+  test_value_selection
+  test_shortcut
+  test_button
+  test_navigation_keys)
  (package mosaic)
  (libraries
   windtrap
   mosaic.ui
-  toffee
-  matrix.ansi
-  matrix.grid
-  matrix.screen
-  test_harness))
-
-(test
- (name test_code)
- (modules test_code)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
+  matrix.input
   toffee
   matrix.ansi
   test_harness
+  matrix.grid
+  matrix.text
+  matrix.screen
   threads.posix
-  unix))
-
-(test
- (name test_canvas)
- (modules test_canvas)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.text
-  matrix.ansi
-  test_harness))
-
-(test
- (name test_slider)
- (modules test_slider)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi test_harness))
-
-(test
- (name test_text_input)
- (modules test_text_input)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.ansi
-  matrix.input
-  test_harness))
-
-(test
- (name test_select)
- (modules test_select)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.ansi
-  matrix.input
-  test_harness))
-
-(test
- (name test_table)
- (modules test_table)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.ansi
-  matrix.input
-  test_harness))
-
-(test
- (name test_tab_select)
- (modules test_tab_select)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.ansi
-  matrix.input
-  test_harness))
-
-(test
- (name test_textarea)
- (modules test_textarea)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.ansi
-  matrix.input
-  matrix.text
-  test_harness))
-
-(test
- (name test_renderer)
- (modules test_renderer)
- (package mosaic)
- (libraries
-  windtrap
-  test_harness
+  unix
   mosaic
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.text
-  matrix.ansi
-  matrix.input
-  matrix.screen
-  matrix.vte))
-
-(test
- (name test_reconciler)
- (modules test_reconciler)
- (package mosaic)
- (libraries
-  windtrap
-  test_harness
-  mosaic
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.text
-  matrix.ansi
-  matrix.input
-  matrix.screen))
-
-(test
- (name test_vnode)
- (modules test_vnode)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.input test_harness))
-
-(test
- (name test_markdown)
- (modules test_markdown)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.ansi
-  matrix.grid
-  matrix.screen
-  matrix.input
+  matrix.vte
   cmarkit
-  test_harness))
-
-(test
- (name test_spinner)
- (modules test_spinner)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi test_harness))
-
-(test
- (name test_progress_bar)
- (modules test_progress_bar)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi test_harness))
-
-(test
- (name test_scroll_bar)
- (modules test_scroll_bar)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi test_harness))
-
-(test
- (name test_scroll_box)
- (modules test_scroll_box)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.grid matrix.ansi test_harness))
-
-(test
- (name test_tree)
- (modules test_tree)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic.ui
-  toffee
-  matrix.grid
-  matrix.ansi
-  matrix.input
-  matrix.screen
-  test_harness))
-
-(test
- (name test_subscriptions)
- (modules test_subscriptions)
- (package mosaic)
- (libraries windtrap mosaic matrix.input))
-
-(test
- (name test_line_number)
- (modules test_line_number)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.grid matrix.screen matrix.ansi))
-
-(test
- (name test_diff)
- (modules test_diff)
- (package mosaic)
- (libraries windtrap mosaic.ui toffee matrix.grid matrix.screen matrix.ansi))
-
-(test
- (name test_editor)
- (modules test_editor)
- (package mosaic)
- (libraries windtrap mosaic.ui matrix matrix.text))
-
-(test
- (name test_mlx)
- (modules test_mlx)
- (package mosaic)
- (libraries
-  windtrap
-  test_harness
-  mosaic
-  mosaic.mlx
-  mosaic.ui
-  matrix.input
-  matrix.grid
-  matrix.screen
-  toffee))
-
-(test
- (name test_focus)
- (modules test_focus)
- (package mosaic)
- (libraries windtrap mosaic))
-
-(test
- (name test_value_selection)
- (modules test_value_selection)
- (package mosaic)
- (libraries
-  windtrap
-  test_harness
-  mosaic
-  mosaic.mlx
-  mosaic.ui
-  matrix.input
-  matrix.grid
-  matrix.screen))
-
-(test
- (name test_shortcut)
- (modules test_shortcut)
- (package mosaic)
- (libraries windtrap mosaic.ui matrix.input))
-
-(test
- (name test_button)
- (modules test_button)
- (package mosaic)
- (libraries
-  windtrap
-  test_harness
-  mosaic
-  mosaic.mlx
-  mosaic.ui
   matrix
-  matrix.test
-  mosaic.test
-  matrix.input
-  matrix.grid
-  matrix.screen))
-
-(test
- (name test_navigation_keys)
- (modules test_navigation_keys)
- (package mosaic)
- (libraries
-  windtrap
-  mosaic
   mosaic.mlx
-  mosaic.ui
-  matrix.input
-  matrix.grid
-  matrix.screen))
+  matrix.test
+  mosaic.test))

@@ -1,10 +1,3 @@
-; MIGRATION NOTE (windtrap 0.2): these were (executables) driven by a
-; hand-written (progn (run ./x.exe) (diff? ...)) rule. An executable
-; carrying let%expect_test has no runner, so none of these tests ran —
-; every [%expect] payload here was inert until this stanza. (inline_tests)
-; makes dune build and drive one runner for the library, and corrections
-; arrive through the ordinary dune promote flow.
-
 (library
  (name mosaic_expect)
  (inline_tests)

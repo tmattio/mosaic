@@ -1,6 +1,3 @@
-; MIGRATION NOTE (windtrap 0.2): see packages/mosaic/test/expect/dune —
-; this was an (executable) stanza whose let%expect_test bodies never ran.
-
 (library
  (name matrix_charts_expect)
  (inline_tests)
