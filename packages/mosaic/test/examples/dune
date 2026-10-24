@@ -4,7 +4,7 @@
 
 (executable
  (name test_examples)
- (libraries windtrap matrix.pty unix))
+ (libraries windtrap matrix.test matrix.vte unix))
 
 (rule
  (alias runtest)
@@ -14,16 +14,10 @@
    (= %{os_type} Unix)
    %{lib-available:eio_main}))
  (action
-  (setenv
-   EXAMPLE
+  (run
+   %{exe:test_examples.exe}
    %{dep:../../examples/24-eio/main.exe}
-   (setenv
-    TITLE
-    "Async Tasks"
-    (setenv
-     CANCEL
-     1
-     (run %{exe:test_examples.exe}))))))
+   "Async Tasks")))
 
 (rule
  (alias runtest)
@@ -33,16 +27,10 @@
    (= %{os_type} Unix)
    %{lib-available:lwt.unix}))
  (action
-  (setenv
-   EXAMPLE
+  (run
+   %{exe:test_examples.exe}
    %{dep:../../examples/26-lwt/main.exe}
-   (setenv
-    TITLE
-    "Lwt timers"
-    (setenv
-     CANCEL
-     1
-     (run %{exe:test_examples.exe}))))))
+   "Lwt timers")))
 
 (rule
  (alias runtest)
@@ -50,13 +38,7 @@
  (enabled_if
   (= %{os_type} Unix))
  (action
-  (setenv
-   EXAMPLE
+  (run
+   %{exe:test_examples.exe}
    %{dep:../../examples/27-threads/main.exe}
-   (setenv
-    TITLE
-    "Thread feed"
-    (setenv
-     CANCEL
-     1
-     (run %{exe:test_examples.exe}))))))
+   "Thread feed")))
