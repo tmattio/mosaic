@@ -17,6 +17,8 @@
 
 (package
  (name matrix-term)
+ ; Empty on Windows, where its demo is not built.
+ (allow_empty)
  (synopsis "Terminal emulator example using Matrix and SDL2")
  (description
   "Matrix-term is an example terminal emulator application demonstrating Matrix's virtual terminal emulator (VTE) capabilities. It uses SDL2 for rendering and showcases how to build a fully functional terminal emulator with Matrix's infrastructure.")

@@ -3,6 +3,9 @@
  (public_name matrix)
  (package matrix-term)
  (modules main)
+ ; tsdl does not build on Windows.
+ (enabled_if
+  (<> %{os_type} Win32))
  (libraries
   matrix.ansi
   matrix.input
