@@ -241,7 +241,7 @@ callback dependencies. The cache lives only while that position is mounted.
 
 ## Examples
 
-27 examples and 4 showcase applications. Run any example from the repo root:
+27 examples and 3 showcase applications. Run any example from the repo root:
 
 ```bash
 dune exec ./packages/mosaic/examples/<name>/main.exe
@@ -279,7 +279,6 @@ dune exec ./packages/mosaic/examples/<name>/main.exe
 | `x-agent`          | Agent-style primary-screen CLI                    |
 | `x-code-editor`    | Code editor with completion and highlighting      |
 | `x-dashboard`      | Component composition with `map`                  |
-| `x-syspanel`       | System monitor: CPU, memory, disk, processes      |
 
 ### Keyboard bindings
 

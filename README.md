@@ -88,7 +88,7 @@ let () = run { init; update; view; subscriptions }
 
 ## Examples
 
-Mosaic ships with 27 examples and 4 showcase apps covering forms, tables,
+Mosaic ships with 27 examples and 3 showcase apps covering forms, tables,
 markdown, syntax highlighting, charts, async commands, tree widgets, CSS
 Grid layouts, and more. See [packages/mosaic/examples/](packages/mosaic/examples/README.md).
 

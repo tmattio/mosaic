@@ -41,7 +41,6 @@ dune exec ./packages/mosaic/examples/<name>/main.exe
 | `x-code-editor` | Editable code editor with completion + line numbers |
 | `x-agent`      | Agent-style primary-screen semantics demo         |
 | `x-dashboard`  | Component composition with TEA `map`             |
-| `x-syspanel`  | System metrics monitor with CPU, memory, disk, and processes |
 
 ## Descriptions
 
@@ -209,7 +208,3 @@ live output panel behavior.
 
 Multi-component dashboard using TEA's `map` function to compose independent
 components. Shows status bar, counters, and stopwatch in a unified layout.
-
-### `x-syspanel` – System metrics monitor
-
-Terminal-based system monitor displaying real-time CPU (per-core with progress bars), memory (total, used, swap), disk partitions, and top processes sorted by CPU usage. 
