@@ -51,7 +51,7 @@
 (test
  (name test_pty)
  (package matrix)
- (enabled_if
+ (build_if
   (= %{os_type} Unix))
  (modules test_pty)
  (libraries windtrap unix matrix.pty))
@@ -80,7 +80,7 @@
 (test
  (name test_tty)
  (package matrix)
- (enabled_if
+ (build_if
   (= %{os_type} Unix))
  (modules test_tty)
  (foreign_stubs
@@ -152,7 +152,7 @@
 (test
  (name test_runtime_pty)
  (package matrix)
- (enabled_if
+ (build_if
   (= %{os_type} Unix))
  (modules test_runtime_pty)
  (deps runtime_child.exe runtime_job.exe)

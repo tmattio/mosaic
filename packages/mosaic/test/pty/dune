@@ -10,7 +10,7 @@
 (test
  (name test_runtime_pty)
  (package mosaic)
- (enabled_if
+ (build_if
   (= %{os_type} Unix))
  (modules test_runtime_pty)
  (deps program.exe %{exe:../../../matrix/test/runtime_job.exe})
