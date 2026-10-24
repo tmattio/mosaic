@@ -4,7 +4,7 @@ The `packages/toffee/bench/` directory contains thumper suites for realistic lay
 workloads. Run the performance gate with:
 
 ```bash
-dune build @packages/toffee/bench
+dune build --profile release @packages/toffee/bench
 ```
 
 Current groups:
@@ -14,11 +14,13 @@ Current groups:
 - `mixed/dashboard` — mixed flex and grid sections (header, toolbar, card grid, activity feed).
 
 The suite checks against `toffee.thumper` independently of functional
-`runtest`, and exposes improvements or a new machine section through
-`dune promote`. Use `--bless` to replace the current machine baseline,
-`--explore` to print results without baseline interaction, `-l` / `--list` to
-list cases, `-f PATTERN` to filter, or `--csv FILE` to write CSV. Example:
+`runtest`, one section per machine, and exposes improvements or a new machine
+section through `dune promote`. The alias refuses to measure outside release,
+and machines key their section with `THUMPER_MACHINE` (see
+`packages/matrix/bench/README.md`). Pass `bless` to re-record the current
+machine's section, `list` to list cases, `-f PATTERN` to filter, or `--help`
+for the rest. Example:
 
 ```
-dune exec packages/toffee/bench/bench_toffee.exe -- --explore
+dune exec --profile release packages/toffee/bench/bench_toffee.exe -- list
 ```

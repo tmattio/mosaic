@@ -19,7 +19,10 @@ measured region because a TEA view rebuilds its vnodes every frame.
 The same alias checks allocation budgets for editing, selection, text layout,
 highlighting, and the application loop. Each suite checks against
 `<suite>.thumper`, which holds one section per machine, and a machine without
-a section proposes one through `dune promote`. These suites therefore stay out
+a section proposes one through `dune promote`. The alias refuses to measure
+outside release, where allocation counts would differ, and a machine keys its
+section with `THUMPER_MACHINE` (see `packages/matrix/bench/README.md`). These
+suites therefore stay out
 of `runtest`, where a new machine (a CI runner, a contributor's laptop) would
 fail on the proposal.
 

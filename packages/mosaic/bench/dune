@@ -1,3 +1,14 @@
+;; Allocation counts follow the profile: dev compiles with -opaque, so a dev
+;; build would be judged against counts measured in release.
+
+(rule
+ (alias bench)
+ (enabled_if
+  (<> %{profile} release))
+ (action
+  (system
+   "echo 'benchmarks measure release builds: dune build --profile release @bench' >&2; exit 1")))
+
 (executable
  (name bench_renderer)
  (modules bench_renderer)
@@ -5,6 +16,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn
@@ -18,6 +33,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn
@@ -31,6 +50,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn
@@ -44,6 +67,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn
@@ -57,6 +84,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn
@@ -96,6 +127,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn
@@ -104,6 +139,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn
@@ -117,6 +156,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn
@@ -136,6 +179,10 @@
 
 (rule
  (alias bench)
+ (enabled_if
+  (= %{profile} release))
+ (deps
+  (env_var THUMPER_MACHINE))
  (locks /bench)
  (action
   (progn

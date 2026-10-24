@@ -1,7 +1,7 @@
 # thumper baseline v1
 # suite: input
 
-# machine: 83e4f30ba5340e6b
+# machine: fudge
 # host: fudge · Intel(R) Core(TM) Ultra 5 235 · x86_64 · linux
 # ocaml: 5.5.1 · 64-bit · release
 
