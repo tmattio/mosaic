@@ -33,10 +33,12 @@ val create : ?corner:corner -> ?capacity:int -> unit -> t
     recorded (default [120]). With a [capacity] of [0] or less it shows no
     average. *)
 
-val record : t -> start:int -> ns:int -> unit
+val record : ?app:int -> t -> start:int -> ns:int -> unit
 (** [record o ~start ~ns] records a frame drawn from the time [start] for [ns]
     nanoseconds. The time between two recorded frames' [start]s is the frame
-    interval [o] shows, from which it shows the frame rate. *)
+    interval [o] shows, from which it shows the frame rate. [app], when given,
+    is the nanoseconds the application spent since the frame before outside
+    drawing, which [o] shows in its [app] row. *)
 
 val draw :
   t ->

@@ -3228,7 +3228,8 @@ let contains s sub =
     (Seq.init (max 0 (String.length s - n + 1)) Fun.id)
 
 (* A run on descriptors draws the panel over each frame the application
-   draws, and dumps the frame before, without it. *)
+   draws, and dumps the frame before, without it. From the second frame the
+   panel shows the time the application spent before the frame. *)
 let test_unix_debug_tools () =
   let input, writer = Unix.pipe ~cloexec:true () in
   let output = Unix.openfile "/dev/null" [ O_WRONLY; O_CLOEXEC ] 0 in
@@ -3239,21 +3240,25 @@ let test_unix_debug_tools () =
   with_debug ("overlay,frames=" ^ dir) @@ fun () ->
   let shown =
     Matrix.run ~input ~output ~config:(quiet ()) (fun app ->
-        let rec loop () =
+        let rec loop frames =
           match Matrix.next app with
           | Frame ->
               Matrix.draw app (fun grid -> draw_rows grid [ "hello" ]);
-              Matrix.Grid.to_text (Matrix.current_grid app)
-          | _ -> loop ()
+              if frames = 1 then Matrix.Grid.to_text (Matrix.current_grid app)
+              else (
+                Matrix.request_redraw app;
+                loop (frames + 1))
+          | _ -> loop frames
         in
-        loop ())
+        loop 0)
   in
   is_true ~msg:"the frame" (contains shown "hello");
   is_true ~msg:"the panel over it" (contains shown "fps");
+  is_true ~msg:"the application's time" (contains shown "app:");
   let files = Sys.readdir dir in
   Array.sort compare files;
-  equal ~msg:"one dump" (list string)
-    [ ".ansi"; ".hits.txt"; ".txt" ]
+  equal ~msg:"a dump per frame" (list string)
+    [ ".ansi"; ".hits.txt"; ".txt"; ".ansi"; ".hits.txt"; ".txt" ]
     (List.map
        (fun file -> String.sub file 12 (String.length file - 12))
        (Array.to_list files));

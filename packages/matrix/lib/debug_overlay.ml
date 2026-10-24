@@ -210,6 +210,8 @@ type t = {
   (* The last frame recorded: when it started and how long it took, and the
      time since the frame before it, 0. for the first. *)
   mutable render_ms : float;
+  (* The time the application spent before it, when given. *)
+  mutable app_ms : float option;
   mutable interval_ms : float;
   mutable last_start : int option;
   (* The collector's counts at the last draw, to show what each frame
@@ -225,14 +227,16 @@ let create ?(corner = `Bottom_right) ?(capacity = 120) () =
     render_ring = Avg_ring.create capacity;
     interval_ring = Avg_ring.create capacity;
     render_ms = 0.;
+    app_ms = None;
     interval_ms = 0.;
     last_start = None;
     last_minor_words = None;
     last_major_words = None;
   }
 
-let record t ~start ~ns =
+let record ?app t ~start ~ns =
   let render_ms = Float.of_int ns *. 1e-6 in
+  t.app_ms <- Option.map (fun ns -> Float.of_int ns *. 1e-6) app;
   let interval_ms =
     match t.last_start with
     | Some last when start > last -> Float.of_int (start - last) *. 1e-6
@@ -253,10 +257,13 @@ let draw t ~(metrics : Screen.frame_metrics) ~(gc : Gc.stat) grid =
       ("fps", Printf.sprintf "%.1f" fps);
       ("frame", fmt_ms frame_ms);
       ("draw", fmt_ms t.render_ms);
-      ("cells", string_of_int metrics.cells);
-      ("output", Printf.sprintf "%d bytes" metrics.bytes);
-      ("cursor", if metrics.cursor_visible then "visible" else "hidden");
     ]
+    @ List.map (fun ms -> ("app", fmt_ms ms)) (Option.to_list t.app_ms)
+    @ [
+        ("cells", string_of_int metrics.cells);
+        ("output", Printf.sprintf "%d bytes" metrics.bytes);
+        ("cursor", if metrics.cursor_visible then "visible" else "hidden");
+      ]
   in
   let perf_rows =
     List.concat

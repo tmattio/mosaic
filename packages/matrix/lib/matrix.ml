@@ -270,8 +270,17 @@ module Stop = struct
 end
 
 (* The tools [MATRIX_DEBUG] names: a panel over each frame, which the run
-   times, and a dump of each frame drawn into a directory. *)
-type tools = { overlay : Debug_overlay.t option; frames : string option }
+   times, and a dump of each frame drawn into a directory. [app] sums the
+   time the application spent handling steps since the last frame: from a
+   step's return ([returned], [-1] once the next call has begun) to the
+   next call of the loop or to [draw], and from the end of [draw] to the
+   next call. *)
+type tools = {
+  overlay : Debug_overlay.t option;
+  frames : string option;
+  mutable app : int;
+  mutable returned : int;
+}
 
 let tools_of_string s =
   let tool tools = function
@@ -287,10 +296,10 @@ let tools_of_string s =
   in
   match
     List.fold_left tool
-      { overlay = None; frames = None }
+      { overlay = None; frames = None; app = 0; returned = -1 }
       (String.split_on_char ',' s)
   with
-  | { overlay = None; frames = None } -> None
+  | { overlay = None; frames = None; _ } -> None
   | tools -> Some tools
 
 (* Configuration *)
@@ -1309,6 +1318,7 @@ let present t =
    grid anew ([Screen.build]), so the panel draws on the one it left. *)
 let draw_with_tools t tools f =
   let start = Tty.now () in
+  if tools.returned >= 0 then tools.app <- tools.app + (start - tools.returned);
   f (Screen.next_grid t.screen);
   Option.iter
     (fun dir -> Frame_dump.snapshot ~dir ~hits:true t.screen)
@@ -1321,9 +1331,12 @@ let draw_with_tools t tools f =
         (Screen.next_grid t.screen))
     tools.overlay;
   present t;
+  let stop = Tty.now () in
   Option.iter
-    (fun o -> Debug_overlay.record o ~start ~ns:(Tty.now () - start))
-    tools.overlay
+    (fun o -> Debug_overlay.record o ~app:tools.app ~start ~ns:(stop - start))
+    tools.overlay;
+  tools.app <- 0;
+  tools.returned <- stop
 
 let draw t ?primary_required_rows f =
   check t;
@@ -1889,8 +1902,20 @@ let turn t =
       t.begun <- false;
       raise_notrace Idle
 
+(* The application's time between steps, for the overlay's [app]. *)
+let entered t =
+  match t.tools with
+  | Some tools when tools.returned >= 0 ->
+      tools.app <- tools.app + (Tty.now () - tools.returned);
+      tools.returned <- -1
+  | _ -> ()
+
+let returned t =
+  match t.tools with Some tools -> tools.returned <- Tty.now () | None -> ()
+
 let step_exn t ~now =
   check t;
+  entered t;
   if now < t.latest then
     invalid_arg "Matrix.step: now is earlier than an earlier step's";
   t.latest <- now;
@@ -1905,7 +1930,11 @@ let step_exn t ~now =
   else match work t with step -> step | exception Idle -> turn t
 
 let step t ~now =
-  match step_exn t ~now with step -> Some step | exception Idle -> None
+  match step_exn t ~now with
+  | step ->
+      returned t;
+      Some step
+  | exception Idle -> None
 
 let deadline t =
   check t;
@@ -1923,6 +1952,7 @@ let rec next t =
   match step_exn t ~now:(t.backend.now ()) with
   | step ->
       t.stepped <- true;
+      returned t;
       step
   | exception Idle ->
       let until = wait_deadline t in

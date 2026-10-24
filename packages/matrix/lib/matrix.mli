@@ -803,8 +803,10 @@ val set_cursor_color : 'msg app -> r:float -> g:float -> b:float -> unit
     them itself when the environment variable [MATRIX_DEBUG], read as the run
     begins, names them in a list separated by commas:
     - [overlay] draws a {!Debug_overlay} over each frame, after the function
-      given to {!draw}, and times the frame from the start of {!draw} to the end
-      of its write.
+      given to {!draw}. It times the frame from the start of {!draw} to the end
+      of its write. Its [app] row is the time since the frame before that the
+      application spent handling steps, outside {!val-step}, {!next} and
+      {!draw}. The waits for a step are left out of it.
     - [frames] or [frames=DIR] dumps each frame drawn into the directory [DIR],
       ["frames"] by default, with its hit grid ({!dump_frame}). The dump is
       taken before the overlay is drawn, so it holds the application's frame
