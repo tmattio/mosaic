@@ -707,6 +707,20 @@ let set_fast_scroll_step_noop () =
 
 (* ── Setter positive ── *)
 
+let set_cell_padding_pads_each_side () =
+  let _t, tbl =
+    make_table
+      ~columns:[ Table.column "A"; Table.column "B" ]
+      ~rows:[ [| Table.cell "1"; Table.cell "2" |] ]
+      ~border:false ~show_header:false ()
+  in
+  Table.set_cell_padding tbl 2;
+  with_layout tbl ~width:12 ~height:1;
+  let grid = make_grid ~width:12 ~height:1 () in
+  Renderable.Private.render_full (Table.node tbl) ~grid ~dt:0.;
+  equal ~msg:"two columns of padding on each side of each cell" string
+    "  1     2" (Matrix_grid.to_text grid)
+
 let set_border_toggle () =
   let t, tbl = make_table () in
   let before = !(t.schedule_count) in
@@ -949,6 +963,7 @@ let () =
         ];
       group "Setter positive"
         [
+          test "set_cell_padding pads each side" set_cell_padding_pads_each_side;
           test "toggle border" set_border_toggle;
           test "toggle show_header" set_show_header_toggle;
           test "toggle show_column_separator" set_show_column_separator_toggle;

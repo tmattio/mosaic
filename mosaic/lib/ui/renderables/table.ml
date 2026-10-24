@@ -598,7 +598,7 @@ let set_wheel_navigation t enabled =
 
 (* ───── Padding & Row Styles Setters ───── *)
 
-let set_uchar_padding t n =
+let set_cell_padding t n =
   let n = max 0 n in
   if t.props.cell_padding <> n then (
     t.props <- { t.props with cell_padding = n };
@@ -1140,7 +1140,7 @@ let apply_props t (props : Props.t) =
   set_show_header t props.show_header;
   set_show_column_separator t props.show_column_separator;
   set_show_row_separator t props.show_row_separator;
-  set_uchar_padding t props.cell_padding;
+  set_cell_padding t props.cell_padding;
   set_header_color t props.header_color;
   set_header_background t props.header_background;
   set_text_color t props.text_color;
