@@ -1,6 +1,13 @@
 ; ../gentest/gentest.js generates the layout_*.ml tests from ../fixtures.
 
 (tests
- (names layout_block layout_flex layout_grid)
+ (names
+  layout_block
+  layout_blockflex
+  layout_blockgrid
+  layout_flex
+  layout_grid
+  layout_gridflex
+  layout_leaf)
  (package toffee)
  (libraries toffee toffee.style toffee.geometry toffee.tree windtrap))
