@@ -770,12 +770,15 @@ let update_subscriptions runtime =
   if animating runtime then Matrix.request_redraw runtime.matrix_app;
   arm_wakeup runtime
 
+(* Nothing after the update that quit is applied, not even a message the
+   same event gives a later listener. *)
 let dispatch runtime msg =
-  let model', cmd = runtime.app.update msg runtime.model in
-  runtime.view_dirty <- runtime.view_dirty || not (model' == runtime.model);
-  runtime.model <- model';
-  process_cmd runtime cmd;
-  update_subscriptions runtime
+  if not runtime.quit then (
+    let model', cmd = runtime.app.update msg runtime.model in
+    runtime.view_dirty <- runtime.view_dirty || not (model' == runtime.model);
+    runtime.model <- model';
+    process_cmd runtime cmd;
+    update_subscriptions runtime)
 
 (* Applies the pending messages. A frame is asked for when one changed the
    model, unless a frame is being drawn, which will show it: a message that

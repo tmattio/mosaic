@@ -1566,9 +1566,9 @@ let%expect_test "an on_size response that resizes its own node presents frames"
     (String.concat " | " (List.rev !screens));
   [%expect
     {|
-    reports: 40 20 40 20 40 20 40 20
-    views per report: 9/8
-    presented before each report:  |  | wide | wide | wide | narrow | narrow | narrow
+    reports: 40 20 40 20 40 20
+    views per report: 7/6
+    presented before each report:  |  | wide | wide | wide | narrow
     |}]
 
 let%expect_test "on_size reports settle within the frame or the next one" =
@@ -2980,6 +2980,31 @@ let%expect_test "C2: quit ends the run; keys read after it are dropped" =
   drive ~width:70 ~height:1 application [ `Feed "aqbc" ];
   print_endline (String.concat "," !observed.keys);
   [%expect {| a,q |}]
+
+(* Nothing after the update that quits is applied, even a message the
+   same key gives a later listener. *)
+let%expect_test "C2: a message after the quitting update is dropped" =
+  let observed, application =
+    recording (fun _ ->
+        Mosaic.Sub.batch
+          [
+            Mosaic.Sub.on_key ~phase:Capture (fun key ->
+                Some (Pressed (key_name key)));
+            Mosaic.Sub.on_key ~phase:Bubble (fun _ -> Some (Note "after"));
+          ])
+  in
+  let application =
+    {
+      application with
+      Mosaic.update =
+        (fun msg model ->
+          let model, cmd = application.Mosaic.update msg model in
+          (model, if msg = Pressed "q" then Mosaic.Cmd.quit else cmd));
+    }
+  in
+  drive ~width:70 ~height:1 application [ `Feed "q" ];
+  print_endline !observed.note;
+  [%expect {| - |}]
 
 let%expect_test "C3: a batch starts its commands in list order, depth first" =
   let order = ref [] in
