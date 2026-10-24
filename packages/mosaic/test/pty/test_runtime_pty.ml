@@ -267,11 +267,29 @@ let flood name =
   ignore (await s "N=0" : int);
   let started = Unix.gettimeofday () in
   pause s 0.5;
+  let latencies = ref [] in
   let key n =
     let from = mark s in
     let t0 = Unix.gettimeofday () in
     send s "a";
-    let at = await ~from s (mark_of n) in
+    let at =
+      try await ~from s (mark_of n)
+      with e ->
+        (* Whether the run went on drawing, and what it drew last: the view
+           shows the flood's count as B. *)
+        let out = Buffer.contents s.output in
+        let last = match s.arrivals with (t, _) :: _ -> t | [] -> t0 in
+        failf
+          "key %d unpainted (%s); the keys before painted after %s s; %d bytes \
+           since it was sent, the last %.1f s after it; the output ends %S"
+          n (Printexc.to_string e)
+          (String.concat ", " (List.rev_map (Printf.sprintf "%.3f") !latencies))
+          (String.length out - from)
+          (last -. t0)
+          (String.sub out
+             (max 0 (String.length out - 160))
+             (min 160 (String.length out)))
+    in
     let painted =
       fst
         (List.find
@@ -279,6 +297,7 @@ let flood name =
            (List.rev s.arrivals |> List.filter (fun (_, l) -> l > from)))
     in
     pause s 0.1;
+    latencies := (painted -. t0) :: !latencies;
     painted -. t0
   in
   let key_to_paint = List.init 10 (fun i -> key (i + 1)) in
