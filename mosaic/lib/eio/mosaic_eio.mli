@@ -6,8 +6,8 @@
     readable or its deadline comes ({!Mosaic.fds}, {!Mosaic.deadline}). The
     calling domain goes on running its other fibers meanwhile, and runs the work
     of {!Mosaic.Cmd.val-perform} and {!Mosaic.Sub.val-worker}, each as a fiber
-    of its own, so that this work may call Eio. Neither domain holds up the
-    other.
+    of its own, so that this work may call Eio. Neither domain waits for the
+    other, except where work sends with [mailbox.send] ({!run}).
 
     The program reads its time from {!Matrix.clock}, as {!Mosaic.val-run} does,
     and Eio's own monotonic clock measures the waits until its deadlines. A
@@ -46,7 +46,7 @@ val run :
     taking the terminal sees the cancellation once that is done, as it sees a
     stop request ({!Matrix.Stop.request}). Work that sends with [mailbox.send]
     ({!Mosaic.type-mailbox}) blocks the calling domain until the program has
-    taken the message. The optional arguments are {!Mosaic.val-run}'s, and
+    applied the message. The optional arguments are {!Mosaic.val-run}'s, and
     cancelling the calling fiber takes the place of its [stop].
 
     Raises what {!Mosaic.val-run} raises. *)

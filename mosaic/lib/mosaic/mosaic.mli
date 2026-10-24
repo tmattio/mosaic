@@ -9,12 +9,15 @@
     {e subscriptions} the model declares ({!Sub}), such as keys and timers, and
     from work done off the loop ({!Cmd.val-perform}, {!Sub.val-worker}).
 
-    A program runs on a run of {!Matrix} ({!Matrix.run}), whose steps it takes
-    on one thread, its {e loop}. The loop applies each message with [update],
-    calls [view] when the model changed, and draws a frame of the view when it
-    changed. [init], [update], [view], [subscriptions] and the commands run on
-    the loop, one message at a time. Work done elsewhere gives the loop its
-    messages, which it applies in a later step.
+    A program holds the terminal with a run of {!Matrix} ({!Matrix.run}), and
+    its {e loop} takes the run's steps on one thread. The loop applies each
+    message with [update], and calls [view] when the model or the usable size
+    ({!Matrix.size}) changed. After each event and each change it draws a
+    {e frame}, the view laid out and painted on the terminal, which writes only
+    the cells that changed. [update], [view], [subscriptions] and the commands
+    start on the loop, one message at a time, and [init] runs on the same thread
+    before it. Work done elsewhere gives the loop its messages, which it applies
+    in a later step.
 
     The life cycle of a program:
     + {!val-run} calls [init], then takes the terminal.
@@ -849,9 +852,9 @@ type 'msg mailbox = {
     one piece of work come in the order it gave them, and the loop applies each
     with [update] in a later step, as a message posted to its run
     ({!Matrix.post}). Once a worker's stop is requested, its [dispatch] and
-    [send] give nothing, and the loop drops what the worker gave before and has
-    not taken, so no message of a worker reaches [update] after the update that
-    removed it. *)
+    [send] return immediately and give nothing, and the loop drops what the
+    worker gave before and has not taken, so no message of a worker reaches
+    [update] after the update that removed it. *)
 
 (** {1:commands Commands} *)
 
@@ -1203,8 +1206,8 @@ module Sub : sig
 
   val on_resize : (width:int -> height:int -> 'msg) -> 'msg t
   (** [on_resize f] dispatches [f ~width ~height] with the usable size in
-      columns and rows ({!Matrix.size}) as the program begins and whenever it
-      changes ({!Matrix.Resize}). *)
+      columns and rows ({!Matrix.size}) as the program begins, when declared
+      then, and whenever the size changes ({!Matrix.Resize}). *)
 
   val on_focus : 'msg -> 'msg t
   (** [on_focus msg] dispatches [msg] when the terminal window gains focus. *)
@@ -1280,12 +1283,13 @@ val run :
   unit
 (** [run app] calls [app]'s [init], takes the terminal ({!Matrix.run}), and runs
     [app] until it ends: at {!Cmd.val-quit}, at a Ctrl+C that no handler
-    prevented ({!Event.Key.prevent_default}), at the end of the input, at a stop
-    request, or at a signal that ends the process. In raw mode Ctrl+C is a key,
-    and quitting is its default, which an element or a listener that uses the
-    key prevents. The terminal is given back on every way out, an exception
-    included. When the run ends, [run] requests the stop of the workers and
-    returns without waiting for work still running off the loop.
+    prevented ({!Event.Key.prevent_default}), at the end of the input, or at a
+    stop request. A signal that ends the process ends the program too, and then
+    [run] does not return ({!Matrix}). In raw mode Ctrl+C is a key, and quitting
+    is its default, which an element or a listener that uses the key prevents.
+    The terminal is given back on every way out, an exception included. When the
+    run ends, [run] requests the stop of the workers and returns without waiting
+    for work still running off the loop.
 
     - [input], [output], [env] -- the terminal to run in and its session's
       environment, as {!Matrix.run} takes them. Default to the process's.
@@ -1311,11 +1315,11 @@ val run :
     A test runs a program on an emulated terminal with [Mosaic_test.run]
     (library [mosaic.test]).
 
-    Raises, once the terminal is given back, what [init], [update], [view],
-    [subscriptions] or a command raised, and what work done off the loop raised
-    ({!Cmd.val-perform}, {!Sub.val-worker}), with its backtrace. Raises
-    [Invalid_argument] when two subscriptions declare the same id, and what
-    {!Matrix.run} raises. *)
+    Raises what [init] raises, before the terminal is taken, and, once the
+    terminal is given back, what [update], [view], [subscriptions] or a command
+    raised, and what work done off the loop raised ({!Cmd.val-perform},
+    {!Sub.val-worker}), with its backtrace. Raises [Invalid_argument] when two
+    subscriptions declare the same id, and what {!Matrix.run} raises. *)
 
 (** {2:event_loops Event loops}
 

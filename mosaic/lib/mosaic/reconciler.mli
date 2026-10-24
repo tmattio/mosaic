@@ -1,18 +1,18 @@
-(** Reconciler for diffing and patching {!Vnode.t} trees.
+(** Reconciler for diffing and patching {!Mosaic_ui.Vnode.t} trees.
 
-    The reconciler bridges the declarative {!Vnode.t} tree produced by a [view]
-    function and the imperative {!Renderable.t} tree. On each {!val-render} call
-    it flattens each parent's children, resolving {!Vnode.Viewport_switch} nodes
-    from the explicit current viewport width, then matches elements to the
-    previous children's fibers by key (preferred) then by position, reuses or
-    creates renderable nodes, destroys unmatched fibers, and commits child
-    placement. {!Vnode.Embed} nodes are attached but bypass the reconciler
-    lifecycle.
+    The reconciler bridges the declarative {!Mosaic_ui.Vnode.t} tree produced by
+    a [view] function and the imperative {!Mosaic_ui.Renderable.t} tree. On each
+    {!val-render} call it flattens each parent's children, resolving
+    {!Mosaic_ui.Vnode.Viewport_switch} nodes from the explicit current viewport
+    width, then matches elements to the previous children's fibers by key
+    (preferred) then by position, reuses or creates renderable nodes, destroys
+    unmatched fibers, and commits child placement. {!Mosaic_ui.Vnode.Embed}
+    nodes are attached but bypass the reconciler lifecycle.
 
-    A memo ({!Vnode.val-memo}) owns the children its view produced. When the
-    memo at the same position among its parent's memos is equal and the viewport
-    width is unchanged, its children are kept without being visited, so an
-    unchanged memo costs one comparison.
+    A memo ({!Mosaic_ui.Vnode.val-memo}) owns the children its view produced.
+    When the memo at the same position among its parent's memos is equal and the
+    viewport width is unchanged, its children are kept without being visited, so
+    an unchanged memo costs one comparison.
 
     Fiber tracking and instance management are internal; this module exposes the
     container, reconciliation, and declared focus. *)
@@ -43,8 +43,8 @@ val render : t -> viewport_width:int -> unit Vnode.t -> unit
 (** [render r ~viewport_width vnode] reconciles [vnode] against the previous
     fiber tree, applying minimal mutations to the renderable tree rooted at
     [container r]. [viewport_width] is the current terminal width in cells and
-    resolves {!Vnode.Viewport_switch} nodes before their selected branch is
-    reconciled or laid out.
+    resolves {!Mosaic_ui.Vnode.Viewport_switch} nodes before their selected
+    branch is reconciled or laid out.
 
     Fibers unmatched in the new tree are destroyed and their renderable nodes
     removed. Requests a render on [container r] after reconciliation completes.
@@ -59,6 +59,7 @@ val unmount : t -> unit
 val focused : t -> Renderable.t option
 (** [focused t] is the visible element declared focused, or [None] if none is.
     Reconciliation does not apply focus: callers synchronize this result with
-    {!Renderer.focus} or {!Renderer.blur} after {!render}.
+    {!Mosaic_ui.Renderer.val-focus} or {!Mosaic_ui.Renderer.val-blur} after
+    {!render}.
 
     Raises [Invalid_argument] if several visible elements declare focus. *)

@@ -44,9 +44,9 @@ val run :
     when [stop] is absent, and rejects it with [Lwt.Canceled] before the
     terminal is given back. A stop request made before the program has begun
     ends it as it begins. Work that sends with [mailbox.send]
-    ({!Mosaic.type-mailbox}) blocks Lwt's thread until the program has taken the
-    message. The optional arguments are {!Mosaic.val-run}'s.
+    ({!Mosaic.type-mailbox}) blocks Lwt's thread until the program has applied
+    the message. The optional arguments are {!Mosaic.val-run}'s.
 
-    The promise is rejected with what {!Mosaic.val-run} raises. Raises [Failure]
-    if no domain can be spawned for the program, and [Unix.Unix_error] if no
-    pipe can be opened for its end. *)
+    The promise is rejected with what {!Mosaic.val-run} raises. [run] itself
+    raises [Failure] if no domain can be spawned for the program, and
+    [Unix.Unix_error] if no pipe can be opened for its end. *)
