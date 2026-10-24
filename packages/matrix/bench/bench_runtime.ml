@@ -2,6 +2,10 @@
    the frame is prepared and presented. The backend's clock moves a second
    at every read, so every frame is due at once and no turn waits. *)
 
+(* The bytes the loop has written: setup checks that a frame writes what it
+   changes, and the measured frames only add to the count. *)
+let written = ref 0
+
 let backend () : Matrix.Backend.t =
   let clock = ref 0 in
   {
@@ -13,7 +17,7 @@ let backend () : Matrix.Backend.t =
     wake = (fun () -> ());
     take_signals = (fun () -> []);
     read_input = (fun _ _ _ -> -1);
-    write_output = (fun _bytes _off _len -> ());
+    write_output = (fun _bytes _off len -> written := !written + len);
     fds = (fun ~reading:_ -> []);
     terminal_size = (fun () -> Some (160, 48));
     set_raw_mode = (fun _ -> ());
@@ -41,10 +45,40 @@ let frame app draw =
    release, while time compares only on one machine. *)
 let exact = Sys.getenv_opt "THUMPER_MACHINE" = Some "exact"
 
+(* Every cell of the 160x48 terminal, in one of two texts. *)
+let full_text =
+  Array.map
+    (fun first -> String.init 160 (fun i -> Char.chr (first + (i mod 26))))
+    [| Char.code 'a'; Char.code 'A' |]
+
+let fill text grid =
+  for y = 0 to 47 do
+    Matrix.Grid.draw_text grid ~x:0 ~y ~text
+  done
+
+(* The bytes [draw]'s frame writes. *)
+let bytes app draw =
+  let before = !written in
+  frame app draw;
+  !written - before
+
+let require condition message =
+  if not condition then failwith ("runtime benchmark: " ^ message)
+
 let () =
   Matrix.run_on (backend ()) ~config @@ fun app ->
   frame app ignore;
   frame app ignore;
+  require (bytes app ignore = 0) "an unchanged frame wrote bytes";
+  require (bytes app (fill full_text.(1)) > 0) "a full frame wrote nothing";
+  require (bytes app (fill full_text.(0)) > 0) "a full frame wrote nothing";
+  require (bytes app ignore > 0) "clearing the frame wrote nothing";
+  (* A sample draws both texts, so it ends where it started. *)
+  let full =
+    Thumper.bench "frame/full-160x48-and-back" (fun () ->
+        frame app (fill full_text.(1));
+        frame app (fill full_text.(0)))
+  in
   let no_changes =
     Thumper.bench "frame/no-changes" (fun () -> frame app ignore)
   in
@@ -68,4 +102,4 @@ let () =
     ~budgets:
       (Thumper.Budget.no_more_alloc_than 0.
       :: (if exact then [] else [ Thumper.Budget.no_slower_than 0.05 ]))
-    [ Thumper.group "render" [ no_changes; single_cell ] ]
+    [ Thumper.group "render" [ no_changes; single_cell; full ] ]
