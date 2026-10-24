@@ -144,4 +144,4 @@ validation work. Huge thanks to the Taffy maintainers and contributors.
 
 ## License
 
-Toffee is licensed under the ISC license. See [LICENSE](LICENSE) for details.
+Toffee is licensed under the ISC license. See [LICENSE](../../LICENSE) for details.

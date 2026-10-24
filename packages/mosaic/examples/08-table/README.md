@@ -14,5 +14,5 @@ Rich data tables with columns, headers, and styling.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/08-table/main.exe
+dune exec ./packages/mosaic/examples/08-table/main.exe
 ```

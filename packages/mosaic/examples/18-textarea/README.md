@@ -4,7 +4,7 @@ Multi-line text editor demonstrating the `textarea` widget with wrapping
 modes, placeholder text, and input callbacks.
 
 ```bash
-dune exec ./mosaic/examples/18-textarea/main.exe
+dune exec ./packages/mosaic/examples/18-textarea/main.exe
 ```
 
 ## Controls

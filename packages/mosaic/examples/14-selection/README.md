@@ -15,5 +15,5 @@ Text selection across renderables and scroll boxes.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/14-selection/main.exe
+dune exec ./packages/mosaic/examples/14-selection/main.exe
 ```

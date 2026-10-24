@@ -13,5 +13,5 @@ Vertical list selection with keyboard and mouse navigation.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/05-select/main.exe
+dune exec ./packages/mosaic/examples/05-select/main.exe
 ```

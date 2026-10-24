@@ -5,7 +5,7 @@ render below the prompt line without taking over the full screen, making it
 suitable for CLI tools that print incremental output.
 
 ```bash
-dune exec ./matrix/examples/11-counter/main.exe
+dune exec ./packages/matrix/examples/11-counter/main.exe
 ```
 
 ## Controls

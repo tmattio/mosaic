@@ -13,5 +13,5 @@ Value sliders with sub-cell rendering precision.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/07-slider/main.exe
+dune exec ./packages/mosaic/examples/07-slider/main.exe
 ```

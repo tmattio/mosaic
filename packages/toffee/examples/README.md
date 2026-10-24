@@ -4,7 +4,7 @@ Toffee ships with small runnable examples that double as integration tests and
 usage guides. From the repo root, run any example with:
 
 ```bash
-dune exec ./examples/<name>/main.exe
+dune exec ./packages/toffee/examples/<name>/main.exe
 ```
 
 ## Examples

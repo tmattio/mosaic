@@ -12,5 +12,5 @@ Minimal TEA example: model-view-update pattern with keyboard input.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/01-counter/main.exe
+dune exec ./packages/mosaic/examples/01-counter/main.exe
 ```

@@ -11,5 +11,5 @@ Animated loading indicators with built-in presets.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/03-spinner/main.exe
+dune exec ./packages/mosaic/examples/03-spinner/main.exe
 ```

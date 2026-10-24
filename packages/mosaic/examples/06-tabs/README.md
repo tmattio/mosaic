@@ -13,5 +13,5 @@ Horizontal tab bar with navigation and descriptions.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/06-tabs/main.exe
+dune exec ./packages/mosaic/examples/06-tabs/main.exe
 ```

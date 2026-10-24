@@ -5,7 +5,7 @@ play different waveform types while visualizing their shape, harmonic content,
 and amplitude envelope in real-time.
 
 ```bash
-dune exec ./matrix/examples/15-synthesizer/main.exe
+dune exec ./packages/matrix/examples/15-synthesizer/main.exe
 ```
 
 ## Controls

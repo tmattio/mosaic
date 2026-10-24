@@ -5,7 +5,7 @@ Demonstrates the `progress_bar` widget with horizontal and vertical
 orientations.
 
 ```bash
-dune exec ./mosaic/examples/17-progress-bar/main.exe
+dune exec ./packages/mosaic/examples/17-progress-bar/main.exe
 ```
 
 ## Controls

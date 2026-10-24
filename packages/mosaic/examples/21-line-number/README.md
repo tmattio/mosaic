@@ -4,7 +4,7 @@ Code viewer with a line number gutter showing per-line colors, breakpoint
 markers, and error indicators.
 
 ```bash
-dune exec ./mosaic/examples/21-line-number/main.exe
+dune exec ./packages/mosaic/examples/21-line-number/main.exe
 ```
 
 ## Controls

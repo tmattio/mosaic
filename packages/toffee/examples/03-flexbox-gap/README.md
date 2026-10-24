@@ -4,7 +4,7 @@ Three fixed-size children laid out in a row with a horizontal gap between them.
 This shows how flex gaps work without extra spacer nodes.
 
 ```bash
-dune exec ./examples/03-flexbox-gap/main.exe
+dune exec ./packages/toffee/examples/03-flexbox-gap/main.exe
 ```
 
 ## Highlights

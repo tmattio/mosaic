@@ -5,7 +5,7 @@ flex column contains a text node and an image node; both are measured via
 user-provided functions.
 
 ```bash
-dune exec ./examples/05-measure/main.exe
+dune exec ./packages/toffee/examples/05-measure/main.exe
 ```
 
 ## Highlights

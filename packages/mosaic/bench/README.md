@@ -3,7 +3,7 @@
 Run the renderer performance contracts with:
 
 ```sh
-dune build --profile release @mosaic/bench/bench
+dune build --profile release @packages/mosaic/bench/bench
 ```
 
 The transcript workload keeps 1,000 laid-out text rows behind a 24-row scroll

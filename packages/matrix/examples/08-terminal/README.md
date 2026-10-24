@@ -5,7 +5,7 @@ inside the Matrix grid and forwards keyboard input, creating a split-screen
 terminal within the TUI.
 
 ```bash
-dune exec ./matrix/examples/08-terminal/main.exe
+dune exec ./packages/matrix/examples/08-terminal/main.exe
 ```
 
 ## Controls

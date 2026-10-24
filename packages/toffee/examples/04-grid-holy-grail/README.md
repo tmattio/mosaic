@@ -4,7 +4,7 @@ Implements the classic “holy grail” page layout using CSS Grid: header, left
 sidebar, content, right sidebar, and footer arranged in a 3×3 grid.
 
 ```bash
-dune exec ./examples/04-grid-holy-grail/main.exe
+dune exec ./packages/toffee/examples/04-grid-holy-grail/main.exe
 ```
 
 ## Highlights

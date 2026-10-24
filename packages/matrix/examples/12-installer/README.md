@@ -5,7 +5,7 @@ As each package finishes installing, a completion message is printed above the
 live progress UI so it remains visible after the app exits.
 
 ```bash
-dune exec ./matrix/examples/12-installer/main.exe
+dune exec ./packages/matrix/examples/12-installer/main.exe
 ```
 
 ## Controls

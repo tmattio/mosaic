@@ -31,7 +31,7 @@ dune build @install
 Run a demo from the repository's root to confirm everything works:
 
 ```bash
-dune exec ./matrix/examples/01-rain/main.exe
+dune exec ./packages/matrix/examples/01-rain/main.exe
 ```
 
 ### Hello Terminal
@@ -151,4 +151,4 @@ Matrix draws inspiration from several excellent projects:
 
 ## License
 
-Matrix is licensed under the ISC license. See [LICENSE](../LICENSE) for details.
+Matrix is licensed under the ISC license. See [LICENSE](../../LICENSE) for details.

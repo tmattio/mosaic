@@ -4,7 +4,7 @@ Unified and split-view diff display with line numbers, signs, and changed-line
 backgrounds.
 
 ```bash
-dune exec ./mosaic/examples/25-diff/main.exe
+dune exec ./packages/mosaic/examples/25-diff/main.exe
 ```
 
 ## Controls

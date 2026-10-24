@@ -3,7 +3,7 @@
 Hierarchical tree view with expand/collapse and guide lines.
 
 ```bash
-dune exec ./mosaic/examples/19-tree/main.exe
+dune exec ./packages/mosaic/examples/19-tree/main.exe
 ```
 
 ## Controls

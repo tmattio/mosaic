@@ -4,7 +4,7 @@ Matrix ships with runnable demos that double as small integration tests. From
 the repo root, run any example with:
 
 ```bash
-dune exec ./examples/<name>/main.exe
+dune exec ./packages/matrix/examples/<name>/main.exe
 ```
 
 ## Examples

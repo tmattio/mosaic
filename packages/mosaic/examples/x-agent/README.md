@@ -14,7 +14,7 @@ Primary-screen agent-style demo focused on TUI semantics.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/x-agent/main.exe
+dune exec ./packages/mosaic/examples/x-agent/main.exe
 ```
 
 ## Controls

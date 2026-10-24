@@ -5,7 +5,7 @@ interpolation, and a pointer-aware zoom that keeps the cursor anchored during
 scrolling. A help overlay explains the controls in-app.
 
 ```bash
-dune exec ./matrix/examples/03-mandelbrot/main.exe
+dune exec ./packages/matrix/examples/03-mandelbrot/main.exe
 ```
 
 ## Controls

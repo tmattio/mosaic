@@ -5,7 +5,7 @@ background and a text status bar rendered via `Matrix.Image`. Mouse or keyboard
 input edits the world while the simulation keeps ticking.
 
 ```bash
-dune exec ./matrix/examples/02-life/main.exe
+dune exec ./packages/matrix/examples/02-life/main.exe
 ```
 
 ## Controls

@@ -54,7 +54,7 @@ Or build from source:
 
 ```bash
 dune build @install
-dune exec ./mosaic/examples/01-counter/main.exe
+dune exec ./packages/mosaic/examples/01-counter/main.exe
 ```
 
 ## Architecture
@@ -244,7 +244,7 @@ callback dependencies. The cache lives only while that position is mounted.
 27 examples and 4 showcase applications. Run any example from the repo root:
 
 ```bash
-dune exec ./mosaic/examples/<name>/main.exe
+dune exec ./packages/mosaic/examples/<name>/main.exe
 ```
 
 | Example            | Description                                       |
@@ -312,4 +312,4 @@ invalidate cached widths, while moving the selection reuses them.
 
 ## License
 
-ISC. See [LICENSE](../LICENSE).
+ISC. See [LICENSE](../../LICENSE).

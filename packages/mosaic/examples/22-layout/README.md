@@ -4,7 +4,7 @@ Dashboard skeleton using CSS Grid layout with switchable configurations.
 Demonstrates Toffee's grid engine as an alternative to flexbox.
 
 ```bash
-dune exec ./mosaic/examples/22-layout/main.exe
+dune exec ./packages/mosaic/examples/22-layout/main.exe
 ```
 
 ## Controls

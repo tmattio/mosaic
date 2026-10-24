@@ -5,7 +5,7 @@ grid every frame, caches styles per streak, and shows how to mix `Matrix.run`
 with a lightweight state machine.
 
 ```bash
-dune exec ./matrix/examples/01-rain/main.exe
+dune exec ./packages/matrix/examples/01-rain/main.exe
 ```
 
 ## Controls

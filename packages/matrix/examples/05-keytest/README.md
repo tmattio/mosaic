@@ -5,7 +5,7 @@ live modifier panel and an event history that shows every keystroke, mouse
 action, and resize event in real time.
 
 ```bash
-dune exec ./matrix/examples/05-keytest/main.exe
+dune exec ./packages/matrix/examples/05-keytest/main.exe
 ```
 
 ## Controls

@@ -5,7 +5,7 @@ multiple levels of the tree. Two equal-width children each contain a fixed-size
 leaf, all sharing the same outer container space.
 
 ```bash
-dune exec ./examples/02-nested/main.exe
+dune exec ./packages/toffee/examples/02-nested/main.exe
 ```
 
 ## Highlights

@@ -4,7 +4,7 @@ Countdown timer with start, stop, and reset controls. Demonstrates time-based
 subscriptions and input handling in the TEA architecture.
 
 ```bash
-dune exec ./mosaic/examples/16-timer/main.exe
+dune exec ./packages/mosaic/examples/16-timer/main.exe
 ```
 
 ## Controls

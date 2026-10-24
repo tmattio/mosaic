@@ -4,8 +4,8 @@ Async task runner using Eio fibers: the program runs from the main fiber with
 `Mosaic_eio.run`, while the main domain runs its jobs as fibers.
 
 ```bash
-dune exec ./mosaic/examples/24-eio/main.exe
-dune exec ./mosaic/examples/24-eio/main.exe -- --for 5
+dune exec ./packages/mosaic/examples/24-eio/main.exe
+dune exec ./packages/mosaic/examples/24-eio/main.exe -- --for 5
 ```
 
 It is built only when `eio_main` is installed. With `--for SECONDS`,

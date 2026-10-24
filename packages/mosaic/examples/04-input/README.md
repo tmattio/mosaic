@@ -12,5 +12,5 @@ Single-line text input with cursor navigation.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/04-input/main.exe
+dune exec ./packages/mosaic/examples/04-input/main.exe
 ```

@@ -5,7 +5,7 @@ Terminal-based system monitor displaying real-time CPU, memory, disk, and proces
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/x-syspanel/main.exe
+dune exec ./packages/mosaic/examples/x-syspanel/main.exe
 ```
 
 ## Features

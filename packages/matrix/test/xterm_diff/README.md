@@ -17,8 +17,8 @@ You need xterm (tested with xterm 398) and an X server. Xvfb is enough:
 ```sh
 Xvfb :97 -screen 0 1024x768x24 -nolisten tcp &
 export DISPLAY=:97
-dune build ./matrix/test/xterm_diff/xterm_diff.exe
-X=_build/default/matrix/test/xterm_diff/xterm_diff.exe
+dune build ./packages/matrix/test/xterm_diff/xterm_diff.exe
+X=_build/default/packages/matrix/test/xterm_diff/xterm_diff.exe
 
 $X fuzz --seed 1 --count 5000 --out /tmp/xd      # a campaign
 $X case 'a\e[2@b' --out /tmp/xd                   # one case, both screens
@@ -225,9 +225,9 @@ xterm and X server; keys also need python3 and libXtst (`keys.py` drives
 xterm through XTest with ctypes, so no xdotool is needed):
 
 ```sh
-dune build ./matrix/test/xterm_diff/input_diff.exe
-I=_build/default/matrix/test/xterm_diff/input_diff.exe
-D=matrix/test/xterm_diff
+dune build ./packages/matrix/test/xterm_diff/input_diff.exe
+I=_build/default/packages/matrix/test/xterm_diff/input_diff.exe
+D=packages/matrix/test/xterm_diff
 
 $I caps --decid 100 --out /tmp/id     # the probe's replies, the capabilities
 $I caps --decid 420 --out /tmp/id

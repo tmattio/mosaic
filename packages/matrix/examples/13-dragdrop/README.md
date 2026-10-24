@@ -5,7 +5,7 @@ start dragging, move it over a zone, and release to record the drop. Zones
 highlight when a tile hovers over them.
 
 ```bash
-dune exec ./matrix/examples/13-dragdrop/main.exe
+dune exec ./packages/matrix/examples/13-dragdrop/main.exe
 ```
 
 ## Controls

@@ -90,7 +90,7 @@ let markdown_view md = Mosaic.markdown ~highlighter md
 filename extensions your application uses go there, and unknown languages stay
 plain. Its state is the tree of the view's latest result. A keystroke in a large
 file is parsed again around the edit, and the query covers the whole new tree,
-as the result type of [`Code.Highlighter`](../mosaic/lib/ui/renderables/code.mli)
+as the result type of [`Code.Highlighter`](../packages/mosaic/lib/ui/renderables/code.mli)
 requires. `threaded_incremental` runs `highlight` on a worker thread and hands
 it each request with the view's latest result.
 
@@ -132,19 +132,19 @@ styles.
 
 ## Where the rules live
 
-- [`Code`](../mosaic/lib/ui/renderables/code.mli): highlighters, their
+- [`Code`](../packages/mosaic/lib/ui/renderables/code.mli): highlighters, their
   requests, states and failures, what a result must hold, the worker of
   `Highlighter.threaded_incremental`, and what a view shows while a result is pending.
-- [`Syntax_highlight`](../mosaic/lib/ui/syntax_highlight.mli): byte ranges,
+- [`Syntax_highlight`](../packages/mosaic/lib/ui/syntax_highlight.mli): byte ranges,
   captures bound to their source, and their resolution into annotations.
-- [`Syntax_style`](../mosaic/lib/ui/syntax_style.mli): the scope vocabulary
+- [`Syntax_style`](../packages/mosaic/lib/ui/syntax_style.mli): the scope vocabulary
   shared by highlighters and styles, and how scopes fall back.
-- [`Markdown`](../mosaic/lib/ui/renderables/markdown.mli) and
-  [`Diff`](../mosaic/lib/ui/renderables/diff.mli): how fenced code blocks and
+- [`Markdown`](../packages/mosaic/lib/ui/renderables/markdown.mli) and
+  [`Diff`](../packages/mosaic/lib/ui/renderables/diff.mli): how fenced code blocks and
   diff panes use a highlighter.
-- [`Textarea`](../mosaic/lib/ui/renderables/textarea.mli) and
-  [`Text_buffer.Annotations`](../mosaic/lib/ui/text_buffer.mli): syntax and
+- [`Textarea`](../packages/mosaic/lib/ui/renderables/textarea.mli) and
+  [`Text_buffer.Annotations`](../packages/mosaic/lib/ui/text_buffer.mli): syntax and
   annotations on editable text.
 
-Mosaic's [examples](../mosaic/examples/common/toy_highlighter.ml) use a small
+Mosaic's [examples](../packages/mosaic/examples/common/toy_highlighter.ml) use a small
 lexical highlighter in place of a parser package.

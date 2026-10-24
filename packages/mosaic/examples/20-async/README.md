@@ -4,7 +4,7 @@ Task runner demonstrating `Cmd.perform` for background operations with
 loading spinners and completion status.
 
 ```bash
-dune exec ./mosaic/examples/20-async/main.exe
+dune exec ./packages/mosaic/examples/20-async/main.exe
 ```
 
 ## Controls

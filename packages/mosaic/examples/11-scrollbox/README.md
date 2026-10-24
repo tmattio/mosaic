@@ -13,5 +13,5 @@ Scrollable container with viewport clipping.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/11-scrollbox/main.exe
+dune exec ./packages/mosaic/examples/11-scrollbox/main.exe
 ```

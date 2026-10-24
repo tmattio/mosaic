@@ -5,7 +5,7 @@ panel, and a scrollable activity log. Metrics update continuously and log
 entries appear at random intervals.
 
 ```bash
-dune exec ./matrix/examples/10-dashboard/main.exe
+dune exec ./packages/matrix/examples/10-dashboard/main.exe
 ```
 
 ## Controls

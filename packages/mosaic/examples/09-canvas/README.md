@@ -13,5 +13,5 @@ Procedural drawing surface for custom graphics.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/09-canvas/main.exe
+dune exec ./packages/mosaic/examples/09-canvas/main.exe
 ```

@@ -4,7 +4,7 @@ Mosaic ships with runnable examples that demonstrate the TEA architecture and
 UI components. From the repo root, run any example with:
 
 ```bash
-dune exec ./mosaic/examples/<name>/main.exe
+dune exec ./packages/mosaic/examples/<name>/main.exe
 ```
 
 ## Examples

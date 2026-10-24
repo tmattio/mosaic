@@ -12,5 +12,5 @@ Syntax-highlighted code display with a small lexical highlighter.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/10-code/main.exe
+dune exec ./packages/mosaic/examples/10-code/main.exe
 ```

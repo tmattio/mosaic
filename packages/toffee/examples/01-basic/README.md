@@ -5,7 +5,7 @@ and a single percentage-based child, then computes layout for both finite and
 unbounded available space.
 
 ```bash
-dune exec ./examples/01-basic/main.exe
+dune exec ./packages/toffee/examples/01-basic/main.exe
 ```
 
 ## Highlights

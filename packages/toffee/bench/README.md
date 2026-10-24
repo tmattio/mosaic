@@ -1,10 +1,10 @@
 # Toffee Benchmarks
 
-The `toffee/bench/` directory contains thumper suites for realistic layout
+The `packages/toffee/bench/` directory contains thumper suites for realistic layout
 workloads. Run the performance gate with:
 
 ```bash
-dune build @toffee/bench
+dune build @packages/toffee/bench
 ```
 
 Current groups:
@@ -20,5 +20,5 @@ The suite checks against `toffee.thumper` independently of functional
 list cases, `-f PATTERN` to filter, or `--csv FILE` to write CSV. Example:
 
 ```
-dune exec toffee/bench/bench_toffee.exe -- --explore
+dune exec packages/toffee/bench/bench_toffee.exe -- --explore
 ```

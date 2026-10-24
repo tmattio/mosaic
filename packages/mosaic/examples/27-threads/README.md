@@ -3,8 +3,8 @@
 A program fed by a worker thread, and stopped by a thread it did not start.
 
 ```bash
-dune exec ./mosaic/examples/27-threads/main.exe
-dune exec ./mosaic/examples/27-threads/main.exe -- --for 5
+dune exec ./packages/mosaic/examples/27-threads/main.exe
+dune exec ./packages/mosaic/examples/27-threads/main.exe -- --for 5
 ```
 
 ## Controls

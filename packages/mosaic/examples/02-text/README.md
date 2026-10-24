@@ -12,5 +12,5 @@ Rich text rendering with styles, colors, and wrapping.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/02-text/main.exe
+dune exec ./packages/mosaic/examples/02-text/main.exe
 ```

@@ -5,7 +5,7 @@ reflects off the rotating walls, transferring energy from the hexagon's spin
 into its velocity.
 
 ```bash
-dune exec ./matrix/examples/07-hexagon/main.exe
+dune exec ./packages/matrix/examples/07-hexagon/main.exe
 ```
 
 ## Controls

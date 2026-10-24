@@ -4,7 +4,7 @@ Interactive charts demo showcasing the matrix.charts library integration with
 mosaic. Features multiple chart types with zoom, pan, and hover tooltips.
 
 ```bash
-dune exec ./mosaic/examples/15-charts/main.exe
+dune exec ./packages/mosaic/examples/15-charts/main.exe
 ```
 
 ## Controls

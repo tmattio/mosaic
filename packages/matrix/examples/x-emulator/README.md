@@ -1,6 +1,6 @@
 # matrix-term
 
-A (toy) terminal emulator built with OCaml and SDL2, using [Matrix](../matrix/).
+A (toy) terminal emulator built with OCaml and SDL2, using [Matrix](../../README.md).
 
 ## Features
 
@@ -14,7 +14,7 @@ A (toy) terminal emulator built with OCaml and SDL2, using [Matrix](../matrix/).
 
 ## Architecture
 
-matrix-term is built on top of the [Matrix](../matrix/) library, which provides:
+matrix-term is built on top of the [Matrix](../../README.md) library, which provides:
 
 - **VTE**: Virtual Terminal Emulator with ANSI escape sequence parsing
 - **PTY**: Pseudo-terminal handling for process communication  
@@ -25,4 +25,4 @@ The terminal uses SDL2 for cross-platform window management and rendering, with 
 
 ## License
 
-ISC License. See [LICENSE](../LICENSE) for details.
+ISC License. See [LICENSE](../../../../LICENSE) for details.

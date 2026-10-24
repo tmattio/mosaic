@@ -4,7 +4,7 @@ A mouse-driven paint program with adjustable brush size, color palette, and
 alpha blending. Click and drag to draw on the canvas, right-click to erase.
 
 ```bash
-dune exec ./matrix/examples/06-canvas/main.exe
+dune exec ./packages/matrix/examples/06-canvas/main.exe
 ```
 
 ## Controls

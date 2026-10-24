@@ -5,11 +5,11 @@ Terminal user interfaces for OCaml.
 This repository contains three packages that work together or
 independently:
 
-| Package                      | Description                                               |
-| ---------------------------- | --------------------------------------------------------- |
-| [Mosaic](mosaic/README.md)   | High-level UI framework with The Elm Architecture         |
-| [Matrix](matrix/README.md)   | Terminal toolkit: rendering, input, PTY, VTE               |
-| [Toffee](toffee/README.md)   | CSS layout engine (Flexbox, Grid, Block) ported from Taffy |
+| Package                             | Description                                               |
+| ----------------------------------- | --------------------------------------------------------- |
+| [Mosaic](packages/mosaic/README.md) | High-level UI framework with The Elm Architecture         |
+| [Matrix](packages/matrix/README.md) | Terminal toolkit: rendering, input, PTY, VTE               |
+| [Toffee](packages/toffee/README.md) | CSS layout engine (Flexbox, Grid, Block) ported from Taffy |
 
 **Mosaic** provides a TEA runtime (model / update / view), built-in
 widgets, and CSS layout via Toffee. Editors, scrolling, selection, and focus
@@ -47,7 +47,7 @@ dune build @install
 Run a demo:
 
 ```bash
-dune exec ./mosaic/examples/01-counter/main.exe
+dune exec ./packages/mosaic/examples/01-counter/main.exe
 ```
 
 A minimal Mosaic app:
@@ -90,23 +90,23 @@ let () = run { init; update; view; subscriptions }
 
 Mosaic ships with 27 examples and 4 showcase apps covering forms, tables,
 markdown, syntax highlighting, charts, async commands, tree widgets, CSS
-Grid layouts, and more. See [mosaic/examples/](mosaic/examples/README.md).
+Grid layouts, and more. See [packages/mosaic/examples/](packages/mosaic/examples/README.md).
 
 Matrix has 15 examples and 1 showcase demonstrating rain animation, game
 of life, mandelbrot rendering, snake, a synthesizer, and a terminal
-emulator. See [matrix/examples/](matrix/examples/README.md).
+emulator. See [packages/matrix/examples/](packages/matrix/examples/README.md).
 
 Run any example from the repo root:
 
 ```bash
 # Mosaic: form with focus management
-dune exec ./mosaic/examples/12-form/main.exe
+dune exec ./packages/mosaic/examples/12-form/main.exe
 
 # Mosaic: ML dashboard showcase
-dune exec ./mosaic/examples/x-dashboard/main.exe
+dune exec ./packages/mosaic/examples/x-dashboard/main.exe
 
 # Matrix: rain animation
-dune exec ./matrix/examples/01-rain/main.exe
+dune exec ./packages/matrix/examples/01-rain/main.exe
 ```
 
 ## License

@@ -4,7 +4,7 @@ Terminal-aware info panel responding to resize and focus events with
 adaptive content layout.
 
 ```bash
-dune exec ./mosaic/examples/23-resize/main.exe
+dune exec ./packages/mosaic/examples/23-resize/main.exe
 ```
 
 ## Controls

@@ -13,5 +13,5 @@ A terminal experiment dashboard with live metrics and charts.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/x-dashboard/main.exe
+dune exec ./packages/mosaic/examples/x-dashboard/main.exe
 ```

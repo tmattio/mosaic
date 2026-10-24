@@ -17,5 +17,5 @@ Markdown rendering with full CommonMark support.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/13-markdown/main.exe
+dune exec ./packages/mosaic/examples/13-markdown/main.exe
 ```

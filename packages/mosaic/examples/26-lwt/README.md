@@ -3,8 +3,8 @@
 Timers that are Lwt promises, in a program that is a promise itself.
 
 ```bash
-dune exec ./mosaic/examples/26-lwt/main.exe
-dune exec ./mosaic/examples/26-lwt/main.exe -- --for 5
+dune exec ./packages/mosaic/examples/26-lwt/main.exe
+dune exec ./packages/mosaic/examples/26-lwt/main.exe -- --for 5
 ```
 
 It is built only when `lwt` is installed. With `--for SECONDS`, `Lwt.pick`

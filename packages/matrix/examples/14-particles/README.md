@@ -5,7 +5,7 @@ fountain, explosion, and firework. Particles spawn from the center or follow
 the mouse, obeying gravity and fading over their lifetime.
 
 ```bash
-dune exec ./matrix/examples/14-particles/main.exe
+dune exec ./packages/matrix/examples/14-particles/main.exe
 ```
 
 ## Controls

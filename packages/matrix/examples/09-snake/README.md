@@ -4,7 +4,7 @@ The classic Snake game rendered in the terminal. Guide the snake to eat food
 and grow longer while avoiding walls and your own tail.
 
 ```bash
-dune exec ./matrix/examples/09-snake/main.exe
+dune exec ./packages/matrix/examples/09-snake/main.exe
 ```
 
 ## Controls

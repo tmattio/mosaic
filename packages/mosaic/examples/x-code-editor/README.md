@@ -4,7 +4,7 @@ Code editor demo combining editable line numbers, keyboard-driven autocomplete,
 and inline syntax highlighting while you type.
 
 ```bash
-dune exec ./mosaic/examples/x-code-editor/main.exe
+dune exec ./packages/mosaic/examples/x-code-editor/main.exe
 ```
 
 ## Controls

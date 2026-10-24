@@ -15,5 +15,5 @@ Multi-component form with focus management.
 ## Run
 
 ```bash
-dune exec ./mosaic/examples/12-form/main.exe
+dune exec ./packages/mosaic/examples/12-form/main.exe
 ```

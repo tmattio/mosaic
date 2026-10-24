@@ -5,7 +5,7 @@ strings, draws a border using composable padding helpers, and ends with a note
 block to show mixed styling and alignment.
 
 ```bash
-dune exec ./matrix/examples/04-runes/main.exe
+dune exec ./packages/matrix/examples/04-runes/main.exe
 ```
 
 ## Highlights
