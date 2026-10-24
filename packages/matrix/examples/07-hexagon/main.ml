@@ -166,20 +166,8 @@ let draw_ui grid ~cols ~rows =
     ~x:((cols - String.length help) / 2)
     ~y:(rows - 1) ~text:help
 
-(* The debug overlay over each frame: the time each frame takes to draw,
-   recorded after it, and the collector's statistics. *)
-let draw_with_overlay overlay app view =
-  let start = Matrix.clock () in
-  Matrix.draw app (fun grid ->
-      view grid;
-      Matrix.Debug_overlay.draw overlay
-        ~metrics:(Matrix.Screen.last_metrics (Matrix.screen app))
-        ~gc:(Gc.quick_stat ()) grid);
-  Matrix.Debug_overlay.record overlay ~start ~ns:(Matrix.clock () - start)
-
 let () =
   let config = Matrix.config ~mouse:`Off () in
-  let overlay = Matrix.Debug_overlay.create () in
   Matrix.run ~config @@ fun app ->
   let rec loop state =
     match Matrix.next app with
@@ -201,7 +189,7 @@ let () =
         (* Each frame moves the scene by the time since the last, and asks
            for the next. *)
         let state = update ~dt:(Matrix.frame_dt app) state in
-        draw_with_overlay overlay app (fun grid ->
+        Matrix.draw app (fun grid ->
             let cols, rows = Matrix.size app in
             Grid.clear ~color:Ansi.Color.black grid;
             let cx = float_of_int cols /. 2.0 in
