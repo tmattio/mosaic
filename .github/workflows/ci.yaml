@@ -57,17 +57,17 @@ jobs:
       - name: Build and test matrix
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: |
-          opam exec -- dune build matrix
-          opam exec -- dune build @matrix/runtest
+          opam exec -- dune build packages/matrix
+          opam exec -- dune build @packages/matrix/runtest
 
       - name: Build and test toffee
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: |
-          opam exec -- dune build toffee
-          opam exec -- dune build @toffee/runtest
+          opam exec -- dune build packages/toffee
+          opam exec -- dune build @packages/toffee/runtest
 
       - name: Build and test mosaic
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: |
-          opam exec -- dune build mosaic
-          opam exec -- dune build @mosaic/runtest
+          opam exec -- dune build packages/mosaic
+          opam exec -- dune build @packages/mosaic/runtest
