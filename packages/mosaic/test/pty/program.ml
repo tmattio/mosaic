@@ -9,6 +9,12 @@ let result name fmt =
 
 let now () = Unix.gettimeofday ()
 
+(* A file of /proc, which only Linux has; elsewhere what is measured from it
+   reads as 0. Nothing is tested on it: "measure" prints it. *)
+let proc file =
+  try In_channel.with_open_text file In_channel.input_all
+  with Sys_error _ -> ""
+
 let key_is c key =
   match (M.Event.Key.data key).Matrix.Input.Keystroke.key with
   | Char u -> Uchar.equal u (Uchar.of_char c)
@@ -121,8 +127,7 @@ let storm () =
         Domain.join (Domain.spawn (fun () -> produce p dispatch)))
   in
   let writes () =
-    In_channel.with_open_text "/proc/self/io" In_channel.input_all
-    |> String.split_on_char '\n'
+    proc "/proc/self/io" |> String.split_on_char '\n'
     |> List.find_map (fun line -> Scanf.sscanf_opt line "syscw: %d" Fun.id)
     |> Option.value ~default:0
   in
@@ -166,8 +171,7 @@ let flood ~domain () =
   in
   let views = counter ~subs:worker ~count_others:true () in
   let peak =
-    In_channel.with_open_text "/proc/self/status" In_channel.input_all
-    |> String.split_on_char '\n'
+    proc "/proc/self/status" |> String.split_on_char '\n'
     |> List.find_map (fun line -> Scanf.sscanf_opt line "VmHWM: %d kB" Fun.id)
     |> Option.value ~default:0
   in

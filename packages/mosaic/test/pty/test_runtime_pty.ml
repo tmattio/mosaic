@@ -456,9 +456,13 @@ let test_terminal_gone name () =
   reap ()
 
 let supported =
-  Sys.os_type = "Unix"
-  && Sys.file_exists "/proc/self/status"
-  && Sys.file_exists program && Sys.file_exists job
+  Sys.os_type = "Unix" && Sys.file_exists program && Sys.file_exists job
+
+(* The idle tests count a process's context switches in /proc, which only
+   Linux has. *)
+let counts_switches f () =
+  if Sys.file_exists "/proc/self/status" then f ()
+  else skip ~reason:"counts context switches in /proc, which only Linux has" ()
 
 let measure () =
   let ms x = x *. 1000. in
@@ -509,12 +513,15 @@ let () =
           (if not supported then []
            else
              [
-               test "an idle program does not wake" test_idle_costs_no_wakeups;
-               test "an idle Matrix run does not wake" test_idle_matrix;
+               test "an idle program does not wake"
+                 (counts_switches test_idle_costs_no_wakeups);
+               test "an idle Matrix run does not wake"
+                 (counts_switches test_idle_matrix);
                test "a program that ran a perform does not wake"
-                 test_idle_after_perform;
-               test "a 1 s timer wakes once a second" test_idle_every;
-               test "a tick wakes once a frame" test_idle_tick;
+                 (counts_switches test_idle_after_perform);
+               test "a 1 s timer wakes once a second"
+                 (counts_switches test_idle_every);
+               test "a tick wakes once a frame" (counts_switches test_idle_tick);
              ]);
         group "Time"
           (if not supported then []
