@@ -1,7 +1,7 @@
 ; The project verdict aliases. They live at the root rather than in a
 ; test/ directory because this repo has no single test tree — every
 ; package carries its own (packages/matrix/test,
-; packages/mosaic/test/unit, packages/toffee/test, …) — and these three
+; packages/mosaic/test/unit, packages/toffee/test, …) — and these two
 ; answer questions about the project as a whole.
 ;
 ; cover and mutate are asymmetric on purpose. Coverage accumulates as a
@@ -40,55 +40,3 @@
   (chdir
    %{workspace_root}
    (run %{bin:windtrap} mutate))))
-
-; @admit asks "can every test this run executes fail?" and answers with
-; its exit code, so it is only useful while it is green — a red one
-; teaches that red is normal, which is the opposite of what UNJUSTIFIED
-; means. It is scoped for a second reason too: an admission run tries up
-; to 25 faults per test, so aiming it at all ~4,400 tests would take
-; hours and nobody would run it.
-;
-; test_selection (24 admitted, 5 no sites) and test_edit_buffer (140
-; admitted) both audit clean, so @admit runs both. Add an executable here
-; once its own audit is clean.
-;
-; Two suites are known NOT to be clean yet, and the numbers are worth
-; keeping where someone will find them rather than in a review comment:
-;
-;   WINDTRAP_MUTATE=audit dune exec --instrument-with ppx_windtrap.mutate \
-;     packages/mosaic/test/unit/test_text_buffer.exe
-;     -> 42 admitted, 9 unjustified, 3 no sites
-;   ... test_event.exe -> 7 admitted, 1 unjustified, 30 no sites
-;
-; test_edit_buffer reached 140/140 from 135/5, and how is worth keeping.
-; Its five UNJUSTIFIED were read as two equivalent mutants; only
-; edit_buffer.ml:23 `max_graphemes <= 0` was one, and it carries a
-; dismissal now. The rest were weak tests, weak in one particular way:
-; each observed nothing but an empty buffer, and every fault the
-; construction path reaches is the identity on empty content. Sharper
-; assertions on the same three numbers could not have helped. Observing
-; more of the object did — four of the five now walk find_line's binary
-; search or a real grapheme run and kill a fault there.
-;
-; One finding was not mosaic's at all. matrix_text.ml:12 `w <= 0`
-; survived matrix's own suite over 91 evaluations because nothing
-; asserted that a tab_width of 0 falls back to the default; test_text
-; carries that row now. `len = 0` at matrix_text.ml:191 and :204 was the
-; near-miss — dismissing it would have suppressed a fault that
-; test_text kills outright, since `len <> 0` makes iter_graphemes a
-; no-op for every non-empty string. A fault one test cannot observe is
-; a weak test, not an equivalent mutant.
-
-(rule
- (alias admit)
- (deps
-  (universe)
-  packages/mosaic/test/unit/test_selection.exe
-  packages/mosaic/test/unit/test_edit_buffer.exe)
- (action
-  (setenv
-   WINDTRAP_MUTATE
-   audit
-   (progn
-    (run %{exe:packages/mosaic/test/unit/test_selection.exe})
-    (run %{exe:packages/mosaic/test/unit/test_edit_buffer.exe})))))
