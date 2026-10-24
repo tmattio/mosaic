@@ -16,8 +16,13 @@ The reconciler workload re-renders a 500-row keyed list through
 (keyed matching plus child moves). Vnode construction happens inside the
 measured region because a TEA view rebuilds its vnodes every frame.
 
-`dune runtest --profile release mosaic/bench` also checks allocation budgets
-for editing, selection, text layout, highlighting, and the application loop.
+The same alias checks allocation budgets for editing, selection, text layout,
+highlighting, and the application loop. Each suite checks against
+`<suite>.thumper`, which holds one section per machine, and a machine without
+a section proposes one through `dune promote`. These suites therefore stay out
+of `runtest`, where a new machine (a CI runner, a contributor's laptop) would
+fail on the proposal.
+
 Highlighting covers 100 KB and 1 MB sources with 1,000 captures: alternating
 themes over a retained capture batch, and installing fresh capture batches over
 already indexed text. Both cases resolve paint styles inside the measured
@@ -27,7 +32,8 @@ Text layout's reference workloads cover short labels, styled long lines, tall
 clipped text, dense overlapping highlights, highlights outside the viewport,
 horizontal scroll, five widths cycled through the four-entry width cache, and
 an edit in the middle of 1 MB. Its allocation baseline holds each within 5%.
-Three checks run beside it in `dune runtest`:
+Three checks that compare with fixed budgets, the same on every machine, run in
+`dune runtest`, as do the undo-history checks of text layout and the editor:
 
 - `paint` repaints unchanged 80x20 views and fails if a repaint allocates more
   when the text hides more rows, columns, overlays or wrapped rows. Paint

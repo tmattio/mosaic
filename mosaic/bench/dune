@@ -39,6 +39,7 @@
 
 (executable
  (name bench_markdown)
+ (modules bench_markdown)
  (libraries thumper mosaic.ui toffee))
 
 (rule
@@ -55,7 +56,7 @@
  (libraries thumper mosaic.ui matrix.ansi matrix.text matrix.grid))
 
 (rule
- (alias runtest)
+ (alias bench)
  (locks /bench)
  (action
   (progn
@@ -94,7 +95,7 @@
  (libraries thumper mosaic.ui matrix.ansi matrix.text))
 
 (rule
- (alias runtest)
+ (alias bench)
  (locks /bench)
  (action
   (progn
@@ -102,7 +103,7 @@
    (diff? highlighting.thumper highlighting.thumper.corrected))))
 
 (rule
- (alias runtest)
+ (alias bench)
  (locks /bench)
  (action
   (progn
@@ -115,7 +116,7 @@
  (libraries thumper mosaic matrix matrix.vte unix))
 
 (rule
- (alias runtest)
+ (alias bench)
  (locks /bench)
  (action
   (progn
@@ -134,7 +135,7 @@
  (libraries thumper mosaic mosaic.ui))
 
 (rule
- (alias runtest)
+ (alias bench)
  (locks /bench)
  (action
   (progn
