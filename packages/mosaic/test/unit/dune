@@ -34,7 +34,8 @@
   test_value_selection
   test_shortcut
   test_button
-  test_navigation_keys)
+  test_navigation_keys
+  test_cost)
  (package mosaic)
  (libraries
   windtrap

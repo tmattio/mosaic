@@ -185,274 +185,101 @@ let dense_overlays count buffer =
 let visible_lines =
   String.concat "\n" (List.init 20 (fun _ -> String.make 80 'x'))
 
-(* Allocation of one unchanged repaint, on the real paint path. Paint allocates
-   per visited row and per entered style run (each batch it draws copies its
-   bytes); a hidden row, column or overlay costs nothing if paint never visits
-   it. Equal counts across hidden sizes are therefore the measurement that
-   repeated paint does not grow with hidden content. *)
-let paint_words (_, node, grid) =
-  Renderable.Private.render node grid ~dt:0.;
-  let before = Gc.minor_words () in
-  Renderable.Private.render node grid ~dt:0.;
-  int_of_float (Gc.minor_words () -. before)
-
-let paint_check () =
-  let words name setup =
-    let w = paint_words (setup ()) in
-    Printf.printf "%s=%d words\n" name w;
-    w
-  in
-  let same what a b =
-    if a <> b then
-      failwith (Printf.sprintf "paint work grows with hidden %s" what)
-  in
-  same "rows"
-    (words "tall-1k-middle" (fun () ->
-         viewport ~scroll:`Middle (span (tall 1_000))))
-    (words "tall-100k-middle" (fun () ->
-         viewport ~scroll:`Middle (span (tall 100_000))));
-  same "columns"
-    (words "horizontal-100k" (fun () ->
-         viewport ~rows:1 ~scroll_x:99_920 (span (String.make 100_000 'x'))))
-    (words "horizontal-1m" (fun () ->
-         viewport ~rows:1 ~scroll_x:999_920 (span editor_text)));
-  same "overlays"
-    (words "overlays-hidden-0" (fun () ->
-         viewport ~scroll:`Middle (span (tall 100_000))))
-    (words "overlays-hidden-10k" (fun () ->
-         viewport ~scroll:`Middle ~setup:(hidden_overlays 10_000)
-           (span (tall 100_000))));
-  same "wrapped rows"
-    (words "styled-10kb-middle" (fun () ->
-         viewport ~wrap:`Word ~scroll:`Middle
-           (List.filteri (fun i _ -> i < 1_000) styled)))
-    (words "styled-100kb-middle" (fun () ->
-         viewport ~wrap:`Word ~scroll:`Middle styled));
-  let ten =
-    words "visible-10-rows" (fun () -> viewport ~rows:10 (span visible_lines))
-  in
-  let twenty =
-    words "visible-20-rows" (fun () -> viewport (span visible_lines))
-  in
-  Printf.printf "per-visible-row=%d words\n" ((twenty - ten) / 10);
-  let buffer = ref None in
-  let dense =
-    words "visible-20-rows-200-overlays" (fun () ->
-        viewport
-          ~setup:(fun b ->
-            dense_overlays 200 b;
-            buffer := Some b)
-          (span visible_lines))
-  in
-  (* Paint looks up a style run where each visible row starts and where the
-     previous run ends: count those lookups. *)
-  let buffer = Option.get !buffer and runs = ref 0 in
-  for row = 0 to 19 do
-    let g = ref (row * 81) in
-    while !g < (row * 81) + 80 do
-      incr runs;
-      g := snd (Text_buffer.style_at buffer !g)
-    done
-  done;
-  Printf.printf "visible-runs=%d; per-visible-run=%d words\n" !runs
-    ((dense - twenty) / (!runs - 20))
-
-let memory_check () =
-  let module L = Matrix_text.Layout in
-  Gc.full_major ();
-  let before = (Gc.stat ()).live_words in
-  let source = L.Source.of_string editor_text in
-  let layout = L.create source ~width:1 ~wrap:`Char in
-  Gc.full_major ();
-  let live = ((Gc.stat ()).live_words - before) * (Sys.word_size / 8) in
-  let replacement =
-    L.create (L.Source.of_string (editor_text ^ "y")) ~width:1 ~wrap:`Char
-  in
-  Gc.full_major ();
-  let peak = (Gc.stat ()).top_heap_words * (Sys.word_size / 8) in
-  Printf.printf "one-source-and-rows=%d bytes; rebuild-heap-peak=%d bytes\n"
-    live peak;
-  ignore (Sys.opaque_identity (layout, replacement));
-  if live > 128 * 1024 * 1024 || peak > 256 * 1024 * 1024 then
-    failwith "text layout memory budget exceeded"
-
-(* A megabyte of prose in paragraphs of 585 bytes, laid out at the four widths
-   a text surface caches. *)
-let prose =
-  let sentence = "The quick brown fox jumps over the lazy dog; " in
-  let paragraph = String.concat "" (List.init 13 (fun _ -> sentence)) in
-  String.concat "\n" (List.init 1_709 (fun _ -> paragraph))
-
-let mib = 1024 * 1024
-
-let memory_widths_check () =
-  let live () = (Gc.stat ()).live_words * (Sys.word_size / 8) in
-  let renderer = Renderer.create () in
-  let node = Renderable.create ~parent:(Renderer.root renderer) () in
-  let buffer = Text_buffer.create () in
-  let surface = Text_surface.create node buffer in
-  Text_surface.set_wrap surface `Word;
-  Gc.full_major ();
-  let base = live () in
-  Text_buffer.set_text buffer prose;
-  ignore (Text_buffer.source buffer : Matrix_text.Layout.Source.t);
-  Gc.full_major ();
-  let index = live () - base in
-  Printf.printf "source=%d bytes, %d graphemes; index=%d bytes\n"
-    (String.length prose)
-    (Matrix_text.Layout.Source.length (Text_buffer.source buffer))
-    index;
-  let previous = ref (live ()) in
-  List.iter
-    (fun width ->
-      Text_surface.set_wrap_width surface (Some width);
-      let rows = Text_surface.display_line_count surface in
-      Gc.full_major ();
-      Printf.printf "width-%d=%d rows, %d bytes\n" width rows
-        (live () - !previous);
-      previous := live ())
-    [ 40; 60; 80; 120 ];
-  ignore
-    (Matrix_text.Layout.measure
-       (Text_buffer.source buffer)
-       ~width:100 ~wrap:`Word
-      : int * int);
-  Gc.full_major ();
-  Printf.printf "count-only-probe=%d bytes\n" (live () - !previous);
-  let retained = live () - base in
-  Text_buffer.set_text buffer (prose ^ "y");
-  ignore (Text_surface.display_line_count surface : int);
-  Gc.full_major ();
-  let peak = (Gc.stat ()).top_heap_words * (Sys.word_size / 8) in
-  Printf.printf "four-widths-retained=%d bytes; replace-heap-peak=%d bytes\n"
-    retained peak;
-  ignore (Sys.opaque_identity (renderer, surface));
-  if retained > 24 * mib || peak > 48 * mib then
-    failwith "text layout memory budget exceeded at the cached widths"
-
-let history_check () =
-  Gc.full_major ();
-  let before = (Gc.stat ()).live_words in
-  let editor = ref (Editor.of_string editor_text) in
-  let old_sources = Weak.create 200 in
-  for i = 0 to 199 do
-    Weak.set old_sources i (Some (Editor.source !editor));
-    editor := !editor |> Editor.set_cursor 500_000 |> Editor.insert "y"
-  done;
-  Gc.full_major ();
-  let live = ((Gc.stat ()).live_words - before) * (Sys.word_size / 8) in
-  for i = 0 to 199 do
-    if Weak.check old_sources i then
-      failwith "undo retained an obsolete source index"
-  done;
-  Printf.printf "200-edit-history-and-current-index=%d bytes\n" live;
-  ignore (Sys.opaque_identity !editor)
-
 (* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
    whose counts are the same on any x86_64 Linux under the locked compiler in
    release, while time compares only on one machine. *)
 let exact = Sys.getenv_opt "THUMPER_MACHINE" = Some "exact"
 
 let () =
-  if Array.length Sys.argv = 2 && Sys.argv.(1) = "memory" then memory_check ()
-  else if Array.length Sys.argv = 2 && Sys.argv.(1) = "history" then
-    history_check ()
-  else if Array.length Sys.argv = 2 && Sys.argv.(1) = "paint" then
-    paint_check ()
-  else if Array.length Sys.argv = 2 && Sys.argv.(1) = "memory-widths" then
-    memory_widths_check ()
-  else
-    Thumper.run "text_layout"
-      ~config:
-        Thumper.Config.(
-          default
-          |> metrics
-               (if exact then [ Thumper.Metric.alloc_words ]
-                else Thumper.Metric.[ wall_time; alloc_words; promoted_words ]))
-      ~budgets:
-        (Thumper.Budget.no_more_alloc_than 0.
-        ::
-        (if exact then []
-         else
-           [
-             Thumper.Budget.no_slower_than 0.05;
-             Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
-               ~max_regression:0.5 ();
-           ]))
-      [
-        Thumper.bench "text/plain-props" (fun () ->
-            Text.Props.make ~content:(Thumper.black_box "plain label") ());
-        Thumper.bench_with_setup
-          ~setup:(fun () -> fragment_text 1_000)
-          "fragments/normalize-1k" replace_fragments;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> fragment_text 10_000)
-          "fragments/normalize-10k" replace_fragments;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> focus_surface 128)
-          "focus/layout-128b" focus_layout;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> focus_surface 1_000_000)
-          "focus/layout-1mb" focus_layout;
-        Thumper.bench_with_setup ~setup:restyle_surface
-          "styles/same-text-layout-100k" restyle_layout;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> editor_text)
-          "index/create-1mb" Editor.of_string;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> make_surface plain)
-          "reflow/label" reflow;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> make_surface styled)
-          "reflow/styled-100k" reflow;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> make_surface styled)
-          "reflow/styled-100k-cold" cold_reflow;
-        Thumper.bench_with_setup
-          ~setup:(fun () ->
-            Editor.of_string editor_text |> Editor.set_cursor 500_000)
-          "edit/1mb-middle-undo" edit;
-        Thumper.bench_with_setup
-          ~setup:(fun () ->
-            paint_surface (tall 1_000) ~height:1_000 ~scroll_x:0)
-          "paint/tall-1k" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () ->
-            paint_surface (tall 100_000) ~height:100_000 ~scroll_x:0)
-          "paint/tall-100k" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () ->
-            paint_surface (String.make 100_000 'x') ~height:1 ~scroll_x:99_900)
-          "paint/horizontal-100k" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () ->
-            paint_surface editor_text ~height:1 ~scroll_x:999_900)
-          "paint/horizontal-1m" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> make_surface styled)
-          "reflow/alternating-widths-100k" alternating_widths;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> viewport plain)
-          "paint/label" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> viewport ~scroll:`Middle (span (tall 100_000)))
-          "paint/tall-100k-middle" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () -> viewport ~wrap:`Word ~scroll:`Middle styled)
-          "paint/styled-100k-middle" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () ->
-            viewport ~setup:(dense_overlays 200) (span visible_lines))
-          "paint/overlays-dense-200" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () ->
-            viewport ~scroll:`Middle ~setup:(hidden_overlays 10_000)
-              (span (tall 100_000)))
-          "paint/overlays-hidden-10k" paint;
-        Thumper.bench_with_setup
-          ~setup:(fun () ->
-            let b = Text_buffer.create () in
-            Text_buffer.set_text b (String.make 400 'x');
-            b)
-          "styles/nested-revision-200" overlay_revision;
-      ]
+  Thumper.run "text_layout"
+    ~config:
+      Thumper.Config.(
+        default
+        |> metrics
+             (if exact then [ Thumper.Metric.alloc_words ]
+              else Thumper.Metric.[ wall_time; alloc_words; promoted_words ]))
+    ~budgets:
+      (Thumper.Budget.no_more_alloc_than 0.
+      ::
+      (if exact then []
+       else
+         [
+           Thumper.Budget.no_slower_than 0.05;
+           Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
+             ~max_regression:0.5 ();
+         ]))
+    [
+      Thumper.bench "text/plain-props" (fun () ->
+          Text.Props.make ~content:(Thumper.black_box "plain label") ());
+      Thumper.bench_with_setup
+        ~setup:(fun () -> fragment_text 1_000)
+        "fragments/normalize-1k" replace_fragments;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> fragment_text 10_000)
+        "fragments/normalize-10k" replace_fragments;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> focus_surface 128)
+        "focus/layout-128b" focus_layout;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> focus_surface 1_000_000)
+        "focus/layout-1mb" focus_layout;
+      Thumper.bench_with_setup ~setup:restyle_surface
+        "styles/same-text-layout-100k" restyle_layout;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> editor_text)
+        "index/create-1mb" Editor.of_string;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> make_surface plain)
+        "reflow/label" reflow;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> make_surface styled)
+        "reflow/styled-100k" reflow;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> make_surface styled)
+        "reflow/styled-100k-cold" cold_reflow;
+      Thumper.bench_with_setup
+        ~setup:(fun () ->
+          Editor.of_string editor_text |> Editor.set_cursor 500_000)
+        "edit/1mb-middle-undo" edit;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> paint_surface (tall 1_000) ~height:1_000 ~scroll_x:0)
+        "paint/tall-1k" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () ->
+          paint_surface (tall 100_000) ~height:100_000 ~scroll_x:0)
+        "paint/tall-100k" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () ->
+          paint_surface (String.make 100_000 'x') ~height:1 ~scroll_x:99_900)
+        "paint/horizontal-100k" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> paint_surface editor_text ~height:1 ~scroll_x:999_900)
+        "paint/horizontal-1m" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> make_surface styled)
+        "reflow/alternating-widths-100k" alternating_widths;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> viewport plain)
+        "paint/label" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> viewport ~scroll:`Middle (span (tall 100_000)))
+        "paint/tall-100k-middle" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () -> viewport ~wrap:`Word ~scroll:`Middle styled)
+        "paint/styled-100k-middle" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () ->
+          viewport ~setup:(dense_overlays 200) (span visible_lines))
+        "paint/overlays-dense-200" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () ->
+          viewport ~scroll:`Middle ~setup:(hidden_overlays 10_000)
+            (span (tall 100_000)))
+        "paint/overlays-hidden-10k" paint;
+      Thumper.bench_with_setup
+        ~setup:(fun () ->
+          let b = Text_buffer.create () in
+          Text_buffer.set_text b (String.make 400 'x');
+          b)
+        "styles/nested-revision-200" overlay_revision;
+    ]

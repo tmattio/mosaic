@@ -1244,6 +1244,44 @@ let gen_script =
        (Gen.of_list [ ""; "hello world"; "a\nbc\n\ndef"; "日本語 text\n🇦🇧" ])
        (Gen.list ~size:(Gen.int_range 0 80) gen_op))
 
+(* Retention: an edit's history holds no earlier state, text or index. *)
+let history_retains_no_old_states () =
+  let count = 240 in
+  let editors = Weak.create count in
+  let sources = Weak.create count in
+  let texts = Weak.create count in
+  let final =
+    let current = ref (Editor.of_string (String.make 4096 'x')) in
+    for i = 0 to count - 1 do
+      Weak.set editors i (Some !current);
+      Weak.set sources i (Some (Editor.source !current));
+      Weak.set texts i (Some (Editor.text !current));
+      current := Editor.insert "y" !current
+    done;
+    !current
+  in
+  Gc.full_major ();
+  for i = 0 to count - 1 do
+    is_false ~msg:"an obsolete state is retained" (Weak.check editors i);
+    is_false ~msg:"an obsolete source is retained" (Weak.check sources i);
+    is_false ~msg:"an old text is retained" (Weak.check texts i)
+  done;
+  ignore (Sys.opaque_identity final)
+
+let undo_retains_no_old_index () =
+  let editor = ref (Editor.of_string (String.make 1_000_000 'x')) in
+  let old_sources = Weak.create 200 in
+  for i = 0 to 199 do
+    Weak.set old_sources i (Some (Editor.source !editor));
+    editor := !editor |> Editor.set_cursor 500_000 |> Editor.insert "y"
+  done;
+  Gc.full_major ();
+  for i = 0 to 199 do
+    is_false ~msg:"undo retained an obsolete source index"
+      (Weak.check old_sources i)
+  done;
+  ignore (Sys.opaque_identity !editor)
+
 let () =
   run "Editor"
     [
@@ -1359,6 +1397,10 @@ let () =
         [
           prop ~count:500 "matches snapshot history over edit scripts"
             gen_script history_matches_snapshots;
+          test "retains no old states, texts or indexes"
+            history_retains_no_old_states;
+          test "undo of a megabyte retains no old index"
+            undo_retains_no_old_index;
         ];
       group "Shared source index"
         [

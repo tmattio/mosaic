@@ -38,19 +38,21 @@ Text layout's reference workloads cover short labels, styled long lines, tall
 clipped text, dense overlapping highlights, highlights outside the viewport,
 horizontal scroll, five widths cycled through the four-entry width cache, and
 an edit in the middle of 1 MB. Its allocation budget, like every suite's, is 0.
-Three checks that compare with fixed budgets, the same on every machine, run in
-`dune runtest`, as do the undo-history checks of text layout and the editor:
 
-- `paint` repaints unchanged 80x20 views and fails if a repaint allocates more
-  when the text hides more rows, columns, overlays or wrapped rows. Paint
-  allocates per visited row and per entered style run, so equal counts show
-  that repeated paint follows the visible area. It prints the cost of one
-  visible row and one visible run.
-- `memory` lays out 1 MB at width 1, a million rows, and fails above 128 MiB
-  retained or a 256 MiB heap peak while a second layout is built.
-- `memory-widths` lays out 1 MB of prose at the four widths a text surface
-  caches, prints the index, each width's rows and a count-only probe, and fails
-  above 24 MiB retained or a 48 MiB heap peak while the text is replaced. The
-  measured 20.4 MiB retained and 42.0 MiB peak leave less room than one more
-  array per grapheme (7.6 MiB): such an array exceeds both budgets. The peak
-  allows the old and the new text's geometry together.
+Checks that need no baseline are tests, run by `dune runtest` on every
+machine and profile, because they compare counts taken in one process or
+hold a fixed cap:
+
+- `test/unit/test_cost.ml` repaints unchanged 80x20 text views and fails if a
+  repaint allocates more when the text hides more rows, columns, overlays or
+  wrapped rows, or a steady frame of a scrolled transcript allocates more
+  behind 10,000 rows than behind 1,000. It caps the memory of 1 MB laid out
+  at width 1 (128 MiB retained, 256 MiB heap peak) and of 1 MB of prose at
+  the four widths a text surface caches (24 MiB retained, 48 MiB peak: the
+  measured 20.4 MiB and 42.0 MiB leave less room than one more array per
+  grapheme, 7.6 MiB).
+- `test/loop/test_transcript.ml` runs the runtime suite's transcript on an
+  emulated terminal and fails if typing or a wheel burst allocates more over
+  20,000 messages than over 5,000.
+- `test/unit/test_editor.ml` checks that undo history retains no obsolete
+  state, text or source index.

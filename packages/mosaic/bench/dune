@@ -94,27 +94,6 @@
    (run %{exe:bench_text_layout.exe} --wait-quiet 60)
    (diff? text_layout.thumper text_layout.thumper.corrected))))
 
-(rule
- (alias runtest)
- (action
-  (run %{exe:bench_text_layout.exe} memory)))
-
-(rule
- (alias runtest)
- (action
-  (run %{exe:bench_text_layout.exe} memory-widths)))
-
-(rule
- (alias runtest)
- (action
-  (run %{exe:bench_text_layout.exe} paint)))
-
-(rule
- (alias runtest)
- (locks /bench)
- (action
-  (run %{exe:bench_text_layout.exe} history)))
-
 (executable
  (name bench_editor)
  (modules bench_editor)
@@ -165,12 +144,6 @@
   (progn
    (run %{exe:bench_runtime.exe} --wait-quiet 60)
    (diff? runtime.thumper runtime.thumper.corrected))))
-
-(rule
- (alias runtest)
- (locks /bench)
- (action
-  (run %{exe:bench_editor.exe} history)))
 
 (executable
  (name bench_selection)
