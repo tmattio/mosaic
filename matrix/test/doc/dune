@@ -1,0 +1,27 @@
+; Typecheck the OCaml snippets of matrix's README, so that they cannot drift
+; from the API. The snippets are a library that nothing links, so building
+; it checks them and runs none of their programs.
+
+(executable
+ (name extract)
+ (modules extract))
+
+(library
+ (name matrix_readme)
+ (modules doc_prelude readme)
+ (libraries matrix))
+
+(rule
+ (target readme.ml)
+ (deps
+  (:readme ../../README.md))
+ (action
+  (with-stdout-to
+   %{target}
+   (run ./extract.exe %{readme} matrix/README.md))))
+
+(rule
+ (alias runtest)
+ (package matrix)
+ (deps %{cma:matrix_readme})
+ (action (progn)))
