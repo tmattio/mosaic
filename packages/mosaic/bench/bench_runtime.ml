@@ -478,17 +478,19 @@ let loop_benches =
     ]
 
 let () =
-  let metrics =
-    if Sys.getenv_opt "RUNTIME_TIMING" = Some "1" then
-      Thumper.Metric.[ alloc_words; wall_time; promoted_words ]
-    else [ Thumper.Metric.alloc_words ]
-  in
   Thumper.run "runtime"
     ~config:
       (Thumper.Config.default
       |> Thumper.Config.deadline 60.
-      |> Thumper.Config.metrics metrics)
-    ~budgets:[ Thumper.Budget.no_more_alloc_than 0.05 ]
+      |> Thumper.Config.metrics
+           Thumper.Metric.[ wall_time; alloc_words; promoted_words ])
+    ~budgets:
+      [
+        Thumper.Budget.no_slower_than 0.05;
+        Thumper.Budget.no_more_alloc_than 0.05;
+        Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
+          ~max_regression:0.5 ();
+      ]
     (* Per-input cost must not grow with mounted content: the 20,000-block
        transcript repeats the input workloads. The primary-mode group runs them
        in an inline region shorter than the terminal. *)

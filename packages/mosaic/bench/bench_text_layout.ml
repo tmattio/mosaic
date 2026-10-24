@@ -361,10 +361,14 @@ let () =
       ~config:
         (Thumper.Config.default
         |> Thumper.Config.metrics
-             (if Sys.getenv_opt "TEXT_LAYOUT_TIMING" = Some "1" then
-                Thumper.Metric.[ alloc_words; wall_time; promoted_words ]
-              else [ Thumper.Metric.alloc_words ]))
-      ~budgets:[ Thumper.Budget.no_more_alloc_than 0.05 ]
+             Thumper.Metric.[ wall_time; alloc_words; promoted_words ])
+      ~budgets:
+        [
+          Thumper.Budget.no_slower_than 0.05;
+          Thumper.Budget.no_more_alloc_than 0.05;
+          Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
+            ~max_regression:0.5 ();
+        ]
       [
         Thumper.bench "text/plain-props" (fun () ->
             Text.Props.make ~content:(Thumper.black_box "plain label") ());

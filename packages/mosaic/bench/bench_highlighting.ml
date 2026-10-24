@@ -58,8 +58,15 @@ let () =
   Thumper.run "highlighting"
     ~config:
       (Thumper.Config.default
-      |> Thumper.Config.metrics [ Thumper.Metric.alloc_words ])
-    ~budgets:[ Thumper.Budget.no_more_alloc_than 0.02 ]
+      |> Thumper.Config.metrics
+           Thumper.Metric.[ wall_time; alloc_words; promoted_words ])
+    ~budgets:
+      [
+        Thumper.Budget.no_slower_than 0.05;
+        Thumper.Budget.no_more_alloc_than 0.02;
+        Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
+          ~max_regression:0.5 ();
+      ]
     [
       Thumper.bench_with_setup
         ~setup:(fun () -> highlighted_code 100_000)

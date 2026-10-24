@@ -91,7 +91,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_text_layout.exe} --quick)
+   (run %{exe:bench_text_layout.exe} --wait-quiet 60)
    (diff? text_layout.thumper text_layout.thumper.corrected))))
 
 (rule
@@ -134,7 +134,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_highlighting.exe} --quick)
+   (run %{exe:bench_highlighting.exe} --wait-quiet 60)
    (diff? highlighting.thumper highlighting.thumper.corrected))))
 
 (rule
@@ -146,7 +146,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_editor.exe} --quick)
+   (run %{exe:bench_editor.exe} --wait-quiet 60)
    (diff? editor.thumper editor.thumper.corrected))))
 
 (executable
@@ -163,7 +163,7 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_runtime.exe} --quick)
+   (run %{exe:bench_runtime.exe} --wait-quiet 60)
    (diff? runtime.thumper runtime.thumper.corrected))))
 
 (rule
@@ -186,5 +186,5 @@
  (locks /bench)
  (action
   (progn
-   (run %{exe:bench_selection.exe} --quick)
+   (run %{exe:bench_selection.exe} --wait-quiet 60)
    (diff? selection.thumper selection.thumper.corrected))))

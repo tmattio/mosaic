@@ -16,14 +16,16 @@ The reconciler workload re-renders a 500-row keyed list through
 (keyed matching plus child moves). Vnode construction happens inside the
 measured region because a TEA view rebuilds its vnodes every frame.
 
-The same alias checks allocation budgets for editing, selection, text layout,
-highlighting, and the application loop. Each suite checks against
-`<suite>.thumper`, which holds one section per machine, and a machine without
-a section proposes one through `dune promote`. The alias refuses to measure
-outside release, where allocation counts would differ, and a machine keys its
-section with `THUMPER_MACHINE` (see `packages/matrix/bench/README.md`). These
-suites therefore stay out
-of `runtest`, where a new machine (a CI runner, a contributor's laptop) would
+The same alias checks time and allocation for editing, selection, text
+layout, highlighting, and the application loop. Promotions and minor
+collections, which the frame suites also record, depend on where the minor
+heap stands when a sample starts, so their budget is 50%. Each suite checks
+against `<suite>.thumper`, which holds one section per machine, and a machine
+without a section proposes one through `dune promote`. The alias refuses to
+measure outside release, where allocation counts would differ, and a machine
+keys its section with `THUMPER_MACHINE` (see
+`packages/matrix/bench/README.md`). These suites therefore stay out of
+`runtest`, where a new machine (a CI runner, a contributor's laptop) would
 fail on the proposal.
 
 Highlighting covers 100 KB and 1 MB sources with 1,000 captures: alternating

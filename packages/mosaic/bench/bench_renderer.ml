@@ -243,8 +243,7 @@ let primary_typing =
 let () =
   (* Frame loops care about retention as much as speed: promotions are
      objects escaping the minor heap mid-frame, and minor collections count
-     GC pressure per frame. Both are counters, so thumper can prove them
-     exact and gate them even on a busy machine. *)
+     GC pressure per frame. *)
   Thumper.run "renderer"
     ~config:
       Thumper.Config.(
@@ -254,7 +253,15 @@ let () =
                [ wall_time; alloc_words; promoted_words; minor_collections ])
     ~budgets:
       [
-        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
+        Thumper.Budget.no_slower_than 0.05;
+        Thumper.Budget.no_more_alloc_than 0.;
+        (* Promotions and minor collections depend on where the minor heap
+           stands when a sample starts, so they are rarely exact: kept, with
+           room for that noise. *)
+        Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
+          ~max_regression:0.5 ();
+        Thumper.Budget.relative ~metric:Thumper.Metric.minor_collections
+          ~max_regression:0.5 ();
       ]
     [
       Thumper.group "viewport" [ steady_scrolled_transcript; scroll_by_one ];

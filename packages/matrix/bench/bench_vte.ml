@@ -38,7 +38,10 @@ let scrollback_render =
 (* Exact allocation guards remain stable when host load makes timing noisy. *)
 let () =
   Thumper.run "vte"
-    ~budgets:[ Thumper.Budget.no_more_alloc_than 0. ]
+    ~budgets:
+      [
+        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
+      ]
     [
       Thumper.group "vte"
         [

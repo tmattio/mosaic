@@ -210,9 +210,14 @@ let build_mixed_dashboard tree rng =
   in
   unwrap (new_with_children tree root_style [| header; toolbar; body |])
 
+(* A layout allocates 583k words, so major slices land in some samples and
+   not others: its time spreads by 44-49% between quartiles in both of the
+   M1's sections, where the other cases spread by under 5%. The budget is
+   set to that spread; a doubling still fails. *)
 let deep_flex_benchmark =
   let available_space = available ~width:1280. ~height:900. in
   Thumper.bench_with_setup
+    ~budgets:[ Thumper.Budget.no_slower_than 0.5 ]
     ~setup:(fun () ->
       let tree = new_tree () in
       let rng = Random.State.make [| 42 |] in
