@@ -35,8 +35,6 @@ jobs:
           awk -F'"' '/"git\+/ { url = $2 } url && /\(name / { sub(/.*\(name /, ""); sub(/\).*/, ""); print $0, url; url = "" }' dune-project |
             while read -r name url; do opam pin add -n "$name" "$url"; done
           opam install . --deps-only --with-test
-          # For matrix's terminal emulator demo
-          opam install tsdl tsdl-ttf
 
       - name: Build install targets
         run: opam exec -- dune build @install
