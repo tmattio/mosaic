@@ -168,26 +168,44 @@ let high_bits s =
   Option.map (fun v -> (v lsl (16 - (4 * String.length s))) lsr 8) (hex_value s)
 
 (* A color name as Xlib reads it: case-insensitive, and without its spaces,
-   as Xcms looks names up (libX11, src/xcms/cmsColNm.c). *)
+   as Xcms looks names up (libX11, src/xcms/cmsColNm.c). A spec of more
+   characters than the longest name, spaces aside, names no color, and is
+   rejected without a copy: a reply's spec can be kilobytes long. *)
+let is_space = function
+  | ' ' | '\t' | '\n' | '\011' | '\012' | '\r' -> true
+  | _ -> false
+
+let longest_name =
+  Array.fold_left (fun n name -> max n (String.length name)) 0 X11_colors.names
+
 let named spec =
-  let key =
-    String.lowercase_ascii spec
-    |> String.to_seq
-    |> Seq.filter (fun c -> not (String.contains " \t\n\011\012\r" c))
-    |> String.of_seq
-  in
-  let rec search lo hi =
-    if lo > hi then None
-    else
-      let mid = (lo + hi) / 2 in
-      let c = String.compare X11_colors.names.(mid) key in
-      if c = 0 then
-        let v = X11_colors.rgb.(mid) in
-        Some ((v lsr 16) land 0xFF, (v lsr 8) land 0xFF, v land 0xFF)
-      else if c < 0 then search (mid + 1) hi
-      else search lo (mid - 1)
-  in
-  if key = "" then None else search 0 (Array.length X11_colors.names - 1)
+  let length = ref 0 in
+  for i = 0 to String.length spec - 1 do
+    if not (is_space spec.[i]) then incr length
+  done;
+  if !length = 0 || !length > longest_name then None
+  else
+    let key = Bytes.create !length in
+    let j = ref 0 in
+    for i = 0 to String.length spec - 1 do
+      let c = spec.[i] in
+      if not (is_space c) then (
+        Bytes.set key !j (Char.lowercase_ascii c);
+        incr j)
+    done;
+    let key = Bytes.unsafe_to_string key in
+    let rec search lo hi =
+      if lo > hi then None
+      else
+        let mid = (lo + hi) / 2 in
+        let c = String.compare X11_colors.names.(mid) key in
+        if c = 0 then
+          let v = X11_colors.rgb.(mid) in
+          Some ((v lsr 16) land 0xFF, (v lsr 8) land 0xFF, v land 0xFF)
+        else if c < 0 then search (mid + 1) hi
+        else search lo (mid - 1)
+    in
+    search 0 (Array.length X11_colors.names - 1)
 
 let rgb_of_spec spec =
   let channels f r g b =
