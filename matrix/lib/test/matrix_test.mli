@@ -8,14 +8,14 @@
     input or output itself.
 
     A {e session} ({!t}) runs a program in the test's process on a terminal,
-    with a {e clock} that only the test moves. The program runs on {!Matrix}, or
-    on a library built on it, with the session's configuration ({!config}),
-    which gives the run the terminal and the clock. A program that waits for its
-    input, with [Matrix.next] as [Mosaic.run] does, runs unchanged ({!run}).
-    When it has nothing to do, it waits for the test instead of the terminal. A
-    program that takes its own steps has the test take them ({!attach}). Either
-    way the program goes on only inside the session's functions, and between two
-    calls nothing runs.
+    with a {e clock} that moves only inside the session's functions. The program
+    runs on {!Matrix}, or on a library built on it, with the session's
+    configuration ({!config}), which gives the run the terminal and the clock. A
+    program that waits for its input, with [Matrix.next] as [Mosaic.run] does,
+    runs unchanged ({!run}). When it has nothing to do, it waits for the test
+    instead of the terminal. A program that takes its own steps has the test
+    take them ({!attach}). Either way the program goes on only inside the
+    session's functions, and between two calls nothing runs.
 
     The terminal shows each write as it is made and sends each input as one
     write. So the run draws a frame asked for by input, a timer, a message or
@@ -35,18 +35,19 @@
 
     A session differs from a real terminal in two ways. A real terminal writes
     over time, so a lone ESC can wait for what may follow it, and a child on a
-    pseudo-terminal ({!Child}) shows that race. And an animation that moves a
-    step at each frame, rather than by the clock, moves one more for each frame
-    that input brings, so its goldens depend on the input; one that moves by the
-    clock does not.
+    pseudo-terminal ({!Child}) shows that race. And a session draws a frame that
+    input asks for at once, where a real terminal waits out the frame interval,
+    so an animation that moves a step at each frame, rather than by the clock,
+    moves one more for each frame that input brings, and its goldens depend on
+    the input; one that moves by the clock does not.
 
     The life cycle of a session:
     + {!Terminal.create} makes the terminal.
     + {!run} makes the session, starts the program, and settles; or {!create}
       makes it, the program starts with {!config}, and {!attach} gives the
       session its steps.
-    + {!input}, {!resize}, {!settle}, {!advance} and {!set_time} drive it, and
-      the readers of {!Terminal} observe it.
+    + {!input}, {!resize}, {!settle} and {!advance} drive it, {!set_time} moves
+      its clock, and the readers of {!Terminal} observe it.
     + The run ends when the program returns, on its own or at the end of the
       input, which {!run} gives once its body returns. The terminal then shows
       what the run left on it.

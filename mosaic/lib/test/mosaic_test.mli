@@ -15,7 +15,7 @@
     what it did.
 
     A worker ({!Mosaic.Sub.val-worker}) runs as long as the program declares it,
-    so it runs on an executor of its own, with a [quiesce] that returns once
+    so it must run on an executor of its own, with a [quiesce] that returns once
     every piece of work waits. Under Eio's mock scheduler ([eio.mock]), work
     runs on fibers, and a sleep of 1 ns returns only once every other fiber
     waits:
