@@ -269,9 +269,9 @@ val config :
     the terminals checked ignore a mode they do not know. The runtime resets
     them when it gives the terminal back.
 
-    The application draws everything its frames show, its diagnostics included
-    ({{!diagnostics}Diagnostics}), and sets the cursor's visibility
-    ({!set_cursor}).
+    The application draws everything its frames show, except the panel
+    [MATRIX_DEBUG] has the run draw ({{!diagnostics}Diagnostics}), and sets the
+    cursor's visibility ({!set_cursor}).
 
     Raises [Invalid_argument] if [fps] is not positive and finite. *)
 
@@ -298,14 +298,17 @@ val run :
     ({!Tty.terminfo}). [stop] ends the run from elsewhere ({!Stop}).
 
     The run takes the terminal, and gives it back, as
-    {{!lifecycle}Taking and giving back the terminal} says.
+    {{!lifecycle}Taking and giving back the terminal} says. It draws and dumps
+    frames itself as the environment variable [MATRIX_DEBUG] says
+    ({{!diagnostics}Diagnostics}).
 
     Raises what [f] raises, and otherwise the first exception raised while
-    giving the terminal back. Raises [Invalid_argument] if the terminal is the
-    process's controlling terminal and another run holds it, unless that run
-    gave it away for {!release}. Raises [Failure] on Windows, where no run
-    starts ({!Tty.Signal.hold}), and [Unix.Unix_error] if the run's wake pipe
-    cannot be made. *)
+    giving the terminal back. Raises [Invalid_argument] if [MATRIX_DEBUG] names
+    something other than a tool, or if the terminal is the process's controlling
+    terminal and another run holds it, unless that run gave it away for
+    {!release}. Raises [Failure] on Windows, where no run starts
+    ({!Tty.Signal.hold}), and [Unix.Unix_error] if the run's wake pipe cannot be
+    made. *)
 
 (** {1:loop The loop}
 
@@ -487,7 +490,9 @@ val draw : 'msg app -> ?primary_required_rows:int -> (Grid.t -> unit) -> unit
     A frame drawn across a {!release} is not presented, and the next one is
     drawn whole.
 
-    Raises [Invalid_argument] if no {!Frame} is being drawn. *)
+    Raises [Invalid_argument] if no {!Frame} is being drawn, and what
+    {!dump_frame} raises when [MATRIX_DEBUG] names [frames]
+    ({{!diagnostics}Diagnostics}). *)
 
 val current_grid : 'msg app -> Grid.t
 (** [current_grid app] is the grid of the frame presented last, blank before the
@@ -792,10 +797,27 @@ val set_cursor_color : 'msg app -> r:float -> g:float -> b:float -> unit
 
 (** {1:diagnostics Diagnostics}
 
-    The application draws what a frame shows about the run, since it owns the
-    frame. {!Debug_overlay} draws the frames' timing and the collector's
-    statistics in a corner of a frame, and {!dump_frame} writes a frame to
-    files. An application that dumps every thirtieth frame counts them:
+    {!Debug_overlay} draws the frames' timing and the collector's statistics in
+    a corner of a frame, and {!dump_frame} writes a frame to files. An
+    application uses them in the frames it draws. A run on descriptors also uses
+    them itself when the environment variable [MATRIX_DEBUG], read as the run
+    begins, names them in a list separated by commas:
+    - [overlay] draws a {!Debug_overlay} over each frame, after the function
+      given to {!draw}, and times the frame from the start of {!draw} to the end
+      of its write.
+    - [frames] or [frames=DIR] dumps each frame drawn into the directory [DIR],
+      ["frames"] by default, with its hit grid ({!dump_frame}). The dump is
+      taken before the overlay is drawn, so it holds the application's frame
+      alone.
+
+    An empty [MATRIX_DEBUG] names no tool. The overlay's cells are part of the
+    frames the run presents and of their metrics. A run on a test's terminal,
+    such as a [Matrix_test] session's, reads no [MATRIX_DEBUG], so that its
+    frames depend only on the test. Any program shows the panel and keeps every
+    frame it draws, its code unchanged:
+    {v MATRIX_DEBUG=overlay,frames=/tmp/frames ./app.exe v}
+
+    An application that dumps every thirtieth frame counts them:
     {[
     let frames = ref 0 in
     let on_frame app view =

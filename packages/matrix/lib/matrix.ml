@@ -269,6 +269,30 @@ module Stop = struct
         t.wakes <- List.filter (fun (s, _) -> s <> serial) t.wakes)
 end
 
+(* The tools [MATRIX_DEBUG] names: a panel over each frame, which the run
+   times, and a dump of each frame drawn into a directory. *)
+type tools = { overlay : Debug_overlay.t option; frames : string option }
+
+let tools_of_string s =
+  let tool tools = function
+    | "" -> tools
+    | "overlay" -> { tools with overlay = Some (Debug_overlay.create ()) }
+    | "frames" -> { tools with frames = Some "frames" }
+    | item when String.starts_with ~prefix:"frames=" item ->
+        let dir = String.sub item 7 (String.length item - 7) in
+        { tools with frames = Some dir }
+    | item ->
+        invalid_arg
+          (Printf.sprintf "Matrix.run: MATRIX_DEBUG names no tool %S" item)
+  in
+  match
+    List.fold_left tool
+      { overlay = None; frames = None }
+      (String.split_on_char ',' s)
+  with
+  | { overlay = None; frames = None } -> None
+  | tools -> Some tools
+
 (* Configuration *)
 
 type config = {
@@ -283,6 +307,8 @@ type config = {
   min_tui_height : int;
   caps : Terminal.capabilities option;
   device : device option;
+  (* [MATRIX_DEBUG], which [run] reads for a run on descriptors. *)
+  debug : string option;
 }
 
 let config ?(mode = `Alt) ?(raw_mode = true) ?(mouse = `Sgr_any)
@@ -302,9 +328,11 @@ let config ?(mode = `Alt) ?(raw_mode = true) ?(mouse = `Sgr_any)
     min_tui_height;
     caps;
     device = None;
+    debug = None;
   }
 
 let on_device d config = { config with device = Some d }
+let default_config = config
 
 (* Queries sent together, which the terminal answers in order. A batch of
    capability queries, of the runtime's other queries or of the
@@ -435,6 +463,7 @@ type 'msg app = {
   mutable asked_outside : bool;
   mutable in_frame_step : bool;
   on_frame : unit -> unit;
+  tools : tools option;
   (* Whether [next] returned a step since it last waited. *)
   mutable stepped : bool;
   mutable drawing : bool;
@@ -1268,16 +1297,43 @@ let submit t =
 
 (* A frame drawn across a release is not presented: what the screen holds
    is unknown, and the next frame is drawn whole. *)
-let draw t ?primary_required_rows f =
-  check t;
-  if not t.drawing then invalid_arg "Matrix.draw: no frame is being drawn";
-  prepare ?primary_required_rows t;
-  f (Screen.next_grid t.screen);
+let present t =
   t.drawing <- false;
   if t.void then (
     t.void <- false;
     t.dirty <- true)
   else submit t
+
+(* The tools draw after the application, the dump first so that it holds
+   the application's frame alone. The application may have built the next
+   grid anew ([Screen.build]), so the panel draws on the one it left. *)
+let draw_with_tools t tools f =
+  let start = Tty.now () in
+  f (Screen.next_grid t.screen);
+  Option.iter
+    (fun dir -> Frame_dump.snapshot ~dir ~hits:true t.screen)
+    tools.frames;
+  Option.iter
+    (fun o ->
+      Debug_overlay.draw o
+        ~metrics:(Screen.last_metrics t.screen)
+        ~gc:(Gc.quick_stat ())
+        (Screen.next_grid t.screen))
+    tools.overlay;
+  present t;
+  Option.iter
+    (fun o -> Debug_overlay.record o ~start ~ns:(Tty.now () - start))
+    tools.overlay
+
+let draw t ?primary_required_rows f =
+  check t;
+  if not t.drawing then invalid_arg "Matrix.draw: no frame is being drawn";
+  prepare ?primary_required_rows t;
+  match t.tools with
+  | None ->
+      f (Screen.next_grid t.screen);
+      present t
+  | Some tools -> draw_with_tools t tools f
 
 (* Cursor *)
 
@@ -1955,6 +2011,7 @@ let make backend ?stop config =
     stepped = false;
     on_frame =
       (match config.device with Some d -> d.frame | None -> Fun.const ());
+    tools = Option.bind config.debug tools_of_string;
     drawing = false;
     void = false;
     last_frame = no_frame;
@@ -2133,6 +2190,13 @@ let run ?input ?output ?env ?stop ?config f =
     | Some { device = Some _; _ }, _, _, _ ->
         invalid_arg "Matrix.run: a run on a device takes no descriptors"
     | _ -> Backend.unix ?input ?output ?env ()
+  in
+  let config =
+    match config with
+    | Some { device = Some _; _ } -> config
+    | _ ->
+        let c = Option.value config ~default:(default_config ()) in
+        Some { c with debug = Sys.getenv_opt "MATRIX_DEBUG" }
   in
   run_on backend ?stop ?config f
 

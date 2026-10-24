@@ -3216,6 +3216,78 @@ let test_unix_description () =
       is_true ~msg:"a TERM whose description has Sync" (sync "matrix-test");
       is_false ~msg:"a TERM with no description" (sync "matrix-none"))
 
+(* [MATRIX_DEBUG] set to [value] while [f] runs. *)
+let with_debug value f =
+  Unix.putenv "MATRIX_DEBUG" value;
+  Fun.protect ~finally:(fun () -> Unix.putenv "MATRIX_DEBUG" "") f
+
+let contains s sub =
+  let n = String.length sub in
+  Seq.exists
+    (fun i -> String.sub s i n = sub)
+    (Seq.init (max 0 (String.length s - n + 1)) Fun.id)
+
+(* A run on descriptors draws the panel over each frame the application
+   draws, and dumps the frame before, without it. *)
+let test_unix_debug_tools () =
+  let input, writer = Unix.pipe ~cloexec:true () in
+  let output = Unix.openfile "/dev/null" [ O_WRONLY; O_CLOEXEC ] 0 in
+  let dir = Filename.temp_dir "matrix_debug" "" in
+  Fun.protect ~finally:(fun () ->
+      List.iter Unix.close [ input; writer; output ])
+  @@ fun () ->
+  with_debug ("overlay,frames=" ^ dir) @@ fun () ->
+  let shown =
+    Matrix.run ~input ~output ~config:(quiet ()) (fun app ->
+        let rec loop () =
+          match Matrix.next app with
+          | Frame ->
+              Matrix.draw app (fun grid -> draw_rows grid [ "hello" ]);
+              Matrix.Grid.to_text (Matrix.current_grid app)
+          | _ -> loop ()
+        in
+        loop ())
+  in
+  is_true ~msg:"the frame" (contains shown "hello");
+  is_true ~msg:"the panel over it" (contains shown "fps");
+  let files = Sys.readdir dir in
+  Array.sort compare files;
+  equal ~msg:"one dump" (list string)
+    [ ".ansi"; ".hits.txt"; ".txt" ]
+    (List.map
+       (fun file -> String.sub file 12 (String.length file - 12))
+       (Array.to_list files));
+  let text =
+    In_channel.with_open_bin
+      (Filename.concat dir files.(2))
+      In_channel.input_all
+  in
+  is_true ~msg:"the dump holds the frame" (contains text "hello");
+  is_false ~msg:"without the panel" (contains text "fps")
+
+(* A [MATRIX_DEBUG] that names something other than a tool fails the run
+   before it takes the terminal. *)
+let test_unix_debug_unknown () =
+  let devnull = Unix.openfile "/dev/null" [ O_RDWR; O_CLOEXEC ] 0 in
+  Fun.protect ~finally:(fun () -> Unix.close devnull) @@ fun () ->
+  with_debug "overlay,frame" @@ fun () ->
+  raises_match ~msg:"the item named"
+    (function
+      | Invalid_argument m ->
+          m = "Matrix.run: MATRIX_DEBUG names no tool \"frame\""
+      | _ -> false)
+    (fun () ->
+      Matrix.run ~input:devnull ~output:devnull ~config:(quiet ()) ignore)
+
+(* A run on a test's terminal reads no [MATRIX_DEBUG]. *)
+let test_device_debug_ignored () =
+  with_debug "overlay" @@ fun () ->
+  let f = fake () in
+  run_device f (fun app ->
+      settle f app;
+      is_false ~msg:"no panel"
+        (contains (Matrix.Grid.to_text (Matrix.current_grid app)) "fps"))
+
 (* What Windows lacks: the process signals are POSIX's, and Backend.unix
    waits on Tty.Signal's wake pipe, which Windows has not (matrix.ml). *)
 let posix_signals f () =
@@ -3472,5 +3544,10 @@ let () =
           test "reset with no terminal input"
             (unix_backend test_unix_reset_without_terminal_input);
           test "the description of TERM" (unix_backend test_unix_description);
+          test "MATRIX_DEBUG's tools" (unix_backend test_unix_debug_tools);
+          test "MATRIX_DEBUG naming no tool"
+            (unix_backend test_unix_debug_unknown);
+          test "a test's terminal reads no MATRIX_DEBUG"
+            test_device_debug_ignored;
         ];
     ]

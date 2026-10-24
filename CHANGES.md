@@ -93,6 +93,7 @@ it.
 - **Line feed/new line mode in the VTE.** `CSI 20 h` (LNM) makes LF, VT and FF also return to the first column, reported as `Vte.modes`'s `new_line`
 - **Primary-mode static output.** `Matrix.static_replace` swaps all static content in one frame, and `Matrix.static_write ?preserve_live_region` keeps the live region's height whatever is above it
 - **Terminal commands.** `Terminal.copy_to_clipboard` (OSC 52), `Terminal.notify ~title ~body`, `Terminal.bell` and `Terminal.query_color_scheme`, with tmux passthrough. A notification is written once, in the form `Caps.t.notification` gives: iTerm2's OSC 9, which iTerm2, kitty, WezTerm and foot read, or OSC 777 for rxvt-unicode
+- **Debugging any program with `MATRIX_DEBUG`.** A run on descriptors reads the environment variable `MATRIX_DEBUG` as it begins: `overlay` draws a `Matrix.Debug_overlay` over each frame and times the frame itself, and `frames` or `frames=DIR` dumps each frame drawn, with its hit grid (`Matrix.dump_frame`). A Mosaic program gets both with no code. A run on a test's terminal reads none, and an item that names no tool raises `Invalid_argument` from `run`
 - `Terminal.enable_meta_sends_escape`, `enable_resize_reports` and `enable_color_scheme_reports`; `Terminal.write_cursor_style` and `write_cursor_color` write the cursor's appearance in one batch
 - `Matrix.frame_dt app` is the time in seconds between the latest two frames, `0.` until the second
 - `Matrix.set_scroll_hint` turns scrolling in alternate-screen mode into a hardware scroll plus the rows at the edge
@@ -202,8 +203,8 @@ compiling are listed under Changed above.
 - `Matrix.close` and `Matrix.stop` → return from the function given to `run`, or `Matrix.Stop.request` on the `Matrix.Stop.t` given as `run ~stop`. `Matrix.running` → a step is `Stopped` once the run is over
 - `Matrix.start`, `pause`, `request_live` and `drop_live` → call `Matrix.request_redraw` from each `Frame` while animating, and stop calling it to pause
 - `Matrix.suspend` and `Matrix.resume` → `Matrix.release app f`; `Matrix.stop_job` suspends the job as Ctrl+Z does
-- `?debug_overlay`, `?debug_overlay_corner`, `?debug_overlay_capacity`, `Matrix.set_debug_overlay`, `toggle_debug_overlay` and the type `debug_overlay_corner` → `Matrix.Debug_overlay.create ?corner ?capacity ()`, with `record` and `draw` inside `Matrix.draw`; the application keeps its own on and off
-- `?frame_dump_every`, `?frame_dump_dir`, `?frame_dump_pattern`, `?frame_dump_hits` and `Matrix.configure_frame_dump` → the application counts frames and calls `Matrix.dump_frame ?hits ?dir ?pattern app` inside `Matrix.draw`
+- `?debug_overlay`, `?debug_overlay_corner`, `?debug_overlay_capacity`, `Matrix.set_debug_overlay`, `toggle_debug_overlay` and the type `debug_overlay_corner` → `MATRIX_DEBUG=overlay` in the environment, or `Matrix.Debug_overlay.create ?corner ?capacity ()`, with `record` and `draw` inside `Matrix.draw`, where the application keeps its own on and off
+- `?frame_dump_every`, `?frame_dump_dir`, `?frame_dump_pattern`, `?frame_dump_hits` and `Matrix.configure_frame_dump` → `MATRIX_DEBUG=frames=DIR` in the environment for every frame, or the application counts frames and calls `Matrix.dump_frame ?hits ?dir ?pattern app` inside `Matrix.draw`
 - `Matrix.static_write app ~rows s` → `Matrix.static_write ?preserve_live_region ?rows app grid`, with the rows drawn into a `Grid.t`
 - `Matrix.set_cursor_color app ~r ~g ~b ~a` → `Matrix.set_cursor_color app ~r ~g ~b`
 - `kitty_keyboard`'s `` `Disabled `` → `` `Off ``; `` `Enabled flags `` → `` `Auto ``, which pushes the protocol once the terminal answers
