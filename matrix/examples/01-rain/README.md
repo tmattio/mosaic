@@ -18,4 +18,5 @@ dune exec ./matrix/examples/01-rain/main.exe
 
 - Immediate-mode drawing with `Grid.draw_text`.
 - Palette blends and memoized `Ansi.Style` values.
-- Debug overlay enabled via the built-in runtime switch for quick telemetry.
+- `Matrix.Debug_overlay` over each frame, with frame times and the
+  collector's statistics.
