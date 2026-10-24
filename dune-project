@@ -59,7 +59,6 @@
    (>= 5.1))
   dune
   (windtrap :with-test)
-  (ppx_windtrap :with-test)
   (thumper :with-test))
  (tags
   (css layout flexbox grid "css-grid" taffy "layout-engine")))

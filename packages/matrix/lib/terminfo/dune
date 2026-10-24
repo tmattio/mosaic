@@ -1,7 +1,3 @@
 (library
- (instrumentation
-  (backend ppx_windtrap.coverage))
- (instrumentation
-  (backend ppx_windtrap.mutate))
  (name matrix_terminfo)
  (public_name matrix.terminfo))

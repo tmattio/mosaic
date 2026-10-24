@@ -1,8 +1,4 @@
 (library
- (instrumentation
-  (backend ppx_windtrap.coverage))
- (instrumentation
-  (backend ppx_windtrap.mutate))
  (name ansi)
  (public_name matrix.ansi)
  (private_modules segment sgr_attrs))
