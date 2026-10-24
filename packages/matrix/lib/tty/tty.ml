@@ -14,10 +14,18 @@ external set_iexten : Unix.file_descr -> bool -> unit = "matrix_tty_set_iexten"
 
 type settings = { termios : Unix.terminal_io; iexten : bool }
 
+(* A signal can interrupt these calls, [TCSADRAIN]'s wait for the output to
+   be sent above all (macOS does), with EINTR; the call is made again. *)
+let rec uninterrupted f x =
+  try f x with Unix.Unix_error (Unix.EINTR, _, _) -> uninterrupted f x
+
+let tcgetattr fd = uninterrupted Unix.tcgetattr fd
+let tcsetattr fd mode t = uninterrupted (Unix.tcsetattr fd mode) t
+
 let raw fd =
-  let termios = Unix.tcgetattr fd in
+  let termios = tcgetattr fd in
   let iexten = get_iexten fd in
-  Unix.tcsetattr fd Unix.TCSANOW
+  tcsetattr fd Unix.TCSANOW
     {
       termios with
       c_echo = false;
@@ -33,7 +41,7 @@ let raw fd =
   { termios; iexten }
 
 let restore fd s =
-  Unix.tcsetattr fd Unix.TCSADRAIN s.termios;
+  tcsetattr fd Unix.TCSADRAIN s.termios;
   set_iexten fd s.iexten
 
 let flush_input fd =

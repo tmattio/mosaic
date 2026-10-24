@@ -122,7 +122,10 @@ CAMLprim value matrix_tty_get_iexten(value fd) {
   CAMLreturn(Val_false);
 #else
   struct termios tio;
-  if (tcgetattr(Int_val(fd), &tio) != 0) caml_uerror("tcgetattr", Nothing);
+  int r;
+  do r = tcgetattr(Int_val(fd), &tio);
+  while (r != 0 && errno == EINTR);
+  if (r != 0) caml_uerror("tcgetattr", Nothing);
   CAMLreturn(Val_bool((tio.c_lflag & IEXTEN) != 0));
 #endif
 }
@@ -135,13 +138,17 @@ CAMLprim value matrix_tty_set_iexten(value fd, value on) {
   CAMLreturn(Val_unit);
 #else
   struct termios tio;
-  if (tcgetattr(Int_val(fd), &tio) != 0) caml_uerror("tcgetattr", Nothing);
+  int r;
+  do r = tcgetattr(Int_val(fd), &tio);
+  while (r != 0 && errno == EINTR);
+  if (r != 0) caml_uerror("tcgetattr", Nothing);
   if (Bool_val(on))
     tio.c_lflag |= IEXTEN;
   else
     tio.c_lflag &= ~(tcflag_t)IEXTEN;
-  if (tcsetattr(Int_val(fd), TCSANOW, &tio) != 0)
-    caml_uerror("tcsetattr", Nothing);
+  do r = tcsetattr(Int_val(fd), TCSANOW, &tio);
+  while (r != 0 && errno == EINTR);
+  if (r != 0) caml_uerror("tcsetattr", Nothing);
   CAMLreturn(Val_unit);
 #endif
 }
