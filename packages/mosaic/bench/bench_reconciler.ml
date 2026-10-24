@@ -6,45 +6,59 @@ open Mosaic_ui
    vnode list inside the measured region — a TEA view rebuilds its vnodes
    every frame, so that allocation is part of the reconcile cost. *)
 
-let rows = 500
 let viewport_width = 80
-let keys = Array.init rows (fun i -> Printf.sprintf "k%d" i)
 
-let labels =
-  Array.init rows (fun i ->
-      Thumper.black_box
-        (Printf.sprintf "row %d: a representative transcript line" i))
+(* A list of [rows] keyed rows. [offset] rotates it: offset 0 is the
+   identity order, any other offset moves the head block to the tail,
+   forcing keyed matching and child moves without creating or destroying
+   fibers. *)
+type keyed = { rows : int; keys : string array; labels : string array }
 
-(* [offset] rotates the keyed list: offset 0 is the identity order, any other
-   offset moves the head block to the tail, forcing keyed matching and child
-   moves without creating or destroying fibers. *)
-let view ~offset =
+let keyed rows =
+  {
+    rows;
+    keys = Array.init rows (fun i -> Printf.sprintf "k%d" i);
+    labels =
+      Array.init rows (fun i ->
+          Thumper.black_box
+            (Printf.sprintf "row %d: a representative transcript line" i));
+  }
+
+let view l ~offset =
   Vnode.box
-    (List.init rows (fun i ->
-         let j = (i + offset) mod rows in
-         Vnode.text ~key:keys.(j) labels.(j)))
+    (List.init l.rows (fun i ->
+         let j = (i + offset) mod l.rows in
+         Vnode.text ~key:l.keys.(j) l.labels.(j)))
 
-type state = { reconciler : Mosaic.Reconciler.t; mutable offset : int }
+type state = {
+  l : keyed;
+  reconciler : Mosaic.Reconciler.t;
+  mutable offset : int;
+}
 
-let make_state () =
+let make_state rows () =
+  let l = keyed rows in
   let renderer = Renderer.create () in
   let reconciler =
     Mosaic.Reconciler.create ~container:(Renderer.root renderer)
   in
-  Mosaic.Reconciler.render reconciler ~viewport_width (view ~offset:0);
-  { reconciler; offset = 0 }
+  Mosaic.Reconciler.render reconciler ~viewport_width (view l ~offset:0);
+  { l; reconciler; offset = 0 }
 
-let steady_keyed_list =
-  Thumper.bench_with_setup ~setup:make_state "steady/keyed-list-500"
-    (fun state ->
-      Mosaic.Reconciler.render state.reconciler ~viewport_width (view ~offset:0))
+(* The 500 and 5,000 pairs show how the cost scales: linear, not
+   quadratic. *)
+let steady_keyed_list rows =
+  Thumper.bench_with_setup ~setup:(make_state rows)
+    (Printf.sprintf "steady/keyed-list-%d" rows) (fun state ->
+      Mosaic.Reconciler.render state.reconciler ~viewport_width
+        (view state.l ~offset:0))
 
-let reorder_keyed_list =
-  Thumper.bench_with_setup ~setup:make_state "reorder/keyed-list-500"
-    (fun state ->
+let reorder_keyed_list rows =
+  Thumper.bench_with_setup ~setup:(make_state rows)
+    (Printf.sprintf "reorder/keyed-list-%d" rows) (fun state ->
       state.offset <- (state.offset + 1) mod rows;
       Mosaic.Reconciler.render state.reconciler ~viewport_width
-        (view ~offset:state.offset))
+        (view state.l ~offset:state.offset))
 
 (* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
    whose counts are the same on any x86_64 Linux under the locked compiler in
@@ -76,4 +90,12 @@ let () =
            Thumper.Budget.relative ~metric:Thumper.Metric.minor_collections
              ~max_regression:0.5 ();
          ]))
-    [ Thumper.group "reconcile" [ steady_keyed_list; reorder_keyed_list ] ]
+    [
+      Thumper.group "reconcile"
+        [
+          steady_keyed_list 500;
+          reorder_keyed_list 500;
+          steady_keyed_list 5000;
+          reorder_keyed_list 5000;
+        ];
+    ]
