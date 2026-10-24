@@ -210,21 +210,46 @@ let job_pid s =
   let i = Option.get (String.index_from_opt out 0 'J') in
   Scanf.sscanf (String.sub out i (String.length out - i)) "JOB %d" Fun.id
 
-(* The state and the CPU ticks of a process, from /proc. *)
+(* What a command prints, with [stdin] as its input. *)
+let output_of ?(stdin = Unix.stdin) prog args =
+  let r, w = Unix.pipe ~cloexec:true () in
+  let pid =
+    Unix.create_process prog (Array.of_list (prog :: args)) stdin w Unix.stderr
+  in
+  Unix.close w;
+  let ic = Unix.in_channel_of_descr r in
+  let out = In_channel.input_all ic in
+  close_in ic;
+  ignore (Unix.waitpid [] pid : int * Unix.process_status);
+  out
+
+(* The state of a process, ["T"] when it is stopped, and the CPU time it
+   has used: from /proc where there is one (Linux), in clock ticks, and
+   from ps(1) elsewhere, such as macOS. *)
 let stat pid =
-  let line =
-    In_channel.with_open_text
-      (Printf.sprintf "/proc/%d/stat" pid)
-      In_channel.input_all
-  in
-  let after =
-    String.sub line
-      (String.rindex line ')' + 2)
-      (String.length line - String.rindex line ')' - 2)
-  in
-  let fields = String.split_on_char ' ' after in
-  ( List.nth fields 0,
-    int_of_string (List.nth fields 11) + int_of_string (List.nth fields 12) )
+  let proc = Printf.sprintf "/proc/%d/stat" pid in
+  if Sys.file_exists proc then
+    let line = In_channel.with_open_text proc In_channel.input_all in
+    let after =
+      String.sub line
+        (String.rindex line ')' + 2)
+        (String.length line - String.rindex line ')' - 2)
+    in
+    let fields = String.split_on_char ' ' after in
+    ( List.nth fields 0,
+      string_of_int
+        (int_of_string (List.nth fields 11) + int_of_string (List.nth fields 12))
+    )
+  else
+    match
+      String.split_on_char ' '
+        (String.trim
+           (output_of "ps"
+              [ "-o"; "state="; "-o"; "time="; "-p"; string_of_int pid ]))
+      |> List.filter (( <> ) "")
+    with
+    | [ state; time ] -> (String.sub state 0 1, time)
+    | _ -> failf "ps: no process %d" pid
 
 (* A stop in a job: while stopped the terminal is cooked and on the primary
    screen; continued in the foreground, the modes are set again and the
@@ -259,10 +284,10 @@ let test_background_continue_stops_again () =
   let from = mark s in
   send s "b\n";
   await ~from s "JOB-STOPPED TTOU";
-  let state, ticks = stat pid in
+  let state, cpu = stat pid in
   equal ~msg:"stopped again" string "T" state;
   Unix.sleepf 0.3;
-  equal ~msg:"no CPU while stopped" int ticks (snd (stat pid));
+  equal ~msg:"no CPU while stopped" string cpu (snd (stat pid));
   let from = mark s in
   send s "f\n";
   await ~from s "READY 2";
@@ -278,11 +303,7 @@ let test_background_continue_stops_again () =
 let served_terminal ?(mode = "served") f =
   let master, slave = Pty.open_pty () in
   Pty.set_nonblock master;
-  let path =
-    Unix.readlink
-      (Printf.sprintf "/proc/self/fd/%d"
-         (Obj.magic (Pty.file_descr slave) : int))
-  in
+  let path = String.trim (output_of ~stdin:(Pty.file_descr slave) "tty" []) in
   let session =
     let pty =
       Pty.spawn ~prog:child ~args:[ mode; path ]
@@ -523,13 +544,14 @@ let test_sigwinch () =
    larger together than what the terminal buffers wait until it reads, and
    none is lost or cut. *)
 let test_back_pressure () =
-  let rows = 60 and cols = 200 in
+  let rows = 100 and cols = 300 in
   with_session ~args:[ "fill" ] ~rows ~cols @@ fun s ->
   await s "FILLED .";
   let from = mark s in
-  (* Each frame rewrites every cell, 12,000 bytes and more: two of them
-     outgrow the terminal's buffer (about 20 KB on Linux), which nothing
-     reads meanwhile, and the keys typed meanwhile wait for the run. *)
+  (* Each frame rewrites every cell, 30,000 bytes and more: one outgrows
+     the terminal's buffer (about 20 KB on Linux, less on macOS), which
+     nothing reads meanwhile, and the keys typed meanwhile wait for the run.
+     How many frames the run draws depends on when its writes are held. *)
   String.iter
     (fun c ->
       send s (String.make 1 c);
@@ -548,8 +570,10 @@ let test_back_pressure () =
   while (not (complete ())) && Unix.gettimeofday () < deadline do
     try await ~timeout:0.05 s " " with _ -> ()
   done;
-  is_true ~msg:"more than the terminal buffers"
-    (Buffer.length s.output - from > 24_000);
+  let written = Buffer.length s.output - from in
+  is_true
+    ~msg:(Printf.sprintf "%d bytes, more than the terminal buffers" written)
+    (written > 30_000);
   let vte = shown ~rows ~cols s in
   equal ~msg:"the last frame, whole" string "FILLED e" (Vte.text vte 0);
   for y = 1 to rows - 1 do
