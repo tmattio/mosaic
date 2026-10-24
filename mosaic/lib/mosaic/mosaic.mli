@@ -1,21 +1,56 @@
-(** TEA (The Elm Architecture) runtime for terminal UIs.
+(** Terminal applications in the Elm architecture.
 
-    Mosaic implements the Model-View-Update loop: the application maintains an
-    immutable {e model}, produces a {!type-t} describing the UI from that model,
-    and reacts to events by running an {e update} function that returns a new
-    model together with optional {!Cmd} side-effects. Subscriptions ({!Sub}) let
-    the application express ongoing event interests such as timers, key presses,
-    and terminal resize events.
+    A Mosaic {e program} runs an application ({!type-app}) in a terminal. The
+    application's state is its {e model}, a value it never changes in place.
+    [init] gives the first model, [view] describes the screen for a model
+    ({!type-t}), and [update] takes a {e message} and the model, and gives the
+    next model with a {e command} ({!Cmd}) for the effects it asks for. Messages
+    come from the elements of the view, such as a button's [on_click], from the
+    {e subscriptions} the model declares ({!Sub}), such as keys and timers, and
+    from work done off the loop ({!Cmd.val-perform}, {!Sub.val-worker}).
 
-    - {{!geometry}Geometry types} and {{!dim_helpers}dimension helpers}
-    - {{!layout_enums}Layout enums} and the {{!grid}Grid module}
-    - {{!widget_types}Widget types}
-    - {{!elements}UI elements}
-    - {{!views}Views}, {{!commands}Commands}, and
-      {{!subscriptions}Subscriptions}
-    - {{!application}Application} and {{!section-running}Running}
+    A program runs on a run of {!Matrix} ({!Matrix.run}), whose steps it takes
+    on one thread, its {e loop}. The loop applies each message with [update],
+    calls [view] when the model changed, and draws a frame of the view when it
+    changed. [init], [update], [view], [subscriptions] and the commands run on
+    the loop, one message at a time. Work done elsewhere gives the loop its
+    messages, which it applies in a later step.
 
-    The entry point is {!val-run}. *)
+    The life cycle of a program:
+    + {!val-run} calls [init], then takes the terminal.
+    + It starts [init]'s commands, calls [subscriptions] with the first model,
+      and draws the first frame from [view].
+    + Each message goes through [update]. The commands it returns start, and
+      [subscriptions] is called again. [view] is called before the next event or
+      frame when the model changed.
+    + The program ends at {!Cmd.val-quit}, at a Ctrl+C that no handler
+      prevented, at the end of the input, at a stop request, or at a signal that
+      ends the process, and {!val-run} gives the terminal back.
+
+    This program counts the presses of [+], and quits at [q]:
+    {[
+    open Mosaic
+
+    type msg = Increment | Quit
+
+    let () =
+      run
+        {
+          init = (fun () -> (0, Cmd.none));
+          update =
+            (fun msg n ->
+              match msg with
+              | Increment -> (n + 1, Cmd.none)
+              | Quit -> (n, Cmd.quit));
+          view = (fun n -> text (Printf.sprintf "%d presses" n));
+          subscriptions =
+            (fun _ ->
+              Sub.on_keys
+                [ (Shortcut.char '+', Increment); (Shortcut.char 'q', Quit) ]);
+        }
+    ]}
+
+    The elements of the view are in {{!elements}UI elements}. *)
 
 open Mosaic_ui
 
@@ -597,7 +632,7 @@ module Scroll_bar : sig
     unit ->
     style
   (** [style ()] is the default scroll bar appearance. Optional fields have the
-      same defaults as {!Mosaic_ui.Scroll_bar.style}. *)
+      same defaults as {!Mosaic_ui.Scroll_bar.val-style}. *)
 end
 
 (** Structured content for {!val-rich_text}. *)
@@ -791,96 +826,79 @@ val map : ('a -> 'b) -> 'a t -> 'b t
 
 type 'msg mailbox = {
   dispatch : 'msg -> unit;
-      (** [dispatch msg] queues [msg] for the loop and returns: it never blocks.
+      (** [dispatch msg] queues [msg] for the loop and returns. It never blocks.
           The queue has no bound, so work that dispatches faster than the loop
           applies its messages grows memory, and collecting it slows the loop.
       *)
   send : 'msg -> unit;
-      (** [send msg] queues [msg] as [dispatch] does and returns once the loop
-          has taken it and [update] applied it, or the run has ended: work that
-          sends keeps pace with the loop. Work that produces values faster than
-          they are shown, such as progress, keeps the latest and sends it when
-          the previous [send] returns.
+      (** [send msg] queues [msg] as [dispatch] does, and returns once the loop
+          has taken it and [update] has applied it, or the run has ended, so
+          work that sends keeps pace with the loop. Work that produces values
+          faster than they are shown, such as progress, keeps the latest and
+          sends it when the previous [send] returns.
 
-          [send] waits for the loop, so it deadlocks the loop's thread and
-          anything the loop waits for: it raises [Invalid_argument] on the
-          loop's thread, and must not be called while holding a lock that
-          [update], [view] or a command takes, or from a fiber or a coroutine
-          that shares the loop's thread. *)
+          [send] waits for the loop, so on the loop's thread it would wait
+          forever, and raises [Invalid_argument] there. It must not be called
+          while holding a lock that [update], [view] or a command takes, or from
+          a fiber or a coroutine that shares the loop's thread, which would wait
+          forever too. *)
 }
-(** The type for the way a worker ({!Sub.val-worker}) gives the program
-    messages, from any thread, any number of times. The work of
-    {!Cmd.val-perform} is given [dispatch] alone. Each piece of work's messages
-    come in the order it gave them; the loop applies each with [update] when it
-    takes it, a step of a turn as an event is. A worker's give nothing once its
-    stop is requested, and a message it gave before and the loop has not taken
-    is dropped: no message of a worker reaches [update] after the update that
+(** The type for the way work done off the loop gives the program messages, from
+    any thread, any number of times. A worker ({!Sub.val-worker}) has a mailbox,
+    and the work of {!Cmd.val-perform} has its [dispatch] alone. The messages of
+    one piece of work come in the order it gave them, and the loop applies each
+    with [update] in a later step, as a message posted to its run
+    ({!Matrix.post}). Once a worker's stop is requested, its [dispatch] and
+    [send] give nothing, and the loop drops what the worker gave before and has
+    not taken, so no message of a worker reaches [update] after the update that
     removed it. *)
 
 (** {1:commands Commands} *)
 
-(** Side-effects issued by the application.
+(** Commands, the effects the application asks for.
 
-    Commands are values returned alongside a new model from {!app.init} and
-    {!app.update}. The runtime executes them after each update cycle. Compose
-    multiple commands with {!Cmd.val-batch}. *)
+    A {e command} is returned beside a model by [init] and [update]. It starts
+    on the loop after the update that returned it, before the next message,
+    event or frame, or after [init] once the terminal is taken. A command that
+    acts on the terminal (a title, the clipboard, static output, a program given
+    the terminal) takes effect as it starts. The work of {!Cmd.val-perform}
+    starts then, off the loop, and goes on after. *)
 module Cmd : sig
-  (** The type for commands. *)
+  (** The type for commands. Each constructor is the command of the function of
+      the same name below. *)
   type 'msg t =
-    | None  (** No command. Equivalent to [batch []]. *)
+    | None
     | Batch of 'msg t list
-        (** Start the commands in list order. See {!val-batch}. *)
     | Perform of (('msg -> unit) -> unit)
-        (** Run a function off the loop. See {!val-perform}. *)
     | Exec of (unit -> 'msg)
-        (** Give the terminal to a function and dispatch its result. See
-            {!val-exec}. *)
-    | Suspend  (** Stop the job. See {!val-suspend}. *)
-    | Quit  (** End the run. See {!val-quit}. *)
+    | Suspend
+    | Quit
     | Set_title of string
-        (** Set the terminal window title to the given string. *)
     | Copy_to_clipboard of string
-        (** Copy text to the terminal clipboard when supported. *)
     | Copy_selection
-        (** Copy the renderer's current text selection to the clipboard via OSC
-            52. No-op when there is no active selection. *)
     | Query_color_scheme
-        (** Ask the terminal for its light/dark colour scheme by emitting
-            [CSI ? 996 n]. The reply, when supported, arrives through
-            {!Sub.on_color_scheme}. *)
-    | Bell  (** Ring the terminal bell (BEL), a best-effort attention cue. *)
+    | Bell
     | Notify of { title : string; body : string }
-        (** Post a desktop notification, in the one form the terminal shows
-            ({!Matrix.Terminal.Caps.t.notification}). Wrapped for tmux
-            passthrough when inside tmux. *)
-    | Clear_selection  (** Clear the active text selection, if any. *)
+    | Clear_selection
     | Static_commit of 'msg Vnode.t
-        (** Render a vnode snapshot and write it to the static area with ANSI
-            styling preserved. The row count is computed automatically from the
-            rendered grid. *)
-    | Static_clear  (** Clear all previously written static content. *)
+    | Static_clear
     | Abort_paste
-        (** End the bracketed paste in progress, if any, and drop it; the bytes
-            after it are input again. See {!val-abort_paste}. *)
 
   val none : 'msg t
-  (** [none] is the empty command. Produces no side-effects. *)
+  (** [none] is the command that does nothing. *)
 
   val batch : 'msg t list -> 'msg t
-  (** [batch cmds] starts the commands of [cmds] in list order, depth first.
-
-      A command starts after the update that returned it, before the next
-      message, event or frame. The commands that act on the terminal (a title,
-      the clipboard, static output, a child given the terminal) therefore take
-      effect in list order: they write to one stream, in order. Work done off
-      the loop ({!val-perform}) starts in that order too, but its messages
-      arrive in the order it finishes, which nothing promises. *)
+  (** [batch cmds] starts the commands of [cmds] in list order, depth first. The
+      commands that act on the terminal take effect in that order, since they
+      write to one stream. The work of {!val-perform} starts in that order too,
+      and its messages arrive in the order it finishes, which nothing promises.
+  *)
 
   val perform : (('msg -> unit) -> unit) -> 'msg t
   (** [perform f] runs [f dispatch] off the loop, by {!val-run}'s
       [process_perform] (by default a thread of a helper domain), so that long
       work never holds the loop. [f] gives the program messages with [dispatch],
-      which is a mailbox's [dispatch] ({!type-mailbox}): it never blocks.
+      which is a mailbox's [dispatch] ({!type-mailbox}) and never blocks.
       [dispatch] stays valid after [f] returns, until the run ends, so [f] may
       hand it to a thread or a callback the program did not start:
       {[
@@ -890,20 +908,20 @@ module Cmd : sig
 
       An exception [f] raises ends the run: {!val-run} gives the terminal back
       and raises it, with the backtrace of where [f] raised it (when backtraces
-      are recorded, {!Printexc.record_backtrace}). After the run, [dispatch]
-      does nothing, and an exception from [f] has no run left to end: it is
-      dropped. [f] cannot be stopped, and cannot wait for the loop to apply its
-      messages: work the program may stop wanting, or that keeps pace with the
-      loop with [send], is a {!Sub.val-worker}. *)
+      are recorded, [Printexc.record_backtrace]). After the run, [dispatch] does
+      nothing, and an exception from [f] has no run left to end, and is dropped.
+      [f] cannot be stopped, and cannot wait for the loop to apply its messages:
+      work the program may stop wanting, or that keeps pace with the loop with
+      [send], is a {!Sub.val-worker}. *)
 
   val exec : (unit -> 'msg) -> 'msg t
   (** [exec f] gives the terminal to [f] and dispatches [f ()]'s result once the
       terminal is taken again ({!Matrix.release}): [f] can run another program
       in the terminal, an editor or a pager, as a shell runs a command. The
-      program waits for [f] as POSIX [system()]'s caller does: nothing is drawn
-      or read, and timers, workers' messages and other commands wait. [f] finds
-      the terminal as a shell leaves it to a command: cooked, on the primary
-      screen, with the cursor shown and the keys typed for it, and the
+      program waits for [f] as POSIX [system()]'s caller does, so nothing is
+      drawn or read, and timers, workers' messages and other commands wait. [f]
+      finds the terminal as a shell leaves it to a command: cooked, on the
+      primary screen, with the cursor shown and the keys typed for it, and the
       terminal's suspend character stopping its program. The next frame is drawn
       whole.
 
@@ -911,59 +929,69 @@ module Cmd : sig
 
   val suspend : 'msg t
   (** [suspend] stops the program's job as the terminal's suspend character does
-      in a shell ({!Matrix.stop_job}): the terminal is given back, the job
+      in a shell ({!Matrix.stop_job}). The terminal is given back, the job
       stops, and when the shell continues it the terminal is taken again and the
       next frame drawn whole. Raw mode turns the suspend character, Ctrl+Z, into
       a key, so a program that wants it to suspend binds it to this command.
-      Nothing happens when the job cannot be stopped (SIGTSTP was ignored when
-      the run began). *)
+      Nothing happens when SIGTSTP was ignored as the run began, or the terminal
+      is not the process's controlling terminal, since the job cannot be stopped
+      then. *)
 
   val quit : 'msg t
   (** [quit] ends the run once the commands of the update that returned it have
       started, so [batch [static_commit v; quit]] commits [v]. Nothing after
-      that update is applied: events read and not yet handled, typed for a
-      program that has ended, are dropped, and no frame is drawn. *)
+      that update is applied. The messages that come after it, from the same
+      event too, and the events read and not yet handled, typed for a program
+      that has ended, are dropped, and no frame is drawn after the step that
+      quit. *)
 
   val set_title : string -> 'msg t
-  (** [set_title s] sets the terminal window title to [s]. *)
+  (** [set_title s] sets the terminal window's title to [s]
+      ({!Matrix.Terminal.set_title}). [s] must hold no control character. *)
 
   val copy_to_clipboard : string -> 'msg t
-  (** [copy_to_clipboard s] copies [s] to the terminal clipboard when supported.
-  *)
+  (** [copy_to_clipboard s] asks the terminal to set the clipboard to [s] (OSC
+      52, {!Matrix.Terminal.copy_to_clipboard}). A terminal without OSC 52
+      leaves the clipboard as it is. *)
 
   val copy_selection : 'msg t
-  (** [copy_selection] copies the renderer's current text selection to the
-      clipboard via OSC 52. Does nothing when no selection is active. *)
+  (** [copy_selection] copies the text selected in the view to the clipboard, as
+      {!copy_to_clipboard} does. It does nothing when no text is selected. *)
 
   val query_color_scheme : 'msg t
-  (** [query_color_scheme] asks the terminal whether it is using a light or dark
-      colour scheme by emitting [CSI ? 996 n]. Terminals that support the query
-      reply, and the reply is delivered through {!Sub.on_color_scheme}. *)
+  (** [query_color_scheme] asks the terminal for its color scheme
+      ({!Matrix.Terminal.query_color_scheme}). A terminal that knows the query
+      answers, and the answer comes to {!Sub.val-on_color_scheme}. *)
 
   val bell : 'msg t
-  (** [bell] rings the terminal bell (BEL). *)
+  (** [bell] rings the terminal's bell (BEL). *)
 
   val notify : title:string -> body:string -> 'msg t
-  (** [notify ~title ~body] posts a desktop notification through the terminal.
-  *)
+  (** [notify ~title ~body] posts a desktop notification through the terminal
+      ({!Matrix.Terminal.notify}). [title] and [body] must hold no control
+      character, and [title] no [;]. *)
 
   val clear_selection : 'msg t
-  (** [clear_selection] clears the active text selection, if any. *)
+  (** [clear_selection] clears the text selected in the view, if any. *)
 
   val static_commit : 'msg Vnode.t -> 'msg t
-  (** [static_commit view] renders [view] offscreen at the current terminal
-      width and appends the styled result to static output. *)
+  (** [static_commit view] renders [view] at the width of the next frame
+      ({!Matrix.effective_size}), as tall as it needs, and writes its rows up to
+      the last that holds something to the transcript, with their styles
+      ({!Matrix.static_write}). In [`Alt] mode it does nothing. *)
 
   val static_clear : 'msg t
-  (** [static_clear] removes all previously emitted static content. *)
+  (** [static_clear] erases the transcript and the screen
+      ({!Matrix.static_clear}). The scrollback stays. In [`Alt] mode it does
+      nothing. *)
 
   val abort_paste : 'msg t
   (** [abort_paste] ends the bracketed paste in progress, if any, and drops what
-      it received ({!Matrix.abort_paste}): the bytes after it are input again. A
+      it received ({!Matrix.abort_paste}). The bytes after it are input again. A
       paste ends at its end marker, so one whose terminal stops before the
       marker takes every later byte as content, keys typed included, until the
-      program gives up on it, after 5 s of silence unless the application
-      decides when ({!Sub.on_paste_stalled}). *)
+      program gives up on it. The program gives up after 5 s of silence, unless
+      the application decides when ({!Sub.val-on_paste_stalled}). *)
 
   val map : ('a -> 'b) -> 'a t -> 'b t
   (** [map f cmd] is [cmd] with every dispatched message transformed by [f]. Use
@@ -972,12 +1000,18 @@ end
 
 (** {1:subscriptions Subscriptions} *)
 
-(** Ongoing event interests declared by the application.
+(** Subscriptions, the events and the work the application declares from its
+    model.
 
-    The {!app.subscriptions} function is called after every update and returns a
-    subscription value describing which events the application wants to receive.
-    Subscriptions are re-evaluated on each cycle, so they may depend on the
-    current model. Compose multiple subscriptions with {!Sub.val-batch}. *)
+    The program calls the application's [subscriptions] with the model after
+    [init]'s commands have started and after every update, and listens to and
+    runs what it returns. A subscription that has an {e id} ({!Sub.val-every},
+    {!Sub.val-after}, {!Sub.val-on_tick}, {!Sub.val-worker}) lives from the
+    update whose subscriptions first declare its id to the update whose
+    subscriptions no longer do, and the others act for as long as they are
+    declared. An id must be nonempty, and the run raises [Invalid_argument] when
+    two subscriptions declare the same id. Compose subscriptions with
+    {!Sub.val-batch}. *)
 module Sub : sig
   (** {1:phases Phases}
 
@@ -989,27 +1023,27 @@ module Sub : sig
       [Bubble] listeners. A key or a paste targets the focused element; a mouse
       event the element under the pointer. {!Event} says what stopping
       propagation and preventing the default do along the way. A behavior that
-      acts on an event consumes it: it prevents and stops it. The keys a
+      acts on an event consumes it, which prevents and stops it. The keys a
       widget's behavior acts on are part of the widget's interface, listed in
       its module (for example {!Mosaic_ui.Select}).
 
-      The application is one node: its listeners of a phase all see what reaches
-      the phase, in declaration order, whatever the others did with it. A
-      [Capture] listener sees every event before any element, and can keep it
+      The application is one node, so its listeners of a phase all see what
+      reaches the phase, in declaration order, whatever the others did with it.
+      A [Capture] listener sees every event before any element, and can keep it
       from them. A [Bubble] listener sees every event no element stopped,
       prevented or not, and reads {!Event.Key.default_prevented} to know whether
       something used it. A behavior that acts also stops the event, so a
-      [Bubble] listener never sees a key typed into a focused input: a shortcut
-      on [q] declared there does not fire while [q] is typed. A key the
-      application takes whatever is focused, such as Tab moving focus, belongs
-      in [Capture], with {!Event.Key.prevent_default} so the focused element
-      does not act on it too. One [Capture] listener cannot hide an event from
-      another; while a dialog owns the keyboard, stop declaring the listeners it
-      overrides.
+      [Bubble] listener never sees a key typed into a focused input, and a
+      shortcut on [q] declared there does not fire while [q] is typed into one.
+      A key the application takes whatever is focused, such as Tab moving focus,
+      belongs in [Capture], with {!Event.Key.prevent_default} so the focused
+      element does not act on it too. One [Capture] listener cannot hide an
+      event from another; while a dialog owns the keyboard, stop declaring the
+      listeners it overrides.
 
-      A listener's message goes through [update] at once. The path is taken when
-      the event is dispatched, so a focus change that message makes moves the
-      next event, not this one, with one exception: the behavior runs on the
+      A listener's message goes through [update] immediately. The path is taken
+      when the event is dispatched, so a focus change that message makes moves
+      the next event, not this one, with one exception. The behavior runs on the
       element focused when it runs, so a [Capture] listener that focuses an
       input on a printable key gets that character inserted into the input. *)
 
@@ -1022,10 +1056,10 @@ module Sub : sig
 
       A worker is work that runs off the loop for as long as the program
       declares it: following a file, reading a socket, watching a process. Its
-      lifetime is its subscription's, as a timer's is: it starts in the update
+      lifetime is its subscription's, as a timer's is. It starts in the update
       whose subscriptions first declare its id, and its stop is requested in the
       update whose subscriptions no longer do, or when the run ends. OCaml
-      cannot interrupt a thread, so a worker stops itself: it reads
+      cannot interrupt a thread, so a worker stops itself. It reads
       {!Stop.requested} between steps, and a step that blocks (a read, a wait)
       is unblocked from {!Stop.on_request}, for example by closing what it waits
       on. *)
@@ -1041,85 +1075,60 @@ module Sub : sig
 
     val on_request : t -> (unit -> unit) -> unit
     (** [on_request t f] calls [f ()] once, when the stop is requested, on the
-        loop's thread; at once, on the calling thread, if it was already. [f]
-        runs on the loop, so it should only unblock the worker. An exception it
-        raises ends the run, or is dropped when the run is ending. *)
+        loop's thread, or immediately, on the calling thread, if it was
+        requested already. [f] runs on the loop, so it should only unblock the
+        worker. An exception it raises ends the run, or is dropped when the run
+        is ending. *)
   end
 
-  (** The type for subscriptions. *)
+  (** The type for subscriptions. Each constructor is the subscription of the
+      function of the same name below. *)
   type 'msg t =
-    | None  (** No subscription. Equivalent to [batch []]. *)
-    | Batch of 'msg t list  (** Activate all subscriptions in the list. *)
+    | None
+    | Batch of 'msg t list
     | Every of string * float * (int -> 'msg)
-        (** [Every (id, period, f)] fires [f k] every [period] seconds; see
-            {!val-every}. *)
     | After of string * float * 'msg
-        (** [After (id, delay, msg)] dispatches [msg] once, [delay] seconds
-            after [id] appears; see {!val-after}. *)
     | On_tick of string * (dt:float -> 'msg)
-        (** [On_tick (id, f)] fires [f ~dt] once per frame; see {!val-on_tick}.
-        *)
     | On_key of phase * (Event.key -> 'msg option)
-        (** [On_key (phase, f)] listens to key presses; see {!val-on_key}. *)
     | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
-        (** [On_key_release f] delivers key releases. *)
     | On_mouse of phase * (Event.mouse -> 'msg option)
-        (** [On_mouse (phase, f)] listens to mouse events; see {!val-on_mouse}.
-        *)
     | On_paste of phase * (Event.paste -> 'msg option)
-        (** [On_paste (phase, f)] listens to pastes; see {!val-on_paste}. *)
     | On_paste_stalled of float * 'msg
-        (** [On_paste_stalled (seconds, msg)] dispatches [msg] when a paste in
-            progress has received nothing for [seconds]. *)
     | On_resize of (width:int -> height:int -> 'msg)
-        (** [On_resize f] fires [f ~width ~height] whenever the terminal is
-            resized. *)
     | On_focus of 'msg
-        (** [On_focus msg] dispatches [msg] when the terminal window gains
-            focus. *)
     | On_blur of 'msg
-        (** [On_blur msg] dispatches [msg] when the terminal window loses focus.
-        *)
     | On_color_scheme of ([ `Dark | `Light ] -> 'msg option)
-        (** [On_color_scheme f] delivers the terminal's light/dark colour
-            scheme, both as the reply to {!Cmd.query_color_scheme} and as
-            unsolicited DEC 2031 notifications. [f] returns [None] to ignore a
-            report. *)
     | Worker of string * (Stop.t -> 'msg mailbox -> unit)
-        (** [Worker (id, f)] runs [f] off the loop while [id] is declared; see
-            {!val-worker}. *)
 
   val none : 'msg t
-  (** [none] is the empty subscription. Produces no events. *)
+  (** [none] is the subscription to nothing. *)
 
   val batch : 'msg t list -> 'msg t
-  (** [batch subs] is a subscription that activates every subscription in
-      [subs]. *)
+  (** [batch subs] is the subscriptions of [subs]. *)
 
   val every : id:string -> float -> (int -> 'msg) -> 'msg t
   (** [every ~id period f] fires on the grid [origin + n * period], [origin] the
       time [id] first appeared in the subscriptions, and dispatches [f k].
       [k >= 1] is the number of periods that ended since its previous call: [1]
       on time, more when the loop could not run for longer than a period (a long
-      [update], a stopped process). The grid does not drift: a late call does
-      not move the next one, and a timer never fires twice in a turn. Timers
-      that come due in the same turn fire in the order of their grid points.
+      [update], a stopped process). The grid does not drift, since a late call
+      does not move the next one, and a timer never fires twice in a turn.
+      Timers that come due in the same turn fire in the order of their grid
+      points.
 
-      The subscription is the timer: keeping [id] keeps its grid, declaring it
+      The subscription is the timer. Keeping [id] keeps its grid, declaring it
       with another [period] starts a new grid at that time, and dropping [id]
       stops it. A pending timer costs nothing until it fires. Not for animation:
       use {!val-on_tick}.
 
       Raises [Invalid_argument] if [id] is empty or [period] is not positive and
-      finite. The run raises it when two subscriptions declare the same id,
-      among those that take one ({!val-every}, {!val-after}, {!val-on_tick},
-      {!val-worker}). *)
+      finite. *)
 
   val after : id:string -> float -> 'msg -> 'msg t
   (** [after ~id delay msg] dispatches [msg] once, [delay] seconds after [id]
-      first appears in the subscriptions: in the first turn at or past that
+      first appears in the subscriptions, in the first turn at or past that
       time, as {!val-every} fires. Dropping [id] before then cancels it, which
-      makes a debounce: declare [after] while the model waits, and each update
+      makes a debounce. Declare [after] while the model waits, and each update
       that should restart the wait declares it under a new id. Once fired, it
       stays inert while [id] stays declared, and fires again only if [id] leaves
       and returns. Declaring [id] with another [delay] starts it again from that
@@ -1130,13 +1139,14 @@ module Sub : sig
 
   val on_tick : id:string -> (dt:float -> 'msg) -> 'msg t
   (** [on_tick ~id f] dispatches [f ~dt] once per frame while declared, before
-      the frame is laid out, and asks for the next frame: frames then come at
-      the frame rate ({!Matrix.config}'s [fps]), and stop when no tick or live
-      element asks. [dt] is the time in seconds since this subscription's
-      previous tick, [0.] on its first: an animation started after a pause does
-      not jump by the pause. Keeping [id] keeps the count of time; dropping it
-      and declaring it again starts at [0.]. Use this for animations; for work
-      at a fixed rate, {!val-every}.
+      the frame is laid out, and asks for the next frame, so frames then come at
+      the frame rate ({!Matrix.val-config}'s [fps]), and stop when no tick
+      subscription or animated element, such as a spinner, asks. [dt] is the
+      time in seconds since this subscription's previous tick, [0.] on its
+      first, so an animation started after a pause does not jump by the pause.
+      Keeping [id] keeps the count of time; dropping it and declaring it again
+      starts at [0.]. Use this for animations; for work at a fixed rate,
+      {!val-every}.
 
       Raises [Invalid_argument] if [id] is empty. *)
 
@@ -1147,16 +1157,17 @@ module Sub : sig
   val on_keys : ?phase:phase -> (Shortcut.t * 'msg) list -> 'msg t
   (** [on_keys bindings] dispatches the message bound to a key that reaches
       [phase] (defaults to [Bubble]; see {!section-phases}) with its default not
-      prevented, and prevents it: a binding is a default action of its key, so a
-      key something prevented fires none. Later equivalent shortcuts override
-      earlier ones. Resolution tries the key, then the base-layout key, as
-      widget bindings do. See {!Shortcut} for how keys and modifiers match. *)
+      prevented, and prevents it, since a binding is a default action of its
+      key, so a key something prevented fires none. Later equivalent shortcuts
+      override earlier ones. Resolution tries the key, then the base-layout key,
+      as widget bindings do. See {!Shortcut} for how keys and modifiers match.
+  *)
 
   val on_key_release : (Matrix.Input.Keystroke.release -> 'msg option) -> 'msg t
   (** [on_key_release f] delivers key releases to [f], which no widget sees. A
       terminal reports releases only under the kitty keyboard protocol, when the
-      runtime asks for them ({!Matrix.config}'s [key_releases], given through
-      {!run}'s [config]). *)
+      runtime asks for them ({!Matrix.val-config}'s [key_releases], given
+      through {!run}'s [config]). *)
 
   val on_mouse : ?phase:phase -> (Event.mouse -> 'msg option) -> 'msg t
   (** [on_mouse f] calls [f] on each mouse event that reaches [phase] (defaults
@@ -1186,13 +1197,14 @@ module Sub : sig
       5 s, as {!Cmd.abort_paste} does, and the keys typed after it reach the
       program again. An application that declares [on_paste_stalled] decides
       instead when to give up, with {!Cmd.abort_paste}, from how long the paste
-      has been silent: any byte counts, keys typed into the paste too, since
+      has been silent. Any byte counts, keys typed into the paste too, since
       they are its content. Raises [Invalid_argument] if [seconds] is not
       positive and finite. *)
 
   val on_resize : (width:int -> height:int -> 'msg) -> 'msg t
-  (** [on_resize f] fires [f ~width ~height] whenever the terminal is resized,
-      reporting the new dimensions in columns and rows. *)
+  (** [on_resize f] dispatches [f ~width ~height] with the usable size in
+      columns and rows ({!Matrix.size}) as the program begins and whenever it
+      changes ({!Matrix.Resize}). *)
 
   val on_focus : 'msg -> 'msg t
   (** [on_focus msg] dispatches [msg] when the terminal window gains focus. *)
@@ -1201,24 +1213,25 @@ module Sub : sig
   (** [on_blur msg] dispatches [msg] when the terminal window loses focus. *)
 
   val on_color_scheme : ([ `Dark | `Light ] -> 'msg option) -> 'msg t
-  (** [on_color_scheme f] delivers the terminal's light/dark colour scheme to
-      [f], both as the reply to {!Cmd.query_color_scheme} and as unsolicited DEC
-      2031 notifications. [f] returns [None] to ignore a report. *)
+  (** [on_color_scheme f] calls [f] with the terminal's color scheme when the
+      terminal answers {!Cmd.val-query_color_scheme} or reports a change (mode
+      2031), and dispatches the message it returns. *)
 
   val worker : id:string -> (Stop.t -> 'msg mailbox -> unit) -> 'msg t
   (** [worker ~id f] runs [f stop mailbox] off the loop, on {!val-run}'s
       [process_perform] executor, from the update whose subscriptions first
       declare [id] (see {{!workers}Workers}), and gives the program messages
       with [mailbox] ({!type-mailbox}). Declaring [id] again, with any function,
-      keeps the worker that runs. [f] returning ends the worker; it starts again
-      only if [id] leaves the subscriptions and returns.
+      keeps the worker that runs. [f] may return before its stop is requested,
+      as work under an event loop does once it has started its own tasks. Its
+      mailbox still gives the program messages until the stop is requested, and
+      [f] runs again only if [id] leaves the subscriptions and returns.
 
       An exception [f] raises ends the run, as one from {!Cmd.val-perform} does,
-      unless its stop was requested before: the program no longer waits for
-      anything from it.
+      unless its stop was requested before, since the program no longer waits
+      for anything from it.
 
-      Raises [Invalid_argument] if [id] is empty. The run raises it when two
-      subscriptions declare the same id, among those that take one. *)
+      Raises [Invalid_argument] if [id] is empty. *)
 
   val map : ('a -> 'b) -> 'a t -> 'b t
   (** [map f sub] is [sub] with every produced message transformed by [f]. Use
@@ -1229,31 +1242,32 @@ end
 
 type ('model, 'msg) app = {
   init : unit -> 'model * 'msg Cmd.t;
-      (** [init ()] is the initial model and any startup commands. Called once
-          before the first render. *)
+      (** [init ()] is the first model and the commands to start with. The
+          program calls it once, before it takes the terminal. *)
   update : 'msg -> 'model -> 'model * 'msg Cmd.t;
-      (** [update msg model] is the new model and any side-effects produced in
-          response to [msg]. Called once per dispatched message. *)
+      (** [update msg model] is the model after [msg], and the commands it asks
+          for. The program calls it once for each message. *)
   view : 'model -> 'msg t;
-      (** [view model] is the UI description for [model]. Refreshed after
-          accepted model changes before subsequent input processing. Several
-          views may be evaluated before one paint. *)
+      (** [view model] describes the screen for [model]. The program calls it
+          before it next handles an event or draws a frame, when [update]
+          returned a model other than the one it was given, by physical
+          equality, or the usable size changed. So several updates may come
+          before one [view], and several views before one frame. *)
   subscriptions : 'model -> 'msg Sub.t;
-      (** [subscriptions model] is the set of events the application wants to
-          receive given [model]. Re-evaluated after every update. *)
+      (** [subscriptions model] is what the program listens to and runs for
+          [model] ({!Sub}). *)
 }
-(** The type for a Mosaic application. Provide a value of this type to
-    {!val-run}. *)
+(** The type for applications, which {!val-run} runs. *)
 
 (** {1:running Running}
 
     {!val-run} runs a program until it ends, waiting for the terminal with
     [select(2)], and runs the work of {!Cmd.val-perform} and {!Sub.val-worker}
-    on threads. A program with threads of its own needs nothing more. A thread
-    ends the run with a stop request ([stop]). Work done off the loop gives the
-    program messages through its [dispatch] or its mailbox, and a thread the
-    program did not start through the [dispatch] a {!Cmd.val-perform} handed it.
-*)
+    on threads. A program whose own threads give it messages needs nothing more.
+    Such a thread ends the run with a stop request ([stop]), and gives the
+    program messages through a mailbox or through the [dispatch] that a
+    {!Cmd.val-perform} handed it, which stays valid after the perform's function
+    returns. *)
 
 val run :
   ?input:Unix.file_descr ->
@@ -1264,14 +1278,14 @@ val run :
   ?process_perform:((unit -> unit) -> unit) ->
   ('model, 'msg) app ->
   unit
-(** [run app] calls [app]'s [init], then runs [app] in the terminal
-    ({!Matrix.run}) until {!Cmd.val-quit}, a Ctrl+C press no handler prevented
-    ({!Event.Key.prevent_default}), the end of the input, a stop request, or a
-    signal that ends the process. In raw mode Ctrl+C is a key: quitting is its
-    default, which an element or a listener that uses the key prevents. The
-    terminal is given back on every way out, an exception included. [init] runs
-    before the terminal is taken; its commands and the first subscriptions run
-    after.
+(** [run app] calls [app]'s [init], takes the terminal ({!Matrix.run}), and runs
+    [app] until it ends: at {!Cmd.val-quit}, at a Ctrl+C that no handler
+    prevented ({!Event.Key.prevent_default}), at the end of the input, at a stop
+    request, or at a signal that ends the process. In raw mode Ctrl+C is a key,
+    and quitting is its default, which an element or a listener that uses the
+    key prevents. The terminal is given back on every way out, an exception
+    included. When the run ends, [run] requests the stop of the workers and
+    returns without waiting for work still running off the loop.
 
     - [input], [output], [env] -- the terminal to run in and its session's
       environment, as {!Matrix.run} takes them. Default to the process's.
@@ -1283,43 +1297,43 @@ val run :
       ({!Code.Highlighter.threaded}), off the loop, each given as a function
       that has the dispatch wired in and raises nothing. By default each runs on
       a thread of its own, in one helper domain, so that the loop's domain runs
-      the loop alone: work on a thread of the loop's domain shares its lock, and
+      the loop alone. Work on a thread of the loop's domain shares its lock, and
       work that computes would hold up each key by up to a tick of OCaml's
       thread scheduler (50 ms) at each of its blocking calls. The helper domain
-      starts with the first work (about 160 us) and ends when it has none. While
-      it runs, OCaml's systhread tick wakes the process 20 times a second, and
-      {!Unix.fork} raises, as OCaml forbids forking a process that runs several
-      domains; {!Unix.create_process} works. An executor given here runs the
-      work where it likes, such as on fibers of the application's own scheduler;
-      the messages go through the loop ({!Matrix.post}) whatever thread or fiber
-      dispatches them.
+      starts with the first work and ends when it has none. While it runs,
+      OCaml's systhread tick wakes the process 20 times a second, and
+      [Unix.fork] raises, as OCaml forbids forking a process that runs several
+      domains, while [Unix.create_process] works. An executor given here runs
+      the work where it likes, such as on fibers of the application's own
+      scheduler, and the messages go through the loop ({!Matrix.post}) whatever
+      thread or fiber dispatches them.
 
-    A test settles the program by running its work off the loop where it can
-    tell that the work is done, on a [Matrix_test] session's queue, as
-    [Mosaic_test.run] (library [mosaic.test]) does, or on the program's own
-    scheduler, for which the session is given a [quiesce]. Work that runs as
-    long as the program does, such as a worker reading a stream, cannot run on
-    such a queue, whose work must return. The test then gives the worker what it
-    reads and lets it return, or runs it on the program's own executor and
-    settles as its messages come. *)
+    A test runs a program on an emulated terminal with [Mosaic_test.run]
+    (library [mosaic.test]).
+
+    Raises, once the terminal is given back, what [init], [update], [view],
+    [subscriptions] or a command raised, and what work done off the loop raised
+    ({!Cmd.val-perform}, {!Sub.val-worker}), with its backtrace. Raises
+    [Invalid_argument] when two subscriptions declare the same id, and what
+    {!Matrix.run} raises. *)
 
 (** {2:event_loops Event loops}
 
-    A program run from an event loop runs with that loop's library, which is
-    built when the loop is installed. [Mosaic_eio.run] (library [mosaic.eio])
-    runs it from a fiber of an Eio program, and [Mosaic_lwt.run] (library
-    [mosaic.lwt]) runs it as an Lwt promise. Under another event loop, the
-    program runs with {!val-start} and the loop does the waiting. It takes the
-    program's steps with {!step}, and between them waits until one of {!fds} is
-    readable or the time {!deadline} comes, as {!Matrix.next} does for a run.
-    [process_perform] hands the program's work to the loop. The source of
+    A program run from an event loop runs with that loop's library.
+    [Mosaic_eio.run] (library [mosaic.eio], built when eio is installed) runs it
+    from a fiber of an Eio program, and [Mosaic_lwt.run] (library [mosaic.lwt],
+    built when lwt is installed) runs it as an Lwt promise. Under another event
+    loop, the program runs with {!val-start} and the loop does the waiting. It
+    takes the program's steps with {!step}, and between them waits until one of
+    {!fds} is readable or the time {!deadline} comes, as {!Matrix.next} does for
+    a run. [process_perform] hands the program's work to the loop. The source of
     [Mosaic_eio] is a worked example of this, and the source of [Mosaic_lwt] one
     of a program run beside a loop on a domain of its own. *)
 
 type 'msg running
 (** The type for programs running in a terminal ({!val-start}), whose work done
     elsewhere gives them messages of type ['msg]. A [running] exists only inside
-    {!val-start}, and belongs to the thread that called it: every function that
+    {!val-start}, and belongs to the thread that called it. Every function that
     takes one must be called on that thread, except {!val-dispatch}. *)
 
 val start :
@@ -1335,28 +1349,30 @@ val start :
 (** [start app f] is {!val-run}[ app] with the waiting left to [f]. It calls
     [app]'s [init], takes the terminal, calls [f] with the running program, and
     gives the terminal back when [f] returns or raises. [f] takes the program's
-    steps with {!step} until it says [`Stopped]; the program ends when [f]
+    steps with {!step} until it says [`Stopped], and the program ends when [f]
     returns, whether it said so or not. The optional arguments are {!val-run}'s.
-*)
+
+    Raises what [f] raises, and what {!val-run} raises before [f] is called. *)
 
 val step : 'msg running -> now:int -> [ `Stepped | `Idle | `Stopped ]
 (** [step r ~now] has [r] take the next step of its run at the time [now]
     ({!Matrix.val-step}) and act on it, as {!val-run} does with each. It is
     [`Stepped] when it did, [`Idle] when the run has nothing to do until one of
     {!fds} is readable or the time {!deadline} comes, and [`Stopped] once the
-    program is over: it quit, Ctrl+C ended it, or its input ended. It never
-    waits for input, a message or a time. [now] must follow {!Matrix.val-step}'s
-    rule for times.
+    program is over: it quit, Ctrl+C ended it, its input ended, or its stop was
+    requested. It never waits for input, a message or a time. [now] must be on
+    {!Matrix.clock}, and never earlier than the time of the step before
+    ({!Matrix.val-step}).
 
-    Raises what [update], [view] or a command raised, and what work done off the
-    loop raised ({!Cmd.val-perform}). *)
+    Raises what {!val-run} raises, at the step that had it. *)
 
 val fds : 'msg running -> Unix.file_descr list
 (** [fds r] is the descriptors [r]'s run waits for ({!Matrix.fds}). *)
 
 val deadline : 'msg running -> int option
-(** [deadline r] is the time by which {!step} must be called again after it said
-    [`Idle] ({!Matrix.deadline}). *)
+(** [deadline r] is the time on {!Matrix.clock} by which {!step} must be called
+    again after it said [`Idle], or [None] when only {!fds} can give the program
+    something to do ({!Matrix.deadline}). *)
 
 val dispatch : 'msg running -> 'msg -> unit
 (** [dispatch r msg] gives [msg] to [r]'s [update] in a later step, as the
@@ -1810,8 +1826,8 @@ val rich_text :
 (** [rich_text fragments] renders structured text as one selectable text widget.
     Fragment styles inherit from [text_style]; nested colours override inherited
     colours. Wrapping and selection cross fragment boundaries. All labelled
-    options have the same meaning as {!text}. Switching between {!text} and
-    [rich_text] retains the text widget. *)
+    options have the same meaning as {!val-text}. Switching between {!val-text}
+    and [rich_text] retains the text widget. *)
 
 val slider :
   ?key:string ->

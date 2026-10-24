@@ -6,16 +6,17 @@
     Lwt's promises, {e Lwt's thread}. The work of {!Mosaic.Cmd.val-perform} and
     {!Mosaic.Sub.val-worker} runs on Lwt's thread
     ([Lwt_preemptive.run_in_main_dont_wait]), where it may start promises. Work
-    that runs there holds up every promise until it returns, so it starts its
-    promises and returns.
+    that runs there holds up every promise until it returns, so it must start
+    its promises and return. A worker that returns keeps its mailbox until its
+    stop is requested ({!Mosaic.Sub.val-worker}).
 
     The promise resolves once the program has ended as {!Mosaic.val-run}'s does
     and given the terminal back, and is rejected with what the program raised.
     Cancelling it ends the program by its stop request ({!Matrix.Stop}). Lwt
     rejects a cancelled promise with [Lwt.Canceled] immediately, and [Lwt.pick]
     resolves without waiting for the promises it cancels, so the program gives
-    the terminal back on its domain after the promise is rejected, within the
-    wait for an answer the terminal owes ({!Matrix.Stop.request}). If the
+    the terminal back on its domain after the promise is rejected, once it has
+    waited for the replies the terminal owes ({!Matrix.Stop.request}). If the
     process exits first, its exit path gives the terminal back. Code that must
     wait for the terminal, such as code that writes to it after the program,
     ends the program by requesting the stop given to {!run} and waits for the

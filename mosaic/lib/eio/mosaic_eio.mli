@@ -4,10 +4,10 @@
     takes its steps on a domain of its own, which the domain manager given to
     {!run} creates, and waits there with Eio until one of its descriptors is
     readable or its deadline comes ({!Mosaic.fds}, {!Mosaic.deadline}). The
-    calling domain goes on running its other fibers meanwhile. It also runs the
-    work of {!Mosaic.Cmd.val-perform} and {!Mosaic.Sub.val-worker}, each as a
-    fiber of its own, so that this work may call Eio. Neither domain holds up
-    the other.
+    calling domain goes on running its other fibers meanwhile, and runs the work
+    of {!Mosaic.Cmd.val-perform} and {!Mosaic.Sub.val-worker}, each as a fiber
+    of its own, so that this work may call Eio. Neither domain holds up the
+    other.
 
     The program reads its time from {!Matrix.clock}, as {!Mosaic.val-run} does,
     and Eio's own monotonic clock measures the waits until its deadlines. A
