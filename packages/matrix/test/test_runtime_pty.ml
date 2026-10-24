@@ -61,7 +61,10 @@ let send s bytes =
 
 let mark s = Buffer.length s.output
 
-let rec wait_exit ?(timeout = 60.) s =
+(* Waits for the program to end, reading what it writes to its terminal and
+   to [also]'s: on macOS, a terminal's settings are put back (TCSADRAIN)
+   only once what was written to it has been read. *)
+let rec wait_exit ?(timeout = 60.) ?also s =
   match Unix.waitpid [ Unix.WNOHANG ] s.pid with
   | 0, _ ->
       if timeout <= 0. then (
@@ -71,7 +74,10 @@ let rec wait_exit ?(timeout = 60.) s =
         Unix.sleepf 0.02;
         (* Keep draining what it writes. *)
         (try await ~timeout:0.01 s "\000\001" with _ -> ());
-        wait_exit ~timeout:(timeout -. 0.03) s)
+        Option.iter
+          (fun t -> try await ~timeout:0.01 t "\000\001" with _ -> ())
+          also;
+        wait_exit ~timeout:(timeout -. 0.03) ?also s)
   | _, status -> status
 
 let cooked s =
@@ -334,7 +340,7 @@ let test_termination_ends_every_run () =
   is_false ~msg:"the served terminal is raw" (served_cooked slave);
   let from = mark s and served_from = mark served in
   Unix.kill s.pid Sys.sigterm;
-  (match wait_exit s with
+  (match wait_exit ~also:served s with
   | WSIGNALED n -> equal ~msg:"ends by SIGTERM" int Sys.sigterm n
   | _ -> fail "expected the process to end by its signal");
   await ~from s "\027[?1049l";
@@ -351,7 +357,7 @@ let test_termination_resets_a_served_session () =
   is_false ~msg:"the served terminal is raw" (served_cooked slave);
   let served_from = mark served in
   Unix.kill s.pid Sys.sigterm;
-  (match wait_exit s with
+  (match wait_exit ~also:served s with
   | WSIGNALED n -> equal ~msg:"ends by SIGTERM" int Sys.sigterm n
   | _ -> fail "expected the process to end by its signal");
   await ~from:served_from served "\027[?1049l";
@@ -363,7 +369,7 @@ let test_abort_resets_every_run () =
   await served "SERVED";
   let from = mark s and served_from = mark served in
   send s "a";
-  (match wait_exit s with
+  (match wait_exit ~also:served s with
   | WSIGNALED n -> equal ~msg:"ends by SIGABRT" int Sys.sigabrt n
   | _ -> fail "expected the process to end by SIGABRT");
   await ~from s "\027[?1049l";
