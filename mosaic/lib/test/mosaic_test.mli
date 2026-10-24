@@ -1,7 +1,7 @@
 (** Mosaic programs on an emulated terminal.
 
     {!run} runs a program with {!Mosaic.run} on a {!Matrix_test} session of a
-    terminal, as a test writes it:
+    terminal. This test types [hello] and prints the screen:
 
     {[
     let term = Matrix_test.Terminal.create ~cols:40 ~rows:10 () in
@@ -51,8 +51,10 @@ val run :
       [0].
     - [process_perform] -- the executor of the program's work off the loop
       ({!Mosaic.Cmd.val-perform}, {!Mosaic.Sub.val-worker}). Defaults to the
-      session's queue ({!Matrix_test.perform}), which settling runs. A worker
-      that runs as long as the program needs its own executor, with a [quiesce].
+      session's queue ({!Matrix_test.perform}), which settling runs on the
+      test's thread. A worker that runs as long as the program does never
+      returns, so on that queue it would hold the test forever, and it needs an
+      executor of its own, with a [quiesce].
     - [quiesce] -- returns once the work [process_perform] was given has
       finished or waits for the test, as {!Matrix_test.attach} takes it.
       Defaults to running the session's queue.

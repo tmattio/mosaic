@@ -4,7 +4,8 @@
     ({!Profile.t}). It applies what a program writes, answers the program's
     queries as that terminal does, keeps what the program asks of its host, and
     gives the bytes it sends for what its user does, in the encoding the program
-    has set. It performs no input or output itself.
+    has set (its keyboard protocol, mouse format and paste mode). It performs no
+    input or output itself.
 
     A {e session} ({!t}) runs a program in the test's process on a terminal,
     with a {e clock} that only the test moves. The program runs on {!Matrix}, or
@@ -20,19 +21,20 @@
     write. So the run draws a frame asked for by input, a timer, a message or
     the runtime itself at the instant it is asked, and decodes a lone ESC as
     Escape at once. An animation's next frame, asked for from its frame, comes
-    one frame interval later, as on any terminal, and a frame that input brings
-    in between leaves that interval's grid where it was. Time moves only by
-    {!advance} and {!set_time}, and by the wait for an answer of a terminal that
-    gives none ({!Profile.t}'s [answers]).
+    one frame interval later ({!Matrix.val-config}'s [fps]), as on any terminal,
+    and a frame that input brings in between does not move the times of the
+    animation's later frames. Time moves only by {!advance} and {!set_time}, and
+    by the wait for an answer of a terminal that gives none ({!Profile.t}'s
+    [answers]).
 
     A session is {e settled} when the program has nothing to do at the session's
-    time and the work handed off its loop has finished or waits for something
-    only the test can change. That work runs on an {e executor}, the session's
-    queue ({!perform}) or the program's own, for which {!run} and {!attach} take
-    a [quiesce].
+    time and the work it runs off its loop, such as Mosaic's commands and
+    workers, has finished or waits for something only the test can change. That
+    work runs on an {e executor}, the session's queue ({!perform}) or the
+    program's own, for which {!run} and {!attach} take a [quiesce].
 
-    Two facts of a real terminal stay outside a session. A terminal writes over
-    time, so a lone ESC can wait for what may follow it, and a child on a
+    A session differs from a real terminal in two ways. A real terminal writes
+    over time, so a lone ESC can wait for what may follow it, and a child on a
     pseudo-terminal ({!Child}) shows that race. And an animation that moves a
     step at each frame, rather than by the clock, moves one more for each frame
     that input brings, so its goldens depend on the input; one that moves by the
@@ -45,13 +47,14 @@
       session its steps.
     + {!input}, {!resize}, {!settle}, {!advance} and {!set_time} drive it, and
       the readers of {!Terminal} observe it.
-    + The run ends when the program returns, at the end of the input that {!run}
-      gives once its body returns, or when it stops itself, and the terminal
-      then shows what the run left on it.
+    + The run ends when the program returns, on its own or at the end of the
+      input, which {!run} gives once its body returns. The terminal then shows
+      what the run left on it.
 
-    Unless a function's doc says otherwise, a function that takes a session
-    settles it before it returns, and raises [Invalid_argument] if no program is
-    attached or its run has ended.
+    The functions that drive a session, {!input}, {!resize}, {!settle} and
+    {!advance}, settle it before they return, and raise [Invalid_argument] if no
+    program is attached or its run has ended. The other functions that take a
+    session do not settle it, and raise only as their docs say.
 
     This runs a program that counts keys, types two and prints the screen:
     {[
@@ -90,7 +93,7 @@ module Profile : sig
     tty : bool;
         (** [false] for an output that is not a terminal, such as a pipe. The
             run then sets no mode and asks nothing, and the size is reported in
-            band ({!Matrix.run}). *)
+            band, as a mode 2048 report in the run's input ({!Matrix.run}). *)
     answers : bool;
         (** [false] for a terminal that answers no query, such as one behind a
             link that drops its replies. A run waits for its answers until its
@@ -116,8 +119,9 @@ module Profile : sig
   *)
 
   val pipe : t
-  (** [pipe] is {!vte} as an output that is not a terminal, which measures text
-      by character as a program that guesses does. *)
+  (** [pipe] is {!vte} as an output that is not a terminal, which answers no
+      query and measures text with wcwidth, as a program that cannot ask the
+      terminal does. *)
 end
 
 (** {1:screens Screens} *)
@@ -167,9 +171,10 @@ module Screen : sig
 
       A {e golden} is a screen as text, which a test compares with an expected
       one, such as in an expect test. Its rows are numbered from 01 as
-      ["NN |text"], with as many digits as the last row's number needs, and its
-      last line is the cursor's, ["cursor ROW,COL SHAPE"] counted from 1, with
-      [blinking] after the shape when it blinks, or ["cursor hidden"]. *)
+      ["NN |text"], with at least two digits, more when the last row's number
+      needs them, and its last line is the cursor's, ["cursor ROW,COL SHAPE"]
+      counted from 1, with [blinking] after the shape when it blinks, or
+      ["cursor hidden"]. *)
 
   val text : t -> string
   (** [text s] is the golden of [s]: each row's {!val-row} text, then the cursor
@@ -214,8 +219,8 @@ module Terminal : sig
 
       Each of these is the bytes the terminal sends for what its user does, in
       the encoding the program has set, and [""] for a report the program has
-      not asked for. A session ({!input}) or a child ({!Child.send}) delivers
-      them. *)
+      not asked for. {!color_scheme} also changes the terminal's scheme. A
+      session ({!input}) or a child ({!Child.send}) delivers them. *)
 
   val key :
     t ->
@@ -307,21 +312,20 @@ val run :
   'a
 (** [run term program body] runs [program s] on a session [s] of [term], whose
     run takes {!config}[ s], until the program waits for input ([Matrix.next],
-    as in [Mosaic.run]) with nothing to do, then is [body s]. The program stays
-    where it waits, and each function of [body] that settles has it go on until
-    it waits again. When [body] returns or raises, the input ends, and the
-    program goes on until it returns, as it does at the end of its input.
-    [config] is the configuration the run is given on the session's device
-    (default [Matrix.config ()]), [now] as for {!create}, and [quiesce] as for
-    {!attach}.
+    as in [Mosaic.run]) with nothing to do, then is [body s]. The program's
+    first frame is on the terminal when [body] begins. The program stays where
+    it waits, and each function of [body] that settles has it go on until it
+    waits again. When [body] returns or raises, the input ends, and the program
+    goes on until it returns, as it does at the end of its input. [config] is
+    the configuration the run is given on the session's terminal (default
+    [Matrix.config ()]), [now] as for {!create}, and [quiesce] as for {!attach}.
 
     The program runs on the test's thread, under an effect handler that [run]
-    installs: where the program would wait, the session's device performs an
-    effect that suspends it, and the session's functions resume it. So the
-    program must wait on the thread and in the domain that called [run], inside
-    [program], and not under a handler of its own that catches every effect. A
-    program that waits with an event loop of its own takes its steps through
-    {!attach} instead.
+    installs: where the program would wait, the session performs an effect that
+    suspends it, and the session's functions resume it. So the program must wait
+    on the thread and in the domain that called [run], inside [program], and not
+    under a handler of its own that catches every effect. A program that waits
+    with an event loop of its own takes its steps through {!attach} instead.
 
     Raises what [program] raises, at the call that had it go on, and
     [Invalid_argument] if the program waits from another thread or domain. *)
@@ -329,8 +333,8 @@ val run :
 val create : ?config:Matrix.config -> ?now:int -> Terminal.t -> t
 (** [create term] is a session on [term] whose clock reads [now] (default [0])
     nanoseconds, for a program driven by its steps ({!attach}), whose run takes
-    [config] (default [Matrix.config ()]) on the session's device ({!config}). A
-    terminal must have at most one session. *)
+    [config] (default [Matrix.config ()]) on the session's terminal ({!config}).
+    A terminal must have at most one session. *)
 
 val terminal : t -> Terminal.t
 (** [terminal s] is [s]'s terminal. *)
@@ -342,11 +346,10 @@ val config : t -> Matrix.config
 
 val perform : t -> (unit -> unit) -> unit
 (** [perform s job] queues [job] on the session's queue, an executor such as
-    [Mosaic.start]'s [process_perform]. Settling runs the queue in order, on the
+    [Mosaic.run]'s [process_perform]. Settling runs the queue in order, on the
     calling thread. A job must return and must not wait for the loop, so work
     that runs as long as the program does, such as a worker reading a stream,
-    must run on the program's own executor, with a [quiesce] ({!attach}). It
-    does not settle. *)
+    must run on the program's own executor, with a [quiesce] ({!attach}). *)
 
 val attach :
   ?quiesce:(unit -> unit) ->
@@ -373,7 +376,8 @@ val input : t -> string -> unit
 val resize : t -> cols:int -> rows:int -> unit
 (** [resize s ~cols ~rows] resizes the terminal and tells the run as the
     terminal does: by a window signal and the mode 2048 report when the program
-    has set it, or, for an output that is not a terminal, in band. *)
+    has set it, or, for an output that is not a terminal, by the report alone.
+*)
 
 val settle : t -> unit
 (** [settle s] settles [s], as after the test released work it held. *)
@@ -393,34 +397,31 @@ val set_time : t -> int -> unit
     Raises [Invalid_argument] if [time] is earlier than the clock. *)
 
 val check_presented : t -> unit
-(** [check_presented s] checks that the terminal shows, on the rows of the run's
-    live region, the text of the frame the run believes it presented
-    ([Matrix.current_grid]), which the run's own diff of frames wrote. It does
-    not settle. A test calls it after its steps to catch output that puts on the
-    terminal another frame than the run drew.
+(** [check_presented s] checks that the terminal shows, on the rows of the frame
+    ([Matrix]'s live region in [`Primary] mode), the text of the frame the run
+    believes it presented ([Matrix.current_grid]), which the run's own diff of
+    frames wrote. A test calls it after its steps to catch output that puts on
+    the terminal another frame than the run drew.
 
     Raises [Failure], with each row that differs, if they differ, and
     [Invalid_argument] if no run has begun on [s]. *)
 
 val now : t -> int
-(** [now s] is the time of [s]'s clock, in nanoseconds. It does not settle. *)
+(** [now s] is the time of [s]'s clock, in nanoseconds. *)
 
 val deadline : t -> int option
-(** [deadline s] is the next time the program has something to do, if any. It
-    does not settle.
+(** [deadline s] is the next time the program has something to do, if any.
 
     Raises [Invalid_argument] if no program is attached. *)
 
 val frames : t -> int
-(** [frames s] is the number of frames the run has begun. It does not settle. *)
+(** [frames s] is the number of frames the run has begun. *)
 
 val steps : t -> int
-(** [steps s] is the number of steps the program has taken. It does not settle.
-*)
+(** [steps s] is the number of steps the program has taken. *)
 
 val ended : t -> bool
-(** [ended s] is [true] once the program's run has stopped. It does not settle.
-*)
+(** [ended s] is [true] once the program's run has stopped. *)
 
 (** {1:children Programs in another process} *)
 
