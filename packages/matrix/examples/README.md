@@ -120,4 +120,3 @@ Graphical terminal emulator using SDL2 for rendering. Demonstrates using Matrix
 sub-libraries (`matrix.pty`, `matrix.vte`, `matrix.grid`) independently without
 the immediate-mode runtime. Features mouse selection, clipboard, scrollback,
 zoom, and texture-cached glyph rendering. Requires `tsdl` and `tsdl-ttf`.
-Without them it builds as a stub that says so and exits.

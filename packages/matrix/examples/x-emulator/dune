@@ -1,7 +1,3 @@
-; The demo renders with SDL. Where tsdl or tsdl-ttf is not installed, a
-; stub that says so takes its place, so the rest of the tree builds
-; without SDL.
-
 (executable
  (name main)
  (public_name matrix)
@@ -14,9 +10,6 @@
   matrix.vte
   matrix.grid
   matrix.text
-  unix
-  (select
-   main.ml
-   from
-   (tsdl tsdl-ttf -> main.sdl.ml)
-   (-> main.stub.ml))))
+  tsdl
+  tsdl-ttf
+  unix))
