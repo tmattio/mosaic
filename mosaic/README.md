@@ -79,9 +79,9 @@ static-output commands.
 `Sub.worker`, `Sub.on_focus`, `Sub.on_blur`. Key, mouse and paste listeners
 run after the elements, on the events no element stopped, unless declared
 `~phase:Capture`. A timer or a worker lives as long as its subscription is
-declared: `Sub.every` fires once with the periods that ended, `Sub.after`
-once after a delay, and a worker's stop is requested when its id is
-dropped.
+declared. `Sub.every` fires on a fixed grid of times, once in a turn, with the
+number of periods that ended, `Sub.after` fires once after a delay, and a
+worker's stop is requested when its id is dropped.
 
 Components compose via `map : ('a -> 'b) -> 'a t -> 'b t`.
 
@@ -120,13 +120,17 @@ are all supported.
 Dimension helpers:
 
 ```ocaml
-px 10             (* 10 terminal columns/rows *)
-pct 50            (* 50% of parent *)
-auto              (* automatic sizing *)
-padding 2         (* uniform padding *)
-gap 1             (* flex/grid gap *)
-Grid.fr 1.        (* fractional grid track *)
-Grid.minmax ~min ~max  (* range-sized grid track *)
+let ten_cells = px 10 (* 10 terminal columns or rows *)
+let half = pct 50 (* 50% of the parent *)
+let automatic = auto (* sized by the layout *)
+let around = padding 2 (* the same padding on every side *)
+let spaced = gap 1 (* the gap of a flex or grid container *)
+let share = Grid.fr 1. (* a fractional grid track *)
+let range =
+  (* a grid track between two sizes *)
+  Grid.minmax
+    ~min:(Toffee.Style.Compact_length.length 10.)
+    ~max:(Toffee.Style.Compact_length.fr 1.)
 ```
 
 ## Model-owned interaction
@@ -216,7 +220,7 @@ declared `~phase:Capture` runs before the focused widget; call
 ## Paint and caching
 
 ```ocaml
-text ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ()) "Hello"
+let view _model = text ~style:(Ansi.Style.make ~bold:true ~fg:Ansi.Color.cyan ()) "Hello"
 ```
 
 For expensive subtrees, use
@@ -233,10 +237,11 @@ callback dependencies. The cache lives only while that position is mounted.
 | `mosaic.mlx` | JSX/MLX syntax adapter                   |
 | `mosaic.eio` | Running from Eio (built with `eio`)      |
 | `mosaic.lwt` | Running as an Lwt promise (built with `lwt`) |
+| `mosaic.test` | Running a program on an emulated terminal in tests |
 
 ## Examples
 
-25 examples and 4 showcase applications. Run any example from the repo root:
+27 examples and 4 showcase applications. Run any example from the repo root:
 
 ```bash
 dune exec ./mosaic/examples/<name>/main.exe
@@ -268,15 +273,13 @@ dune exec ./mosaic/examples/<name>/main.exe
 | `22-layout`        | CSS Grid with responsive switching                |
 | `23-resize`        | Terminal resize and focus events                  |
 | `24-eio`           | A program run from Eio                            |
+| `25-diff`          | Unified and split diff views                      |
 | `26-lwt`           | A program as an Lwt promise                       |
 | `27-threads`       | A program fed by a worker and stopped by a thread |
 | `x-agent`          | Agent-style primary-screen CLI                    |
+| `x-code-editor`    | Code editor with completion and highlighting      |
 | `x-dashboard`      | Component composition with `map`                  |
 | `x-syspanel`       | System monitor: CPU, memory, disk, processes      |
-
-## License
-
-ISC. See [LICENSE](../LICENSE).
 
 ### Keyboard bindings
 
@@ -287,14 +290,16 @@ replace defaults for the same shortcut, with the last entry taking precedence.
 For example:
 
 ```ocaml
-let editor_view =
-  textarea ~state:model.editor ~on_change:(fun state -> Edit state)
-    ~key_bindings:[ Shortcut.ctrl 'j', Mosaic_ui.Textarea.Submit ] ()
+type binding_msg = Edit of Editor.t | Select of string
 
-let selection_view =
-  select ~equal:String.equal ~selected:model.selected
+let editor_view editor =
+  textarea ~state:editor ~on_change:(fun state -> Edit state)
+    ~key_bindings:[ (Shortcut.ctrl 'j', Mosaic_ui.Textarea.Submit) ] ()
+
+let selection_view selected options =
+  select ~equal:String.equal ~selected
     ~on_change:(fun value -> Select value)
-    ~key_bindings:[ Shortcut.ctrl 'n', Select.Move_down ] options
+    ~key_bindings:[ (Shortcut.ctrl 'n', Select.Move_down) ] options
 ```
 
 Modifiers match exactly, ignoring Caps Lock and Num Lock. Releases do not
@@ -304,3 +309,7 @@ and terminal-reported base-layout keys use the same matching rules everywhere.
 Select measures its labels and descriptions when no size is specified. Use
 `max_size` or an explicit height to constrain the visible rows; option changes
 invalidate cached widths, while moving the selection reuses them.
+
+## License
+
+ISC. See [LICENSE](../LICENSE).
