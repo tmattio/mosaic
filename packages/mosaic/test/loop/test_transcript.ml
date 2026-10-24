@@ -2,7 +2,8 @@
    of three-row messages over an input line. Per-input cost must not grow
    with the messages the viewport hides, so a key or a wheel burst allocates
    the same over 5,000 messages as over 20,000. Both counts come from one
-   process, so the check holds on any machine, compiler and profile. *)
+   process, so the check holds on any machine, compiler and profile. What
+   each input writes to the terminal is deterministic, and printed. *)
 
 let caps : Matrix.Terminal.capabilities =
   {
@@ -130,4 +131,35 @@ let%expect_test "per-input allocation does not grow with the transcript" =
     {|
     type and erase: the same
     wheel round trip: the same
+    |}]
+
+(* Bytes per change: what each input has the transcript write. Output is
+   deterministic for fixed capabilities, so a change in what an input costs
+   the terminal shows here as a changed number. *)
+let%expect_test "bytes each input writes" =
+  with_transcript 5_000 (fun s term ->
+      let step name f =
+        let before = String.length (Matrix_test.Terminal.output term) in
+        f ();
+        Printf.printf "%-24s %6d bytes\n" name
+          (String.length (Matrix_test.Terminal.output term) - before)
+      in
+      step "type a key" (fun () -> Matrix_test.input s "x");
+      step "erase it" (fun () -> Matrix_test.input s "\127");
+      step "wheel down 8 lines" (fun () -> Matrix_test.input s (wheel 65));
+      step "wheel up 8 lines" (fun () -> Matrix_test.input s (wheel 64));
+      step "resize to 249x69" (fun () ->
+          Matrix_test.resize s ~cols:249 ~rows:69);
+      step "resize back to 250x70" (fun () ->
+          Matrix_test.resize s ~cols:250 ~rows:70);
+      step "a second idle" (fun () -> Matrix_test.advance s 1_000_000_000));
+  [%expect
+    {|
+    type a key                   49 bytes
+    erase it                     42 bytes
+    wheel down 8 lines          651 bytes
+    wheel up 8 lines            606 bytes
+    resize to 249x69          17703 bytes
+    resize back to 250x70     18029 bytes
+    a second idle                 0 bytes
     |}]

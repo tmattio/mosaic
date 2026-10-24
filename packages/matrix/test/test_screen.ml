@@ -1228,9 +1228,55 @@ let test_transform_before_render () =
 
 (* Test Suite *)
 
+(* Bytes per change: what a 160x48 frame writes to the terminal for a
+   change of each size. Output is deterministic for fixed capabilities, so
+   a change in what a frame costs shows here as a changed number. *)
+
+let bytes_style =
+  Ansi.Style.make
+    ~fg:(Ansi.Color.of_rgb 232 232 232)
+    ~bg:(Ansi.Color.of_rgb 18 20 24)
+    ~bold:true ()
+
+let bytes_line =
+  String.init 158 (fun i -> Char.chr (Char.code 'a' + (i mod 26)))
+
+(* The bytes of each frame of [changes] after a full frame of text. *)
+let frame_bytes changes =
+  let screen = Screen.create () in
+  let frame draw =
+    Screen.build screen ~width:160 ~height:48 (fun grid _hits ->
+        Grid.clear grid ~color:(Ansi.Color.of_rgb 0 0 0);
+        for row = 0 to 47 do
+          Grid.draw_text ~style:bytes_style grid ~x:0 ~y:row ~text:bytes_line
+        done;
+        draw grid);
+    String.length (Screen.render screen)
+  in
+  let full = frame ignore in
+  full :: List.map frame changes
+
+let bytes_per_change () =
+  let cell grid =
+    Grid.draw_text ~style:bytes_style grid ~x:80 ~y:24 ~text:"X"
+  in
+  let line grid =
+    Grid.draw_text
+      ~style:(Ansi.Style.make ~fg:(Ansi.Color.of_rgb 255 80 80) ~bold:true ())
+      grid ~x:0 ~y:24 ~text:(String.make 158 'Z')
+  in
+  match frame_bytes [ ignore; cell; line ] with
+  | [ full; unchanged; one_cell; one_line ] ->
+      equal int ~msg:"a full frame of text" 10_507 full;
+      equal int ~msg:"an unchanged frame" 0 unchanged;
+      equal int ~msg:"one cell changed" 50 one_cell;
+      equal int ~msg:"one line restyled" 204 one_line
+  | _ -> assert false
+
 let () =
   run "matrix.screen"
     [
+      group "Bytes per change" [ test "a 160x48 frame" bytes_per_change ];
       group "Core Rendering"
         [
           test "Create renderer" test_create_renderer;
