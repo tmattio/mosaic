@@ -86,6 +86,7 @@ let snapshot ?dir ?pattern ?(hits = false) (screen : Screen.t) =
   let stem =
     Filename.chop_suffix_opt ~suffix:".ansi" base |> Option.value ~default:base
   in
+  write_file (stem ^ ".txt") (Grid.to_text grid);
   if hits then
     let path = stem ^ ".hits.txt" in
     write_file path (hit_grid_text screen)

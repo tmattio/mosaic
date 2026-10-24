@@ -1,8 +1,9 @@
 (** Frame dumping to disk.
 
-    Writes the grid a {!Matrix_screen.t} is drawing to an ANSI file and, when
-    asked, its hit grid to a text file beside it. A private module of the Matrix
-    runtime, which implements {!Matrix.dump_frame} with it. *)
+    Writes the grid a {!Matrix_screen.t} is drawing to an ANSI file and a plain
+    text file and, when asked, its hit grid to a third file beside them. A
+    private module of the Matrix runtime, which implements {!Matrix.dump_frame}
+    with it. *)
 
 val snapshot :
   ?dir:string -> ?pattern:string -> ?hits:bool -> Matrix_screen.t -> unit

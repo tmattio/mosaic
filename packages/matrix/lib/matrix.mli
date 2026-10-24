@@ -794,8 +794,8 @@ val set_cursor_color : 'msg app -> r:float -> g:float -> b:float -> unit
 
     The application draws what a frame shows about the run, since it owns the
     frame. {!Debug_overlay} draws the frames' timing and the collector's
-    statistics in a corner of a frame, and {!dump_frame} writes a frame to a
-    file. An application that dumps every thirtieth frame counts them:
+    statistics in a corner of a frame, and {!dump_frame} writes a frame to
+    files. An application that dumps every thirtieth frame counts them:
     {[
     let frames = ref 0 in
     let on_frame app view =
@@ -816,10 +816,12 @@ val dump_frame :
     {!draw} has drawn it so far, to a new file of [dir] (default ["frames"],
     made if missing), named [pattern] (default ["frame_"]) followed by a number
     that grows with each dump of the process and [.ansi]. The file holds the
-    frame's cells as ANSI text and, if [hits] (default [false]), its hit grid.
+    frame's cells as ANSI text, a file named with [.txt] in place of [.ansi]
+    holds them as plain text ({!Grid.to_text}) and, if [hits] (default [false]),
+    a file named with [.hits.txt] holds its hit grid.
 
     Raises [Invalid_argument] if no {!Frame} is being drawn, [Failure] if [dir]
-    cannot be made, and [Sys_error] if the file cannot be written. *)
+    cannot be made, and [Sys_error] if a file cannot be written. *)
 
 (**/**)
 

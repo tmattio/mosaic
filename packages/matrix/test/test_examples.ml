@@ -88,8 +88,8 @@ let with_run ?(cols = 20) ?(rows = 3) ?(setup = ignore) on_frame f =
 
 let hello grid = Matrix.Grid.draw_text grid ~x:0 ~y:0 ~text:"hello"
 
-(* The diagnostics section's dump of every thirtieth frame: the file holds
-   the frame drawn. *)
+(* The diagnostics section's dump of every thirtieth frame: its files hold
+   the frame drawn, with styles and as plain text. *)
 let test_dump_every_thirtieth_frame () =
   let dir = Filename.temp_dir "matrix_dumps" "" in
   let frames = ref 0 in
@@ -104,17 +104,21 @@ let test_dump_every_thirtieth_frame () =
       Matrix.request_redraw app;
       Matrix_test.settle s
     done );
-  match Sys.readdir dir with
-  | [| file |] ->
-      let dump =
+  let files = Sys.readdir dir in
+  Array.sort compare files;
+  match files with
+  | [| ansi; txt |] ->
+      let read file =
         In_channel.with_open_bin (Filename.concat dir file) In_channel.input_all
       in
+      let dump = read ansi in
       is_true ~msg:"the dump holds the frame"
         (String.length dump >= 5
         && Seq.exists
              (fun i -> String.sub dump i 5 = "hello")
-             (Seq.init (String.length dump - 4) Fun.id))
-  | files -> failf "%d dumps, expected one" (Array.length files)
+             (Seq.init (String.length dump - 4) Fun.id));
+      equal ~msg:"and as text" string "hello\n\n" (read txt)
+  | files -> failf "%d files, expected two" (Array.length files)
 
 (* [Debug_overlay]'s preamble example draws the panel over the view. *)
 let draw_frame overlay app view =
