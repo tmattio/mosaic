@@ -1,5 +1,13 @@
 (** Interactive charts demo: zoom, pan, hover tooltips for multiple chart types.
-*)
+
+    Line, scatter, bar, stacked bar, heatmap and candlestick charts, each
+    keeping its zoom and pan.
+
+    Tab and Shift+Tab or < and > switch charts; the wheel zooms at the pointer,
+    [+] and [-] at the center; dragging or the arrows pan; r resets the chart
+    and 0 all of them; g toggles the grid and G cycles its pattern; c cycles the
+    charset, t the theme, m the chart's mode; p toggles the line chart's points,
+    h the help; q or Esc quits. *)
 
 module Cell_grid = Matrix_grid
 open Mosaic

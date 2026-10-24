@@ -1,19 +1,12 @@
-# Toffee Examples
+# Toffee examples
 
-Toffee ships with small runnable examples that double as integration tests and
-usage guides. From the repo root, run any example with:
+Run them from the repository root. The comment at the top of each `main.ml`
+says what it shows.
 
-```bash
-dune exec ./packages/toffee/examples/<name>/main.exe
-```
-
-## Examples
-
-| Example              | Description                                           |
-| -------------------- | ----------------------------------------------------- |
-| `01-basic`           | Minimal tree: fixed container, percentage child       |
-| `02-nested`          | Nested percentage layout with shared container space  |
-| `03-flexbox-gap`     | Simple flex row demonstrating gaps between items      |
-| `04-grid-holy-grail` | Classic three-column grid “holy grail” page layout    |
-| `05-measure`         | Custom measure function for text and image leaf nodes |
-
+| Example | What it shows | Run |
+| --- | --- | --- |
+| `01-basic` | A fixed container with a percentage child | `dune exec ./packages/toffee/examples/01-basic/main.exe` |
+| `02-nested` | Percentage sizes through nested containers | `dune exec ./packages/toffee/examples/02-nested/main.exe` |
+| `03-flexbox-gap` | A flex row spaced by `gap` | `dune exec ./packages/toffee/examples/03-flexbox-gap/main.exe` |
+| `04-grid-holy-grail` | The holy grail layout on a grid | `dune exec ./packages/toffee/examples/04-grid-holy-grail/main.exe` |
+| `05-measure` | Leaves measured by a custom function | `dune exec ./packages/toffee/examples/05-measure/main.exe` |

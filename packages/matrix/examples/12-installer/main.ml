@@ -1,6 +1,9 @@
-open Matrix
+(** A package installer that prints each finished package above its live
+    progress with [Matrix.static_print], and exits once all are installed.
 
-(* Installer: package manager simulation demonstrating static_print *)
+    q or Esc quits early. *)
+
+open Matrix
 
 type package = { name : string; version : string; size : int (* KB *) }
 

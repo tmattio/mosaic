@@ -1,6 +1,9 @@
-open Matrix
+(** Your shell in a pseudo-terminal, drawn through [Vte]. A thread waits for its
+    output and posts to the loop ([Matrix.post]), which reads it.
 
-(* Split terminal: embed a PTY shell using VTE *)
+    Keys go to the shell (Ctrl+D ends it); Esc quits. *)
+
+open Matrix
 
 let shell_prog = try Sys.getenv "SHELL" with Not_found -> "/bin/sh"
 

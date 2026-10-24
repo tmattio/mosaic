@@ -1,210 +1,37 @@
-# Mosaic Examples
+# Mosaic examples
 
-Mosaic ships with runnable examples that demonstrate the TEA architecture and
-UI components. From the repo root, run any example with:
+Run them from the repository root. The comment at the top of each `main.ml`
+says what it shows and which keys it takes.
 
-```bash
-dune exec ./packages/mosaic/examples/<name>/main.exe
-```
-
-## Examples
-
-| Example        | Description                                      |
-| -------------- | ------------------------------------------------ |
-| `01-counter`   | Simple counter with TEA basics                   |
-| `02-text`      | Styled text with colors and formatting           |
-| `03-spinner`   | Animated spinners with presets                   |
-| `04-input`     | Text input with cursor and placeholder           |
-| `05-select`    | Vertical list selection with keyboard navigation |
-| `06-tabs`      | Horizontal tab bar with scroll arrows            |
-| `07-slider`    | Value sliders with sub-cell precision            |
-| `08-table`     | Data tables with columns and styling             |
-| `09-canvas`    | Procedural drawing with shapes and braille       |
-| `10-code`      | Syntax-highlighted code with a toy lexer         |
-| `11-scrollbox` | Scrollable content with scroll bars              |
-| `12-form`      | Multi-component form with focus management       |
-| `13-markdown`  | Markdown rendering with scrollable content       |
-| `14-selection` | Text selection across renderables                |
-| `15-charts`    | Interactive charts with zoom, pan, and tooltips  |
-| `16-timer`     | Countdown timer with tick subscriptions          |
-| `17-progress-bar` | Animated progress bars with orientations      |
-| `18-textarea`  | Multi-line text editing with wrapping             |
-| `19-tree`      | Hierarchical tree with expand/collapse navigation |
-| `20-async`     | Async operations with `Cmd.perform`               |
-| `21-line-number` | Line number gutter with signs and colors        |
-| `22-layout`    | CSS Grid layout with responsive switching         |
-| `23-resize`    | Terminal resize and focus events                  |
-| `24-eio`       | A program run from Eio, its jobs as fibers        |
-| `25-diff`      | Unified and split-view diff display               |
-| `26-lwt`       | A program as an Lwt promise, cancelled by `Lwt.pick` |
-| `27-threads`   | A program fed by a worker and stopped by a thread  |
-| `x-code-editor` | Editable code editor with completion + line numbers |
-| `x-agent`      | Agent-style primary-screen semantics demo         |
-| `x-dashboard`  | Component composition with TEA `map`             |
-
-## Descriptions
-
-### `01-counter` – TEA basics
-
-Minimal example showing the TEA (The Elm Architecture) pattern: model, msg,
-init, update, view, and subscriptions. Demonstrates keyboard input handling
-and the quit pattern.
-
-### `02-text` – Styled text
-
-Text rendering with labelled styling arguments. Shows colors (foreground/background),
-text attributes (bold, italic, underline), and different wrap modes.
-
-### `03-spinner` – Loading indicators
-
-Animated spinners using built-in presets (Dots, Line, Circle, Bounce, Bar,
-Arrow). Demonstrates start/stop control and custom frame periods.
-
-### `04-input` – Text input
-
-Single-line text input with cursor navigation, placeholder text, and different
-cursor styles (block, line, underline). Shows on_change event handling.
-
-### `05-select` – List selection
-
-Vertical list selector with keyboard (Up/Down, j/k, Enter) and mouse support.
-Features scroll indicator, item descriptions, and wrap selection.
-
-### `06-tabs` – Tab navigation
-
-Horizontal tab bar with Left/Right navigation. Shows scroll arrows when tabs
-exceed available width, selection underline, and optional descriptions.
-
-### `07-slider` – Value control
-
-Horizontal and vertical sliders with sub-cell precision using Unicode
-half-blocks. Demonstrates mouse dragging and value change callbacks.
-
-### `08-table` – Data display
-
-Rich tables with configurable columns, headers, footers, and cell styling.
-Shows different column width strategies and text overflow handling.
-
-### `09-canvas` – Procedural drawing
-
-Off-screen drawing surface for custom graphics. Demonstrates plotting text,
-drawing boxes and lines (including braille sub-cell lines), and fills.
-
-### `10-code` – Syntax highlighting
-
-Code display with a small application-owned lexical highlighter. Shows OCaml
-and JSON examples with customizable color themes.
-
-### `11-scrollbox` – Scrollable content
-
-Scrollable container with viewport clipping and scroll bars. Demonstrates
-vertical scrolling with mouse wheel and keyboard support.
-
-### `12-form` – Form layout
-
-Multi-field form combining text inputs, selection and buttons. Typed focus
-identifiers and Tab/Shift+Tab traversal include Submit and Reset; buttons
-activate with Enter/Space or a completed primary click.
-
-### `13-markdown` – Markdown rendering
-
-Rich markdown display with full CommonMark support. Shows headings, text
-formatting (bold, italic, strikethrough, code), links, lists (ordered and
-unordered with nesting), code blocks with syntax highlighting, blockquotes,
-tables, and task lists. Demonstrates scroll_box for large content.
-
-### `14-selection` – Text selection
-
-Cross-renderable text selection with mouse. Shows selection across multiple
-text elements, within scrollable content, and with custom selection colors.
-Demonstrates Unicode text selection and selection state tracking.
-
-### `15-charts` – Interactive charts
-
-Interactive chart viewer integrating matrix.charts with mosaic. Demonstrates
-six chart types (line, scatter, bar, stacked bar, heatmap, candlestick) with
-zoom/pan via mouse wheel and drag, hover tooltips with hit testing, theme
-switching, and per-chart view persistence.
-
-### `16-timer` – Countdown timer
-
-Countdown timer with start/stop/reset controls. Shows time-based subscriptions
-using `Sub.on_tick`, input field handling with validation, and combining
-keyboard shortcuts with mouse-clickable buttons.
-
-### `17-progress-bar` – Animated progress bars
-
-Task download simulator with multiple progress bars at different speeds.
-Demonstrates horizontal and vertical `progress_bar` orientations, animated
-fill via `Sub.on_tick`, color customization, and start/pause control.
-
-### `18-textarea` – Multi-line text editing
-
-Note editor with a `textarea` widget. Shows multi-line editing with
-word/character/no wrapping modes (toggle with Ctrl+W), placeholder text,
-cursor blinking, and model-owned `Editor.t` and `on_change`/`on_submit` callbacks. Status bar displays
-character, word, and line counts.
-
-### `19-tree` – Hierarchical tree
-
-File-system-like tree browser with nested items and expand/collapse navigation.
-Demonstrates the `tree` widget with guide lines (rounded and single styles),
-model-owned `Tree.State.t` with `on_change`/`on_activate` callbacks, custom icon and guide colors,
-and an info panel showing selection state.
-
-### `20-async` – Async operations
-
-Task runner demonstrating `Cmd.perform` for background operations. Simulates
-launching tasks that run in parallel threads with `Unix.sleepf`, dispatching
-results back to the TEA loop. Shows `Cmd.batch` for combining commands,
-`Cmd.set_title` for terminal title updates, spinners for running tasks, and
-success/failure status indicators.
-
-### `21-line-number` – Line number gutter
-
-Code viewer with `line_number` wrapping a `code` widget. Demonstrates
-per-line background colors for current-line highlighting, gutter signs
-(breakpoint markers, error indicators), toggleable line numbers, and
-keyboard navigation (j/k) to move the cursor line.
-
-### `22-layout` – CSS Grid layout
-
-Dashboard skeleton using CSS Grid instead of Flexbox. Shows
-`grid_template_columns`, `grid_template_rows`, and `grid_row`/`grid_column`
-placement with `fr` units and fixed lengths. Toggle between three layout
-configurations: dashboard, two-column, and holy grail.
-
-### `23-resize` – Terminal resize and focus
-
-Terminal-aware info panel using `Sub.on_resize`, `Sub.on_focus`, and
-`Sub.on_blur`. Displays live terminal dimensions, a focused/blurred
-indicator, resize event history, and content that adapts between wide,
-normal, and narrow column layouts based on terminal width.
-
-### `25-diff` – Diff display
-
-Unified and split-view diff display with line numbers, gutter signs, and
-changed-line backgrounds. Demonstrates parsing a unified diff with
-`Diff.Patch.of_unified`, switching layouts, toggling line numbers, wrapping
-content, and applying a custom `Diff.theme`.
-
-### `x-code-editor` – Editor workflow demo
-
-Interactive code-editor demo with a `textarea` wrapped in `line_number`,
-showing editable gutters, inline syntax highlighting, and language-aware
-completion. Demonstrates completion trigger/cycle/accept and language
-switching between OCaml and JSON while editing.
-
-### `x-agent` – Agent-style TUI semantics
-
-Primary-screen demo focused on interaction semantics similar to modern agent
-CLIs. Committed transcript lines are written via static output above the live
-UI area, while in-flight assistant/tool output is rendered dynamically in a
-separate panel. Demonstrates explicit `idle`/`responding`/`waiting for
-confirmation` states, confirmation handling (`y`/`n`), and compact/expanded
-live output panel behavior.
-
-### `x-dashboard` – Component composition
-
-Multi-component dashboard using TEA's `map` function to compose independent
-components. Shows status bar, counters, and stopwatch in a unified layout.
+| Example | What it shows | Run |
+| --- | --- | --- |
+| `01-counter` | TEA basics: model, update, view, subscriptions | `dune exec ./packages/mosaic/examples/01-counter/main.exe` |
+| `02-text` | Styled text with colors and wrapping | `dune exec ./packages/mosaic/examples/02-text/main.exe` |
+| `03-spinner` | Animated spinners with presets | `dune exec ./packages/mosaic/examples/03-spinner/main.exe` |
+| `04-input` | Single-line text input with a cursor | `dune exec ./packages/mosaic/examples/04-input/main.exe` |
+| `05-select` | A vertical list to select from | `dune exec ./packages/mosaic/examples/05-select/main.exe` |
+| `06-tabs` | A horizontal tab bar with scroll arrows | `dune exec ./packages/mosaic/examples/06-tabs/main.exe` |
+| `07-slider` | Sliders with sub-cell precision | `dune exec ./packages/mosaic/examples/07-slider/main.exe` |
+| `08-table` | Data tables with columns and styling | `dune exec ./packages/mosaic/examples/08-table/main.exe` |
+| `09-canvas` | Procedural drawing with shapes and braille | `dune exec ./packages/mosaic/examples/09-canvas/main.exe` |
+| `10-code` | Syntax highlighting with an application-owned highlighter | `dune exec ./packages/mosaic/examples/10-code/main.exe` |
+| `11-scrollbox` | Scrollable content with scroll bars | `dune exec ./packages/mosaic/examples/11-scrollbox/main.exe` |
+| `12-form` | A form with focus management | `dune exec ./packages/mosaic/examples/12-form/main.exe` |
+| `13-markdown` | CommonMark rendering in a scroll box | `dune exec ./packages/mosaic/examples/13-markdown/main.exe` |
+| `14-selection` | Text selection across renderables | `dune exec ./packages/mosaic/examples/14-selection/main.exe` |
+| `15-charts` | Charts with zoom, pan and tooltips | `dune exec ./packages/mosaic/examples/15-charts/main.exe` |
+| `16-timer` | A countdown on tick subscriptions | `dune exec ./packages/mosaic/examples/16-timer/main.exe` |
+| `17-progress-bar` | Animated progress bars | `dune exec ./packages/mosaic/examples/17-progress-bar/main.exe` |
+| `18-textarea` | Multi-line editing with wrapping | `dune exec ./packages/mosaic/examples/18-textarea/main.exe` |
+| `19-tree` | A tree with expand and collapse | `dune exec ./packages/mosaic/examples/19-tree/main.exe` |
+| `20-async` | Background work with `Cmd.perform` | `dune exec ./packages/mosaic/examples/20-async/main.exe` |
+| `21-line-number` | A code gutter with signs and colors | `dune exec ./packages/mosaic/examples/21-line-number/main.exe` |
+| `22-layout` | CSS Grid layouts | `dune exec ./packages/mosaic/examples/22-layout/main.exe` |
+| `23-resize` | Resize and focus events | `dune exec ./packages/mosaic/examples/23-resize/main.exe` |
+| `24-eio` | A program run from Eio (needs `eio_main`) | `dune exec ./packages/mosaic/examples/24-eio/main.exe` |
+| `25-diff` | Unified and split diffs | `dune exec ./packages/mosaic/examples/25-diff/main.exe` |
+| `26-lwt` | A program as an Lwt promise (needs `lwt`) | `dune exec ./packages/mosaic/examples/26-lwt/main.exe` |
+| `27-threads` | A program fed by a worker and stopped by a thread | `dune exec ./packages/mosaic/examples/27-threads/main.exe` |
+| `x-agent` | An agent-style CLI on the primary screen | `dune exec ./packages/mosaic/examples/x-agent/main.exe` |
+| `x-code-editor` | A code editor with completion and highlighting | `dune exec ./packages/mosaic/examples/x-code-editor/main.exe` |
+| `x-dashboard` | An experiment dashboard with live metrics and charts | `dune exec ./packages/mosaic/examples/x-dashboard/main.exe` |

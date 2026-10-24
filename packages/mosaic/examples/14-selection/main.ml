@@ -1,4 +1,6 @@
-(** Text selection across renderables and scroll boxes. *)
+(** Text selection across renderables and scroll boxes.
+
+    Ctrl+click extends the selection. *)
 
 open Mosaic
 

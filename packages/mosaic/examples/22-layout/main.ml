@@ -1,4 +1,7 @@
-(** CSS Grid layout with template areas and responsive switching. *)
+(** CSS Grid layout with template areas and responsive switching.
+
+    1, 2 and 3 switch between the dashboard, two-column and holy grail grids; q
+    or Esc quits. *)
 
 open Mosaic
 

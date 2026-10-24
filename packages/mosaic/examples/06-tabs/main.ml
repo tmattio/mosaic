@@ -1,4 +1,6 @@
-(** Horizontal tab bar with navigation. *)
+(** Horizontal tab bar with navigation.
+
+    Left and Right or [ and ] move; Enter selects. *)
 
 open Mosaic
 

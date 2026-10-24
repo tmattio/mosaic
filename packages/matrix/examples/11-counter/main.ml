@@ -1,6 +1,9 @@
-open Matrix
+(** An inline UI below the prompt, in [`Primary] mode, whose height grows with
+    its list.
 
-(* Counter: simple inline TUI demonstrating Primary_inline mode *)
+    [+] and [-] change the counter; r resets; a adds an item; q or Esc quits. *)
+
+open Matrix
 
 type state = { counter : int; items : string list }
 

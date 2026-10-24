@@ -1,4 +1,6 @@
-(** Multi-line text editing with wrapping and cursor styles. *)
+(** Multi-line text editing with wrapping and cursor styles.
+
+    F2 cycles the wrap mode; Ctrl+Enter submits; Esc quits. *)
 
 open Mosaic
 

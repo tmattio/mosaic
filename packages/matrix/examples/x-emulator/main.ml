@@ -1,3 +1,7 @@
+(** A graphical terminal emulator on SDL2, built from matrix.pty, matrix.vte and
+    matrix.grid without Matrix's runtime: mouse selection, clipboard,
+    scrollback, zoom and cached glyph textures. It needs tsdl and tsdl-ttf. *)
+
 module Grid = Matrix_grid
 open Tsdl
 open Tsdl_ttf

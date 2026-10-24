@@ -1,6 +1,9 @@
-open Matrix
+(** Snake on a fixed-rate tick, a timer re-armed with [Matrix.at] at every tick;
+    a resize restarts the game.
 
-(* Snake: classic game demonstrating keyboard input and game loop *)
+    The arrows steer; p pauses; r restarts after a game over; Esc quits. *)
+
+open Matrix
 
 type direction = Up | Down | Left | Right
 

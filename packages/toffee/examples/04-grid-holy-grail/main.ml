@@ -1,3 +1,6 @@
+(** The holy grail page layout on a 3x3 grid: header, two sidebars, content and
+    footer, placed by lines and spans on [fr] and fixed tracks. *)
+
 open Toffee
 
 let or_fail = function

@@ -1,3 +1,8 @@
+(** Multilingual text (Indic, Japanese, Korean, emoji) centred and framed with
+    [Matrix.Image]'s padding and layering.
+
+    Esc or Ctrl+C quits. *)
+
 open Matrix
 module Color = Matrix_image.Color
 module Style = Matrix_image.Style

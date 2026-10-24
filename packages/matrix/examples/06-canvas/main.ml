@@ -1,6 +1,11 @@
-open Matrix
+(** A paint program with alpha blending, whose canvas survives resizes through
+    [Grid.blit_region].
 
-(* Drawing canvas: mouse-driven paint program with alpha blending *)
+    The left button paints and the right erases; 1 to 0 pick a color; a and z
+    change the alpha, [+] and [-] the brush size; c clears; p toggles the
+    palette, h the help; Esc quits. *)
+
+open Matrix
 
 type brush = { size : int; color : Ansi.Color.t; alpha : float }
 type state = { brush : brush; show_palette : bool; show_help : bool }

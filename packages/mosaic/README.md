@@ -241,44 +241,8 @@ callback dependencies. The cache lives only while that position is mounted.
 
 ## Examples
 
-27 examples and 3 showcase applications. Run any example from the repo root:
-
-```bash
-dune exec ./packages/mosaic/examples/<name>/main.exe
-```
-
-| Example            | Description                                       |
-| ------------------ | ------------------------------------------------- |
-| `01-counter`       | TEA basics: model, update, view, subscriptions    |
-| `02-text`          | Styled text with colors and formatting            |
-| `03-spinner`       | Animated loading indicators                       |
-| `04-input`         | Single-line text input with cursor                |
-| `05-select`        | Vertical list with keyboard/mouse navigation      |
-| `06-tabs`          | Horizontal tab bar with scroll arrows             |
-| `07-slider`        | Value sliders with sub-cell precision             |
-| `08-table`         | Data tables with columns and styling              |
-| `09-canvas`        | Procedural drawing with shapes and braille        |
-| `10-code`          | Backend-neutral syntax highlighting              |
-| `11-scrollbox`     | Scrollable content with scroll bars               |
-| `12-form`          | Multi-component form with focus management        |
-| `13-markdown`      | CommonMark rendering in a scroll box              |
-| `14-selection`     | Text selection across elements                    |
-| `15-charts`        | Interactive charts with zoom, pan, tooltips       |
-| `16-timer`         | Countdown with tick subscriptions                 |
-| `17-progress-bar`  | Animated progress bars                            |
-| `18-textarea`      | Multi-line editing with word wrap                 |
-| `19-tree`          | Hierarchical tree with expand/collapse            |
-| `20-async`         | Background operations with `Cmd.perform`          |
-| `21-line-number`   | Code gutter with signs and colors                 |
-| `22-layout`        | CSS Grid with responsive switching                |
-| `23-resize`        | Terminal resize and focus events                  |
-| `24-eio`           | A program run from Eio                            |
-| `25-diff`          | Unified and split diff views                      |
-| `26-lwt`           | A program as an Lwt promise                       |
-| `27-threads`       | A program fed by a worker and stopped by a thread |
-| `x-agent`          | Agent-style primary-screen CLI                    |
-| `x-code-editor`    | Code editor with completion and highlighting      |
-| `x-dashboard`      | Component composition with `map`                  |
+27 examples and 3 showcase applications, listed with their run commands in
+[examples/README.md](examples/README.md).
 
 ### Keyboard bindings
 

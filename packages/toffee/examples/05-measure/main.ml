@@ -1,3 +1,6 @@
+(** Leaves measured by a function that reads each node's context: a text node
+    that wraps to the space available, and an image. *)
+
 open Toffee
 
 let or_fail = function

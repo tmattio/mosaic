@@ -1,8 +1,11 @@
+(** Waveforms drawn with [matrix.charts]: the shape in braille, the harmonic
+    spectrum as bars, the envelope as a sparkline, and the frequency's note.
+
+    a and z change the frequency, s and x the volume, d and c the duration; Tab
+    cycles the waveform; Space plays it; q quits. *)
+
 open Matrix
 module Charts = Matrix_charts
-
-(* Audio Waveform Synthesizer - Interactive terminal synthesizer with
-   visualization *)
 
 (* --- Audio Types --- *)
 

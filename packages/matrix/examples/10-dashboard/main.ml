@@ -1,7 +1,10 @@
-open Matrix
+(** A system-monitor-style dashboard: animated progress bars, a statistics panel
+    and a scrolling log.
 
-(* Dashboard: system monitor style UI with progress bars, stats panel, and
-   scrolling logs *)
+    Up and Down scroll the log, Page Up and Page Down by more; q or Esc quits.
+*)
+
+open Matrix
 
 type metric = {
   name : string;

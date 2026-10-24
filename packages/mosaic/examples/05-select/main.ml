@@ -1,4 +1,6 @@
-(** Vertical list selection with keyboard navigation. *)
+(** Vertical list selection with keyboard navigation.
+
+    Up and Down or j and k move; Enter selects. *)
 
 open Mosaic
 

@@ -1,4 +1,7 @@
-(** Async operations with Cmd.perform. *)
+(** Async operations with Cmd.perform.
+
+    1 to 6 launch a task (task 5 fails), Enter every pending one; q or Esc
+    quits. *)
 
 open Mosaic
 

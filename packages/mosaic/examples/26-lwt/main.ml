@@ -1,4 +1,10 @@
-(** Timers that are Lwt promises, in a program that is a promise itself. *)
+(** Timers that are Lwt promises, in a program that is a promise itself.
+
+    It is built only when lwt is installed. [Mosaic_lwt.run] is the whole glue:
+    the program runs on a domain of its own, so it never holds up Lwt's thread,
+    and the work of [Cmd.perform] runs on Lwt's thread.
+
+    a adds a timer; q or Esc quits. *)
 
 open Mosaic
 

@@ -1,7 +1,9 @@
-open Matrix
+(** Every key, mouse and resize event, with its modifiers and Kitty metadata,
+    releases included.
 
-(* Keyboard tester: visualize all key events with modifiers and Kitty
-   metadata, releases included *)
+    Esc quits. *)
+
+open Matrix
 
 type event_record = { event : Matrix.event; timestamp : float }
 

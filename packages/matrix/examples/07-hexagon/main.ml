@@ -1,6 +1,9 @@
-open Matrix
+(** A ball bouncing under gravity in a spinning hexagon, moved by the time since
+    the last frame.
 
-(* Spinning hexagon with bouncing ball inside *)
+    Space relaunches the ball; Esc quits. *)
+
+open Matrix
 
 let pi = Float.pi
 

@@ -1,7 +1,10 @@
 (** Agent-style TUI modelled after Claude Code's non-fullscreen layout.
 
     Stress-tests Mosaic's primary-screen rendering with markdown, code blocks,
-    tool calls, and streaming content. *)
+    tool calls, and streaming content.
+
+    Enter submits; y and n answer a confirmation; o toggles the compact live
+    panel; q or Esc quits. *)
 
 open Mosaic
 

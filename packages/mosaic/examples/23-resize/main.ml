@@ -1,4 +1,7 @@
-(** Terminal resize and focus events. *)
+(** Terminal resize and focus events.
+
+    Resize the terminal or switch its focus to see the events; q or Esc quits.
+*)
 
 open Mosaic
 

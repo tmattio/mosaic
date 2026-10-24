@@ -1,4 +1,6 @@
-(** Progress bars with animated fill and orientations. *)
+(** Progress bars with animated fill and orientations.
+
+    Space starts or pauses; q or Esc quits. *)
 
 open Mosaic
 

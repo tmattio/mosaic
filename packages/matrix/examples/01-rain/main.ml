@@ -1,3 +1,8 @@
+(** Neon rain: random Katakana and digits stream down the screen, redrawn whole
+    every frame with a style cached per streak.
+
+    Space reseeds the columns; Esc or Ctrl+C quits. *)
+
 open Matrix
 
 let () = Random.self_init ()

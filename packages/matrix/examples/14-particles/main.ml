@@ -1,3 +1,10 @@
+(** A particle system with five emitters (burst, rainbow, fountain, explosion,
+    firework), each particle colored over its life.
+
+    1 to 5 pick the emitter; g and h change gravity, [+] and [-] the spawn rate;
+    Space bursts at the pointer and the left button sprays; p pauses; c clears;
+    q or Esc quits. *)
+
 open Matrix
 module Color = Ansi.Color
 module Style = Ansi.Style

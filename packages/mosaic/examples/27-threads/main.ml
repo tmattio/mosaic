@@ -1,5 +1,10 @@
 (** A program fed by a worker thread, and stopped by a thread it did not start.
-*)
+
+    A thread the program did not start, such as a library's callback thread,
+    gives it messages with the [dispatch] of a [Cmd.perform], which it may keep
+    after the perform returns.
+
+    p pauses or resumes the feed; q or Esc quits. *)
 
 open Mosaic
 

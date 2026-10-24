@@ -1,3 +1,6 @@
+(** Three fixed-size children in a flex row, spaced by [gap] instead of spacer
+    nodes. *)
+
 open Toffee
 
 let or_fail = function

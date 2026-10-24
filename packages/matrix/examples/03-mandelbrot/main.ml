@@ -1,3 +1,10 @@
+(** The Mandelbrot set in braille sub-cells, with a zoom that keeps the point
+    under the pointer.
+
+    The arrows pan; [+] and [-] or the wheel zoom, and the horizontal wheel or
+    Shift+wheel pans; [ and ] change the iteration count; c cycles palettes; r
+    resets; h hides the help; Esc or Ctrl+C quits. *)
+
 open Matrix
 
 type draw_context = { grid : Grid.t; cols : int; rows : int }

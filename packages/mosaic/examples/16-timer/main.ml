@@ -1,4 +1,6 @@
-(** Countdown timer with start/stop/reset controls. *)
+(** Countdown timer with start/stop/reset controls.
+
+    Space starts or stops; r resets; q or Esc quits. *)
 
 open Mosaic
 

@@ -1,5 +1,9 @@
 (** Code editor demo with inline completion, editable line numbers, and syntax
-    highlighting while typing. *)
+    highlighting while typing.
+
+    Tab triggers or accepts a completion and Shift+Tab selects the previous one;
+    Enter accepts; Esc dismisses; Ctrl+Space opens the list, and Ctrl+N and
+    Ctrl+P move in it; q or Esc quits. *)
 
 open Mosaic
 

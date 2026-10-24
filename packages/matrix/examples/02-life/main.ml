@@ -1,3 +1,9 @@
+(** Conway's Game of Life on a toroidal grid, edited with the mouse while it
+    runs, under a status bar drawn with [Matrix.Image].
+
+    Space pauses; c clears; the left button paints cells; Esc or Ctrl+C quits.
+*)
+
 open Matrix
 
 type draw_context = {

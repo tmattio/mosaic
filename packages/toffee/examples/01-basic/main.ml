@@ -1,3 +1,6 @@
+(** A fixed-size container with one percentage-sized child, laid out in definite
+    and in max-content space. *)
+
 open Toffee
 
 let or_fail = function

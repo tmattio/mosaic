@@ -1,4 +1,10 @@
-(** Async task runner demonstrating [Cmd.perform] with Eio fibers. *)
+(** Async task runner demonstrating [Cmd.perform] with Eio fibers.
+
+    It is built only when eio_main is installed. [Mosaic_eio.run] is the whole
+    glue: the program takes its steps on a domain of its own, and the work of
+    [Cmd.perform] runs as fibers of the main domain, where it may call Eio.
+
+    a launches a job; q or Esc quits. *)
 
 open Mosaic
 open Eio.Std

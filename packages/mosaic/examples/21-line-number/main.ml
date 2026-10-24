@@ -1,4 +1,7 @@
-(** Line numbers with gutter signs and per-line colors. *)
+(** Line numbers with gutter signs and per-line colors.
+
+    j and k or Up and Down move the current line; b toggles a breakpoint, e an
+    error sign, n the line numbers; q or Esc quits. *)
 
 open Mosaic
 

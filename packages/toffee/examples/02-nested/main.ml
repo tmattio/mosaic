@@ -1,3 +1,6 @@
+(** Percentage sizes through nested containers: two equal-width children, each
+    holding a fixed-size leaf. *)
+
 open Toffee
 
 let or_fail = function

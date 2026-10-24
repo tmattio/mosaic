@@ -1,4 +1,7 @@
-(** Unified and split-view diff display. *)
+(** Unified and split-view diff display.
+
+    l toggles the unified and split layouts, n the line numbers, w wrapping; q
+    or Esc quits. *)
 
 open Mosaic
 

@@ -1,3 +1,9 @@
+(** Tiles dragged with the mouse onto zones that highlight under them, with
+    alpha blending.
+
+    Press on a tile to drag it and release over a zone to drop it; Esc while
+    dragging snaps it back; Esc or q quits. *)
+
 open Matrix
 module Color = Ansi.Color
 module Style = Ansi.Style

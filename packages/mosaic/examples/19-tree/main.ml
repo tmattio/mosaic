@@ -1,4 +1,8 @@
-(** Hierarchical tree view with expand/collapse and guide lines. *)
+(** Hierarchical tree view with expand/collapse and guide lines.
+
+    Up and Down or j and k move; Left and Right collapse and expand, Space
+    toggles; Enter activates; g toggles the guides and s their style; q or Esc
+    quits. *)
 
 open Mosaic
 
