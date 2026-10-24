@@ -26,23 +26,32 @@ module Term = struct
   let resize t ~width ~height =
     write_all t.input_w (Printf.sprintf "\027[48;%d;%d;0;0t" height width) 0
 
-  let create ~width ~height =
-    let input_r, input_w = Unix.pipe ~cloexec:true () in
+  (* An unlinked file the run writes to. Its name's length follows the
+     temporary directory's, so it is opened outside any sample. *)
+  let output_file () =
     let path = Filename.temp_file "bench_runtime" ".out" in
     let output =
       Unix.openfile path [ O_RDWR; O_APPEND; O_TRUNC; O_CLOEXEC ] 0o600
     in
     Unix.unlink path;
+    output
+
+  (* A terminal writing to [output], emptied, or to a file of its own. *)
+  let create ?output ~width ~height () =
+    let input_r, input_w = Unix.pipe ~cloexec:true () in
+    let output =
+      match output with
+      | Some output ->
+          Unix.ftruncate output 0;
+          output
+      | None -> output_file ()
+    in
     let t = { input_r; input_w; output; now = 0; ended = false } in
     resize t ~width ~height;
     t
 
-  (* Closes the descriptors once the run has ended. *)
-  let release t =
-    List.iter
-      (fun fd -> try Unix.close fd with Unix.Unix_error _ -> ())
-      [ t.input_r; t.output ]
-
+  (* Closes the input once the run has ended. *)
+  let release t = try Unix.close t.input_r with Unix.Unix_error _ -> ()
   let feed t s = write_all t.input_w s 0
   let advance t ns = t.now <- t.now + ns
 
@@ -108,6 +117,9 @@ let caps : Matrix.Terminal.capabilities =
     identity = None;
   }
 
+(* An empty environment: the run reads no TERM, so loads no terminfo
+   description, whose size would follow the machine's database. *)
+let env = Matrix.Terminal.Caps.env (fun _ -> None) ~win32:false
 let initial_width = 250
 let initial_height = 70
 
@@ -219,7 +231,7 @@ let require condition message =
    clock: [on_idle] runs whenever the program has nothing to do and nothing
    has come for it, given the run's deadline. *)
 let drive ?(mode = `Alt) ?process_perform ~on_idle (t : Term.t) application =
-  Mosaic.start ~input:t.input_r ~output:t.output
+  Mosaic.start ~input:t.input_r ~output:t.output ~env
     ~config:(Matrix.config ~mode ~caps ()) ?process_perform application
     (fun r ->
       (* The clock starts at the run's time, which the steps never precede. *)
@@ -245,7 +257,7 @@ let setup ~mode ~blocks workload () =
   let accepted =
     ref { editor = Mosaic.Editor.of_string "a"; scroll = Mosaic.Scroll.at 7500 }
   in
-  let terminal = Term.create ~width:initial_width ~height:initial_height in
+  let terminal = Term.create ~width:initial_width ~height:initial_height () in
   let on_idle (terminal : Term.t) ~until =
     match until with
     | Some until -> Term.advance terminal (max 1 (until - terminal.now))
@@ -410,7 +422,7 @@ let start_suspended ?(pause = fun () -> true) (t : Term.t) application =
 let loop_setup ~pause () =
   let dispatch = ref ignore in
   let views = ref 0 in
-  let t = Term.create ~width:40 ~height:2 in
+  let t = Term.create ~width:40 ~height:2 () in
   let application =
     {
       Mosaic.init =
@@ -540,7 +552,7 @@ let down = "\027[B"
 let up = "\027[A"
 
 let list_setup kind n () =
-  let t = Term.create ~width:80 ~height:46 in
+  let t = Term.create ~width:80 ~height:46 () in
   let suspended = start_suspended t (list_application kind n) in
   let loop = { t; suspended; dispatch = ref ignore; views = ref 0 } in
   (* Validate both keys before measuring. *)
@@ -576,8 +588,8 @@ let list_benches =
 
 (* Startup: a run of the 5,000-message transcript from its start to its
    first presented frame, then its end. *)
-let startup () =
-  let t = Term.create ~width:initial_width ~height:initial_height in
+let startup output =
+  let t = Term.create ~output ~width:initial_width ~height:initial_height () in
   let application =
     {
       Mosaic.init =
@@ -604,7 +616,10 @@ let startup () =
 
 let startup_benches =
   Thumper.group "startup"
-    [ Thumper.bench "transcript-5000-first-frame" startup ]
+    [
+      Thumper.bench_with_setup ~setup:Term.output_file ~teardown:Unix.close
+        "transcript-5000-first-frame" startup;
+    ]
 
 (* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
    whose counts are the same on any x86_64 Linux under the locked compiler in
