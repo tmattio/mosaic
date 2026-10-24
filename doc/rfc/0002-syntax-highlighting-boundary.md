@@ -66,7 +66,7 @@ its reason. Tests are in `mosaic/test/unit/` unless stated.
 | ruling | rule | reference / reason | confidence | pinned by |
 |---|---|---|---|---|
 | R1. No language registry | `language` is an opaque string the application interprets. Mosaic holds no language names, extensions or fence info-strings | One job per library (design.md). Naming is policy that differs per application: mentat maps `ml` and `mli` to two grammars of one package. OpenTUI keeps a registry in core (`resolve-ft.ts`, 186 lines; datapoint) | high | "highlighter receives fence language" (`test_markdown.ml`) |
-| R2. Cookbook, not a bridge package | The glue is a recipe each application owns, in `doc/highlighting.md`. No `mosaic-tree-sitter` package | The glue is about ten lines; a package adds release surface, version coupling and a second home for the resolver. Revisit if a third-party backend ecosystem appears | medium (§7) | `mosaic/test/doc` compiles the guide's snippets |
+| R2. Cookbook, not a bridge package | The glue is a recipe each application owns, in `doc/highlighting.md`. No `mosaic-tree-sitter` package | The glue is about ten lines; a package adds release surface, version coupling and a second home for the resolver. Revisit if a third-party backend ecosystem appears | medium (§7) | none: the guide is checked by hand |
 | R3. Whole-buffer requests, amended (§8) | `{content; language; previous}`: the whole buffer, and the content of the view's latest result with the highlighter's state and the one edit from it, derived by the view. No buffer identity. Results stay whole. Caching stays with the application | LSP's `previousResultId`; tree-sitter's `ts_parser_parse` (§8). First decided on OpenTUI's unused incremental machinery (datapoint) | high | "async content changes coalesce", "requests hold on random scripts" (`test_code.ml`) |
 | R4. The scope vocabulary is the contract | A producer emits scopes whose first segment is one of `comment string number constant keyword operator punctuation function type constructor variable property module attribute label embedded tag`. Dotted refinements fall back to their base; unmapped scopes are kept and resolve to the base style. `Syntax_style.default` styles `variable.member` as `property` | tree-sitter, [Syntax Highlighting](https://tree-sitter.github.io/tree-sitter/3-syntax-highlighting.html), Queries › Highlights: "Commonly used highlight names include `keyword`, `function`, `type`, `property`, and `string`." Its CLI's default theme (`crates/cli/src/highlight.rs`, `Theme::default`) styles the rest (datapoint). `label` is mosaic's | medium-high | "scope vocabulary fallback and extensions" (`test_syntax_highlight.ml`) |
 | R5. tree-sitter leaves the repository | The bindings, the json and ocaml grammars, their tests and their opam package (`tree-sitter`, name unchanged) live in invariant-hq/ocaml-tree-sitter. `dune-project`, `mosaic.opam`, the lock and CI do not mention it; the examples use a keyword toy (`mosaic/examples/common/toy_highlighter.ml`) | No dependency used only inside an implementation (design.md); measured install (§6) | high | the build |
@@ -108,10 +108,9 @@ The decided text also fixed two surfaces:
   removed, and a running call finishes with its result discarded. Completion wakes an idle loop
   through an atomic redraw flag. The bindings copy their input before releasing the runtime lock,
   and each grammar guards its cached parser and query with a mutex.
-- **D4. The guide's snippets are typechecked in CI** (`eafdf527`). A dune rule extracts every OCaml
-  block of `doc/highlighting.md`, with line directives, and `mosaic/test/doc` compiles them against
-  the current API. Stub `Tree_sitter_ocaml` and `Tree_sitter_json` modules give the grammars'
-  highlighting interface, so mosaic gains no dependency.
+- **D4. The guide's snippets were typechecked in CI** (`eafdf527`), against stub tree-sitter
+  modules. The extractor and the stubs were removed later: the guide is short enough to check by
+  hand.
 - **D5. Wrapped split diffs settle under asynchronous highlighting** (`1aff4a2a`). Each rebuild
   reinstalled the unaligned pane text, which restarted highlighting, so the panes alternated
   forever: six jobs became eleven over ten more frames. The diff now keeps its alignment, keyed by
@@ -158,7 +157,7 @@ The decided text also fixed two surfaces:
 
 ## 6. Using it, and verification
 
-The recipe is in [doc/highlighting.md](../highlighting.md), whose snippets compile in CI (D4); it
+The recipe is in [doc/highlighting.md](../highlighting.md), checked by hand (D4); it
 states no rule and links to the interfaces. The contracts, including the worker's lifetime, failures,
 the pending display, the scope vocabulary and editable annotations, are in
 `mosaic/lib/ui/syntax_highlight.mli`, `syntax_style.mli`, `renderables/code.mli`,
@@ -172,7 +171,6 @@ not copy them.
   `constant`, `keyword`, `module`, `number`, `string`, `type`, `variable`, `variable.member`.
 - **P3.** Twenty fences over five unchanged refreshes: 100 highlight calls at `739cf2a1` with a
   closure capturing a theme (20 with a closure capturing nothing); 20 after R6.
-- **The guide.** `mosaic/test/doc` fails mosaic's build when an API the guide uses changes.
 
 ## 7. Closed: the guide and the `.mli`
 
@@ -247,8 +245,7 @@ guide's recipe), `f1317115` (textarea `?syntax`), `15df2699` (annotations over s
 styled graphemes" (`test_syntax_highlight.ml`); "pending edit inside a range keeps its other
 bytes", "conceal is a view property", "previous carries the state and the edit", "requests hold
 on random scripts" (`test_code.ml`); the "Syntax" group of `test_textarea.ml`; "merge puts the
-overlay over the base" (`test_syntax_highlight.ml`); `mosaic/test/doc`
-for the recipe.
+overlay over the base" (`test_syntax_highlight.ml`).
 
 **Behavior breaks.**
 - `Code.Highlighter.request`, `result` and `job` take a `'state`; `request` gains `previous`.
