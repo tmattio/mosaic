@@ -153,7 +153,7 @@ type event =
           and the runtime applies the latest report when it next draws. In
           [`Primary] mode the live region also changes as a frame writes the
           static rows queued or requires rows ({!draw}). That change comes as a
-          [Resize] before the next frame. *)
+          [Resize] before the frame after the one that made it. *)
   | Color_scheme of [ `Dark | `Light ]
       (** The terminal's color scheme, in reply to a query or on a change. *)
   | Invalid of string
@@ -236,7 +236,8 @@ val config :
       cooked mode input comes a line at a time and Ctrl+C sends SIGINT
       ({{!signals}Signals}). The runtime then sends no query, and uses the kitty
       keyboard protocol only when [caps] says the terminal has it. With the
-      protocol the terminal sends Ctrl+C as a key even then.
+      protocol the terminal sends Ctrl+C as a key sequence even then, which
+      cooked mode holds until a line ends, as it holds all input.
     - [explicit_width] whether to measure text with the built-in wcwidth tables
       instead of asking the terminal how it measures text. Defaults to [false].
     - [min_tui_height] the fewest rows the live region keeps in [`Primary] mode,
@@ -247,9 +248,8 @@ val config :
 
     {b Frames:}
     - [fps] the most frames per second. Defaults to [60.]. The
-      {e frame interval} is [1 / fps] seconds. A terminal sends no signal when
-      it has shown a frame, so no feedback sets the rate, and 60 is the refresh
-      rate of most displays.
+      {e frame interval} is [1 / fps] seconds. 60 is the refresh rate of most
+      displays.
 
     {b Input:}
     - [mouse] mouse tracking. Defaults to [`Sgr_any]. [`Off] leaves the mouse to
@@ -337,11 +337,12 @@ val run :
     + returns {!Stopped} once the input has ended and every event decoded before
       its end has been returned;
     + returns a {!Frame} if one was asked for ({!request_redraw}), one frame
-      interval has passed since the last frame by the latest step's time, and
-      the runtime waits for no answer from the terminal (the place of the live
-      region after a resize or a release, for at most an answer wait). Work that
-      took the turn's budget may have taken the interval with it. Before the
-      frame, if the usable size changed, comes a {!Resize}.
+      interval has passed since the last frame by the latest step's time (the
+      first frame waits for no interval), and the runtime waits for no answer
+      from the terminal (the place of the live region after a resize or a
+      release, for at most an answer wait). Work that took the turn's budget may
+      have taken the interval with it. Before the frame, if the usable size
+      changed, comes a {!Resize}.
 
     Each step is done before the next is asked for, so the application handles
     one event at a time, and an event sees what the previous one did. A turn
@@ -470,10 +471,11 @@ val frame_dt : 'msg app -> float
 
 val draw : 'msg app -> ?primary_required_rows:int -> (Grid.t -> unit) -> unit
 (** [draw app f] draws the frame the last step returned. It lays the frame out
-    at {!size}, calls [f] with the frame's grid, cleared, and presents the
-    frame. Presenting writes the terminal operations of the layout and the cells
-    that differ from the frame presented before, in one write, and writes
-    nothing when nothing changed.
+    at {!effective_size}, the usable size once the static rows queued are
+    written, calls [f] with the frame's grid, cleared, and presents the frame.
+    Presenting writes the terminal operations of the layout and the cells that
+    differ from the frame presented before, in one write, and writes nothing
+    when nothing changed.
 
     In [`Primary] mode the static rows queued go to the transcript first, in the
     same write, and the live region grows to [primary_required_rows] rows when
@@ -525,15 +527,17 @@ val post : 'msg app -> 'msg -> unit
     returned first by {!next}. Only a terminal that answered the probe is
     measured, on cells the run owns and then erases: the alternate screen's
     second row, or the live region's first, which then has at least two rows,
-    the height of a space of scale 2. If a step raises, the undos made so far
-    run in reverse and the exception propagates with its backtrace.
+    the height of text drawn at scale 2 by kitty's text-sizing protocol. If a
+    step raises, the undos made so far run in reverse and the exception
+    propagates with its backtrace.
 
     Giving the terminal back runs every undo, each even if another raises. When
     a reply is owed, it first waits at most an answer wait for the terminal to
     answer, so that no reply reaches the shell as typing. Then the modes are
-    reset, the cursor shown, the screen left (in [`Primary] mode the live region
-    is erased below the transcript), cooked mode restored, and the input not
-    read discarded.
+    reset (mouse tracking, bracketed paste, the keyboard protocols, and focus,
+    color scheme and resize reports), the cursor shown, the screen left (in
+    [`Primary] mode the live region is erased below the transcript), cooked mode
+    restored, and the input not read discarded.
 
     A run gives its terminal back on every way out: when the function given to
     {!run} returns or raises, for a program run in its place ({!release}), on a
@@ -557,12 +561,12 @@ val release : 'msg app -> (unit -> 'a) -> 'a
     erased live region, below the transcript, where [f]'s output goes on.
 
     The events decoded and not yet returned, and those decoded while waiting for
-    the answer, are dropped, but for {!Reply}, and a paste in progress is cut. A
-    turn decodes all it reads before it returns a step, so this drops the keys
-    read in the turn of the step that called [release], whatever that step was.
-    Those keys were typed after the event that called [release], or at a time
-    that cannot be ordered against the timer or the post that did, so they count
-    as typed for [f].
+    the replies owed, are dropped, but for {!Reply}, and a paste in progress is
+    cut. A turn decodes all it reads before it returns a step, so this drops the
+    keys read in the turn of the step that called [release], whatever that step
+    was. Those keys were typed after the event that called [release], or at a
+    time that cannot be ordered against the timer or the post that did, so they
+    count as typed for [f].
 
     During [f], SIGTSTP, SIGTERM and SIGHUP have their default actions, so the
     terminal's suspend character stops [f]'s program and the runtime with it.
@@ -638,7 +642,8 @@ val abort_paste : 'msg app -> unit
     when it is sent until the terminal has answered it or, from a terminal that
     never does, for max(5 s, four round trips). While a batch is owed the
     decoder reads its replies as replies, and a reply that comes after that
-    decodes as input.
+    decodes as input. A batch stays owed after the runtime has stopped waiting
+    for its answer.
 
     An application's query sent other than by {!query}, such as with
     {!Terminal.send}, is not owed. Its reply is never a {!Reply}, and one that
@@ -653,15 +658,15 @@ val query : 'msg app -> owed:Input.Decoder.owed -> string -> unit
 (** [query app ~owed q] sends the queries [q] to the terminal, followed by a
     primary device attributes query (DA1), and delivers their replies as
     {!Reply} events, ending with the DA1 reply. [owed] says which of the replies
-    [q] asks for are cursor position reports or control strings, as
-    {!Input.Decoder.expect} counts them. The decoder must know that they are
-    coming, or a string reply such as XTVERSION's [DCS > | text ST] decodes as
-    Alt+P and typed text, and a cursor report [CSI 1 ; m R] as F3. A terminal
-    answers in order and answers DA1, so its DA1 reply says that [q] has been
-    answered, or never will be, as for the runtime's own queries. Every DA1
-    reply is alike, so one batch that ends with DA1 is in flight at a time, and
-    [q] is sent once the terminal has answered the batches sent before it, or
-    they have been given up.
+    [q] asks for are cursor position reports or control strings (DCS, OSC and
+    APC replies), as {!Input.Decoder.expect} counts them. The decoder must know
+    that they are coming, or a string reply such as XTVERSION's
+    [DCS > | text ST] decodes as Alt+P and typed text, and a cursor report
+    [CSI 1 ; m R] as F3. A terminal answers in order and answers DA1, so its DA1
+    reply says that [q] has been answered, or never will be, as for the
+    runtime's own queries. Every DA1 reply is alike, so one batch that ends with
+    DA1 is in flight at a time, and [q] is sent once the terminal has answered
+    the batches sent before it, or they have been given up.
 
     Nothing is sent, and no {!Reply} comes, when the input is not a terminal in
     raw mode, or it has ended, since no reply could come. *)
@@ -725,8 +730,8 @@ val static_write :
     room. Otherwise, by default, the rows take theirs from the live region, down
     to [min_tui_height].
 
-    Raises [Invalid_argument] if [grid] is wider than the terminal, or [rows] is
-    negative or greater than the height of [grid]. *)
+    Raises [Invalid_argument], in [`Primary] mode, if [grid] is wider than the
+    terminal, or [rows] is negative or greater than the height of [grid]. *)
 
 val static_replace :
   ?preserve_live_region:bool -> ?rows:int -> 'msg app -> Grid.t -> unit
@@ -742,9 +747,9 @@ val static_replace :
     Raises as {!static_write} does. *)
 
 val static_clear : 'msg app -> unit
-(** [static_clear app] erases the screen immediately, drops the static rows
-    queued, and gives the live region the whole screen. It writes before the
-    next frame, which it asks for. The scrollback stays. *)
+(** [static_clear app] erases the screen, drops the static rows queued, and
+    gives the live region the whole screen. It writes the erase immediately, and
+    asks for the next frame. The scrollback stays. *)
 
 (** {1:scroll Scroll hints} *)
 
