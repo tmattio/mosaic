@@ -241,10 +241,10 @@ The final review's fuzzers, re-run on `9d897c96`:
   terminal does, also leaks. Two lossy runs at 2 s ended with a report still owed, so their last
   Shift+F3 read as a report: the owed rule's stated cost.
 
-**xterm 398.** `input_diff` (`matrix/test/xterm_diff`, outside CI) runs a matrix application in
-xterm under Xvfb. At decTerminalID 100 and 420 it checks the capabilities derived from xterm's
-replies to the real probe, then presses the 31 entries of `chords.txt` through XTest (25 chords,
-four again with Caps Lock on) and checks each keystroke. Re-run on `9d897c96`: 0 unexpected, at
+**xterm 398.** `input_diff` (`matrix/test/xterm_diff`, outside CI, since removed) ran a matrix
+application in xterm under Xvfb. At decTerminalID 100 and 420 it checked the capabilities derived
+from xterm's replies to the real probe, then pressed 31 chords through XTest (25 chords, four
+again with Caps Lock on) and checked each keystroke. Re-run on `9d897c96`: 0 unexpected, at
 both identities, for capabilities and keys.
 
 **tmux 3.5a** (skeptic): DECRQM of 2026, 2027, 2004, 2031, 2048, 1004 and 1016 gets no answer;
@@ -290,5 +290,6 @@ Questions 1–5 were adjudicated as §1–§2 state, for the maintainer to confi
     earlier? (Settled 2026-10-23: no; 2004 from 1.7 and 1004 from 1.8.)
 11. Should input-method `Text` reach mosaic widgets as a paste, or as an event of its own?
 12. Is a small Python XTest driver acceptable in `matrix/test/xterm_diff`, outside CI?
+    (Moot since 2026-10-24: `xterm_diff` was removed.)
 13. A kitty release carries no text, so with Caps Lock a press is `'R'` and its release `'r'`:
     is that acceptable?

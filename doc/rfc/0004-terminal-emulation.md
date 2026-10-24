@@ -175,11 +175,11 @@ commits that follow them change:
   finals (U+1160..U+11FF, U+D7B0..U+D7FF) are zero width under every method.
 
 ## 6. Verification
-Every behaviour is pinned by a unit test. A differential fuzzer (`matrix/test/xterm_diff`)
-compares the VTE with xterm 398 under Xvfb: random sequences drawn from the implemented
-functions are written to both, and their screens are compared, xterm's dumped through its
-print-screen control. Each difference is either fixed, or removed by a named normalisation that
-fires only on its pattern and cites its reason (`norm.ml`, `xterm_diff list`):
+Every behaviour is pinned by a unit test. A differential fuzzer (`matrix/test/xterm_diff`, since
+removed; the bugs it found are pinned by unit tests) compared the VTE with xterm 398 under Xvfb:
+random sequences drawn from the implemented functions were written to both, and their screens
+compared, xterm's dumped through its print-screen control. Each difference was either fixed, or
+removed by a named normalisation that fired only on its pattern and cited its reason:
 - a deviation this RFC decides (§1, §2: grapheme clusters, the zero-width join, the wrap erase,
   autowrap off at the margin, REP of a cluster and after a control function, the flag after
   scrolls and edits, BCE on selective erase, C1 handling, CAN and SUB, the identity and DECXCPR,
@@ -188,7 +188,7 @@ fires only on its pattern and cites its reason (`norm.ml`, `xterm_diff list`):
   only as observed in xterm 398);
 - a difference of configuration (xterm's level and print-screen).
 
-Without the normalisations, about 44% of cases differ. A clean campaign reports
+Without the normalisations, about 44% of cases differed. A clean campaign reported
 "0 unexplained differences". The campaigns ran about 2.2M cases in 20 rounds; the last two
 (216,000 cases at 12x6, 80x24, 2x2 and 1x1, decTerminalID 100 and 420, up to 200 tokens) ran
 clean, and the fuzzing found and fixed bugs in Hangul widths, sub-parameters, resize and DECRC.
