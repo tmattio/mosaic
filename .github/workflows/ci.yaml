@@ -42,6 +42,12 @@ jobs:
           ocaml-compiler: 5
           dune-cache: true
 
+      # opam installs SDL for the terminal demo with apt, whose index on the
+      # runner can be stale.
+      - name: Refresh the system package index
+        if: runner.os == 'Linux'
+        run: sudo apt-get update
+
       - name: Install OCaml dependencies
         id: deps
         run: |
@@ -49,6 +55,8 @@ jobs:
           awk -F'"' '/"git\+/ { url = $2 } url && /\(name / { sub(/.*\(name /, ""); sub(/\).*/, ""); print $0, url; url = "" }' dune-project |
             while read -r name url; do opam pin add -n "$name" "$url"; done
           opam install . --deps-only --with-test
+          # For matrix's terminal emulator demo, which Windows does not build.
+          if [ "$RUNNER_OS" != Windows ]; then opam install tsdl tsdl-ttf; fi
 
       - name: Build install targets
         run: opam exec -- dune build @install
