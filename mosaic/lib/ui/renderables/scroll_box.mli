@@ -32,8 +32,8 @@ module Scroll_accel : sig
   (** [macos ()] uses exponential acceleration with defaults [0.8], [3.0]
       seconds, and [6.0]. *)
 
-  val tick : t -> now:float -> float
-  (** [tick t ~now] advances the gesture clock to [now], in seconds. *)
+  val tick : t -> seconds:float -> float
+  (** [tick t ~seconds] advances the gesture clock to the time [seconds]. *)
 
   val reset : t -> unit
   (** [reset t] clears its velocity history. *)

@@ -20,7 +20,7 @@ module Scroll_accel = struct
   let macos ?(a = 0.8) ?(tau = 3.0) ?(max_multiplier = 6.0) () =
     { strategy = MacOS { a; tau; max_multiplier }; last_now = 0.; history = [] }
 
-  let tick t ~now =
+  let tick t ~seconds:now =
     match t.strategy with
     | Linear -> 1.0
     | MacOS { a; tau; max_multiplier } ->
@@ -380,7 +380,7 @@ let on_mouse t (event : Event.mouse) =
       let dx = if t.props.scroll_x then dx else 0 in
       let dy = if t.props.scroll_y then dy else 0 in
       if dx <> 0 || dy <> 0 then begin
-        let mult = Scroll_accel.tick t.scroll_accel ~now:t.frame_clock in
+        let mult = Scroll_accel.tick t.scroll_accel ~seconds:t.frame_clock in
         let fx = float_of_int dx *. mult in
         let fy = float_of_int dy *. mult in
         t.wheel_acc_x <- t.wheel_acc_x +. fx;
