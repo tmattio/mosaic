@@ -870,22 +870,25 @@ module Cmd : sig
   (** The type for commands. Each constructor is the command of the function of
       the same name below. *)
   type 'msg t =
-    | None
-    | Batch of 'msg t list
-    | Perform of (('msg -> unit) -> unit)
-    | Exec of (unit -> 'msg)
-    | Suspend
-    | Quit
-    | Set_title of string
-    | Copy_to_clipboard of string
-    | Copy_selection
-    | Query_color_scheme
-    | Bell
-    | Notify of { title : string; body : string }
-    | Clear_selection
-    | Static_commit of 'msg Vnode.t
-    | Static_clear
-    | Abort_paste
+    | None  (** {!val-none}. *)
+    | Batch of 'msg t list  (** {!val-batch}. *)
+    | Perform of (('msg -> unit) -> unit)  (** {!val-perform}. *)
+    | Exec of (unit -> 'msg)  (** {!val-exec}. *)
+    | Suspend  (** {!val-suspend}. *)
+    | Quit  (** {!val-quit}. *)
+    | Set_title of string  (** {!val-set_title}. *)
+    | Copy_to_clipboard of string  (** {!val-copy_to_clipboard}. *)
+    | Copy_selection  (** {!val-copy_selection}. *)
+    | Query_color_scheme  (** {!val-query_color_scheme}. *)
+    | Bell  (** {!val-bell}. *)
+    | Notify of {
+        title : string;  (** [notify]'s [~title]. *)
+        body : string;  (** [notify]'s [~body]. *)
+      }  (** {!val-notify}. *)
+    | Clear_selection  (** {!val-clear_selection}. *)
+    | Static_commit of 'msg Vnode.t  (** {!val-static_commit}. *)
+    | Static_clear  (** {!val-static_clear}. *)
+    | Abort_paste  (** {!val-abort_paste}. *)
 
   val none : 'msg t
   (** [none] is the command that does nothing. *)
@@ -1087,21 +1090,23 @@ module Sub : sig
   (** The type for subscriptions. Each constructor is the subscription of the
       function of the same name below. *)
   type 'msg t =
-    | None
-    | Batch of 'msg t list
-    | Every of string * float * (int -> 'msg)
-    | After of string * float * 'msg
-    | On_tick of string * (dt:float -> 'msg)
-    | On_key of phase * (Event.key -> 'msg option)
+    | None  (** {!val-none}. *)
+    | Batch of 'msg t list  (** {!val-batch}. *)
+    | Every of string * float * (int -> 'msg)  (** {!val-every}. *)
+    | After of string * float * 'msg  (** {!val-after}. *)
+    | On_tick of string * (dt:float -> 'msg)  (** {!val-on_tick}. *)
+    | On_key of phase * (Event.key -> 'msg option)  (** {!val-on_key}. *)
     | On_key_release of (Matrix.Input.Keystroke.release -> 'msg option)
-    | On_mouse of phase * (Event.mouse -> 'msg option)
-    | On_paste of phase * (Event.paste -> 'msg option)
-    | On_paste_stalled of float * 'msg
-    | On_resize of (width:int -> height:int -> 'msg)
-    | On_focus of 'msg
-    | On_blur of 'msg
+        (** {!val-on_key_release}. *)
+    | On_mouse of phase * (Event.mouse -> 'msg option)  (** {!val-on_mouse}. *)
+    | On_paste of phase * (Event.paste -> 'msg option)  (** {!val-on_paste}. *)
+    | On_paste_stalled of float * 'msg  (** {!val-on_paste_stalled}. *)
+    | On_resize of (width:int -> height:int -> 'msg)  (** {!val-on_resize}. *)
+    | On_focus of 'msg  (** {!val-on_focus}. *)
+    | On_blur of 'msg  (** {!val-on_blur}. *)
     | On_color_scheme of ([ `Dark | `Light ] -> 'msg option)
-    | Worker of string * (Stop.t -> 'msg mailbox -> unit)
+        (** {!val-on_color_scheme}. *)
+    | Worker of string * (Stop.t -> 'msg mailbox -> unit)  (** {!val-worker}. *)
 
   val none : 'msg t
   (** [none] is the subscription to nothing. *)

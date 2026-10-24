@@ -134,10 +134,10 @@ module Screen : sig
       moment. A screen does not change. Rows and columns count from 0. *)
 
   type cursor = {
-    row : int;
-    col : int;
-    shape : Matrix.Ansi.cursor_style;
-    blinking : bool;
+    row : int;  (** The cursor's row. *)
+    col : int;  (** The cursor's column. *)
+    shape : Matrix.Ansi.cursor_style;  (** The cursor's shape. *)
+    blinking : bool;  (** Whether the cursor blinks. *)
   }
   (** The type for a visible cursor. *)
 
