@@ -1,11 +1,17 @@
+; A pseudo-terminal is POSIX: on Windows, Pty raises ENOSYS (see pty.mli).
+
 (executable
  (name program)
+ (enabled_if
+  (= %{os_type} Unix))
  (modules program)
  (libraries mosaic matrix unix threads.posix))
 
 (test
  (name test_runtime_pty)
  (package mosaic)
+ (enabled_if
+  (= %{os_type} Unix))
  (modules test_runtime_pty)
  (deps program.exe %{exe:../../../matrix/test/runtime_job.exe})
  (libraries windtrap matrix.pty unix))

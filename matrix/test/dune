@@ -44,9 +44,15 @@
  (modules test_vte_props)
  (libraries windtrap matrix.vte matrix.grid))
 
+; A pseudo-terminal, process groups and the controlling terminal are POSIX:
+; on Windows, Pty raises ENOSYS (see pty.mli), so the tests that need one
+; run only on Unix.
+
 (test
  (name test_pty)
  (package matrix)
+ (enabled_if
+  (= %{os_type} Unix))
  (modules test_pty)
  (libraries windtrap unix matrix.pty))
 
@@ -74,6 +80,8 @@
 (test
  (name test_tty)
  (package matrix)
+ (enabled_if
+  (= %{os_type} Unix))
  (modules test_tty)
  (foreign_stubs
   (language c)
@@ -133,6 +141,8 @@
 
 (executable
  (name runtime_job)
+ (enabled_if
+  (= %{os_type} Unix))
  (modules runtime_job)
  (foreign_stubs
   (language c)
@@ -142,6 +152,8 @@
 (test
  (name test_runtime_pty)
  (package matrix)
+ (enabled_if
+  (= %{os_type} Unix))
  (modules test_runtime_pty)
  (deps runtime_child.exe runtime_job.exe)
  (libraries windtrap matrix.pty matrix.vte matrix.input unix))

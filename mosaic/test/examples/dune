@@ -1,5 +1,6 @@
 ; The examples that run a program from another event loop, run in a
-; pseudo-terminal. Those whose event loop is not installed are skipped.
+; pseudo-terminal. Those whose event loop is not installed are skipped, and
+; all of them on Windows, which has no pseudo-terminal (see pty.mli).
 
 (executable
  (name test_examples)
@@ -8,7 +9,10 @@
 (rule
  (alias runtest)
  (package mosaic)
- (enabled_if %{lib-available:eio_main})
+ (enabled_if
+  (and
+   (= %{os_type} Unix)
+   %{lib-available:eio_main}))
  (action
   (setenv
    EXAMPLE
@@ -24,7 +28,10 @@
 (rule
  (alias runtest)
  (package mosaic)
- (enabled_if %{lib-available:lwt.unix})
+ (enabled_if
+  (and
+   (= %{os_type} Unix)
+   %{lib-available:lwt.unix}))
  (action
   (setenv
    EXAMPLE
@@ -40,6 +47,8 @@
 (rule
  (alias runtest)
  (package mosaic)
+ (enabled_if
+  (= %{os_type} Unix))
  (action
   (setenv
    EXAMPLE
