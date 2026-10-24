@@ -569,17 +569,38 @@ let device_size t =
 (* Accessors *)
 
 let size t =
+  check t;
   match t.config.mode with
   | `Alt -> (t.width, t.height)
   | `Primary -> (t.width, (Primary.live_region t.primary).height)
 
-let full_size t = (t.width, t.height)
-let mode t = t.config.mode
-let pixel_resolution t = Terminal.pixel_resolution t.terminal
-let terminal t = t.terminal
-let capabilities t = Terminal.capabilities t.terminal
-let now t = t.now
-let frame_dt t = Float.of_int t.frame_dt *. 1e-9
+let full_size t =
+  check t;
+  (t.width, t.height)
+
+let mode t =
+  check t;
+  t.config.mode
+
+let pixel_resolution t =
+  check t;
+  Terminal.pixel_resolution t.terminal
+
+let terminal t =
+  check t;
+  t.terminal
+
+let capabilities t =
+  check t;
+  Terminal.capabilities t.terminal
+
+let now t =
+  check t;
+  t.now
+
+let frame_dt t =
+  check t;
+  Float.of_int t.frame_dt *. 1e-9
 
 (* A reply needs a terminal on the input side, in raw mode. *)
 let can_query t =
@@ -1021,6 +1042,7 @@ let apply_primary_op buf = function
       Ansi.Writer.write_string buf clear_scrollback_seq
 
 let effective_size t =
+  check t;
   match t.config.mode with
   | `Alt -> (t.width, t.height)
   | `Primary -> (t.width, (Primary.effective_region t.primary).height)
@@ -1097,9 +1119,17 @@ let prepare ?primary_required_rows t =
   end;
   refresh_render_region t
 
-let current_grid t = Screen.current_grid t.screen
-let hits t = Screen.next_hit_grid t.screen
-let screen t = t.screen
+let current_grid t =
+  check t;
+  Screen.current_grid t.screen
+
+let hits t =
+  check t;
+  Screen.next_hit_grid t.screen
+
+let screen t =
+  check t;
+  t.screen
 
 (* Apply cursor position, style, and color into the frame buffer.
    Style and color are only emitted when they differ from the last frame. *)
@@ -1256,16 +1286,19 @@ let draw t ?primary_required_rows f =
    as a single write. *)
 
 let set_cursor ?visible ?style t =
+  check t;
   let cursor = Screen.cursor t.screen in
   let visible = Option.value visible ~default:cursor.visible in
   let style = Option.value style ~default:cursor.style in
   Screen.set_cursor t.screen { cursor with visible; style }
 
 let set_cursor_style t ~style ~blinking =
+  check t;
   let cursor = Screen.cursor t.screen in
   Screen.set_cursor t.screen { cursor with style; blinking }
 
 let set_cursor_position t ~row ~col =
+  check t;
   let max_row =
     if t.config.mode = `Primary then (Primary.live_region t.primary).height
     else max 1 t.height
@@ -1276,6 +1309,7 @@ let set_cursor_position t ~row ~col =
   Screen.set_cursor t.screen { cursor with position = Some (col - 1, row - 1) }
 
 let set_cursor_color t ~r ~g ~b =
+  check t;
   let clamp_01 f = Float.max 0. (Float.min 1. f) in
   let to_byte f = int_of_float (Float.round (f *. 255.)) |> clamp 0 255 in
   let cursor = Screen.cursor t.screen in

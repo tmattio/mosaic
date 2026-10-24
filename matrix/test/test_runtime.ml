@@ -914,6 +914,54 @@ let test_post_from_other_domains () =
   equal ~msg:"every post" int (producers * each) !received;
   equal ~msg:"in order per producer" int 0 !disordered
 
+(* An app belongs to the thread that runs it: every function that takes
+   one, but [post], raises on another thread, the readers and the cursor's
+   setters included. *)
+let test_calls_off_the_loop_raise () =
+  let f = fake () in
+  run ~config:(quiet ()) f (fun app ->
+      let calls =
+        [
+          ("step", fun () -> ignore (Matrix.step app ~now:0));
+          ("fds", fun () -> ignore (Matrix.fds app));
+          ("deadline", fun () -> ignore (Matrix.deadline app));
+          ("now", fun () -> ignore (Matrix.now app));
+          ("at", fun () -> ignore (Matrix.at app 0));
+          ("request_redraw", fun () -> Matrix.request_redraw app);
+          ("frame_dt", fun () -> ignore (Matrix.frame_dt app));
+          ("current_grid", fun () -> ignore (Matrix.current_grid app));
+          ("hits", fun () -> ignore (Matrix.hits app));
+          ("screen", fun () -> ignore (Matrix.screen app));
+          ("mode", fun () -> ignore (Matrix.mode app));
+          ("size", fun () -> ignore (Matrix.size app));
+          ("full_size", fun () -> ignore (Matrix.full_size app));
+          ("effective_size", fun () -> ignore (Matrix.effective_size app));
+          ("pixel_resolution", fun () -> ignore (Matrix.pixel_resolution app));
+          ("terminal", fun () -> ignore (Matrix.terminal app));
+          ("capabilities", fun () -> ignore (Matrix.capabilities app));
+          ("set_cursor", fun () -> Matrix.set_cursor app ~visible:true);
+          ( "set_cursor_style",
+            fun () -> Matrix.set_cursor_style app ~style:`Block ~blinking:false
+          );
+          ( "set_cursor_position",
+            fun () -> Matrix.set_cursor_position app ~row:1 ~col:1 );
+          ( "set_cursor_color",
+            fun () -> Matrix.set_cursor_color app ~r:0. ~g:0. ~b:0. );
+        ]
+      in
+      let not_raised =
+        Domain.join
+          (Domain.spawn (fun () ->
+               List.filter_map
+                 (fun (name, call) ->
+                   match call () with
+                   | () -> Some name
+                   | exception Invalid_argument _ -> None)
+                 calls))
+      in
+      equal ~msg:"calls that did not raise off the loop's thread" (list string)
+        [] not_raised)
+
 (* The caller drives the run: [step] never waits, says [None] when the run
    has nothing to do, and [deadline] says until when the caller may wait.
    The run's time is the steps': a frame asked for comes once the caller's
@@ -3184,6 +3232,7 @@ let () =
           test "frames, a property" test_frame_property;
           test "the turn budget, a property" test_turn_budget_property;
           test "post from other domains" test_post_from_other_domains;
+          test "calls off the loop raise" test_calls_off_the_loop_raise;
           test "post after the run" test_post_after_the_run;
           test "a step never waits" test_step_never_waits;
           test "a stop requested before the run" test_stop_before_the_run;
