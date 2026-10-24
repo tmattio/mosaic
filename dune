@@ -1,7 +1,8 @@
 ; The project verdict aliases. They live at the root rather than in a
 ; test/ directory because this repo has no single test tree — every
-; package carries its own (matrix/test, mosaic/test/unit, toffee/test,
-; …) — and these three answer questions about the project as a whole.
+; package carries its own (packages/matrix/test,
+; packages/mosaic/test/unit, packages/toffee/test, …) — and these three
+; answer questions about the project as a whole.
 ;
 ; cover and mutate are asymmetric on purpose. Coverage accumulates as a
 ; side effect of any instrumented run, so @cover both runs the suites
@@ -55,7 +56,7 @@
 ; keeping where someone will find them rather than in a review comment:
 ;
 ;   WINDTRAP_MUTATE=audit dune exec --instrument-with ppx_windtrap.mutate \
-;     mosaic/test/unit/test_text_buffer.exe
+;     packages/mosaic/test/unit/test_text_buffer.exe
 ;     -> 42 admitted, 9 unjustified, 3 no sites
 ;   ... test_event.exe -> 7 admitted, 1 unjustified, 30 no sites
 ;
@@ -82,12 +83,12 @@
  (alias admit)
  (deps
   (universe)
-  mosaic/test/unit/test_selection.exe
-  mosaic/test/unit/test_edit_buffer.exe)
+  packages/mosaic/test/unit/test_selection.exe
+  packages/mosaic/test/unit/test_edit_buffer.exe)
  (action
   (setenv
    WINDTRAP_MUTATE
    audit
    (progn
-    (run %{exe:mosaic/test/unit/test_selection.exe})
-    (run %{exe:mosaic/test/unit/test_edit_buffer.exe})))))
+    (run %{exe:packages/mosaic/test/unit/test_selection.exe})
+    (run %{exe:packages/mosaic/test/unit/test_edit_buffer.exe})))))

@@ -4,6 +4,8 @@
 
 (generate_opam_files true)
 
+(opam_file_location inside_opam_directory)
+
 (source
  (github tmattio/mosaic))
 
