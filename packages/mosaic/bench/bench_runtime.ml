@@ -194,13 +194,13 @@ let step workload driver =
   if !(driver.continuation) = None then
     failwith "runtime benchmark: loop ended before presentation"
 
-(* Each wheel sample returns to its starting viewport. Alternating directions
-   in separate samples makes allocation evidence depend on sample parity. *)
+(* Every sample returns to where it started: a key and its erasure, a wheel
+   burst and its reverse, a resize and its restoration. Alternating
+   directions across samples would make each sample's allocation depend on
+   its parity, and thumper could not count it exactly. *)
 let measure workload driver =
   step workload driver;
-  match workload with
-  | Wheel_burst -> step workload driver
-  | Keystroke | Resize -> ()
+  step workload driver
 
 let close driver =
   Term.stop driver.terminal;
@@ -509,20 +509,20 @@ let () =
            ( `Alt,
              5000,
              [
-               ("keystroke-to-present", Keystroke);
+               ("type-and-erase", Keystroke);
                ("wheel-roundtrip-2x8", Wheel_burst);
-               ("resize-250x70", Resize);
+               ("resize-roundtrip-249x69", Resize);
              ] );
            ( `Alt,
              20000,
              [
-               ("keystroke-to-present", Keystroke);
+               ("type-and-erase", Keystroke);
                ("wheel-roundtrip-2x8", Wheel_burst);
              ] );
            ( `Primary,
              5000,
              [
-               ("keystroke-to-present", Keystroke);
+               ("type-and-erase", Keystroke);
                ("wheel-roundtrip-2x8", Wheel_burst);
              ] );
          ])

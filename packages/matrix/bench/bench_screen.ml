@@ -142,67 +142,48 @@ let diff_no_changes =
       build_full_ascii screen;
       ignore (Screen.render screen))
 
-(* Scenario: text editor / TUI layout *)
+(* Scenario: text editor / TUI layout. A sample switches the editor to
+   insert mode and back, two frames, so that every sample starts from the
+   same screen and allocates the same. *)
 
 let scenario_text_editor =
-  let toggle = ref false in
   let code_bg = C.of_rgb 18 20 24 in
   let status_fg = C.of_rgb 0 0 0 in
   let status_bg = C.of_rgb 200 200 200 in
   let status_style = S.make ~fg:status_fg ~bg:status_bg ~bold:true () in
   let cursor_row = 12 in
   let cursor_col = 8 in
+  let normal_cursor =
+    S.make ~fg:(C.of_rgb 200 200 255) ~bg:(C.of_rgb 30 30 40) ~italic:true ()
+  in
+  let insert_cursor =
+    S.make ~fg:(C.of_rgb 255 255 0) ~bg:(C.of_rgb 40 40 0) ~bold:true ()
+  in
+  let frame screen ~mode_label ~cursor_style =
+    let status_text = mode_label ^ "  matrix.ml  42L, 1C  All tests passing" in
+    Screen.build screen ~width:grid_width ~height:grid_height (fun grid hits ->
+        Grid.clear grid ~color:code_bg;
+        for row = 0 to grid_height - 2 do
+          Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text:ascii_line
+        done;
+        Grid.draw_text ~style:cursor_style grid ~x:cursor_col ~y:cursor_row
+          ~text:"let value = 42 in";
+        Grid.draw_text ~style:status_style grid ~x:0 ~y:(grid_height - 1)
+          ~text:status_text;
+        Hit_grid.add hits ~x:0 ~y:(grid_height - 1) ~width:grid_width ~height:1
+          ~id:1);
+    ignore (Screen.render screen)
+  in
   Thumper.bench_with_setup
     ~setup:(fun () ->
-      toggle := false;
       let screen = Screen.create () in
-      Screen.build screen ~width:grid_width ~height:grid_height
-        (fun grid hits ->
-          Grid.clear grid ~color:code_bg;
-          (* Code area *)
-          for row = 0 to grid_height - 2 do
-            Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text:ascii_line
-          done;
-          (* Initial cursor line + status bar *)
-          let cursor_style =
-            S.make ~fg:(C.of_rgb 255 255 0) ~bg:(C.of_rgb 40 40 0) ~bold:true ()
-          in
-          Grid.draw_text ~style:cursor_style grid ~x:cursor_col ~y:cursor_row
-            ~text:"let value = 42 in";
-          Grid.draw_text ~style:status_style grid ~x:0 ~y:(grid_height - 1)
-            ~text:"-- NORMAL --  matrix.ml  42L, 1C  All tests passing";
-          Hit_grid.add hits ~x:0 ~y:(grid_height - 1) ~width:grid_width
-            ~height:1 ~id:1);
-      let _ = Screen.render screen in
+      frame screen ~mode_label:"-- NORMAL --" ~cursor_style:normal_cursor;
       screen)
     ~teardown:(fun _ -> ())
-    "render.scenario/text-editor"
+    "render.scenario/text-editor-insert-and-back"
     (fun screen ->
-      toggle := not !toggle;
-      let mode_label = if !toggle then "-- INSERT --" else "-- NORMAL --" in
-      let cursor_style =
-        if !toggle then
-          S.make ~fg:(C.of_rgb 255 255 0) ~bg:(C.of_rgb 40 40 0) ~bold:true ()
-        else
-          S.make ~fg:(C.of_rgb 200 200 255) ~bg:(C.of_rgb 30 30 40) ~italic:true
-            ()
-      in
-      let status_text =
-        mode_label ^ "  matrix.ml  42L, 1C  All tests passing"
-      in
-      Screen.build screen ~width:grid_width ~height:grid_height
-        (fun grid hits ->
-          Grid.clear grid ~color:code_bg;
-          for row = 0 to grid_height - 2 do
-            Grid.draw_text ~style:ascii_style grid ~x:0 ~y:row ~text:ascii_line
-          done;
-          Grid.draw_text ~style:cursor_style grid ~x:cursor_col ~y:cursor_row
-            ~text:"let value = 42 in";
-          Grid.draw_text ~style:status_style grid ~x:0 ~y:(grid_height - 1)
-            ~text:status_text;
-          Hit_grid.add hits ~x:0 ~y:(grid_height - 1) ~width:grid_width
-            ~height:1 ~id:1);
-      ignore (Screen.render screen))
+      frame screen ~mode_label:"-- INSERT --" ~cursor_style:insert_cursor;
+      frame screen ~mode_label:"-- NORMAL --" ~cursor_style:normal_cursor)
 
 (* Scenario: CI log viewer / heavy style + hyperlinks *)
 

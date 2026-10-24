@@ -53,13 +53,10 @@ let steady_scrolled_transcript =
    hint the presentation shifts the region in hardware and rewrites only the
    revealed row; without it the scrolled content changes every viewport row.
    Rows carry distinct content — a transcript of identical rows diffs to
-   nothing when shifted and would measure an empty present. Direction
-   alternates so the position stays put across samples. *)
-type scroll_state = {
-  scroll_renderer : Renderer.t;
-  scroll_box : Scroll_box.t;
-  mutable scroll_dir : int;
-}
+   nothing when shifted and would measure an empty present. A sample
+   scrolls one row down and back, two frames, so that every sample starts
+   at the same position and allocates the same. *)
+type scroll_state = { scroll_renderer : Renderer.t; scroll_box : Scroll_box.t }
 
 let scroll_phrases =
   Thumper.black_box
@@ -91,16 +88,17 @@ let make_scroll_by_one () =
   render_frame renderer;
   Scroll_box.scroll_to scroll ~y:(transcript_rows / 2) ();
   render_frame renderer;
-  { scroll_renderer = renderer; scroll_box = scroll; scroll_dir = 1 }
+  { scroll_renderer = renderer; scroll_box = scroll }
 
-let scroll_by_one_frame st =
-  Scroll_box.scroll_by st.scroll_box ~y:st.scroll_dir ();
-  st.scroll_dir <- -st.scroll_dir;
+let scroll_by_one_frames st =
+  Scroll_box.scroll_by st.scroll_box ~y:1 ();
+  render_frame st.scroll_renderer;
+  Scroll_box.scroll_by st.scroll_box ~y:(-1) ();
   render_frame st.scroll_renderer
 
 let scroll_by_one =
-  Thumper.bench_with_setup ~setup:make_scroll_by_one "frame/scroll-by-one-row"
-    scroll_by_one_frame
+  Thumper.bench_with_setup ~setup:make_scroll_by_one
+    "frame/scroll-one-row-and-back" scroll_by_one_frames
 
 (* Steady full-frame scenario at 200x50: no scrolling, no layout changes.
    Exercises the per-frame fixed costs — buffer clears, command build, text
