@@ -240,6 +240,11 @@ let primary_typing =
   Thumper.bench_with_setup ~setup:make_primary "typing-inline-transcript-1000"
     primary_frame
 
+(* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
+   whose counts are the same on any x86_64 Linux under the locked compiler in
+   release, while time compares only on one machine. *)
+let exact = Sys.getenv_opt "THUMPER_MACHINE" = Some "exact"
+
 let () =
   (* Frame loops care about retention as much as speed: promotions are
      objects escaping the minor heap mid-frame, and minor collections count
@@ -249,20 +254,25 @@ let () =
       Thumper.Config.(
         default
         |> metrics
-             Thumper.Metric.
-               [ wall_time; alloc_words; promoted_words; minor_collections ])
+             (if exact then [ Thumper.Metric.alloc_words ]
+              else
+                Thumper.Metric.
+                  [ wall_time; alloc_words; promoted_words; minor_collections ]))
     ~budgets:
-      [
-        Thumper.Budget.no_slower_than 0.05;
-        Thumper.Budget.no_more_alloc_than 0.;
-        (* Promotions and minor collections depend on where the minor heap
-           stands when a sample starts, so they are rarely exact: kept, with
-           room for that noise. *)
-        Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
-          ~max_regression:0.5 ();
-        Thumper.Budget.relative ~metric:Thumper.Metric.minor_collections
-          ~max_regression:0.5 ();
-      ]
+      (Thumper.Budget.no_more_alloc_than 0.
+      ::
+      (if exact then []
+       else
+         [
+           Thumper.Budget.no_slower_than 0.05;
+           (* Promotions and minor collections depend on where the minor
+              heap stands when a sample starts, so they are rarely exact:
+              kept, with room for that noise. *)
+           Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
+             ~max_regression:0.5 ();
+           Thumper.Budget.relative ~metric:Thumper.Metric.minor_collections
+             ~max_regression:0.5 ();
+         ]))
     [
       Thumper.group "viewport" [ steady_scrolled_transcript; scroll_by_one ];
       Thumper.group "idle" [ idle_full_frame ];

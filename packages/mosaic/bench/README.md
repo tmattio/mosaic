@@ -24,7 +24,8 @@ against `<suite>.thumper`, which holds one section per machine, and a machine
 without a section proposes one through `dune promote`. The alias refuses to
 measure outside release, where allocation counts would differ, and a machine
 keys its section with `THUMPER_MACHINE` (see
-`packages/matrix/bench/README.md`). These suites therefore stay out of
+`packages/matrix/bench/README.md`, which also describes the `exact` section
+of allocation counts that CI checks). These suites therefore stay out of
 `runtest`, where a new machine (a CI runner, a contributor's laptop) would
 fail on the proposal.
 
@@ -36,7 +37,7 @@ region; source and viewport setup are excluded.
 Text layout's reference workloads cover short labels, styled long lines, tall
 clipped text, dense overlapping highlights, highlights outside the viewport,
 horizontal scroll, five widths cycled through the four-entry width cache, and
-an edit in the middle of 1 MB. Its allocation baseline holds each within 5%.
+an edit in the middle of 1 MB. Its allocation budget, like every suite's, is 0.
 Three checks that compare with fixed budgets, the same on every machine, run in
 `dune runtest`, as do the undo-history checks of text layout and the editor:
 

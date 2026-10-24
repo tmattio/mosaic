@@ -16,8 +16,8 @@ Current groups:
 The suite checks against `toffee.thumper` independently of functional
 `runtest`, one section per machine, and exposes improvements or a new machine
 section through `dune promote`. The alias refuses to measure outside release,
-and machines key their section with `THUMPER_MACHINE` (see
-`packages/matrix/bench/README.md`). Pass `bless` to re-record the current
+and machines key their section with `THUMPER_MACHINE`; CI checks the `exact`
+section of allocation counts (both in `packages/matrix/bench/README.md`). Pass `bless` to re-record the current
 machine's section, `list` to list cases, `-f PATTERN` to filter, or `--help`
 for the rest. Example:
 

@@ -2,6 +2,10 @@ module Grid = Matrix_grid
 module C = Ansi.Color
 module S = Ansi.Style
 
+(* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
+   whose counts are the same on any x86_64 Linux under the locked compiler in
+   release, while time compares only on one machine. *)
+let exact = Sys.getenv_opt "THUMPER_MACHINE" = Some "exact"
 let grid_width = 160
 let grid_height = 48
 let solid_fill = C.of_rgb 28 32 36
@@ -45,10 +49,8 @@ let make_grid () = Grid.create ~width:grid_width ~height:grid_height ()
    exact, and retain a timing guard wide enough to reject the old per-cell path
    without turning normal frequency scaling into a flaky gate. *)
 let opaque_fill_budgets =
-  [
-    Thumper.Budget.no_slower_than ~metric:Thumper.Metric.wall_time 1.;
-    Thumper.Budget.no_more_alloc_than 0.;
-  ]
+  Thumper.Budget.no_more_alloc_than 0.
+  :: (if exact then [] else [ Thumper.Budget.no_slower_than 1. ])
 
 let fill_rect_opaque_full =
   Thumper.bench_with_setup ~budgets:opaque_fill_budgets
@@ -285,8 +287,13 @@ let benchmarks =
 
 let () =
   Thumper.run "grid"
+    ~config:
+      Thumper.Config.(
+        default
+        |> metrics
+             (if exact then [ Thumper.Metric.alloc_words ]
+              else Thumper.Metric.[ wall_time; alloc_words ]))
     ~budgets:
-      [
-        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
-      ]
+      (Thumper.Budget.no_more_alloc_than 0.
+      :: (if exact then [] else [ Thumper.Budget.no_slower_than 0.05 ]))
     [ benchmarks ]

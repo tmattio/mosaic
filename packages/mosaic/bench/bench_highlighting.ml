@@ -54,19 +54,29 @@ let fresh_captures (renderer, code, content, first, second, style) =
   Code.set_syntax code (Some (Code.syntax ~style highlights));
   Text_buffer.style_at (Code.buffer code) 0
 
+(* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
+   whose counts are the same on any x86_64 Linux under the locked compiler in
+   release, while time compares only on one machine. *)
+let exact = Sys.getenv_opt "THUMPER_MACHINE" = Some "exact"
+
 let () =
   Thumper.run "highlighting"
     ~config:
-      (Thumper.Config.default
-      |> Thumper.Config.metrics
-           Thumper.Metric.[ wall_time; alloc_words; promoted_words ])
+      Thumper.Config.(
+        default
+        |> metrics
+             (if exact then [ Thumper.Metric.alloc_words ]
+              else Thumper.Metric.[ wall_time; alloc_words; promoted_words ]))
     ~budgets:
-      [
-        Thumper.Budget.no_slower_than 0.05;
-        Thumper.Budget.no_more_alloc_than 0.02;
-        Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
-          ~max_regression:0.5 ();
-      ]
+      (Thumper.Budget.no_more_alloc_than 0.
+      ::
+      (if exact then []
+       else
+         [
+           Thumper.Budget.no_slower_than 0.05;
+           Thumper.Budget.relative ~metric:Thumper.Metric.promoted_words
+             ~max_regression:0.5 ();
+         ]))
     [
       Thumper.bench_with_setup
         ~setup:(fun () -> highlighted_code 100_000)

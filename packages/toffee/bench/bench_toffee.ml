@@ -2,6 +2,10 @@ open Toffee
 module S = Style
 module G = Geometry
 
+(* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
+   whose counts are the same on any x86_64 Linux under the locked compiler in
+   release, while time compares only on one machine. *)
+let exact = Sys.getenv_opt "THUMPER_MACHINE" = Some "exact"
 let unwrap = function Ok v -> v | Error e -> failwith (Error.to_string e)
 let px = S.Dimension.length
 let pct = S.Dimension.percent
@@ -217,7 +221,7 @@ let build_mixed_dashboard tree rng =
 let deep_flex_benchmark =
   let available_space = available ~width:1280. ~height:900. in
   Thumper.bench_with_setup
-    ~budgets:[ Thumper.Budget.no_slower_than 0.5 ]
+    ~budgets:(if exact then [] else [ Thumper.Budget.no_slower_than 0.5 ])
     ~setup:(fun () ->
       let tree = new_tree () in
       let rng = Random.State.make [| 42 |] in
@@ -261,10 +265,15 @@ let mixed_dashboard_benchmark =
 
 let () =
   Thumper.run "toffee"
+    ~config:
+      Thumper.Config.(
+        default
+        |> metrics
+             (if exact then [ Thumper.Metric.alloc_words ]
+              else Thumper.Metric.[ wall_time; alloc_words ]))
     ~budgets:
-      [
-        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
-      ]
+      (Thumper.Budget.no_more_alloc_than 0.
+      :: (if exact then [] else [ Thumper.Budget.no_slower_than 0.05 ]))
     [
       deep_flex_benchmark;
       wide_flex_benchmark;

@@ -36,12 +36,22 @@ let scrollback_render =
       done)
 
 (* Exact allocation guards remain stable when host load makes timing noisy. *)
+(* THUMPER_MACHINE=exact selects the section CI checks: allocation alone,
+   whose counts are the same on any x86_64 Linux under the locked compiler in
+   release, while time compares only on one machine. *)
+let exact = Sys.getenv_opt "THUMPER_MACHINE" = Some "exact"
+
 let () =
   Thumper.run "vte"
+    ~config:
+      Thumper.Config.(
+        default
+        |> metrics
+             (if exact then [ Thumper.Metric.alloc_words ]
+              else Thumper.Metric.[ wall_time; alloc_words ]))
     ~budgets:
-      [
-        Thumper.Budget.no_slower_than 0.05; Thumper.Budget.no_more_alloc_than 0.;
-      ]
+      (Thumper.Budget.no_more_alloc_than 0.
+      :: (if exact then [] else [ Thumper.Budget.no_slower_than 0.05 ]))
     [
       Thumper.group "vte"
         [

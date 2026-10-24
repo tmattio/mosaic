@@ -1,2 +1,9 @@
 # thumper baseline v1
 # suite: reconciler
+
+# machine: exact
+# host: fudge · Intel(R) Core(TM) Ultra 5 235 · x86_64 · linux
+# ocaml: 5.5.1 · 64-bit · release
+
+reconcile/reorder-keyed-list-500	alloc_words	exact	50677
+reconcile/steady-keyed-list-500	alloc_words	exact	35208

@@ -1,2 +1,9 @@
 # thumper baseline v1
 # suite: runtime
+
+# machine: exact
+# host: fudge · Intel(R) Core(TM) Ultra 5 235 · x86_64 · linux
+# ocaml: 5.5.1 · 64-bit · release
+
+render/frame-no-changes	alloc_words	exact	27
+render/frame-single-cell	alloc_words	exact	45

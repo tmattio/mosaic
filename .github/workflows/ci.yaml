@@ -75,3 +75,58 @@ jobs:
         run: |
           opam exec -- dune build packages/mosaic
           opam exec -- dune build @packages/mosaic/runtest
+
+  # Allocation counts, exact and independent of load, against the `exact`
+  # section of every benchmark baseline. They depend on the compiler and the
+  # profile, so the job pins the compiler dune.lock names and builds in
+  # release. Re-record with the command in packages/matrix/bench/README.md.
+  bench-allocation:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout tree
+        uses: actions/checkout@v4
+
+      - name: Set-up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.5.1
+          dune-cache: true
+
+      - name: Install OCaml dependencies
+        run: |
+          awk -F'"' '/"git\+/ { url = $2 } url && /\(name / { sub(/.*\(name /, ""); sub(/\).*/, ""); print $0, url; url = "" }' dune-project |
+            while read -r name url; do opam pin add -n "$name" "$url"; done
+          # The markdown suite measures cmarkit's parser: the version dune.lock names.
+          opam pin add -n cmarkit 0.4.0
+          opam install . --deps-only --with-test
+
+      - name: Build the benchmarks in release
+        run: opam exec -- dune build --profile release packages/matrix/bench packages/mosaic/bench packages/toffee/bench
+
+      # --strict fails on a count that is not exact, a stale section or a new
+      # case; a count that dropped proposes a row, which must be committed.
+      - name: Check allocation counts
+        run: |
+          fail=0
+          for exe in _build/default/packages/*/bench/bench_*.exe; do
+            THUMPER_MACHINE=exact "$exe" --quick --strict --color never || fail=1
+          done
+          for corrected in packages/*/bench/*.thumper.corrected; do
+            [ -e "$corrected" ] || continue
+            diff -u "${corrected%.corrected}" "$corrected" || true
+            fail=1
+          done
+          exit $fail
+
+      - name: Upload the proposed baselines
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-allocation-proposals
+          path: packages/*/bench/*.thumper.corrected
+          if-no-files-found: ignore
