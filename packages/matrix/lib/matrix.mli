@@ -829,7 +829,21 @@ val set_cursor_color : 'msg app -> r:float -> g:float -> b:float -> unit
           if !frames mod 30 = 0 then Matrix.dump_frame ~dir:"dumps" app)
     in
     on_frame
-    ]} *)
+    ]}
+
+    While a run holds the terminal, the program must write to it only through
+    the run. Bytes written to the terminal by other means, such as by
+    [Printf.printf] or by a library's message on standard error, land in the
+    frame where the run does not know they are, and stay on the screen until the
+    cells under them change. A program that prints diagnostics while it runs
+    must write them to standard error, and be run with standard error redirected
+    to a file, which another terminal follows:
+    {v
+    ./app.exe 2>app.log
+    tail -f app.log
+    v}
+    In [`Primary] mode it can also write rows above the live region with
+    {!static_write}. *)
 
 module Debug_overlay = Debug_overlay
 (** A panel of a run's frame timing and memory, drawn in a corner of a frame. *)
