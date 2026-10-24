@@ -45,6 +45,7 @@
    (>= 5.4))
   dune
   (windtrap :with-test)
+  (ppx_windtrap :with-test)
   (thumper :with-test))
  (tags
   (terminal ansi input grid rendering unicode pty vte)))
