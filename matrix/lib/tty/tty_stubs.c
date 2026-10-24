@@ -370,6 +370,27 @@ CAMLprim value matrix_tty_check(value id) {
   return Val_unit;
 }
 
+/* A wake pipe: close-on-exec, so no child inherits it, and non-blocking at
+   both ends. macOS has no pipe2(): there a fork by another thread between
+   pipe() and fcntl() leaks the ends into that child. */
+static int wake_pipe(int fds[2]) {
+#ifdef __APPLE__
+  if (pipe(fds) != 0) return -1;
+  for (int i = 0; i < 2; i++)
+    if (fcntl(fds[i], F_SETFD, FD_CLOEXEC) == -1 ||
+        fcntl(fds[i], F_SETFL, fcntl(fds[i], F_GETFL) | O_NONBLOCK) == -1) {
+      int err = errno;
+      close(fds[0]);
+      close(fds[1]);
+      errno = err;
+      return -1;
+    }
+  return 0;
+#else
+  return pipe2(fds, O_CLOEXEC | O_NONBLOCK);
+#endif
+}
+
 /* Registers a holder whose reset bytes go to [output], if [Some], and
    gives its id and its wake pipe's read end, [(id, read)]. A node is reused
    once its holder has ended, with its pipe, emptied: a pipe is never closed,
@@ -384,11 +405,11 @@ CAMLprim value matrix_tty_hold(value controlling, value output) {
   if (h == NULL) {
     int fds[2];
     h = calloc(1, sizeof *h);
-    if (h == NULL || pipe2(fds, O_CLOEXEC | O_NONBLOCK) != 0) {
+    if (h == NULL || wake_pipe(fds) != 0) {
       int err = errno;
       free(h);
       pthread_mutex_unlock(&holders_lock);
-      caml_unix_error(err, "pipe2", Nothing);
+      caml_unix_error(err, "pipe", Nothing);
     }
     h->wake_r = fds[0];
     h->wake = fds[1];
